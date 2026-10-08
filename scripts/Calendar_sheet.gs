@@ -1,7 +1,7 @@
 /**
  * ========================================================
  * 구글 스프레드시트 만년달력 자동 생성 스크립트
- * (구글 캘린더 대한민국 공휴일 연동 + WBS 빈 행 지원)
+ * (구글 캘린더 대한민국 공휴일 연동 + WBS 빈 행 + Today 버튼 지원)
  * ========================================================
  */
 
@@ -48,8 +48,16 @@ function createPerpetualCalendar() {
     .setValue(curMonth)
     .setHorizontalAlignment("center")
     .setFontWeight("bold");
+    
+  // 4) G2:H2 영역에 [Today] 스마트 버튼 자동 생성
+  sheet.getRange("G2").insertCheckboxes();
+  sheet.getRange("G2").setValue(false).setHorizontalAlignment("center");
+  sheet.getRange("H2").setValue("Today").setFontWeight("bold").setFontColor("#1d4ed8").setHorizontalAlignment("left");
+  sheet.getRange("G2:H2")
+    .setBackground("#eff6ff")
+    .setBorder(true, true, true, true, true, true, "#bfdbfe", SpreadsheetApp.BorderStyle.SOLID);
   
-  // 4) 요일 헤더 (B4:H4)
+  // 5) 요일 헤더 (B4:H4)
   var days = ["일", "월", "화", "수", "목", "금", "토"];
   var headerRange = sheet.getRange("B4:H4");
   headerRange.setValues([days])
@@ -59,7 +67,7 @@ function createPerpetualCalendar() {
   sheet.getRange("B4").setFontColor("#dc2626"); // 일요일 빨강
   sheet.getRange("H4").setFontColor("#2563eb"); // 토요일 파랑
   
-  // 5) 주차별 날짜 수식 (WBS 빈 행 지원)
+  // 6) 주차별 날짜 수식 (WBS 빈 행 지원)
   sheet.getRange("B5").setFormula("=SEQUENCE(1, 7, DATE(C2, E2, 1) - WEEKDAY(DATE(C2, E2, 1), 1) + 1, 1)");
   sheet.getRange("B7").setFormula("=SEQUENCE(1, 7, H5 + 1, 1)");
   sheet.getRange("B9").setFormula("=SEQUENCE(1, 7, H7 + 1, 1)");
@@ -67,7 +75,7 @@ function createPerpetualCalendar() {
   sheet.getRange("B13").setFormula("=SEQUENCE(1, 7, H11 + 1, 1)");
   sheet.getRange("B15").setFormula("=SEQUENCE(1, 7, H13 + 1, 1)");
   
-  // 6) 서식 및 크기 설정
+  // 7) 서식 및 크기 설정
   var dateRows = [5, 7, 9, 11, 13, 15];
   var taskRows = [6, 8, 10, 12, 14, 16];
   
@@ -99,7 +107,7 @@ function createPerpetualCalendar() {
       .setBorder(false, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
   });
   
-  // 7) 조건부 서식 (우선순위 순서)
+  // 8) 조건부 서식 (우선순위 순서)
   var calDateRangeList = [];
   dateRows.forEach(function(r) {
     calDateRangeList.push(sheet.getRange("B" + r + ":H" + r));
@@ -146,8 +154,20 @@ function createPerpetualCalendar() {
     
   sheet.setConditionalFormatRules([ruleOtherMonth, ruleToday, ruleHoliday, ruleSunday, ruleSaturday]);
   
-  // 8) 백그라운드 자동 갱신 트리거 자동 등록 (매월 1일 새벽 2시 자동 실행)
+  // 9) 백그라운드 자동 갱신 트리거 등록
   registerMonthlyTrigger();
+}
+
+/**
+ * G2 체크박스를 클릭했을 때 Today 동작 실행
+ */
+function onEdit(e) {
+  if (!e) return;
+  var range = e.range;
+  if (range.getA1Notation() === "G2" && range.getValue() === true) {
+    range.setValue(false); // 클릭 후 다시 원상복구하여 버튼처럼 동작
+    goToToday();
+  }
 }
 
 /**
