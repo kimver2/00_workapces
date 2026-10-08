@@ -75,18 +75,10 @@ function addNewSiteAtTop() {
     sheet.getRange(2, col, 4, 1).setHorizontalAlignment("left");
   });
 
-  // 시트에 이미 설정되어 있는 드롭다운 규칙(사용자가 시트에서 직접 추가한 담당자 포함)을 그대로 복사하여 상속
-  var existingTaskRule = sheet.getRange(6, 3).getDataValidation();
-  var existingManagerRule = sheet.getRange(6, 7).getDataValidation();
-  var existingStatusRule = sheet.getRange(6, 8).getDataValidation();
-
-  if (existingManagerRule) {
-    sheet.getRange(2, 7, 4, 1).setDataValidation(existingManagerRule);
-  } else {
-    applyValidationsToRange(sheet, 2, 4);
-  }
-  if (existingTaskRule) sheet.getRange(2, 3, 4, 1).setDataValidation(existingTaskRule);
-  if (existingStatusRule) sheet.getRange(2, 8, 4, 1).setDataValidation(existingStatusRule);
+  // 6행(기존 첫 번째 행)의 드롭다운 규칙(다중 선택 칩 설정 포함)을 2~5행으로 직접 복사하여 상속
+  sheet.getRange(6, 7).copyTo(sheet.getRange(2, 7, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 담당자
+  sheet.getRange(6, 3).copyTo(sheet.getRange(2, 3, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 공종
+  sheet.getRange(6, 8).copyTo(sheet.getRange(2, 8, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 진행상태
 
   // 2행의 자식 행인 3~5행을 묶어 2행에 접기/펼치기 아코디언 버튼 생성
   try {
