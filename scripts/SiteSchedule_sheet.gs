@@ -103,7 +103,12 @@ function applyValidationsToRange(sheet, startRow, numRows) {
     SpreadsheetApp.newDataValidation().requireValueInList(tasks, true).setAllowInvalid(true).build()
   );
 
-  var managers = ["조항만", "송지은", "전예린", "영하"];
+  var managers = [
+    // 단일 담당자
+    "조항만", "송지은", "전예린", "영하",
+    // 2인 이상 복합 담당자 (빨간 삼각형 에러 방지)
+    "조항만, 송지은", "조항만, 전예린", "송지은, 전예린", "조항만, 영하", "송지은, 영하"
+  ];
   sheet.getRange(startRow, 7, numRows, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(managers, true).setAllowInvalid(true).build()
   );
@@ -130,8 +135,9 @@ function applySiteScheduleFormatting() {
   sheet.getRange(2, 5, maxRows - 1, 1).insertCheckboxes();
 
   // 3. 노션 스타일 뱃지 색상 (조건부 서식)
-  var rangeC = sheet.getRange(2, 3, maxRows - 1, 1);
-  var rangeH = sheet.getRange(2, 8, maxRows - 1, 1);
+  var rangeC = sheet.getRange(2, 3, maxRows - 1, 1); // 공종
+  var rangeG = sheet.getRange(2, 7, maxRows - 1, 1); // 담당자
+  var rangeH = sheet.getRange(2, 8, maxRows - 1, 1); // 진행상태
   var rules = [];
 
   // 진행상태 색상
@@ -139,6 +145,23 @@ function applySiteScheduleFormatting() {
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("진행 중").setBackground("#dbeafe").setFontColor("#1d4ed8").setBold(true).setRanges([rangeH]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("완료").setBackground("#dcfce7").setFontColor("#15803d").setBold(true).setRanges([rangeH]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("AS").setBackground("#fee2e2").setFontColor("#b91c1c").setBold(true).setRanges([rangeH]).build());
+
+  // 담당자 인물 뱃지 색상 (G열)
+  var managerColorMap = [
+    { key: "조항만", bg: "#dbeafe", font: "#1e40af" }, // 블루
+    { key: "송지은", bg: "#fce7f3", font: "#be185d" }, // 로즈핑크
+    { key: "전예린", bg: "#f3e8ff", font: "#7e22ce" }, // 퍼플
+    { key: "영하", bg: "#ccfbf1", font: "#0f766e" }    // 민트
+  ];
+  managerColorMap.forEach(function(item) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains(item.key)
+      .setBackground(item.bg)
+      .setFontColor(item.font)
+      .setBold(true)
+      .setRanges([rangeG])
+      .build());
+  });
 
   // 공종별 색상
   var taskColorMap = [
