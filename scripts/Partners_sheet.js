@@ -12,20 +12,9 @@
  */
 function applyNotionDropdownsAndColors() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var targetGid = 1633721368;
-  
-  // 대상 시트 찾기 (gid=1633721368 또는 현재 활성 시트)
-  var sheet = null;
-  var sheets = ss.getSheets();
-  for (var i = 0; i < sheets.length; i++) {
-    if (sheets[i].getSheetId() === targetGid) {
-      sheet = sheets[i];
-      break;
-    }
-  }
-  if (!sheet) sheet = ss.getActiveSheet();
-  
-  var maxRows = Math.max(sheet.getLastRow(), 200);
+  // 현재 보고 계신 활성 시트에 즉시 적용
+  var sheet = ss.getActiveSheet();
+  var maxRows = sheet.getMaxRows();
 
   // ----------------------------------------------------
   // A. 노션 드롭다운 (데이터 확인 / Data Validation) 설정
