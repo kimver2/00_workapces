@@ -1,12 +1,12 @@
 /**
  * ========================================================
  * 우성아이디 현장 데이터 자동화 스크립트
- * (신규 현장 상단 자동 추가 + 아코디언 그룹화 + 서식 일괄 적용)
+ * (신규 현장 상단 자동 추가 + 다중선택 칩 보존 + 아코디언)
  * ========================================================
  */
 
 /**
- * 1. 스프레드시트가 열릴 때 상단에 [🚀 현장 관리] 전용 메뉴 자동 등록
+ * 1. 스프레드시트가 열릴 때 상단에 [🚀 현장 관리] 메뉴 자동 등록
  */
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -18,15 +18,14 @@ function onOpen() {
 }
 
 /**
- * 2. 1행과 2행 사이에 신규 현장 4개 행을 추가하고 아코디언 버튼을 자동 생성하는 함수
- * (버튼을 누를 때마다 상단에 새 현장이 추가되어 최신순 정렬 유지)
+ * 2. 1행과 2행 사이에 신규 현장 4개 행을 추가하고 아코디언 버튼 자동 생성
  */
 function addNewSiteAtTop() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getActiveSheet();
   var ui = SpreadsheetApp.getUi();
 
-  // 현장명 입력 팝업창
+  // 현장명 입력 팝업
   var response = ui.prompt(
     "➕ 신규 현장 추가",
     "새로운 현장명을 입력하세요 (예: 래미안 101동 202호):",
@@ -34,7 +33,7 @@ function addNewSiteAtTop() {
   );
 
   if (response.getSelectedButton() !== ui.Button.OK) {
-    return; // 취소 시 중단
+    return;
   }
 
   var siteName = response.getResponseText().trim();
@@ -45,7 +44,7 @@ function addNewSiteAtTop() {
   // 1행과 2행 사이에 4개 행 삽입
   sheet.insertRowsBefore(2, 4);
 
-  // 기본 4개 공정 템플릿 데이터 (대표 1행 + 세부공정 3행)
+  // 기본 4개 공정 템플릿 (대표 1행 + 세부공정 3행)
   var defaultTasks = ["상담", "철거", "목공", "마감"];
   var newRows = [];
   for (var i = 0; i < defaultTasks.length; i++) {
@@ -54,7 +53,7 @@ function addNewSiteAtTop() {
       "",                 // B열: 날짜
       defaultTasks[i],    // C열: 공종
       "",                 // D열: 협력업체
-      false,              // E열: 공유 (체크박스 미체크)
+      false,              // E열: 공유 (체크박스)
       "",                 // F열: 비고
       "",                 // G열: 담당자
       "예정"              // H열: 진행상태
@@ -67,7 +66,7 @@ function addNewSiteAtTop() {
   // E열 체크박스 삽입
   sheet.getRange(2, 5, 4, 1).insertCheckboxes();
 
-  // 정렬 (A, B, C, E, G, H 가운데 / D, F 좌측)
+  // 정렬
   [1, 2, 3, 5, 7, 8].forEach(function(col) {
     sheet.getRange(2, col, 4, 1).setHorizontalAlignment("center");
   });
@@ -75,54 +74,26 @@ function addNewSiteAtTop() {
     sheet.getRange(2, col, 4, 1).setHorizontalAlignment("left");
   });
 
-  // 6행(기존 첫 번째 행)의 드롭다운 규칙(다중 선택 칩 설정 포함)을 2~5행으로 직접 복사하여 상속
-  sheet.getRange(6, 7).copyTo(sheet.getRange(2, 7, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 담당자
-  sheet.getRange(6, 3).copyTo(sheet.getRange(2, 3, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 공종
-  sheet.getRange(6, 8).copyTo(sheet.getRange(2, 8, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 진행상태
+  // 기존 데이터 행에서 다중 선택 칩 드롭다운 서식을 새 행으로 복사 (다중 선택 보존)
+  try {
+    var sourceRow = sheet.getLastRow(); // 실제 데이터가 있는 맨 아래 행에서 복사
+    sheet.getRange(sourceRow, 7).copyTo(sheet.getRange(2, 7, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 담당자
+    sheet.getRange(sourceRow, 3).copyTo(sheet.getRange(2, 3, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 공종
+    sheet.getRange(sourceRow, 8).copyTo(sheet.getRange(2, 8, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false); // 진행상태
+  } catch(e) {}
 
   // 2행의 자식 행인 3~5행을 묶어 2행에 접기/펼치기 아코디언 버튼 생성
   try {
     sheet.getRange("3:5").shiftRowGroupDepth(1);
   } catch(e) {}
 
-  // A2 셀로 포커스 이동 및 토스트 알림
   sheet.setActiveRange(sheet.getRange("A2"));
-  sheet.toast("'" + siteName + "' 4개 행이 상단에 추가되고 아코디언이 생성되었습니다.", "추가 완료", 3);
-}
-
-/**
- * 특정 행 범위에 드롭다운 유효성 검사 적용 헬퍼
- */
-function applyValidationsToRange(sheet, startRow, numRows) {
-  var tasks = [
-    "상담", "신고", "철거", "마루철거", "설비", "누수보수", "미장",
-    "전기입선", "전기마감", "목공", "타일", "줄눈", "필름", "도장",
-    "SMC", "도기", "도기세팅 천장", "퍼플렉스", "코킹", "도배", "바닥", "마루시공",
-    "창호", "창호a/s", "도어설치", "중문", "터닝도어", "현관부속",
-    "주방", "가구", "수납가구", "마감", "잔마감", "청소", "입주", "현장촬영", "S/A"
-  ];
-  sheet.getRange(startRow, 3, numRows, 1).setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(tasks, true).setAllowInvalid(true).build()
-  );
-
-  var managers = [
-    // 단일 담당자
-    "조항만", "송지은", "전예린", "영하",
-    // 2인 이상 복합 담당자 (빨간 삼각형 에러 방지)
-    "조항만, 송지은", "조항만, 전예린", "송지은, 전예린", "조항만, 영하", "송지은, 영하"
-  ];
-  sheet.getRange(startRow, 7, numRows, 1).setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(managers, true).setAllowInvalid(true).build()
-  );
-
-  var statuses = ["예정", "진행 중", "완료", "AS"];
-  sheet.getRange(startRow, 8, numRows, 1).setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(statuses, true).setAllowInvalid(true).build()
-  );
+  ss.toast("'" + siteName + "' 4개 행이 상단에 추가되었습니다.", "추가 완료", 3);
 }
 
 /**
  * 3. 전체 현장 시트 서식 및 아코디언 일괄 세팅
+ * (주의: 다중 선택 칩 설정을 지우지 않도록 드롭다운을 강제 재정의하지 않습니다)
  */
 function applySiteScheduleFormatting() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -130,13 +101,10 @@ function applySiteScheduleFormatting() {
   var maxRows = sheet.getMaxRows();
   var lastRow = Math.max(sheet.getLastRow(), 2);
 
-  // 1. 드롭다운 설정
-  applyValidationsToRange(sheet, 2, maxRows - 1);
-
-  // 2. E열 체크박스 생성
+  // E열 체크박스 일괄 생성
   sheet.getRange(2, 5, maxRows - 1, 1).insertCheckboxes();
 
-  // 3. 노션 스타일 뱃지 색상 (조건부 서식)
+  // 노션 스타일 뱃지 색상 (조건부 서식)
   var rangeC = sheet.getRange(2, 3, maxRows - 1, 1); // 공종
   var rangeG = sheet.getRange(2, 7, maxRows - 1, 1); // 담당자
   var rangeH = sheet.getRange(2, 8, maxRows - 1, 1); // 진행상태
@@ -150,10 +118,10 @@ function applySiteScheduleFormatting() {
 
   // 담당자 인물 뱃지 색상 (G열)
   var managerColorMap = [
-    { key: "조항만", bg: "#dbeafe", font: "#1e40af" }, // 블루
-    { key: "송지은", bg: "#fce7f3", font: "#be185d" }, // 로즈핑크
-    { key: "전예린", bg: "#f3e8ff", font: "#7e22ce" }, // 퍼플
-    { key: "영하", bg: "#ccfbf1", font: "#0f766e" }    // 민트
+    { key: "조항만", bg: "#dbeafe", font: "#1e40af" },
+    { key: "송지은", bg: "#fce7f3", font: "#be185d" },
+    { key: "전예린", bg: "#f3e8ff", font: "#7e22ce" },
+    { key: "영하",   bg: "#ccfbf1", font: "#0f766e" }
   ];
   managerColorMap.forEach(function(item) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
@@ -196,7 +164,7 @@ function applySiteScheduleFormatting() {
 
   sheet.setConditionalFormatRules(rules);
 
-  // 4. 헤더 및 정렬
+  // 헤더 스타일링
   var lastCol = Math.max(sheet.getLastColumn(), 8);
   sheet.getRange(1, 1, 1, lastCol)
     .setFontWeight("bold")
@@ -207,6 +175,7 @@ function applySiteScheduleFormatting() {
   sheet.setRowHeight(1, 36);
   sheet.setFrozenRows(1);
 
+  // 정렬
   [1, 2, 3, 5, 7, 8].forEach(function(col) {
     sheet.getRange(2, col, lastRow - 1, 1).setHorizontalAlignment("center");
   });
@@ -214,6 +183,7 @@ function applySiteScheduleFormatting() {
     sheet.getRange(2, col, lastRow - 1, 1).setHorizontalAlignment("left");
   });
 
+  // 열 너비
   var colWidths = [180, 140, 110, 150, 70, 220, 100, 95];
   for (var c = 0; c < colWidths.length; c++) {
     sheet.setColumnWidth(c + 1, colWidths[c]);
@@ -223,7 +193,7 @@ function applySiteScheduleFormatting() {
     sheet.getDataRange().createFilter();
   }
 
-  // 5. 기존 전체 현장별 아코디언 그룹화
+  // 기존 전체 현장 아코디언 그룹화
   if (lastRow >= 3) {
     try {
       for (var d = 0; d < 3; d++) {
