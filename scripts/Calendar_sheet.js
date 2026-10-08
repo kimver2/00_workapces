@@ -86,12 +86,12 @@ function createPerpetualCalendar() {
     sheet.getRange("B" + r).setFormula(formula);
   }
   
-  // 7) 서식 및 크기 설정 (기념일 명칭이 여유 있게 보이도록 열 너비 105px 지정)
+  // 7) 서식 및 크기 설정 (열 너비 300px 지정)
   var dateRows = [5, 7, 9, 11, 13, 15];
   var taskRows = [6, 8, 10, 12, 14, 16];
   
   for (var col = 2; col <= 8; col++) {
-    sheet.setColumnWidth(col, 105);
+    sheet.setColumnWidth(col, 300);
   }
   sheet.setRowHeight(4, 30);
   
@@ -106,9 +106,9 @@ function createPerpetualCalendar() {
       .setBorder(true, true, false, true, true, true, "#e2e8f0", SpreadsheetApp.BorderStyle.SOLID);
   });
   
-  // 작업/WBS 빈 행 서식
+  // 작업/WBS 빈 행 서식 (높이 300px 지정)
   taskRows.forEach(function(row) {
-    sheet.setRowHeight(row, 55);
+    sheet.setRowHeight(row, 300);
     sheet.getRange(row, 2, 1, 7)
       .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
       .setVerticalAlignment("top")
