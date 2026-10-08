@@ -1,7 +1,7 @@
 /**
  * ========================================================
  * 구글 스프레드시트 만년달력 자동 생성 스크립트
- * (공휴일 명칭 표시 '일자 (기념일)' + 구글 캘린더 연동 + WBS 빈 행 + Today 버튼)
+ * (법정공휴일만 빨간색 표시 + 비공휴 기념일 제외 + WBS 빈 행 + Today 버튼)
  * ========================================================
  */
 
@@ -19,7 +19,7 @@ function createPerpetualCalendar() {
   // 1) 동적 연도 목록 생성 (오늘 기준 -2년 ~ +2년 총 5개 연도)
   sheet.getRange("Z1").setFormula("=SEQUENCE(5, 1, YEAR(TODAY()) - 2, 1)");
 
-  // 2) 대한민국 공휴일 데이터(날짜 및 명칭) 자동 수집
+  // 2) 대한민국 법정 공휴일 데이터(날짜 및 명칭) 자동 수집 (식목일, 국군의날 등 비공휴 기념일 자동 제외)
   autoSyncKoreanHolidays(curYear);
   
   // X열(공휴일 날짜), Y열(공휴일 명칭), Z열(연도 목록) 숨기기
@@ -67,7 +67,7 @@ function createPerpetualCalendar() {
   sheet.getRange("B4").setFontColor("#dc2626"); // 일요일 빨강
   sheet.getRange("H4").setFontColor("#2563eb"); // 토요일 파랑
   
-  // 6) 주차별 날짜 수식 (공휴일일 경우 '일자 (기념일명)' 형태로 자동 노출)
+  // 6) 주차별 날짜 수식 (법정공휴일일 경우에만 '일자 (기념일명)' 형태로 자동 노출)
   var weekOffsets = [0, 1, 2, 3, 4, 5];
   var formulaRows = [5, 7, 9, 11, 13, 15];
   
@@ -123,7 +123,6 @@ function createPerpetualCalendar() {
     calDateRangeList.push(sheet.getRange("B" + r + ":H" + r));
   });
   
-  // 셀의 실제 날짜를 역산하는 수식 기준점
   var cellDateFormula = 'DATE($C$2, $E$2, 1) - WEEKDAY(DATE($C$2, $E$2, 1), 1) + 1 + (INT((ROW(B5)-5)/2)*7) + (COLUMN(B5)-2)';
   
   // 1순위: 이전/다음 달 흐리게
@@ -142,7 +141,7 @@ function createPerpetualCalendar() {
     .setRanges(calDateRangeList)
     .build();
 
-  // 3순위: 대한민국 공휴일 빨간색 강조 (기념일 괄호 '(' 가 포함된 날짜)
+  // 3순위: 법정공휴일 빨간색 강조 (기념일 괄호 '(' 가 포함된 날짜)
   var ruleHoliday = SpreadsheetApp.newConditionalFormatRule()
     .whenFormulaSatisfied('=ISNUMBER(SEARCH("(", B5))')
     .setFontColor("#dc2626")
@@ -184,12 +183,25 @@ function onEdit(e) {
 }
 
 /**
- * 구글 공식 캘린더에서 대한민국 공휴일 날짜 및 명칭 수집
+ * 구글 공식 캘린더에서 대한민국 법정공휴일 날짜 및 명칭 수집
+ * (비공휴 기념일인 식목일, 국군의날, 제헌절 등은 제외)
  */
 function autoSyncKoreanHolidays(baseYear) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   if (!baseYear) baseYear = new Date().getFullYear();
   
+  // 빨간 날이 아닌 비공휴 기념일 제외 키워드 목록
+  var nonHolidayKeywords = [
+    "식목일", "국군의 날", "국군의날", "제헌절", "어버이날", "스승의 날", "스승의날",
+    "근로자의 날", "근로자의날", "노동절", "발렌타인", "화이트데이", "할로윈", "크리스마스 이브",
+    "초복", "중복", "말복", "단오", "칠석", "대보름", "정월대보름", "한식", "동지", "입춘", "춘분", "하지", "추분",
+    "경찰의 날", "소방의 날", "학생독립운동기념일", "농업인의 날", "무역의 날", "금융의 날",
+    "체육의 날", "문화의 날", "세계 한인의 날", "임산부의 날", "노인의 날", "청년의 날",
+    "철도의 날", "정보보호의 날", "바다의 날", "발명의 날", "성년의 날", "부부의 날", "방재의 날",
+    "과학의 날", "정보통신의 날", "보건의 날", "예비군의 날", "서해수호의 날", "상공의 날", "납세자의 날",
+    "3·15", "4·19", "5·18", "6·10", "독도의 날"
+  ];
+
   var holidayData = [];
   try {
     var cal = CalendarApp.getCalendarById("ko.south_korea#holiday@group.v.calendar.google.com");
@@ -199,24 +211,35 @@ function autoSyncKoreanHolidays(baseYear) {
       var events = cal.getEvents(start, end);
       for (var i = 0; i < events.length; i++) {
         var ev = events[i];
+        var title = ev.getTitle();
+        
+        // 비공휴 기념일 여부 검사
+        var isNonHoliday = false;
+        for (var k = 0; k < nonHolidayKeywords.length; k++) {
+          if (title.indexOf(nonHolidayKeywords[k]) !== -1) {
+            isNonHoliday = true;
+            break;
+          }
+        }
+        if (isNonHoliday) continue; // 빨간 날이 아니므로 제외
+        
         var rawDate = ev.getStartTime();
-        // 시간 오차 제거 (00:00:00 기준 Date 생성)
         var cleanDate = new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate());
-        var title = ev.getTitle().replace(/\s*\(대체공휴일\)\s*/g, "대체").trim();
-        holidayData.push([cleanDate, title]);
+        var displayTitle = title.replace(/\s*\(대체공휴일\)\s*/g, "대체").trim();
+        holidayData.push([cleanDate, displayTitle]);
       }
     }
   } catch (e) {
     Logger.log("Calendar sync: " + e.toString());
   }
   
-  // 캘린더 조회가 실패하거나 비어있는 경우를 대비한 필수 공휴일 백업 데이터
+  // 필수 법정공휴일 백업 데이터 (식목일, 국군의날, 제헌절 등 제외된 순수 공휴일)
   if (holidayData.length === 0) {
     var defaultHolidays = [
       ["2024-01-01", "신정"], ["2024-02-09", "설날연휴"], ["2024-02-10", "설날"], ["2024-02-11", "설날연휴"], ["2024-02-12", "대체공휴일"],
       ["2024-03-01", "삼일절"], ["2024-04-10", "총선"], ["2024-05-05", "어린이날"], ["2024-05-06", "대체공휴일"], ["2024-05-15", "부처님오신날"],
       ["2024-06-06", "현충일"], ["2024-08-15", "광복절"], ["2024-09-16", "추석연휴"], ["2024-09-17", "추석"], ["2024-09-18", "추석연휴"],
-      ["2024-10-01", "국군의날"], ["2024-10-03", "개천절"], ["2024-10-09", "한글날"], ["2024-12-25", "성탄절"],
+      ["2024-10-03", "개천절"], ["2024-10-09", "한글날"], ["2024-12-25", "성탄절"],
       ["2025-01-01", "신정"], ["2025-01-28", "설날연휴"], ["2025-01-29", "설날"], ["2025-01-30", "설날연휴"],
       ["2025-03-01", "삼일절"], ["2025-03-03", "대체공휴일"], ["2025-05-05", "어린이날"], ["2025-05-06", "대체공휴일"],
       ["2025-06-06", "현충일"], ["2025-08-15", "광복절"], ["2025-10-03", "개천절"], ["2025-10-05", "추석연휴"],
