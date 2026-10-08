@@ -199,7 +199,7 @@ function autoSyncKoreanHolidays(baseYear) {
     "체육의 날", "문화의 날", "세계 한인의 날", "임산부의 날", "노인의 날", "청년의 날",
     "철도의 날", "정보보호의 날", "바다의 날", "발명의 날", "성년의 날", "부부의 날", "방재의 날",
     "과학의 날", "정보통신의 날", "보건의 날", "예비군의 날", "서해수호의 날", "상공의 날", "납세자의 날",
-    "3·15", "4·19", "5·18", "6·10", "독도의 날"
+    "3·15", "4·19", "5·18", "6·10", "독도의 날", "섣달 그믐날", "섣달그믐"
   ];
 
   var holidayData = [];
@@ -225,7 +225,11 @@ function autoSyncKoreanHolidays(baseYear) {
         
         var rawDate = ev.getStartTime();
         var cleanDate = new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate());
-        var displayTitle = title.replace(/\s*\(대체공휴일\)\s*/g, "대체").trim();
+        var displayTitle = title.trim();
+        // 구글 캘린더에서 '쉬는 날 삼일절', '쉬는 날 개천절', '추석 (대체공휴일)' 등으로 들어오는 대체공휴일 표기를 '대체공휴일'로 단일화
+        if (/쉬는\s*날|대체공휴일|대체휴일/.test(displayTitle)) {
+          displayTitle = "대체공휴일";
+        }
         holidayData.push([cleanDate, displayTitle]);
       }
     }
