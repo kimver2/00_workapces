@@ -12,6 +12,10 @@ function createPerpetualCalendar() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   sheet.clear(); // 초기화
   
+  // 전체 시트 눈금선(gridlines) 숨기기 & 배경 흰색 초기화 (표 외 빈 영역 줄 숨김)
+  sheet.setHiddenGridlines(true);
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).setBackground("#ffffff");
+  
   var today = new Date();
   var curYear = today.getFullYear();
   var curMonth = today.getMonth() + 1;
@@ -26,8 +30,8 @@ function createPerpetualCalendar() {
   sheet.hideColumns(24, 3);
   
   // 3) 헤더 컨트롤 바 (B2:E2)
-  sheet.getRange("B2").setValue("년도").setFontWeight("bold").setHorizontalAlignment("center");
-  sheet.getRange("D2").setValue("월").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("B2").setValue("년도").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#f1f5f9");
+  sheet.getRange("D2").setValue("월").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#f1f5f9");
   
   // 연도 드롭다운 (Z1:Z5 동적 범위 연결)
   var yearRule = SpreadsheetApp.newDataValidation()
@@ -37,7 +41,8 @@ function createPerpetualCalendar() {
     .setDataValidation(yearRule)
     .setValue(curYear)
     .setHorizontalAlignment("center")
-    .setFontWeight("bold");
+    .setFontWeight("bold")
+    .setBackground("#ffffff");
   
   // 월 드롭다운 (1 ~ 12)
   var months = [];
@@ -47,7 +52,12 @@ function createPerpetualCalendar() {
     .setDataValidation(monthRule)
     .setValue(curMonth)
     .setHorizontalAlignment("center")
-    .setFontWeight("bold");
+    .setFontWeight("bold")
+    .setBackground("#ffffff");
+
+  // 연도/월 컨트롤 박스 테두리
+  sheet.getRange("B2:C2").setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange("D2:E2").setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
     
   // 4) G2:H2 영역에 [Today] 스마트 버튼 자동 생성
   sheet.getRange("G2").insertCheckboxes();
@@ -63,7 +73,8 @@ function createPerpetualCalendar() {
   headerRange.setValues([days])
     .setFontWeight("bold")
     .setHorizontalAlignment("center")
-    .setBackground("#f8fafc");
+    .setBackground("#f8fafc")
+    .setBorder(true, true, true, true, true, true, "#000000", SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange("B4").setFontColor("#dc2626"); // 일요일 빨강
   sheet.getRange("H4").setFontColor("#2563eb"); // 토요일 파랑
   
@@ -102,8 +113,7 @@ function createPerpetualCalendar() {
       .setFontSize(9.5)
       .setFontWeight("bold")
       .setHorizontalAlignment("left")
-      .setBackground("#f8fafc")
-      .setBorder(true, true, false, true, true, true, "#e2e8f0", SpreadsheetApp.BorderStyle.SOLID);
+      .setBackground("#f8fafc");
   });
   
   // 작업/WBS 빈 행 서식 (높이 200px 지정)
@@ -114,8 +124,24 @@ function createPerpetualCalendar() {
       .setVerticalAlignment("top")
       .setHorizontalAlignment("left")
       .setFontSize(9)
-      .setBorder(false, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+      .setBackground("#ffffff");
   });
+
+  // 날짜 행과 아래칸을 한 묶음으로 감싸는 테두리 설정
+  for (var w = 0; w < dateRows.length; w++) {
+    var rDate = dateRows[w];
+    var rTask = taskRows[w];
+    
+    // 날짜행 + 작업행 2개 행을 한 묶음으로 외곽 및 세로 구분선을 진한 검은색(#000000)으로 설정
+    sheet.getRange(rDate, 2, 2, 7)
+      .setBorder(true, true, true, true, true, null, "#000000", SpreadsheetApp.BorderStyle.SOLID);
+      
+    // 날짜 셀과 아래 작업 셀 사이의 가로선은 연한 회색(#e2e8f0)으로 구분하여 한 묶음 카드 형태 완성
+    sheet.getRange(rDate, 2, 1, 7)
+      .setBorder(null, null, true, null, null, null, "#e2e8f0", SpreadsheetApp.BorderStyle.SOLID);
+    sheet.getRange(rTask, 2, 1, 7)
+      .setBorder(true, null, null, null, null, null, "#e2e8f0", SpreadsheetApp.BorderStyle.SOLID);
+  }
   
   // 8) 조건부 서식 (우선순위 순서)
   var calDateRangeList = [];
