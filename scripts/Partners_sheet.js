@@ -61,6 +61,7 @@ function applyNotionDropdownsAndColors() {
   // B. 노션 스타일 뱃지 색상 (조건부 서식) 설정
   // ----------------------------------------------------
   var rangeB = sheet.getRange(2, 2, maxRows - 1, 1); // 대구분
+  var rangeC = sheet.getRange(2, 3, maxRows - 1, 1); // 업태/공종
   var rangeD = sheet.getRange(2, 4, maxRows - 1, 1); // 우선순위
   var rangeE = sheet.getRange(2, 5, maxRows - 1, 1); // 관리상태
   
@@ -87,6 +88,36 @@ function applyNotionDropdownsAndColors() {
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("본사").setBackground("#e0e7ff").setFontColor("#3730a3").setBold(true).setRanges([rangeD]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("LX 대리점").setBackground("#e0e7ff").setFontColor("#3730a3").setBold(true).setRanges([rangeD]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("미지정").setBackground("#f1f5f9").setFontColor("#64748b").setRanges([rangeD]).build());
+
+  // [업태/공종 색상 - C열]
+  var bizColorMap = [
+    { keys: ["철거", "마루"], bg: "#f1f5f9", font: "#334155" },
+    { keys: ["설비", "누수"], bg: "#cffafe", font: "#0e7490" },
+    { keys: ["전기", "조명"], bg: "#fef3c7", font: "#b45309" },
+    { keys: ["목공", "목자재"], bg: "#ffedd5", font: "#9a3412" },
+    { keys: ["타일", "줄눈", "도기"], bg: "#ccfbf1", font: "#0f766e" },
+    { keys: ["필름", "도장"], bg: "#f3e8ff", font: "#7e22ce" },
+    { keys: ["도배", "벽지", "지물"], bg: "#dcfce7", font: "#15803d" },
+    { keys: ["창호", "중문", "유리", "방충망"], bg: "#dbeafe", font: "#1d4ed8" },
+    { keys: ["바닥"], bg: "#fef9c3", font: "#854d0e" },
+    { keys: ["가구", "블라인드", "커튼"], bg: "#fce7f3", font: "#be185d" },
+    { keys: ["에어컨"], bg: "#e0f2fe", font: "#0369a1" },
+    { keys: ["청소", "마감"], bg: "#d1fae5", font: "#047857" },
+    { keys: ["욕실", "SMC"], bg: "#e0f2fe", font: "#0284c7" },
+    { keys: ["인력", "철물", "골재", "단열시공", "인조대리석"], bg: "#f3f4f6", font: "#4b5563" }
+  ];
+
+  bizColorMap.forEach(function(item) {
+    item.keys.forEach(function(k) {
+      rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenTextContains(k)
+        .setBackground(item.bg)
+        .setFontColor(item.font)
+        .setBold(true)
+        .setRanges([rangeC])
+        .build());
+    });
+  });
 
   sheet.setConditionalFormatRules(rules);
 
