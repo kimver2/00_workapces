@@ -1,16 +1,20 @@
 /**
  * ========================================================
- * 우성아이디 거래처 리스트 자동 동기화/입력 스크립트
+ * 우성아이디 거래처 리스트 자동화 스크립트
  * (Notion '우성아이디 거래처 리스트' DB -> Google Sheets)
  * 대상 시트: gid=1633721368
  * ========================================================
  */
 
-function importPartnersList() {
+/**
+ * 1. 이미 붙여넣은 시트에 노션 스타일 드롭다운 및 색상만 즉시 적용하는 함수
+ * (데이터를 덮어쓰지 않고 드롭다운 선택 메뉴와 상태별 뱃지 색상만 세팅)
+ */
+function applyNotionDropdownsAndColors() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var targetGid = 1633721368;
   
-  // 1) 대상 시트 찾기 (gid=1633721368 또는 활성 시트)
+  // 대상 시트 찾기 (gid=1633721368 또는 현재 활성 시트)
   var sheet = null;
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
@@ -21,13 +25,121 @@ function importPartnersList() {
   }
   if (!sheet) sheet = ss.getActiveSheet();
   
-  // 기존 필터 해제 및 초기화
+  var maxRows = Math.max(sheet.getLastRow(), 200);
+
+  // ----------------------------------------------------
+  // A. 노션 드롭다운 (데이터 확인 / Data Validation) 설정
+  // ----------------------------------------------------
+  // 1) 대구분 (B열: 대분류)
+  var categories = ["시공", "외주", "자재"];
+  var catRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(categories, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(2, 2, maxRows - 1, 1).setDataValidation(catRule);
+
+  // 2) 업태/공종 (C열)
+  var bizTypes = [
+    "철거", "설비", "전기", "목공", "타일", "줄눈", "필름", "도장",
+    "SMC", "도기", "도배", "청소", "마감", "욕실", "창호", "에어컨",
+    "바닥", "가구", "중문", "유리", "방충망", "누수탐지", "보수", "단열시공",
+    "블라인드", "커튼", "조명", "인력", "목자재", "벽지", "지물", "현관부속",
+    "철물류", "인조대리석", "골재", "마루"
+  ];
+  var bizRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(bizTypes, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(2, 3, maxRows - 1, 1).setDataValidation(bizRule);
+
+  // 3) 우선순위 (D열)
+  var priorities = ["A팀", "B팀", "C팀", "A 거래처", "B 거래처", "C 거래처", "본사", "LX 대리점", "미지정"];
+  var priorityRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(priorities, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(2, 4, maxRows - 1, 1).setDataValidation(priorityRule);
+
+  // 4) 관리상태 (E열)
+  var statuses = ["운영 중", "확인 필요", "신규 발굴", "보류"];
+  var statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(statuses, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(2, 5, maxRows - 1, 1).setDataValidation(statusRule);
+
+  // ----------------------------------------------------
+  // B. 노션 스타일 뱃지 색상 (조건부 서식) 설정
+  // ----------------------------------------------------
+  var rangeB = sheet.getRange(2, 2, maxRows - 1, 1); // 대구분
+  var rangeD = sheet.getRange(2, 4, maxRows - 1, 1); // 우선순위
+  var rangeE = sheet.getRange(2, 5, maxRows - 1, 1); // 관리상태
+  
+  var rules = [];
+
+  // [관리상태 색상]
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("운영 중").setBackground("#dcfce7").setFontColor("#15803d").setBold(true).setRanges([rangeE]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("확인 필요").setBackground("#fef3c7").setFontColor("#b45309").setBold(true).setRanges([rangeE]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("신규 발굴").setBackground("#dbeafe").setFontColor("#1d4ed8").setBold(true).setRanges([rangeE]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("보류").setBackground("#fee2e2").setFontColor("#b91c1c").setBold(true).setRanges([rangeE]).build());
+
+  // [대구분 색상]
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("시공").setBackground("#dbeafe").setFontColor("#1e40af").setBold(true).setRanges([rangeB]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("외주").setBackground("#f3e8ff").setFontColor("#6b21a8").setBold(true).setRanges([rangeB]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("자재").setBackground("#ffedd5").setFontColor("#9a3412").setBold(true).setRanges([rangeB]).build());
+
+  // [우선순위 색상]
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("A팀").setBackground("#dcfce7").setFontColor("#166534").setBold(true).setRanges([rangeD]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("A 거래처").setBackground("#dcfce7").setFontColor("#166534").setBold(true).setRanges([rangeD]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("B팀").setBackground("#e0f2fe").setFontColor("#0369a1").setBold(true).setRanges([rangeD]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("B 거래처").setBackground("#e0f2fe").setFontColor("#0369a1").setBold(true).setRanges([rangeD]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("C팀").setBackground("#fef9c3").setFontColor("#854d0e").setBold(true).setRanges([rangeD]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("C 거래처").setBackground("#fef9c3").setFontColor("#854d0e").setBold(true).setRanges([rangeD]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("본사").setBackground("#e0e7ff").setFontColor("#3730a3").setBold(true).setRanges([rangeD]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("LX 대리점").setBackground("#e0e7ff").setFontColor("#3730a3").setBold(true).setRanges([rangeD]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("미지정").setBackground("#f1f5f9").setFontColor("#64748b").setRanges([rangeD]).build());
+
+  sheet.setConditionalFormatRules(rules);
+
+  // 1행 헤더 서식 및 틀 고정
+  var lastCol = Math.max(sheet.getLastColumn(), 18);
+  sheet.getRange(1, 1, 1, lastCol)
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#1e293b")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  sheet.setRowHeight(1, 36);
+  sheet.setFrozenRows(1);
+
+  // 필터가 없으면 자동 생성
+  if (!sheet.getFilter()) {
+    sheet.getDataRange().createFilter();
+  }
+}
+
+/**
+ * 2. 데이터 전체 입력 + 드롭다운 + 색상까지 일괄 자동 실행 함수
+ */
+function importPartnersList() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var targetGid = 1633721368;
+  
+  var sheet = null;
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].getSheetId() === targetGid) {
+      sheet = sheets[i];
+      break;
+    }
+  }
+  if (!sheet) sheet = ss.getActiveSheet();
+  
   var oldFilter = sheet.getFilter();
   if (oldFilter) oldFilter.remove();
   sheet.clear();
-  sheet.setHiddenGridlines(false); // 데이터 시트는 격자선 표시
+  sheet.setHiddenGridlines(false);
   
-  // 2) 헤더 및 데이터 정의
   var headers = ["거래처명", "대구분", "업태/공종", "우선순위", "관리상태", "주력분야 및 특징", "담당자", "연락처", "발주/접수방식", "카톡방", "비고", "최근 거래일", "다음 확인일", "내부 담당", "등록일", "발주 링크", "주소/지역", "최종 수정"];
   var rows = [
   [
@@ -1352,73 +1464,38 @@ function importPartnersList() {
   ]
 ];
   
-  // 3) 헤더 작성 및 서식
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
-  headerRange.setValues([headers])
-    .setFontWeight(bold)
-    .setFontColor(#ffffff)
-    .setBackground(#1e293b) // 다크 네이비 헤더
-    .setHorizontalAlignment(center)
-    .setVerticalAlignment(middle);
-  sheet.setRowHeight(1, 36);
-  sheet.setFrozenRows(1); // 1행 틀 고정
+  headerRange.setValues([headers]);
   
-  // 4) 데이터 작성
   if (rows.length > 0) {
     var dataRange = sheet.getRange(2, 1, rows.length, headers.length);
     dataRange.setValues(rows)
-      .setVerticalAlignment(middle)
+      .setVerticalAlignment("middle")
       .setFontSize(9.5);
       
-    // 행 높이 기본 설정
     for (var r = 2; r <= rows.length + 1; r++) {
       sheet.setRowHeight(r, 28);
     }
     
-    // 열별 정렬 및 줄바꿈 서식
-    // 거래처명(1), 대구분(2), 우선순위(4), 관리상태(5), 담당자(7), 발주방식(9), 카톡방(10): 가운데 정렬
     [1, 2, 4, 5, 7, 9, 10, 12, 13, 14, 15, 18].forEach(function(col) {
-      sheet.getRange(2, col, rows.length, 1).setHorizontalAlignment(center);
+      sheet.getRange(2, col, rows.length, 1).setHorizontalAlignment("center");
     });
     
-    // 주력분야 및 특징(6), 비고(11), 주소/지역(17): 왼쪽 정렬 및 자동 줄바꿈
     [3, 6, 8, 11, 16, 17].forEach(function(col) {
       sheet.getRange(2, col, rows.length, 1)
-        .setHorizontalAlignment(left)
+        .setHorizontalAlignment("left")
         .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
     });
     
-    // 전체 테두리 설정 (연한 회색 테두리)
     sheet.getRange(1, 1, rows.length + 1, headers.length)
-      .setBorder(true, true, true, true, true, true, #cbd5e1, SpreadsheetApp.BorderStyle.SOLID);
+      .setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
   }
   
-  // 5) 열 너비 최적화
-  var colWidths = [
-    140, // 1. 거래처명
-    90,  // 2. 대구분
-    130, // 3. 업태/공종
-    90,  // 4. 우선순위
-    95,  // 5. 관리상태
-    320, // 6. 주력분야 및 특징
-    120, // 7. 담당자
-    140, // 8. 연락처
-    130, // 9. 발주/접수방식
-    95,  // 10. 카톡방
-    180, // 11. 비고
-    110, // 12. 최근 거래일
-    110, // 13. 다음 확인일
-    100, // 14. 내부 담당
-    130, // 15. 등록일
-    120, // 16. 발주 링크
-    160, // 17. 주소/지역
-    130  // 18. 최종 수정
-  ];
-  
+  var colWidths = [140, 90, 130, 90, 95, 320, 120, 140, 130, 95, 180, 110, 110, 100, 130, 120, 160, 130];
   for (var c = 0; c < colWidths.length; c++) {
     sheet.setColumnWidth(c + 1, colWidths[c]);
   }
   
-  // 6) 자동 필터 생성
-  sheet.getDataRange().createFilter();
+  // 드롭다운 및 색상 자동 적용
+  applyNotionDropdownsAndColors();
 }
