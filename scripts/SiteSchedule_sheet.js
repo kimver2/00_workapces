@@ -1,22 +1,19 @@
 /**
  * ========================================================
- * 우성아이디 현장 관리 & 대시보드 달력 & 구글 캘린더 완벽 양방향 연동 스크립트 (v7.0)
- * (마지막 수정 시간 추적 기반 Last-Modified-Wins 양방향 동기화)
+ * 우성아이디 현장 관리 & 대시보드 달력 & 구글 캘린더 완벽 양방향 연동 스크립트 (v8.0)
+ * (최초작성일/작성자 및 최종수정일/수정자 자동 기록 + Last-Modified-Wins 양방향 연동)
  * 
- * [핵심 기능]
- * 1. ⏱️ [최종 수정 시간 기반 동기화 (Last-Modified-Wins)]:
- *    - 캘린더에서 수정한 경우: 캘린더의 수정 시각이 더 최신이면 시트(B열)로 날짜 자동 반영!
- *    - 시트에서 수정한 경우: 시트의 수정 시각이 더 최신이면 캘린더로 날짜 자동 반영!
- *    - 캘린더에서 날짜를 바꿨는데 시트의 이전 값으로 되돌아가는 현상 원천 차단!
- * 2. 📅 [시트 ➔ 캘린더 실시간 연동]:
- *    - 시트에서 날짜/공종/담당자 입력 시 즉시 구글 캘린더 생성/수정
- * 3. 📥 [캘린더 ➔ 시트 자동/수동 연동]:
- *    - 1분 주기(초고속) 또는 5분 주기(표준) 백그라운드 자동 감지
- *    - [즉시 가져오기] 버튼으로 수 초 만에 반영 가능
- * 4. ⚙️ [자유로운 캘린더 지정]:
- *    - 전용 캘린더, 공유 캘린더 ID, 개인 캘린더 UI에서 즉시 교체 가능
- * 5. 🔄 [대시보드 달력 연쇄 최신화]:
- *    - 날짜가 변경되면 대시보드 월간 달력도 자동으로 연동 갱신
+ * [주요 기능]
+ * 1. 📝 [작성/수정 이력 자동 추적 (Audit Trail)]:
+ *    - 최초 작성일 & 작성자(이메일/아이디) 자동 기록 (K, L열)
+ *    - 최종 수정일 & 수정자 자동 기록 (M, N열)
+ *    - 구글 캘린더에서 날짜를 옮기거나 수정한 경우: "최종수정자: 구글 캘린더"로 정확하게 추적 기록!
+ *    - 캘린더 일정 본문(Description)에도 최초작성/최종수정 정보 자동 표기
+ * 2. ⏱️ [최종 수정 시간 기반 Last-Modified-Wins 동기화]:
+ *    - 캘린더에서 날짜를 수정하면 시트로 자동 반영, 시트에서 수정하면 캘린더로 자동 반영!
+ *    - 캘린더에서 바꾼 날짜가 시트 옛날 값으로 되돌아가는 현상 100% 원천 차단
+ * 3. 📅 [시트 ➔ 캘린더 실시간 연동] & [캘린더 ➔ 시트 1분/5분 자동 연동]
+ * 4. ⚙️ [자유로운 캘린더 지정] & 🔄 [대시보드 월간 달력 연쇄 최신화]
  * ========================================================
  */
 
@@ -151,7 +148,7 @@ function disableRealtimeCalendarSync() {
 }
 
 /**
- * 설치형 onEdit 트리거 핸들러 (실시간 캘린더 수정/등록/삭제 처리)
+ * 설치형 onEdit 트리거 핸들러 (실시간 캘린더 수정/등록/삭제 및 작성자/수정자 추적)
  */
 function handleCalendarEditTrigger(e) {
   if (!e || !e.range) return;
@@ -162,12 +159,28 @@ function handleCalendarEditTrigger(e) {
   var col = e.range.getColumn();
   if (row < 2) return;
 
-  // A~H열(1~8열: 현장, 날짜, 공종, 세부내용, 체크박스, 협력업체, 담당자, 진행상태) 수정 시
+  // A~H열(1~8열: 현장, 날짜, 공종, 협력업체, 체크박스, 비고, 담당자, 진행상태) 수정 시
   if (col >= 1 && col <= 8) {
     try {
-      // 시트의 최종 수정 시각 기록 (J열: 10열)
-      var now = Date.now();
-      sheet.getRange(row, 10).setValue(now);
+      ensureCalendarSyncColumns(sheet);
+
+      var now = new Date();
+      var nowStr = formatDateTime(now);
+      var currentUser = getCurrentUserIdentifier();
+
+      // 최초작성일/작성자(K, L열)가 비어있으면 최초 작성 정보 기록
+      var cellCreatedDate = sheet.getRange(row, 11);
+      if (!cellCreatedDate.getValue()) {
+        cellCreatedDate.setValue(nowStr);
+        sheet.getRange(row, 12).setValue(currentUser);
+      }
+
+      // 최종수정일/수정자(M, N열) 갱신
+      sheet.getRange(row, 13).setValue(nowStr);
+      sheet.getRange(row, 14).setValue(currentUser);
+
+      // 시트의 최종 수정 시각 밀리초 타임스탬프 기록 (J열: 10열)
+      sheet.getRange(row, 10).setValue(now.getTime());
 
       // 캘린더 동기화 실행 (Last-Modified-Wins 검사 포함)
       syncSingleRowToCalendar(sheet, row);
@@ -185,6 +198,7 @@ function handleCalendarEditTrigger(e) {
 /**
  * 캘린더에서 수정한 날짜를 시트로 가져와 동기화 (캘린더 ➔ 시트)
  * - 최종 수정 시각(Last Modified)을 비교하여 항상 가장 마지막에 수정한 쪽이 승리!
+ * - 캘린더에서 수정된 경우 최종수정자: "구글 캘린더"로 자동 기록!
  */
 function syncFromCalendarToSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -205,8 +219,8 @@ function syncFromCalendarToSheet() {
 
   ensureCalendarSyncColumns(sheet);
 
-  // A~J열(1~10열) 읽기
-  var range = sheet.getRange(2, 1, lastRow - 1, 10);
+  // A~N열(1~14열) 읽기
+  var range = sheet.getRange(2, 1, lastRow - 1, 14);
   var values = range.getValues();
   var updatedCount = 0;
 
@@ -229,7 +243,8 @@ function syncFromCalendarToSheet() {
 
     if (!event) continue;
 
-    var calUpdated = event.getLastUpdated().getTime();
+    var calUpdatedDate = event.getLastUpdated();
+    var calUpdated = calUpdatedDate.getTime();
 
     // 캘린더의 날짜 추출
     var isAllDay = event.isAllDayEvent();
@@ -265,6 +280,11 @@ function syncFromCalendarToSheet() {
         var newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
         sheet.getRange(row, 2).setValue(newDateStr);
         sheet.getRange(row, 10).setValue(calUpdated);
+
+        // 캘린더에서 수정한 것이므로 최종수정일/수정자 기록!
+        sheet.getRange(row, 13).setValue(formatDateTime(calUpdatedDate));
+        sheet.getRange(row, 14).setValue("구글 캘린더");
+
         updatedCount++;
       } else {
         // [시트가 더 최신] ➔ 시트의 날짜를 캘린더에 덮어쓰기!
@@ -334,7 +354,7 @@ function setupCalendarToSheetTrigger(minutes) {
   SpreadsheetApp.getUi().alert(
     "✅ 캘린더 ➔ 시트 자동 동기화 (" + minutes + "분 주기)",
     "구글 캘린더 ➔ 시트 자동 동기화가 [" + minutes + "분 주기]로 활성화되었습니다!\n\n" +
-    "이제 구글 캘린더에서 일정을 드래그하여 날짜를 옮기면, 약 " + minutes + "분 이내에 시트(B열)와 대시보드 달력에 자동으로 반영됩니다.\n\n" +
+    "이제 구글 캘린더에서 일정을 드래그하거나 수정창에서 날짜를 옮기면, 약 " + minutes + "분 이내에 시트(B열)와 대시보드 달력에 자동으로 반영됩니다.\n\n" +
     "(지금 즉시 반영하고 싶을 때는 [📥 캘린더 수정사항 가져오기] 메뉴를 누르시면 됩니다)",
     SpreadsheetApp.getUi().ButtonSet.OK
   );
@@ -384,6 +404,43 @@ function formatDateYYMMDD(date) {
   var dd = String(date.getDate());
   if (dd.length < 2) dd = "0" + dd;
   return yy + "." + mm + "." + dd;
+}
+
+/**
+ * Date 객체를 YY.MM.DD HH:mm 문자열로 변환 (예: 26.10.09 20:50)
+ */
+function formatDateTime(d) {
+  if (!d) return "";
+  var yy = String(d.getFullYear()).slice(-2);
+  var mm = String(d.getMonth() + 1);
+  if (mm.length < 2) mm = "0" + mm;
+  var dd = String(d.getDate());
+  if (dd.length < 2) dd = "0" + dd;
+  var hh = String(d.getHours());
+  if (hh.length < 2) hh = "0" + hh;
+  var min = String(d.getMinutes());
+  if (min.length < 2) min = "0" + min;
+  return yy + "." + mm + "." + dd + " " + hh + ":" + min;
+}
+
+/**
+ * 현재 로그인 사용자 닉네임/아이디 추출
+ */
+function getCurrentUserIdentifier() {
+  var email = "";
+  try {
+    email = Session.getActiveUser().getEmail();
+  } catch (e) {}
+  if (!email) {
+    try {
+      email = Session.getEffectiveUser().getEmail();
+    } catch (e) {}
+  }
+  if (email) {
+    var id = email.split("@")[0];
+    return id || email;
+  }
+  return "사용자";
 }
 
 
@@ -521,6 +578,12 @@ function buildEventDetails(rowValues, rowNumber) {
   var manager = String(rowValues[6] || "").trim();  // G열: 담당자 (인덱스 6)
   var status = String(rowValues[7] || "").trim();   // H열: 진행상태 (인덱스 7)
 
+  // 이력 정보 (K, L, M, N열)
+  var createdAt = String(rowValues[10] || "").trim(); // K열: 최초작성일
+  var createdBy = String(rowValues[11] || "").trim(); // L열: 최초작성자
+  var updatedAt = String(rowValues[12] || "").trim(); // M열: 최종수정일
+  var updatedBy = String(rowValues[13] || "").trim(); // N열: 최종수정자
+
   if (!siteName && !taskName) return null;
 
   var parsedDate = parseScheduleDateRange(dateVal);
@@ -546,6 +609,8 @@ function buildEventDetails(rowValues, rowNumber) {
   if (partner) descLines.push("🏢 협력업체: " + partner);
   if (memo) descLines.push("📝 비고: " + memo);
   descLines.push("--------------------------------");
+  if (createdAt) descLines.push("⏱️ 최초작성: " + createdAt + (createdBy ? " (" + createdBy + ")" : ""));
+  if (updatedAt) descLines.push("🔄 최종수정: " + updatedAt + (updatedBy ? " (" + updatedBy + ")" : ""));
   descLines.push("📊 스프레드시트 연동 (Row: " + rowNumber + ")");
 
   return {
@@ -561,7 +626,7 @@ function buildEventDetails(rowValues, rowNumber) {
  */
 function syncSingleRowToCalendar(sheet, row) {
   if (row < 2) return;
-  var rowValues = sheet.getRange(row, 1, 1, 10).getValues()[0];
+  var rowValues = sheet.getRange(row, 1, 1, 14).getValues()[0];
   var existingEventId = String(rowValues[8] || "").trim(); // I열: 캘린더ID
   var sheetUpdated = parseInt(rowValues[9], 10) || 0;     // J열: 시트최종수정시각
 
@@ -593,7 +658,8 @@ function syncSingleRowToCalendar(sheet, row) {
   }
 
   if (event) {
-    var calUpdated = event.getLastUpdated().getTime();
+    var calUpdatedDate = event.getLastUpdated();
+    var calUpdated = calUpdatedDate.getTime();
 
     // 만약 캘린더가 시트보다 3초 이상 더 최근에 수정되었다면:
     // (캘린더의 수정을 덮어쓰지 않고 오히려 캘린더 날짜를 시트로 가져옴!)
@@ -613,6 +679,9 @@ function syncSingleRowToCalendar(sheet, row) {
       var newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
       sheet.getRange(row, 2).setValue(newDateStr);
       sheet.getRange(row, 10).setValue(calUpdated);
+      sheet.getRange(row, 13).setValue(formatDateTime(calUpdatedDate));
+      sheet.getRange(row, 14).setValue("구글 캘린더");
+
       var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
       refreshDashboardCalendar(ss);
       return;
@@ -697,16 +766,34 @@ function syncAllSiteSchedulesToGoogleCalendar() {
 
   ensureCalendarSyncColumns(sheet);
 
-  var range = sheet.getRange(2, 1, lastRow - 1, 10);
+  var range = sheet.getRange(2, 1, lastRow - 1, 14);
   var values = range.getValues();
   var syncedCount = 0;
   var updatedCount = 0;
-  var now = Date.now();
+  var now = new Date();
+  var nowMs = now.getTime();
+  var nowStr = formatDateTime(now);
+  var currentUser = getCurrentUserIdentifier();
 
   for (var i = 0; i < values.length; i++) {
     var row = i + 2;
     var rowVals = values[i];
     var existingId = String(rowVals[8] || "").trim();
+
+    // 작성일이 비어있으면 보완
+    if (!rowVals[10]) {
+      sheet.getRange(row, 11).setValue(nowStr);
+      sheet.getRange(row, 12).setValue(currentUser);
+      rowVals[10] = nowStr;
+      rowVals[11] = currentUser;
+    }
+    if (!rowVals[12]) {
+      sheet.getRange(row, 13).setValue(nowStr);
+      sheet.getRange(row, 14).setValue(currentUser);
+      rowVals[12] = nowStr;
+      rowVals[13] = currentUser;
+    }
+
     var details = buildEventDetails(rowVals, row);
 
     if (!details) {
@@ -739,7 +826,7 @@ function syncAllSiteSchedulesToGoogleCalendar() {
       } else {
         event.setAllDayDate(details.parsedDate.startDate);
       }
-      sheet.getRange(row, 10).setValue(now);
+      sheet.getRange(row, 10).setValue(nowMs);
       updatedCount++;
     } else {
       var opt = { description: details.description, location: details.siteName };
@@ -750,7 +837,7 @@ function syncAllSiteSchedulesToGoogleCalendar() {
       }
       if (event) {
         sheet.getRange(row, 9).setValue(event.getId());
-        sheet.getRange(row, 10).setValue(now);
+        sheet.getRange(row, 10).setValue(nowMs);
         syncedCount++;
       }
     }
@@ -769,32 +856,56 @@ function syncAllSiteSchedulesToGoogleCalendar() {
 }
 
 /**
- * 9열(I열, 캘린더ID) & 10열(J열, 최종수정시각) 헤더 및 숨김 처리 확인
+ * 9열~14열 시스템 및 이력 열 헤더 & 서식 확인
+ * 9열: 캘린더ID (숨김)
+ * 10열: 최종수정시각 (밀리초, 숨김)
+ * 11열: 최초작성일
+ * 12열: 최초작성자
+ * 13열: 최종수정일
+ * 14열: 최종수정자
  */
 function ensureCalendarSyncColumns(sheet) {
   if (!sheet) return;
   var maxCols = sheet.getMaxColumns();
-  if (maxCols < 10) {
-    sheet.insertColumnsAfter(maxCols, 10 - maxCols);
+  if (maxCols < 14) {
+    sheet.insertColumnsAfter(maxCols, 14 - maxCols);
   }
-  var hI = sheet.getRange(1, 9);
-  var hJ = sheet.getRange(1, 10);
-  if (hI.getValue() !== "캘린더ID") {
-    hI.setValue("캘린더ID")
-      .setFontWeight("bold")
-      .setFontColor("#ffffff")
-      .setBackground("#1e293b")
+
+  var headers = [
+    { col: 9, title: "캘린더ID" },
+    { col: 10, title: "최종수정시각" },
+    { col: 11, title: "최초작성일" },
+    { col: 12, title: "최초작성자" },
+    { col: 13, title: "최종수정일" },
+    { col: 14, title: "최종수정자" }
+  ];
+
+  headers.forEach(function(h) {
+    var cell = sheet.getRange(1, h.col);
+    if (cell.getValue() !== h.title) {
+      cell.setValue(h.title)
+        .setFontWeight("bold")
+        .setFontColor("#ffffff")
+        .setBackground("#334155")
+        .setHorizontalAlignment("center")
+        .setVerticalAlignment("middle");
+    }
+  });
+
+  // 11~14열 너비 및 서식
+  var colWidthMap = { 11: 120, 12: 85, 13: 120, 14: 85 };
+  for (var c in colWidthMap) {
+    sheet.setColumnWidth(parseInt(c, 10), colWidthMap[c]);
+  }
+
+  var lastRow = Math.max(sheet.getLastRow(), 2);
+  if (lastRow >= 2) {
+    sheet.getRange(2, 11, lastRow - 1, 4)
       .setHorizontalAlignment("center")
-      .setVerticalAlignment("middle");
+      .setFontColor("#64748b");
   }
-  if (hJ.getValue() !== "최종수정시각") {
-    hJ.setValue("최종수정시각")
-      .setFontWeight("bold")
-      .setFontColor("#ffffff")
-      .setBackground("#1e293b")
-      .setHorizontalAlignment("center")
-      .setVerticalAlignment("middle");
-  }
+
+  // 9, 10열(시스템 열) 숨김
   try {
     sheet.hideColumns(9, 2);
   } catch(e) {}
@@ -1236,7 +1347,7 @@ function collapseAllSites() {
 }
 
 /**
- * 상단(1행과 2행 사이)에 신규 현장 4개 행 추가 & 아코디언 설정
+ * 상단(1행과 2행 사이)에 신규 현장 4개 행 추가 & 아코디언 설정 (작성일/작성자 자동 기록)
  */
 function addNewSiteAtTop() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1264,15 +1375,24 @@ function addNewSiteAtTop() {
 
   var defaultTasks = ["상담", "철거", "목공", "마감"];
   var newRows = [];
-  var now = Date.now();
+  var now = new Date();
+  var nowMs = now.getTime();
+  var nowStr = formatDateTime(now);
+  var currentUser = getCurrentUserIdentifier();
+
+  // 14개 열 채우기
+  // 1:현장, 2:날짜, 3:공종, 4:협력업체, 5:공유, 6:비고, 7:담당자, 8:진행상태, 9:캘린더ID, 10:타임스탬프, 11:작성일, 12:작성자, 13:수정일, 14:수정자
   for (var i = 0; i < defaultTasks.length; i++) {
-    newRows.push([siteName, "", defaultTasks[i], "", false, "", "", "예정", "", now]);
+    newRows.push([
+      siteName, "", defaultTasks[i], "", false, "", "", "예정",
+      "", nowMs, nowStr, currentUser, nowStr, currentUser
+    ]);
   }
 
-  sheet.getRange(2, 1, 4, 10).setValues(newRows);
+  sheet.getRange(2, 1, 4, 14).setValues(newRows);
   sheet.getRange(2, 5, 4, 1).insertCheckboxes();
 
-  [1, 2, 3, 5, 7, 8].forEach(function(col) {
+  [1, 2, 3, 5, 7, 8, 11, 12, 13, 14].forEach(function(col) {
     sheet.getRange(2, col, 4, 1).setHorizontalAlignment("center");
   });
   [4, 6].forEach(function(col) {
@@ -1402,9 +1522,9 @@ function applySiteScheduleFormatting() {
 
   sheet.setConditionalFormatRules(rules);
 
-  // 헤더 스타일링
-  var lastCol = Math.max(sheet.getLastColumn(), 10);
-  sheet.getRange(1, 1, 1, lastCol)
+  // 헤더 스타일링 (1~14열)
+  var lastCol = Math.max(sheet.getLastColumn(), 14);
+  sheet.getRange(1, 1, 1, 8)
     .setFontWeight("bold")
     .setFontColor("#ffffff")
     .setBackground("#1e293b")
@@ -1414,7 +1534,7 @@ function applySiteScheduleFormatting() {
   sheet.setFrozenRows(1);
 
   // 정렬
-  [1, 2, 3, 5, 7, 8].forEach(function(col) {
+  [1, 2, 3, 5, 7, 8, 11, 12, 13, 14].forEach(function(col) {
     sheet.getRange(2, col, lastRow - 1, 1).setHorizontalAlignment("center");
   });
   [4, 6].forEach(function(col) {
