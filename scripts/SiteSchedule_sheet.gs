@@ -47,20 +47,19 @@ function onOpen() {
     .addSeparator()
     .addItem("⚙️ 연동 캘린더 변경 / 확인", "configureTargetCalendar")
     .addSeparator()
+    .addItem("🎯 오늘 날짜로 이동 (Today)", "goToToday")
     .addItem("🔄 대시보드 달력 새로고침 (선택된 월 동기화)", "syncAllSiteSchedulesToDashboard")
     .addSeparator()
     .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
     .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
     .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
-    .addSeparator()
-    .addItem("🗑️ 150행 하단 행 일괄 삭제", "deleteRowsBelow")
-    .addItem("🎨 서식 및 아코디언 완전 재설정", "applySiteScheduleFormatting")
     .addToUi();
 }
 
 
 // ========================================================
 // 2. [실시간 스프레드시트 UI 감지 (단순 트리거)]
+// - 대시보드에서 Today 버튼 클릭 시 오늘 날짜로 이동
 // - 대시보드에서 '월' 또는 '년도' 변경 시 달력 즉시 새로고침
 // - 현장데이터 시트에서 A, B, C열 수정 시 대시보드 달력 즉시 갱신
 // ========================================================
@@ -71,8 +70,16 @@ function onEdit(e) {
   var col = e.range.getColumn();
   var ss = e.source || SpreadsheetApp.getActiveSpreadsheet();
 
-  // ① [대시보드 시트] 상단 컨트롤(1~3행)의 년도 또는 월 변경 시
+  // ① [대시보드 시트]
   if (isDashboardSheet(sheet)) {
+    var a1 = e.range.getA1Notation();
+    // G2 체크박스 또는 H2 클릭 시 Today 동작 실행
+    if ((a1 === "G2" || a1 === "H2") && e.range.getValue() === true) {
+      e.range.setValue(false);
+      goToToday();
+      return;
+    }
+    // 상단 컨트롤(1~3행)의 년도 또는 월 변경 시 대시보드 달력 즉시 갱신
     if (row <= 3) {
       refreshDashboardCalendar(ss);
       return;
@@ -576,6 +583,12 @@ function buildEventDetails(rowValues, rowNumber) {
   var dateVal = rowValues[1];                      // B열: 날짜
   var taskName = String(rowValues[2] || "").trim(); // C열: 공종
   var partner = String(rowValues[3] || "").trim();  // D열: 협력업체 (인덱스 3)
+
+  // E열: 공유 (인덱스 4) -> 체크되어 있으면 🟦, 체크 안 되어 있으면 🟥
+  var rawShare = rowValues[4];
+  var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
+  var prefixIcon = isShared ? "🟦 " : "🟥 ";
+
   var memo = String(rowValues[5] || "").trim();     // F열: 비고 (인덱스 5)
   var manager = String(rowValues[6] || "").trim();  // G열: 담당자 (인덱스 6)
   var status = String(rowValues[7] || "").trim();   // H열: 진행상태 (인덱스 7)
@@ -591,21 +604,23 @@ function buildEventDetails(rowValues, rowNumber) {
   var parsedDate = parseScheduleDateRange(dateVal);
   if (!parsedDate) return null;
 
-  // 제목 포맷: [현장명] 공종 (비고가 있으면 비고 포함하여 중복 방지 및 구분)
-  var title = "";
+  // 제목 포맷: 🟦 또는 🟥 [현장명] 공종 (비고)
+  var baseTitle = "";
   var taskDisplay = taskName + (memo ? " (" + memo + ")" : "");
   if (siteName && taskName) {
-    title = "[" + siteName + "] " + taskDisplay;
+    baseTitle = "[" + siteName + "] " + taskDisplay;
   } else if (siteName) {
-    title = "[" + siteName + "]" + (memo ? " (" + memo + ")" : "");
+    baseTitle = "[" + siteName + "]" + (memo ? " (" + memo + ")" : "");
   } else {
-    title = taskDisplay;
+    baseTitle = taskDisplay;
   }
+  var title = prefixIcon + baseTitle;
 
   // 설명(Description) 포맷
   var descLines = [
     "📌 현장명: " + (siteName || "-"),
-    "🔨 공종: " + (taskName || "-")
+    "🔨 공종: " + (taskName || "-"),
+    "🔗 공유여부: " + (isShared ? "🟦 공유 (공개)" : "🟥 미공유 (내부)")
   ];
   if (manager) descLines.push("👤 담당자: " + manager);
   if (status) descLines.push("🚦 진행상태: " + status);
@@ -1070,6 +1085,69 @@ function syncAllSiteSchedulesToDashboard() {
 }
 
 /**
+ * 대시보드 [Today] 실행: 현재 연도/월로 변경 및 오늘 날짜 셀로 포커스 이동
+ */
+function goToToday() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var dashSheet = findDashboardSheet(ss);
+  if (!dashSheet) {
+    dashSheet = ss.getActiveSheet();
+  }
+  ss.setActiveSheet(dashSheet);
+
+  var today = new Date();
+  var curYear = today.getFullYear();
+  var curMonth = today.getMonth() + 1;
+  var curDay = today.getDate();
+
+  // 1. 대시보드 상단에서 '년도'와 '월' 셀 위치 찾기
+  var yearCell = dashSheet.getRange("C2");
+  var monthCell = dashSheet.getRange("E2");
+
+  var dowRow = findDayOfWeekRow(dashSheet);
+  var maxSearchRows = Math.max(dowRow - 1, 3);
+  var values = dashSheet.getRange(1, 1, maxSearchRows, Math.min(dashSheet.getLastColumn(), 10)).getValues();
+  for (var r = 0; r < values.length; r++) {
+    for (var c = 0; c < values[r].length; c++) {
+      var val = String(values[r][c] || "").trim();
+      if ((val === "년도" || val === "연도" || val === "Year") && c + 1 < values[r].length) {
+        yearCell = dashSheet.getRange(r + 1, c + 2);
+      }
+      if ((val === "월" || val === "Month") && c + 1 < values[r].length) {
+        monthCell = dashSheet.getRange(r + 1, c + 2);
+      }
+    }
+  }
+
+  // G2 체크박스가 있다면 false로 초기화 (클릭 피드백)
+  try {
+    var g2 = dashSheet.getRange("G2");
+    if (typeof g2.getValue() === "boolean") {
+      g2.setValue(false);
+    }
+  } catch(e) {}
+
+  // 2. 연도와 월 설정
+  yearCell.setValue(curYear);
+  monthCell.setValue(curMonth);
+  SpreadsheetApp.flush();
+
+  // 3. 대시보드 달력 새로고침 (선택된 월 일정 렌더링)
+  refreshDashboardCalendar(ss);
+
+  // 4. 오늘 날짜 셀로 정확한 포커스 이동
+  var cellPositions = buildCalendarCellMap(dashSheet, dowRow, curMonth);
+  if (cellPositions && cellPositions[curDay]) {
+    var pos = cellPositions[curDay];
+    // 날짜 헤더 셀(숫자 적힌 셀)로 활성화
+    var targetRange = dashSheet.getRange(pos.row - 1, pos.col);
+    dashSheet.setActiveRange(targetRange);
+  }
+
+  ss.toast("오늘(" + curYear + "년 " + curMonth + "월 " + curDay + "일)로 이동했습니다.", "📅 Today", 3);
+}
+
+/**
  * 달력의 모든 일정 내용 칸 깨끗하게 비우기 (수식 셀 보존)
  */
 function clearAllDashboardContentCells(dashSheet, dowRow) {
@@ -1481,174 +1559,4 @@ function addNewSiteAtTop() {
 
   sheet.setActiveRange(sheet.getRange("A2"));
   ss.toast("'" + siteName + "' 4개 행이 상단에 추가되었습니다.", "추가 완료", 3);
-}
-
-/**
- * 지정 행(기본 150행) 하단의 불필요한 모든 빈 행 삭제
- */
-function deleteRowsBelow() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSiteScheduleSheet(ss);
-  if (!sheet) sheet = ss.getActiveSheet();
-  var ui = SpreadsheetApp.getUi();
-
-  var response = ui.prompt(
-    "🗑️ 하단 행 일괄 삭제",
-    "몇 번째 행 아래의 행들을 모두 삭제하시겠습니까?\n(그냥 확인을 누르면 150행 하단 전체가 삭제됩니다)",
-    ui.ButtonSet.OK_CANCEL
-  );
-
-  if (response.getSelectedButton() !== ui.Button.OK) return;
-
-  var targetRow = parseInt(response.getResponseText().trim(), 10);
-  if (isNaN(targetRow) || targetRow <= 1) targetRow = 150;
-
-  var maxRows = sheet.getMaxRows();
-  sheet.showRows(1, maxRows);
-  sheet.expandAllRowGroups();
-  SpreadsheetApp.flush();
-
-  maxRows = sheet.getMaxRows();
-  if (maxRows > targetRow) {
-    var rowsToDelete = maxRows - targetRow;
-    sheet.deleteRows(targetRow + 1, rowsToDelete);
-    ss.toast(targetRow + "행 아래의 " + rowsToDelete + "개 행이 영구 삭제되었습니다.", "삭제 완료", 3);
-  } else {
-    ss.toast("현재 시트의 총 행 수가 " + targetRow + "행 이하입니다.", "삭제할 행 없음", 3);
-  }
-}
-
-/**
- * 현장데이터 시트 서식 및 아코디언 완전 재설정
- */
-function applySiteScheduleFormatting() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSiteScheduleSheet(ss);
-  if (!sheet) sheet = ss.getActiveSheet();
-
-  var maxRows = sheet.getMaxRows();
-  var lastRow = Math.max(sheet.getLastRow(), 2);
-
-  sheet.showRows(1, maxRows);
-
-  try {
-    sheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE);
-  } catch(e) {}
-
-  ensureCalendarSyncColumns(sheet);
-
-  sheet.getRange(2, 5, maxRows - 1, 1).insertCheckboxes();
-
-  var rangeC = sheet.getRange(2, 3, maxRows - 1, 1);
-  var rangeG = sheet.getRange(2, 7, maxRows - 1, 1);
-  var rangeH = sheet.getRange(2, 8, maxRows - 1, 1);
-  var rules = [];
-
-  // 상태별 색상
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("예정").setBackground("#fef3c7").setFontColor("#b45309").setBold(true).setRanges([rangeH]).build());
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("진행 중").setBackground("#dbeafe").setFontColor("#1d4ed8").setBold(true).setRanges([rangeH]).build());
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("완료").setBackground("#dcfce7").setFontColor("#15803d").setBold(true).setRanges([rangeH]).build());
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("AS").setBackground("#fee2e2").setFontColor("#b91c1c").setBold(true).setRanges([rangeH]).build());
-
-  // 담당자별 색상
-  var managerColorMap = [
-    { key: "조항만", bg: "#dbeafe", font: "#1e40af" },
-    { key: "송지은", bg: "#fce7f3", font: "#be185d" },
-    { key: "전예린", bg: "#f3e8ff", font: "#7e22ce" },
-    { key: "영하",   bg: "#ccfbf1", font: "#0f766e" }
-  ];
-  managerColorMap.forEach(function(item) {
-    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains(item.key).setBackground(item.bg).setFontColor(item.font).setBold(true).setRanges([rangeG]).build());
-  });
-
-  // 공종별 색상
-  var taskColorMap = [
-    { keys: ["철거", "마루철거"], bg: "#f1f5f9", font: "#334155" },
-    { keys: ["설비", "누수보수", "미장"], bg: "#cffafe", font: "#0e7490" },
-    { keys: ["전기입선", "전기마감"], bg: "#fef3c7", font: "#b45309" },
-    { keys: ["목공"], bg: "#ffedd5", font: "#9a3412" },
-    { keys: ["타일", "줄눈", "퍼플렉스"], bg: "#ccfbf1", font: "#0f766e" },
-    { keys: ["필름", "도장"], bg: "#f3e8ff", font: "#7e22ce" },
-    { keys: ["도배"], bg: "#dcfce7", font: "#15803d" },
-    { keys: ["창호", "중문", "도어", "터닝도어", "현관부속"], bg: "#dbeafe", font: "#1d4ed8" },
-    { keys: ["바닥", "마루시공"], bg: "#fef9c3", font: "#854d0e" },
-    { keys: ["주방", "가구", "수납가구"], bg: "#fce7f3", font: "#be185d" },
-    { keys: ["SMC", "도기"], bg: "#e0f2fe", font: "#0284c7" },
-    { keys: ["마감", "잔마감", "코킹", "청소"], bg: "#d1fae5", font: "#047857" },
-    { keys: ["상담", "신고", "입주", "현장촬영"], bg: "#e0e7ff", font: "#3730a3" }
-  ];
-
-  taskColorMap.forEach(function(item) {
-    item.keys.forEach(function(k) {
-      rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains(k).setBackground(item.bg).setFontColor(item.font).setBold(true).setRanges([rangeC]).build());
-    });
-  });
-
-  sheet.setConditionalFormatRules(rules);
-
-  // 헤더 스타일링 (1~14열)
-  var lastCol = Math.max(sheet.getLastColumn(), 14);
-  sheet.getRange(1, 1, 1, 8)
-    .setFontWeight("bold")
-    .setFontColor("#ffffff")
-    .setBackground("#1e293b")
-    .setHorizontalAlignment("center")
-    .setVerticalAlignment("middle");
-  sheet.setRowHeight(1, 36);
-  sheet.setFrozenRows(1);
-
-  // 정렬
-  [1, 2, 3, 5, 7, 8, 11, 12, 13, 14].forEach(function(col) {
-    sheet.getRange(2, col, lastRow - 1, 1).setHorizontalAlignment("center");
-  });
-  [4, 6].forEach(function(col) {
-    sheet.getRange(2, col, lastRow - 1, 1).setHorizontalAlignment("left");
-  });
-
-  // 열 너비 설정
-  var colWidths = [180, 140, 110, 150, 70, 220, 100, 95];
-  for (var c = 0; c < colWidths.length; c++) {
-    sheet.setColumnWidth(c + 1, colWidths[c]);
-  }
-
-  // 아코디언 그룹 재생성
-  if (lastRow >= 3) {
-    try {
-      for (var d = 0; d < 3; d++) {
-        sheet.getRange("2:" + maxRows).shiftRowGroupDepth(-1);
-      }
-    } catch(e) {}
-
-    var siteValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    var startRow = 2;
-    var currentSite = siteValues[0][0];
-
-    for (var i = 1; i < siteValues.length; i++) {
-      var site = siteValues[i][0];
-      if (site !== currentSite) {
-        var endRow = i + 1;
-        if (endRow > startRow) {
-          try {
-            sheet.getRange((startRow + 1) + ":" + endRow).shiftRowGroupDepth(1);
-          } catch(e) {}
-        }
-        startRow = i + 2;
-        currentSite = site;
-      }
-    }
-    if (lastRow > startRow) {
-      try {
-        sheet.getRange((startRow + 1) + ":" + lastRow).shiftRowGroupDepth(1);
-      } catch(e) {}
-    }
-  }
-
-  sheet.showRows(1, maxRows);
-  sheet.expandAllRowGroups();
-  try {
-    sheet.hideColumns(9, 2);
-  } catch(e) {}
-  SpreadsheetApp.flush();
-
-  ss.toast("모든 서식과 아코디언이 정상적으로 복구되었습니다.", "새로고침 완료", 3);
 }
