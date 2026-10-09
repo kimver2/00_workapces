@@ -620,7 +620,7 @@ function buildEventDetails(rowValues, rowNumber) {
   var descLines = [
     "📌 현장명: " + (siteName || "-"),
     "🔨 공종: " + (taskName || "-"),
-    "🔗 공유여부: " + (isShared ? "🟦 공유 (공개)" : "🟥 미공유 (내부)")
+    "🔗 공유: " + (isShared ? "완료" : "미완료")
   ];
   if (manager) descLines.push("👤 담당자: " + manager);
   if (status) descLines.push("🚦 진행상태: " + status);
