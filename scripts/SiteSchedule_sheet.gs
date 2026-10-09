@@ -1684,6 +1684,9 @@ function cleanupEmptyRowsMetadata() {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
 
+  var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+  var cleaned = 0;
+
   // 2행 C2(공종)와 E2(공유)에 실수로 들어간 2026 / 10 자동 복구
   try {
     var c2 = sheet.getRange("C2");
