@@ -53,6 +53,8 @@ function onOpen() {
     .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
     .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
     .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
+    .addSeparator()
+    .addItem("🧹 빈 행 유령 이력/ID 일괄 청소", "cleanupEmptyRowsMetadata")
     .addToUi();
 }
 
@@ -236,9 +238,20 @@ function syncFromCalendarToSheet() {
   for (var i = 0; i < values.length; i++) {
     var row = i + 2;
     var rowVals = values[i];
+    var siteName = String(rowVals[0] || "").trim(); // A열: 현장명
+    var currentSheetDate = rowVals[1];               // B열: 날짜
+    var taskName = String(rowVals[2] || "").trim(); // C열: 공종
     var existingId = String(rowVals[8] || "").trim(); // I열: 캘린더ID
     var sheetUpdated = parseInt(rowVals[9], 10) || 0; // J열: 시트수정시각
-    var currentSheetDate = rowVals[1];               // B열: 날짜
+
+    // ① 현장명과 공종이 모두 없는 빈 행은 캘린더 동기화에서 완전 제외!
+    if (!siteName && !taskName) {
+      // 빈 행에 유령 캘린더 ID나 이력 정보가 잘못 남아있다면 깨끗이 청소
+      if (existingId || rowVals[10] || rowVals[12]) {
+        sheet.getRange(row, 9, 1, 6).clearContent(); // I~N열 클리어
+      }
+      continue;
+    }
 
     if (!existingId) continue;
 
@@ -284,8 +297,9 @@ function syncFromCalendarToSheet() {
 
     if (!isSame) {
       // 날짜가 서로 다름! [마지막 수정 시간 기반 비교 (Last-Modified-Wins)]
-      if (calUpdated > sheetUpdated) {
-        // [캘린더가 더 최신] ➔ 캘린더의 날짜를 시트에 반영!
+      // 시트 ➔ 캘린더 전송 직후 발생하는 미세 타임스탬프 오차(Race Condition) 방지를 위해 10초 안전 마진 적용
+      if (calUpdated > sheetUpdated + 10000) {
+        // [캘린더가 10초 이상 더 최신일 때만] ➔ 캘린더의 날짜를 시트에 반영!
         var newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
         sheet.getRange(row, 2).setValue(newDateStr);
         sheet.getRange(row, 10).setValue(calUpdated);
@@ -295,8 +309,8 @@ function syncFromCalendarToSheet() {
         sheet.getRange(row, 14).setValue("구글 캘린더");
 
         updatedCount++;
-      } else {
-        // [시트가 더 최신] ➔ 시트의 날짜를 캘린더에 덮어쓰기!
+      } else if (sheetUpdated > calUpdated + 3000) {
+        // [시트가 3초 이상 더 최신] ➔ 시트의 날짜를 캘린더에 덮어쓰기!
         if (currentRange) {
           if (currentRange.isRange) {
             event.setAllDayDates(currentRange.startDate, currentRange.endDate);
@@ -1583,4 +1597,38 @@ function addNewSiteAtTop() {
 
   sheet.setActiveRange(sheet.getRange("A2"));
   ss.toast("'" + siteName + "' 4개 행이 상단에 추가되었습니다.", "추가 완료", 3);
+}
+
+/**
+ * 현장명과 공종이 없는 빈 행에 잘못 입력된 유령 이력/캘린더ID 일괄 청소
+ */
+function cleanupEmptyRowsMetadata() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) return;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+  var cleaned = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var row = i + 2;
+    var rowVals = values[i];
+    var siteName = String(rowVals[0] || "").trim();
+    var taskName = String(rowVals[2] || "").trim();
+
+    // 현장명과 공종이 모두 없는 빈 행인 경우
+    if (!siteName && !taskName) {
+      var hasMetadata = rowVals[8] || rowVals[9] || rowVals[10] || rowVals[11] || rowVals[12] || rowVals[13];
+      if (hasMetadata) {
+        sheet.getRange(row, 9, 1, 6).clearContent(); // I~N열(ID, 타임스탬프, 작성일, 작성자, 수정일, 수정자) 클리어
+        cleaned++;
+      }
+    }
+  }
+
+  SpreadsheetApp.flush();
+  ss.toast(cleaned + "개 빈 행의 유령 이력 및 캘린더 ID가 깨끗하게 청소되었습니다.", "🧹 청소 완료", 3);
 }
