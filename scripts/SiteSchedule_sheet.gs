@@ -589,14 +589,15 @@ function buildEventDetails(rowValues, rowNumber) {
   var parsedDate = parseScheduleDateRange(dateVal);
   if (!parsedDate) return null;
 
-  // 제목 포맷: [현장명] 공종
+  // 제목 포맷: [현장명] 공종 (비고가 있으면 비고 포함하여 중복 방지 및 구분)
   var title = "";
+  var taskDisplay = taskName + (memo ? " (" + memo + ")" : "");
   if (siteName && taskName) {
-    title = "[" + siteName + "] " + taskName;
+    title = "[" + siteName + "] " + taskDisplay;
   } else if (siteName) {
-    title = "[" + siteName + "]";
+    title = "[" + siteName + "]" + (memo ? " (" + memo + ")" : "");
   } else {
-    title = taskName;
+    title = taskDisplay;
   }
 
   // 설명(Description) 포맷
@@ -942,11 +943,11 @@ function refreshDashboardCalendar(ss) {
   // 4. 달력의 모든 일정 내용 칸을 깨끗하게 비움 (기존 월 일정 완전 삭제)
   clearAllDashboardContentCells(dashSheet, dowRow);
 
-  // 5. 현장데이터 시트에서 전체 데이터 읽기
+  // 5. 현장데이터 시트에서 전체 데이터 읽기 (1~6열: 현장, 날짜, 공종, 협력업체, 공유, 비고)
   var lastRow = siteSheet.getLastRow();
   if (lastRow < 2) return;
 
-  var siteData = siteSheet.getRange(2, 1, lastRow - 1, 3).getValues();
+  var siteData = siteSheet.getRange(2, 1, lastRow - 1, 6).getValues();
 
   // 6. 현재 대시보드 달력의 날짜 위치 맵 구성: map[day] = { row, col }
   var cellPositions = buildCalendarCellMap(dashSheet, dowRow, targetMonth);
@@ -959,6 +960,7 @@ function refreshDashboardCalendar(ss) {
     var siteName = String(siteData[i][0] || "").trim();
     var dateVal = siteData[i][1];
     var taskName = String(siteData[i][2] || "").trim();
+    var memo = String(siteData[i][5] || "").trim(); // F열: 비고 (인덱스 5)
 
     if (!siteName || !dateVal || !taskName) continue;
 
@@ -973,12 +975,13 @@ function refreshDashboardCalendar(ss) {
 
     var day = rangeInfo.day;
     if (!schedulesByDay[day]) schedulesByDay[day] = [];
-    var itemText = "[" + siteName + "] " + taskName;
 
-    if (schedulesByDay[day].indexOf(itemText) === -1) {
-      schedulesByDay[day].push(itemText);
-      matchedCount++;
-    }
+    // 동일 현장/날짜에 같은 공종이 여러 개일 때 비고가 있으면 비고를 붙여서 구분
+    var itemText = "[" + siteName + "] " + taskName + (memo ? " (" + memo + ")" : "");
+
+    // 비고까지 완전히 똑같은 중복이 아니라면 모두 추가
+    schedulesByDay[day].push(itemText);
+    matchedCount++;
   }
 
   // 8. 해당 월의 일정들을 달력의 해당 날짜 밑 칸에 쓰기
