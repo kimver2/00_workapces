@@ -699,38 +699,15 @@ function syncSingleRowToCalendar(sheet, row) {
     }
     sheet.getRange(row, 10).setValue(Date.now());
   } else {
-    // 3) 기존 ID가 없거나 유효하지 않은 경우 -> 중복 방지 검색 후 신규 생성
-    var searchStart = new Date(details.parsedDate.startDate.getTime() - 24 * 60 * 60 * 1000);
-    var searchEnd = new Date(details.parsedDate.startDate.getTime() + 48 * 60 * 60 * 1000);
-    var candidateEvents = cal.getEvents(searchStart, searchEnd);
-    var foundExisting = null;
-
-    for (var i = 0; i < candidateEvents.length; i++) {
-      if (candidateEvents[i].getTitle() === details.title) {
-        foundExisting = candidateEvents[i];
-        break;
-      }
-    }
-
-    if (foundExisting) {
-      event = foundExisting;
-      event.setDescription(details.description);
-      event.setLocation(details.siteName);
-      if (details.parsedDate.isRange) {
-        event.setTime(details.parsedDate.startDate, details.parsedDate.endDate);
-      } else {
-        event.setAllDayDate(details.parsedDate.startDate);
-      }
+    // 3) 기존 ID가 없거나 유효하지 않은 경우 -> [1 Row = 1 Event 원칙] 무조건 이 행을 위한 새 이벤트 단독 1개 생성!
+    var opt = {
+      description: details.description,
+      location: details.siteName
+    };
+    if (details.parsedDate.isRange) {
+      event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
     } else {
-      var opt = {
-        description: details.description,
-        location: details.siteName
-      };
-      if (details.parsedDate.isRange) {
-        event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
-      } else {
-        event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
-      }
+      event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
     }
 
     if (event) {
