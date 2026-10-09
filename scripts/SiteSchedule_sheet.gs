@@ -516,10 +516,10 @@ function buildEventDetails(rowValues, rowNumber) {
   var siteName = String(rowValues[0] || "").trim(); // A열: 현장
   var dateVal = rowValues[1];                      // B열: 날짜
   var taskName = String(rowValues[2] || "").trim(); // C열: 공종
-  var memo = String(rowValues[3] || "").trim();     // D열: 세부내용/비고
-  var partner = String(rowValues[5] || "").trim();  // F열: 협력업체
-  var manager = String(rowValues[6] || "").trim();  // G열: 담당자
-  var status = String(rowValues[7] || "").trim();   // H열: 진행상태
+  var partner = String(rowValues[3] || "").trim();  // D열: 협력업체 (인덱스 3)
+  var memo = String(rowValues[5] || "").trim();     // F열: 비고 (인덱스 5)
+  var manager = String(rowValues[6] || "").trim();  // G열: 담당자 (인덱스 6)
+  var status = String(rowValues[7] || "").trim();   // H열: 진행상태 (인덱스 7)
 
   if (!siteName && !taskName) return null;
 
@@ -544,7 +544,7 @@ function buildEventDetails(rowValues, rowNumber) {
   if (manager) descLines.push("👤 담당자: " + manager);
   if (status) descLines.push("🚦 진행상태: " + status);
   if (partner) descLines.push("🏢 협력업체: " + partner);
-  if (memo) descLines.push("📝 세부내용: " + memo);
+  if (memo) descLines.push("📝 비고: " + memo);
   descLines.push("--------------------------------");
   descLines.push("📊 스프레드시트 연동 (Row: " + rowNumber + ")");
 
