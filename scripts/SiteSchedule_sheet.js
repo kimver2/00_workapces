@@ -86,9 +86,9 @@ function onEdit(e) {
     }
   }
 
-  // ② [현장데이터 시트] 데이터 행(2행 이상)의 A, B, C열(현장, 날짜, 공종) 수정 시 대시보드 갱신
+  // ② [현장데이터 시트] 데이터 행(2행 이상)의 1~6열(현장, 날짜, 공종, 협력업체, 공유, 비고) 수정 시 대시보드 갱신
   if (isSiteScheduleSheet(sheet)) {
-    if (row >= 2 && (col === 1 || col === 2 || col === 3)) {
+    if (row >= 2 && col >= 1 && col <= 6) {
       refreshDashboardCalendar(ss);
       return;
     }
@@ -299,7 +299,7 @@ function syncFromCalendarToSheet() {
         // [시트가 더 최신] ➔ 시트의 날짜를 캘린더에 덮어쓰기!
         if (currentRange) {
           if (currentRange.isRange) {
-            event.setTime(currentRange.startDate, currentRange.endDate);
+            event.setAllDayDates(currentRange.startDate, currentRange.endDate);
           } else {
             event.setAllDayDate(currentRange.startDate);
           }
@@ -710,7 +710,7 @@ function syncSingleRowToCalendar(sheet, row) {
     event.setDescription(details.description);
     event.setLocation(details.siteName);
     if (details.parsedDate.isRange) {
-      event.setTime(details.parsedDate.startDate, details.parsedDate.endDate);
+      event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
     } else {
       event.setAllDayDate(details.parsedDate.startDate);
     }
@@ -863,7 +863,7 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
         event.setDescription(details.description);
         event.setLocation(details.siteName);
         if (details.parsedDate.isRange) {
-          event.setTime(details.parsedDate.startDate, details.parsedDate.endDate);
+          event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
         } else {
           event.setAllDayDate(details.parsedDate.startDate);
         }
@@ -1043,21 +1043,42 @@ function refreshDashboardCalendar(ss) {
     var rangeInfo = parseScheduleDateRange(dateVal);
     if (!rangeInfo) continue;
 
-    // 연도 비교 (연도가 지정된 경우)
-    if (rangeInfo.year && targetYear && rangeInfo.year !== targetYear) continue;
+    // E열: 공유 (인덱스 4) -> 🟦 / 🟥 아이콘
+    var rawShare = siteData[i][4];
+    var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
+    var prefixIcon = isShared ? "🟦 " : "🟥 ";
 
-    // 월 비교 (현재 대시보드에 선택된 월과 일치해야 함)
-    if (rangeInfo.month !== targetMonth) continue;
+    // 대시보드 일정 텍스트 포맷 (아이콘 + 현장명 + 공종 + 비고)
+    var itemText = prefixIcon + "[" + siteName + "] " + taskName + (memo ? " (" + memo + ")" : "");
 
-    var day = rangeInfo.day;
-    if (!schedulesByDay[day]) schedulesByDay[day] = [];
+    // 기간 일정(예: 10/7 ~ 10/9) 처리
+    if (rangeInfo.isRange && rangeInfo.displayEndDate) {
+      var curD = new Date(rangeInfo.startDate.getFullYear(), rangeInfo.startDate.getMonth(), rangeInfo.startDate.getDate());
+      var endD = new Date(rangeInfo.displayEndDate.getFullYear(), rangeInfo.displayEndDate.getMonth(), rangeInfo.displayEndDate.getDate());
+      var anyMatched = false;
+      while (curD <= endD) {
+        var cYear = curD.getFullYear();
+        var cMonth = curD.getMonth() + 1;
+        var cDay = curD.getDate();
 
-    // 동일 현장/날짜에 같은 공종이 여러 개일 때 비고가 있으면 비고를 붙여서 구분
-    var itemText = "[" + siteName + "] " + taskName + (memo ? " (" + memo + ")" : "");
+        if ((!targetYear || cYear === targetYear) && cMonth === targetMonth) {
+          if (!schedulesByDay[cDay]) schedulesByDay[cDay] = [];
+          schedulesByDay[cDay].push(itemText);
+          anyMatched = true;
+        }
+        curD.setDate(curD.getDate() + 1);
+      }
+      if (anyMatched) matchedCount++;
+    } else {
+      // 단일 날짜
+      if (rangeInfo.year && targetYear && rangeInfo.year !== targetYear) continue;
+      if (rangeInfo.month !== targetMonth) continue;
 
-    // 비고까지 완전히 똑같은 중복이 아니라면 모두 추가
-    schedulesByDay[day].push(itemText);
-    matchedCount++;
+      var day = rangeInfo.day;
+      if (!schedulesByDay[day]) schedulesByDay[day] = [];
+      schedulesByDay[day].push(itemText);
+      matchedCount++;
+    }
   }
 
   // 8. 해당 월의 일정들을 달력의 해당 날짜 밑 칸에 쓰기
@@ -1267,8 +1288,9 @@ function findDayOfWeekRow(dashSheet) {
  * 대시보드 상단 선택 연도/월 읽기
  */
 function getDashboardSelectedYearMonth(dashSheet, dowRow) {
-  var defYear = 2026;
-  var defMonth = 10;
+  var now = new Date();
+  var defYear = now.getFullYear();
+  var defMonth = now.getMonth() + 1;
   if (dowRow <= 1) return { year: defYear, month: defMonth };
 
   var values = dashSheet.getRange(1, 1, dowRow - 1, Math.min(dashSheet.getLastColumn(), 10)).getValues();
@@ -1379,6 +1401,8 @@ function parseScheduleDateRange(val) {
 function parseDateComponents(val) {
   if (!val) return null;
 
+  var currentYear = new Date().getFullYear();
+
   if (val instanceof Date && !isNaN(val.getTime())) {
     return { year: val.getFullYear(), month: val.getMonth() + 1, day: val.getDate() };
   }
@@ -1397,13 +1421,13 @@ function parseDateComponents(val) {
   // MM/DD 또는 MM.DD (예: 10/9)
   var mMd = str.match(/^(\d{1,2})[-./](\d{1,2})$/);
   if (mMd) {
-    return { year: 2026, month: parseInt(mMd[1], 10), day: parseInt(mMd[2], 10) };
+    return { year: currentYear, month: parseInt(mMd[1], 10), day: parseInt(mMd[2], 10) };
   }
 
   // 10월 9일
   var mKor = str.match(/(\d{1,2})월\s*(\d{1,2})일/);
   if (mKor) {
-    return { year: 2026, month: parseInt(mKor[1], 10), day: parseInt(mKor[2], 10) };
+    return { year: currentYear, month: parseInt(mKor[1], 10), day: parseInt(mKor[2], 10) };
   }
 
   // Oct 9, Nov 14 등 영문 월
@@ -1411,7 +1435,7 @@ function parseDateComponents(val) {
   var mEng = str.match(/^([A-Za-z]{3})\s+(\d{1,2})/);
   if (mEng) {
     var mon = months[mEng[1].toLowerCase()];
-    if (mon) return { year: 2026, month: mon, day: parseInt(mEng[2], 10) };
+    if (mon) return { year: currentYear, month: mon, day: parseInt(mEng[2], 10) };
   }
 
   return null;
