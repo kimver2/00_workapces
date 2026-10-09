@@ -47,8 +47,8 @@ function onOpen() {
     .addSeparator()
     .addItem("⚙️ 연동 캘린더 변경 / 확인", "configureTargetCalendar")
     .addSeparator()
+    .addItem("🔄 대시보드 갱신 (달력 새로고침)", "syncAllSiteSchedulesToDashboard")
     .addItem("🎯 오늘 날짜로 이동 (Today)", "goToToday")
-    .addItem("🔄 대시보드 달력 새로고침 (선택된 월 동기화)", "syncAllSiteSchedulesToDashboard")
     .addSeparator()
     .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
     .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
@@ -1125,8 +1125,13 @@ function syncAllSiteSchedulesToDashboard() {
 function goToToday() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var dashSheet = findDashboardSheet(ss);
-  if (!dashSheet) {
-    dashSheet = ss.getActiveSheet();
+  if (!dashSheet || isSiteScheduleSheet(dashSheet)) {
+    SpreadsheetApp.getUi().alert(
+      "⚠️ 대시보드 시트를 찾을 수 없습니다.",
+      "현재 대시보드(달력) 시트의 탭 이름을 찾지 못했습니다.\n\n대시보드 탭 이름을 '대시보드' 또는 'dashboard'로 지정해주세요.",
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+    return;
   }
   ss.setActiveSheet(dashSheet);
 
@@ -1461,8 +1466,26 @@ function parseDateComponents(val) {
 // ========================================================
 function isDashboardSheet(sheet) {
   if (!sheet) return false;
+  if (isSiteScheduleSheet(sheet)) return false;
+
   var name = sheet.getName().toLowerCase();
-  return name.indexOf("dashboard") !== -1 || name.indexOf("대시보드") !== -1 || sheet.getSheetId() === 244837509;
+  if (name.indexOf("dashboard") !== -1 || name.indexOf("대시보드") !== -1 ||
+      name.indexOf("만년달력") !== -1 || name.indexOf("달력") !== -1 ||
+      name.indexOf("캘린더") !== -1 || name.indexOf("calendar") !== -1 ||
+      sheet.getSheetId() === 244837509) {
+    return true;
+  }
+
+  // 4행에 요일 헤더('일', '월', '화'...)가 있는지 추가 판별
+  try {
+    if (sheet.getLastRow() >= 4 && sheet.getLastColumn() >= 7) {
+      var headerRow = sheet.getRange(4, 1, 1, Math.min(sheet.getLastColumn(), 10)).getValues()[0].join("");
+      if (headerRow.indexOf("일") !== -1 && headerRow.indexOf("월") !== -1 && headerRow.indexOf("화") !== -1) {
+        return true;
+      }
+    }
+  } catch(e) {}
+  return false;
 }
 
 function isSiteScheduleSheet(sheet) {
@@ -1474,8 +1497,11 @@ function isSiteScheduleSheet(sheet) {
 }
 
 function findDashboardSheet(ss) {
-  var s = ss.getSheetByName("dashboard") || ss.getSheetByName("Dashboard") || ss.getSheetByName("대시보드");
-  if (s) return s;
+  var candidates = ["dashboard", "Dashboard", "대시보드", "00_대시보드", "만년달력", "달력", "캘린더", "Calendar", "calendar"];
+  for (var k = 0; k < candidates.length; k++) {
+    var s = ss.getSheetByName(candidates[k]);
+    if (s && !isSiteScheduleSheet(s)) return s;
+  }
 
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
@@ -1610,8 +1636,17 @@ function cleanupEmptyRowsMetadata() {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
 
-  var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
-  var cleaned = 0;
+  // 2행 C2(공종)와 E2(공유)에 실수로 들어간 2026 / 10 자동 복구
+  try {
+    var c2 = sheet.getRange("C2");
+    var e2 = sheet.getRange("E2");
+    if (String(c2.getValue()).trim() === "2026") {
+      c2.clearContent();
+    }
+    if (String(e2.getValue()).trim() === "10") {
+      e2.setValue(false);
+    }
+  } catch(e) {}
 
   for (var i = 0; i < values.length; i++) {
     var row = i + 2;
