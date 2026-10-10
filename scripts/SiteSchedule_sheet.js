@@ -3240,7 +3240,6 @@ function extractMemberBriefingEmails(sheet) {
     }
   }
 
-  if (emailColIdx === -1) return [];
   if (lastRow < startDataRow) return [];
 
   var data = sheet.getRange(startDataRow, 1, lastRow - startDataRow + 1, lastCol).getValues();
@@ -3249,8 +3248,6 @@ function extractMemberBriefingEmails(sheet) {
 
   for (var i = 0; i < data.length; i++) {
     var rowVals = data[i];
-    var rawEmail = String(rowVals[emailColIdx] || "").trim();
-    if (!rawEmail || !emailRegex.test(rawEmail)) continue;
 
     // 수신 여부 체크박스 열이 있다면 확인
     if (receiveColIdx !== -1) {
@@ -3258,6 +3255,20 @@ function extractMemberBriefingEmails(sheet) {
       var isChecked = (recvVal === true || String(recvVal).trim().toUpperCase() === "TRUE" || String(recvVal).trim() === "1" || String(recvVal).trim() === "V" || String(recvVal).trim() === "O");
       if (!isChecked) continue; // 체크 안 된 인원은 제외
     }
+
+    var rawEmail = (emailColIdx !== -1) ? String(rowVals[emailColIdx] || "").trim() : "";
+    // 스마트 감지: 이메일 컬럼이 비어있거나 실수로 연락처 등 다른 열에 이메일 주소를 입력한 경우
+    if (!rawEmail || !emailRegex.test(rawEmail)) {
+      for (var colIdx = 0; colIdx < rowVals.length; colIdx++) {
+        if (colIdx === receiveColIdx) continue;
+        var candidateVal = String(rowVals[colIdx] || "").trim();
+        if (emailRegex.test(candidateVal)) {
+          rawEmail = candidateVal;
+          break;
+        }
+      }
+    }
+    if (!rawEmail || !emailRegex.test(rawEmail)) continue;
 
     if (resultEmails.indexOf(rawEmail) === -1) {
       resultEmails.push(rawEmail);

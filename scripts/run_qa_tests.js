@@ -345,6 +345,14 @@ const mockSimpleMemberSheet = createMockMembersSheet('팀원', ['성명', '이�
 const extractedSimpleEmails = sandbox.extractMemberBriefingEmails(mockSimpleMemberSheet);
 assertTest('수신 체크박스 열 부재 시: 모든 유효 이메일 자동 추출', extractedSimpleEmails.length === 2 && extractedSimpleEmails.indexOf('park@woosung.com') !== -1 && extractedSimpleEmails.indexOf('jung@woosung.com') !== -1);
 
+// [실제 사용자 사례 테스트]: 이메일 열이 비어 있고 연락처 열에 이메일이 입력된 경우 스마트 자동 감지
+const mockMisplacedSheet = createMockMembersSheet('03_구성원', ['이름', '직책', '이메일', '연락처', '모닝 브리핑 수신'], [
+  ['조항만', '대표', '', 'joehm037@gmail.com', true]
+]);
+const extractedMisplacedEmails = sandbox.extractMemberBriefingEmails(mockMisplacedSheet);
+assertTest('사용자 시나리오 검증: C열(이메일) 비어있고 D열(연락처)에 이메일 있을 때 스마트 자동 추출 성공', extractedMisplacedEmails.length === 1 && extractedMisplacedEmails[0] === 'joehm037@gmail.com');
+assertTest('findMembersSheet 탐색: "03_구성원" 접두사 시트명 정상 감지', sandbox.findMembersSheet({ getSheets: () => [mockMisplacedSheet] }) !== null);
+
 // findMembersSheet 탐색 검증
 const mockSsWithMembers = {
   getSheets: () => [mockGuideSheet, mockMemberSheet]
