@@ -46,6 +46,7 @@ function onOpen() {
     .addItem("⏹️ 캘린더 ➔ 시트 자동 동기화 끄기", "disableCalendarToSheetAutoSync")
     .addSeparator()
     .addItem("⚙️ 연동 캘린더 변경 / 확인", "configureTargetCalendar")
+    .addItem("📱 모바일 상태변경 웹앱 배포 URL 설정", "configureWebAppUrl")
     .addSeparator()
     .addItem("🔄 대시보드 갱신 (달력 새로고침)", "syncAllSiteSchedulesToDashboard")
     .addItem("🎯 오늘 날짜로 이동 (Today)", "goToToday")
@@ -337,6 +338,28 @@ function syncFromCalendarToSheet() {
           updatedCount++;
         }
       }
+    }
+
+    // ② 캘린더 제목의 상태 이모지 감지 (역방향 동기화: ✅ 완료, ▶️ 진행중, 🛠️ AS, 예정)
+    var calTitle = event.getTitle() || "";
+    var currentSheetStatus = String(rowVals[7] || "").trim();
+    var detectedStatus = "";
+    if (calTitle.indexOf("✅") !== -1) {
+      detectedStatus = "완료";
+    } else if (calTitle.indexOf("▶️") !== -1) {
+      detectedStatus = "진행중";
+    } else if (calTitle.indexOf("🛠️") !== -1 || calTitle.indexOf("🛠") !== -1) {
+      detectedStatus = "AS";
+    } else if ((calTitle.indexOf("🟦") !== -1 || calTitle.indexOf("🟥") !== -1) && (currentSheetStatus === "완료" || currentSheetStatus === "진행중" || currentSheetStatus === "AS")) {
+      detectedStatus = "예정";
+    }
+
+    if (detectedStatus && detectedStatus !== currentSheetStatus && calUpdated > sheetUpdated + 3000) {
+      sheet.getRange(row, 8).setValue(detectedStatus); // H열 진행상태 갱신
+      sheet.getRange(row, 10).setValue(calUpdated);
+      sheet.getRange(row, 13).setValue(formatDateTime(calUpdatedDate));
+      sheet.getRange(row, 14).setValue("구글 캘린더");
+      updatedCount++;
     }
   }
 
@@ -651,7 +674,15 @@ function buildEventDetails(rowValues, rowNumber) {
 
   var memo = String(rowValues[5] || "").trim();     // F열: 비고 (인덱스 5)
   var manager = String(rowValues[6] || "").trim();  // G열: 담당자 (인덱스 6)
-  var status = String(rowValues[7] || "").trim();   // H열: 진행상태 (인덱스 7)
+  // 상태별 아이콘 (스타일 A: 예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
+  var statusIcon = "";
+  if (status === "완료") {
+    statusIcon = "✅ ";
+  } else if (status === "진행중") {
+    statusIcon = "▶️ ";
+  } else if (status === "AS" || status === "A/S") {
+    statusIcon = "🛠️ ";
+  }
 
   // 이력 정보 (K, L, M, N열)
   var createdAt = String(rowValues[10] || "").trim(); // K열: 최초작성일
@@ -664,7 +695,7 @@ function buildEventDetails(rowValues, rowNumber) {
   var parsedDate = parseScheduleDateRange(dateVal);
   if (!parsedDate) return null;
 
-  // 제목 포맷: 🟦 또는 🟥 [현장명] 공종 (비고)
+  // 제목 포맷: [상태아이콘] 🟦 또는 🟥 [현장명] 공종 (비고)
   var baseTitle = "";
   var taskDisplay = taskName + (memo ? " (" + memo + ")" : "");
   if (siteName && taskName) {
@@ -674,21 +705,29 @@ function buildEventDetails(rowValues, rowNumber) {
   } else {
     baseTitle = taskDisplay;
   }
-  var title = prefixIcon + baseTitle;
+  var title = statusIcon + prefixIcon + baseTitle;
 
   // 설명(Description) 포맷
   var descLines = [
     "📌 현장명: " + (siteName || "-"),
     "🔨 공종: " + (taskName || "-"),
+    "🚦 진행상태: " + (status || "예정"),
     "🔗 공유: " + (isShared ? "완료" : "미완료")
   ];
   if (manager) descLines.push("👤 담당자: " + manager);
-  if (status) descLines.push("🚦 진행상태: " + status);
   if (partner) descLines.push("🏢 협력업체: " + partner);
   if (memo) descLines.push("📝 비고: " + memo);
   descLines.push("--------------------------------");
   if (createdAt) descLines.push("⏱️ 최초작성: " + createdAt + (createdBy ? " (" + createdBy + ")" : ""));
   if (updatedAt) descLines.push("🔄 최종수정: " + updatedAt + (updatedBy ? " (" + updatedBy + ")" : ""));
+
+  var webAppUrl = getWebAppUrl();
+  if (webAppUrl && rowNumber) {
+    descLines.push("--------------------------------");
+    descLines.push("📱 [진행상태 모바일 빠른 변경 링크]");
+    descLines.push(webAppUrl + "?row=" + rowNumber);
+  }
+
   descLines.push("📊 우성아이디 현장관리 시트 실시간 연동");
 
   return {
@@ -2094,4 +2133,239 @@ function cleanupEmptyRowsMetadata() {
 
   SpreadsheetApp.flush();
   ss.toast(cleaned + "개 빈 행의 유령 이력 및 캘린더 ID가 깨끗하게 청소되었습니다.", "🧹 청소 완료", 3);
+}
+
+
+// ========================================================
+// 10. [모바일 웹 앱: 캘린더 일정 상세 드롭다운 상태 변경 엔진]
+// ========================================================
+
+/**
+ * 배포된 웹 앱 URL 가져오기
+ */
+function getWebAppUrl() {
+  var docProps = PropertiesService.getDocumentProperties();
+  var savedUrl = docProps.getProperty("WEB_APP_URL");
+  if (savedUrl) return savedUrl.trim();
+
+  try {
+    var url = ScriptApp.getService().getUrl();
+    if (url && url.indexOf("macros/s") !== -1) {
+      return url;
+    }
+  } catch(e) {}
+
+  return "";
+}
+
+/**
+ * [메뉴용] 모바일 상태변경 웹앱 배포 URL 확인 및 등록 대화상자
+ */
+function configureWebAppUrl() {
+  var ui = SpreadsheetApp.getUi();
+  var currentUrl = getWebAppUrl();
+
+  var promptText = "📌 현재 등록된 모바일 웹앱 URL:\n" +
+                   (currentUrl ? currentUrl : "(아직 등록되지 않음)") + "\n\n" +
+                   "[웹앱 배포 방법]:\n" +
+                   "1. 상단 메뉴 [확장 프로그램] > [Apps Script] 클릭\n" +
+                   "2. 우측 상단 파란색 [배포] > [새 배포] 클릭\n" +
+                   "3. 유형: [웹 앱] 선택, 액세스 권한: [모든 사용자(Anyone)] 선택 후 [배포]\n" +
+                   "4. 발급된 '웹 앱 URL'을 복사하여 아래에 입력하세요:";
+
+  var response = ui.prompt("📱 모바일 웹앱 배포 URL 설정", promptText, ui.ButtonSet.OK_CANCEL);
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  var input = response.getResponseText().trim();
+  var docProps = PropertiesService.getDocumentProperties();
+
+  if (input) {
+    docProps.setProperty("WEB_APP_URL", input);
+    ui.alert("✅ 모바일 웹앱 URL이 성공적으로 등록되었습니다!\n\n이제 캘린더 동기화 시 일정 본문에 상태 변경 링크가 자동 삽입됩니다.");
+  } else {
+    docProps.deleteProperty("WEB_APP_URL");
+    ui.alert("모바일 웹앱 URL 설정이 해제되었습니다.");
+  }
+}
+
+/**
+ * 모바일 웹 드롭다운 상태 변경 화면 (doGet)
+ */
+function doGet(e) {
+  var p = (e && e.parameter) ? e.parameter : {};
+  var row = parseInt(p.row, 10);
+  var action = p.action;
+  var newStatus = p.status;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = findSiteScheduleSheet(ss);
+
+  // 1) 상태 업데이트 요청 (AJAX fetch)
+  if (action === "update" && row >= 2 && newStatus && sheet) {
+    try {
+      sheet.getRange(row, 8).setValue(newStatus); // H열 진행상태 업데이트
+      var now = new Date();
+      sheet.getRange(row, 10).setValue(now.getTime()); // J열 타임스탬프
+      sheet.getRange(row, 13).setValue(formatDateTime(now)); // M열 최종수정일
+      sheet.getRange(row, 14).setValue("모바일 웹"); // N열 최종수정자
+
+      // 캘린더 및 대시보드 즉시 동기화
+      syncSingleRowToCalendar(sheet, row);
+      SpreadsheetApp.flush();
+
+      return ContentService.createTextOutput(JSON.stringify({ success: true, status: newStatus }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch(err) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // 2) 모바일 UI 화면 출력
+  if (!row || row < 2 || !sheet) {
+    return HtmlService.createHtmlOutput("<h3 style='font-family:sans-serif;text-align:center;margin-top:50px;'>⚠️ 올바른 일정 링크가 아닙니다.</h3>");
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (row > lastRow) {
+    return HtmlService.createHtmlOutput("<h3 style='font-family:sans-serif;text-align:center;margin-top:50px;'>⚠️ 이미 삭제되었거나 유효하지 않은 일정입니다.</h3>");
+  }
+
+  var rowVals = sheet.getRange(row, 1, 1, 8).getValues()[0];
+  var siteName = String(rowVals[0] || "-").trim();
+  var dateStr = String(rowVals[1] || "-").trim();
+  var taskName = String(rowVals[2] || "-").trim();
+  var currentStatus = String(rowVals[7] || "예정").trim() || "예정";
+
+  var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus);
+  return HtmlService.createHtmlOutput(html)
+    .setTitle("현장 공정 상태 변경 - " + siteName)
+    .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
+}
+
+/**
+ * 모바일 반응형 상태 변경 HTML 생성기
+ */
+function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus) {
+  var html = "<!DOCTYPE html>" +
+    "<html>" +
+    "<head>" +
+    "  <meta charset='utf-8'>" +
+    "  <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>" +
+    "  <title>현장 공정 상태 변경</title>" +
+    "  <style>" +
+    "    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }" +
+    "    body { background-color: #f1f5f9; color: #1e293b; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }" +
+    "    .card { background: #ffffff; width: 100%; max-width: 420px; border-radius: 20px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); padding: 24px; }" +
+    "    .header { text-align: center; margin-bottom: 20px; }" +
+    "    .badge { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 13px; font-weight: 600; background: #e2e8f0; color: #475569; margin-bottom: 8px; }" +
+    "    .title { font-size: 20px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }" +
+    "    .subtitle { font-size: 15px; color: #64748b; font-weight: 600; }" +
+    "    .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 14px; line-height: 1.6; }" +
+    "    .info-row { display: flex; justify-content: space-between; }" +
+    "    .info-label { color: #64748b; }" +
+    "    .info-val { font-weight: 600; color: #1e293b; }" +
+    "    .section-label { font-size: 14px; font-weight: 700; color: #334155; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }" +
+    "    .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }" +
+    "    .status-btn { padding: 14px 8px; border-radius: 12px; border: 2px solid #cbd5e1; font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; justify-content: center; gap: 6px; background: #ffffff; }" +
+    "    .btn-plan.active { background: #f1f5f9; color: #334155; border-color: #64748b; border-width: 3px; transform: scale(1.02); }" +
+    "    .btn-progress.active { background: #e0f2fe; color: #0284c7; border-color: #0284c7; border-width: 3px; transform: scale(1.02); }" +
+    "    .btn-done.active { background: #dcfce7; color: #16a34a; border-color: #16a34a; border-width: 3px; transform: scale(1.02); }" +
+    "    .btn-as.active { background: #ffedd5; color: #ea580c; border-color: #ea580c; border-width: 3px; transform: scale(1.02); }" +
+    "    .select-dropdown { width: 100%; height: 50px; font-size: 16px; font-weight: 600; padding: 0 16px; border-radius: 12px; border: 2px solid #cbd5e1; background: #ffffff; color: #1e293b; margin-bottom: 20px; outline: none; transition: border-color 0.2s; -webkit-appearance: none; background-image: url(\"data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e\"); background-repeat: no-repeat; background-position: right 14px center; background-size: 18px; }" +
+    "    .select-dropdown:focus { border-color: #2563eb; }" +
+    "    .submit-btn { width: 100%; height: 52px; background: #2563eb; color: #ffffff; border: none; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3); }" +
+    "    .submit-btn:active { background: #1d4ed8; }" +
+    "    .submit-btn:disabled { background: #94a3b8; cursor: not-allowed; }" +
+    "    .toast { display: none; padding: 14px; border-radius: 12px; text-align: center; font-size: 14px; font-weight: 600; margin-top: 14px; }" +
+    "    .toast-success { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }" +
+    "    .toast-error { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }" +
+    "    .footer { text-align: center; margin-top: 16px; font-size: 12px; color: #94a3b8; }" +
+    "  </style>" +
+    "</head>" +
+    "<body>" +
+    "  <div class='card'>" +
+    "    <div class='header'>" +
+    "      <div class='badge'>현장 공정 상태 관리</div>" +
+    "      <div class='title'>" + siteName + "</div>" +
+    "      <div class='subtitle'>" + taskName + "</div>" +
+    "    </div>" +
+    "    <div class='info-box'>" +
+    "      <div class='info-row'><span class='info-label'>일시:</span><span class='info-val'>" + dateStr + "</span></div>" +
+    "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 상태:</span><span class='info-val' id='currStatusDisplay'>" + currentStatus + "</span></div>" +
+    "    </div>" +
+    "    <div class='section-label'>⚡ 원터치 빠른 선택</div>" +
+    "    <div class='btn-grid'>" +
+    "      <button type='button' class='status-btn btn-plan " + (currentStatus === "예정" ? "active" : "") + "' onclick='selectStatus(\"예정\")'>📅 예정</button>" +
+    "      <button type='button' class='status-btn btn-progress " + (currentStatus === "진행중" ? "active" : "") + "' onclick='selectStatus(\"진행중\")'>▶️ 진행중</button>" +
+    "      <button type='button' class='status-btn btn-done " + (currentStatus === "완료" ? "active" : "") + "' onclick='selectStatus(\"완료\")'>✅ 완료</button>" +
+    "      <button type='button' class='status-btn btn-as " + (currentStatus === "AS" ? "active" : "") + "' onclick='selectStatus(\"AS\")'>🛠️ AS</button>" +
+    "    </div>" +
+    "    <div class='section-label'>또는 드롭다운 메뉴로 선택</div>" +
+    "    <select id='statusSelect' class='select-dropdown' onchange='onDropdownChange()'>" +
+    "      <option value='예정' " + (currentStatus === "예정" ? "selected" : "") + ">📅 예정</option>" +
+    "      <option value='진행중' " + (currentStatus === "진행중" ? "selected" : "") + ">▶️ 진행중</option>" +
+    "      <option value='완료' " + (currentStatus === "완료" ? "selected" : "") + ">✅ 완료</option>" +
+    "      <option value='AS' " + (currentStatus === "AS" ? "selected" : "") + ">🛠️ AS</option>" +
+    "    </select>" +
+    "    <button type='button' id='saveBtn' class='submit-btn' onclick='saveStatus()'>" +
+    "      <span>💾 상태 변경 저장하기</span>" +
+    "    </button>" +
+    "    <div id='toast' class='toast'></div>" +
+    "    <div class='footer'>우성아이디 현장관리 시스템</div>" +
+    "  </div>" +
+    "  <script>" +
+    "    var selected = '" + currentStatus + "';" +
+    "    function selectStatus(s) {" +
+    "      selected = s;" +
+    "      document.getElementById('statusSelect').value = s;" +
+    "      updateBtnUI();" +
+    "    }" +
+    "    function onDropdownChange() {" +
+    "      selected = document.getElementById('statusSelect').value;" +
+    "      updateBtnUI();" +
+    "    }" +
+    "    function updateBtnUI() {" +
+    "      var btns = document.querySelectorAll('.status-btn');" +
+    "      btns.forEach(function(b) {" +
+    "        b.classList.remove('active');" +
+    "        if (b.innerText.indexOf(selected) !== -1) b.classList.add('active');" +
+    "      });" +
+    "    }" +
+    "    function saveStatus() {" +
+    "      var btn = document.getElementById('saveBtn');" +
+    "      var toast = document.getElementById('toast');" +
+    "      btn.disabled = true;" +
+    "      btn.innerText = '저장 처리 중...';" +
+    "      toast.style.display = 'none';" +
+    "      var url = window.location.href.split('?')[0] + '?action=update&row=" + row + "&status=' + encodeURIComponent(selected);" +
+    "      fetch(url)" +
+    "        .then(function(r) { return r.json(); })" +
+    "        .then(function(res) {" +
+    "          btn.disabled = false;" +
+    "          btn.innerText = '💾 상태 변경 저장하기';" +
+    "          if (res && res.success) {" +
+    "            document.getElementById('currStatusDisplay').innerText = selected;" +
+    "            toast.className = 'toast toast-success';" +
+    "            toast.innerHTML = '✅ 상태가 <b>[' + selected + ']</b>(으)로 즉시 변경되었습니다!<br><span style=\"font-size:12px;font-weight:normal;\">시트와 캘린더에 실시간 반영 완료되었습니다. 창을 닫으셔도 됩니다.</span>';" +
+    "            toast.style.display = 'block';" +
+    "          } else {" +
+    "            toast.className = 'toast toast-error';" +
+    "            toast.innerText = '⚠️ 변경 실패: ' + (res.error || '오류가 발생했습니다.');" +
+    "            toast.style.display = 'block';" +
+    "          }" +
+    "        })" +
+    "        .catch(function(err) {" +
+    "          btn.disabled = false;" +
+    "          btn.innerText = '💾 상태 변경 저장하기';" +
+    "          toast.className = 'toast toast-error';" +
+    "          toast.innerText = '⚠️ 네트워크 오류가 발생했습니다. 다시 시도해주세요.';" +
+    "          toast.style.display = 'block';" +
+    "        });" +
+    "    }" +
+    "  </script>" +
+    "</body>" +
+    "</html>";
+
+  return html;
 }

@@ -150,6 +150,16 @@ assertTest('구글 6분 타임아웃 방지 안전 실행 시간 가드(Executio
 const hasPriorityQueue = code.indexOf('pendingIndices.concat(existingIndices)') !== -1;
 assertTest('미등록 신규 일정 최우선 처리 큐(Priority Queue) 존재 여부', hasPriorityQueue);
 
+// [신규 QA] 상태별 아이콘(스타일 A) 및 모바일 웹앱 드롭다운 연동 검증
+const hasStatusIconsInTitle = code.indexOf('status === "완료"') !== -1 && code.indexOf('"✅ "') !== -1 && code.indexOf('"▶️ "') !== -1 && code.indexOf('"🛠️ "') !== -1;
+assertTest('캘린더 제목 상태별 아이콘(완료: ✅, 진행중: ▶️, AS: 🛠️) 표기 엔진 존재 여부', hasStatusIconsInTitle);
+
+const hasMobileDoGet = code.indexOf('function doGet(e)') !== -1 && code.indexOf('buildMobileStatusHtml') !== -1;
+assertTest('모바일 드롭다운 상태변경 웹앱 엔드포인트(doGet) 탑재 여부', hasMobileDoGet);
+
+const hasReverseStatusSync = code.indexOf('calTitle.indexOf("✅")') !== -1 && code.indexOf('sheet.getRange(row, 8).setValue(detectedStatus)') !== -1;
+assertTest('캘린더 제목 상태 이모지 역방향 동기화 엔진 탑재 여부', hasReverseStatusSync);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
