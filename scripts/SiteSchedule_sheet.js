@@ -1484,7 +1484,7 @@ function getDashboardSelectedYearMonth(dashSheet, dowRow) {
         }
       }
       var n = parseInt(val, 10);
-      if (n >= 2020 && n <= 2035 && !foundYear) {
+      if (n >= 2000 && n <= 2099 && !foundYear) {
         foundYear = n;
       }
     }
@@ -1565,7 +1565,8 @@ function parseScheduleDateRange(val) {
       var p2 = parseDateTimeComponents(parts[1].trim());
 
       if (p1) {
-        var startYear = p1.year || (p2 ? p2.year : 2026);
+        var currentYear = new Date().getFullYear();
+        var startYear = p1.year || (p2 ? p2.year : currentYear);
         var sDate = new Date(startYear, p1.month - 1, p1.day);
 
         // 시간 일정인 경우 (p1 또는 p2에 시간 정보 포함)
@@ -1633,7 +1634,8 @@ function parseScheduleDateRange(val) {
   // 3. 단일 날짜 및 시간 파싱 (예: "26.10.11 15:00" 또는 "26.10.11")
   var comp = parseDateTimeComponents(str);
   if (comp) {
-    var y = comp.year || 2026;
+    var currentYear = new Date().getFullYear();
+    var y = comp.year || currentYear;
     var sDate = new Date(y, comp.month - 1, comp.day);
 
     if (comp.hasTime) {
@@ -2027,14 +2029,19 @@ function cleanupEmptyRowsMetadata() {
   var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
   var cleaned = 0;
 
-  // 2행 C2(공종)와 E2(공유)에 실수로 들어간 2026 / 10 자동 복구
+  // 2행 C2(공종)와 E2(공유)에 실수로 대시보드 연도/월 숫자가 들어간 경우 동적 자동 복구
   try {
     var c2 = sheet.getRange("C2");
     var e2 = sheet.getRange("E2");
-    if (String(c2.getValue()).trim() === "2026") {
+    var c2Val = String(c2.getValue()).trim();
+    var e2Val = String(e2.getValue()).trim();
+
+    // 4자리 연도 숫자(예: 2025, 2026, 2027 등)가 공종명에 잘못 들어간 경우 삭제
+    if (/^\d{4}$/.test(c2Val)) {
       c2.clearContent();
     }
-    if (String(e2.getValue()).trim() === "10") {
+    // 1~12 사이의 월 숫자가 체크박스에 잘못 들어간 경우 체크 해제(false)로 복구
+    if (/^(1[0-2]|[1-9])$/.test(e2Val)) {
       e2.setValue(false);
     }
   } catch(e) {}
@@ -2047,7 +2054,7 @@ function cleanupEmptyRowsMetadata() {
 
     // B열(날짜열)에 대시보드 달력 텍스트([현장명] 공종...)가 잘못 덮어써진 경우 자동 복구
     var rawDateStr = String(rowVals[1] || "");
-    if (rawDateStr.indexOf("[") !== -1 && (rawDateStr.indexOf("호]") !== -1 || rawDateStr.indexOf("\n") !== -1 || rawDateStr.indexOf("목공") !== -1 || rawDateStr.indexOf("퍼플렉스") !== -1)) {
+    if (rawDateStr.indexOf("[") !== -1 && (rawDateStr.indexOf("]") !== -1 || rawDateStr.indexOf("\n") !== -1)) {
       sheet.getRange(row, 2).clearContent();
       cleaned++;
     }
