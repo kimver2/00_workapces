@@ -31,7 +31,17 @@ const sandbox = {
   SpreadsheetApp: {},
   CalendarApp: {},
   Utilities: { sleep: () => {} },
-  Session: { getActiveUser: () => ({ getEmail: () => 'qa-tester@woosung.com' }) }
+  Session: { getActiveUser: () => ({ getEmail: () => 'qa-tester@woosung.com' }) },
+  PropertiesService: {
+    getDocumentProperties: () => ({
+      getProperty: () => '',
+      setProperty: () => {},
+      deleteProperty: () => {}
+    })
+  },
+  ScriptApp: {
+    getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/test/exec' })
+  }
 };
 vm.createContext(sandbox);
 
@@ -100,6 +110,52 @@ assertTest('1시간 기본 일정 포맷팅: "26.10.11 15:00"', fmtWithTime(sA, 
 
 const eA2 = new Date(2026, 9, 11, 18, 0);
 assertTest('3시간 일정 포맷팅: "26.10.11 15:00 ~ 18:00"', fmtWithTime(sA, eA2) === '26.10.11 15:00 ~ 18:00');
+
+console.log('\n🔍 [Step 3.5: 핵심 엔진 런타임 실행(Mock Runtime Execution) 전수 검증]');
+const buildDetailsFn = sandbox.buildEventDetails;
+
+// Row 템플릿: 0:현장, 1:날짜, 2:공종, 3:협력, 4:공유, 5:비고, 6:담당자, 7:진행상태, 8:캘린더ID, 9:시각, 10:작성일, 11:작성자, 12:수정일, 13:수정자
+const baseMockRow = ['래미안 101동', '26.10.15', '목공', '우성목재', true, '오전작업', '김팀장', '예정', '', 0, '', '', '', ''];
+
+// 1. 상태 '완료' 런타임 호출 테스트 (ReferenceError 방지 검증)
+const rowDone = [...baseMockRow];
+rowDone[7] = '완료';
+const resDone = buildDetailsFn(rowDone, 15);
+assertTest('buildEventDetails 런타임 실행 ("완료"): ReferenceError 없이 정상 실행', resDone !== null);
+assertTest('상태 "완료" 시 캘린더 제목에 "✅ " 아이콘 정상 부여', resDone && resDone.title.startsWith('✅ 🟦'));
+
+// 2. 상태 '진행중' 런타임 호출 테스트
+const rowProg = [...baseMockRow];
+rowProg[7] = '진행중';
+const resProg = buildDetailsFn(rowProg, 16);
+assertTest('상태 "진행중" 시 캘린더 제목에 "▶️ " 아이콘 정상 부여', resProg && resProg.title.startsWith('▶️ 🟦'));
+
+// 3. 상태 'AS' 런타임 호출 테스트
+const rowAs = [...baseMockRow];
+rowAs[7] = 'AS';
+const resAs = buildDetailsFn(rowAs, 17);
+assertTest('상태 "AS" 시 캘린더 제목에 "🛠️ " 아이콘 정상 부여', resAs && resAs.title.startsWith('🛠️ 🟦'));
+
+// 4. 상태 '예정' 런타임 호출 테스트
+const rowPlan = [...baseMockRow];
+rowPlan[7] = '예정';
+const resPlan = buildDetailsFn(rowPlan, 18);
+assertTest('상태 "예정" 시 캘린더 제목에 상태 아이콘 없이 기본 "🟦 " 표시', resPlan && resPlan.title.startsWith('🟦'));
+
+// 5. 상태 미입력(빈문자열, null, undefined) 런타임 안전성 테스트
+const rowEmpty = [...baseMockRow];
+rowEmpty[7] = '';
+const resEmpty = buildDetailsFn(rowEmpty, 19);
+assertTest('진행상태가 빈 문자열일 때 ReferenceError 없이 안전 처리', resEmpty !== null && resEmpty.title.startsWith('🟦'));
+
+// 6. 모바일 웹앱 링크 Description 포함 여부 테스트
+assertTest('일정 설명(Description)에 모바일 웹앱 링크(?row=15) 정상 삽입', resDone && resDone.description.indexOf('?row=15') !== -1);
+
+// 7. buildMobileStatusHtml 런타임 실행 테스트
+const buildHtmlFn = sandbox.buildMobileStatusHtml;
+const htmlOutput = buildHtmlFn(15, '래미안 101동', '26.10.15', '목공', '완료');
+assertTest('buildMobileStatusHtml 런타임 실행: 유효한 HTML 문자열 반환', typeof htmlOutput === 'string' && htmlOutput.indexOf('<!DOCTYPE html>') !== -1);
+assertTest('모바일 HTML 내 4대 상태 버튼(예정, 진행중, 완료, AS) 정상 렌더링', htmlOutput.indexOf('btn-done') !== -1 && htmlOutput.indexOf('btn-progress') !== -1);
 
 console.log('\n🔍 [Step 4: 코드리뷰 정적 보안/안전성 감사]');
 // Rate limit 방어 패턴 검사

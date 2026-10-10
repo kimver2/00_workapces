@@ -674,6 +674,8 @@ function buildEventDetails(rowValues, rowNumber) {
 
   var memo = String(rowValues[5] || "").trim();     // F열: 비고 (인덱스 5)
   var manager = String(rowValues[6] || "").trim();  // G열: 담당자 (인덱스 6)
+  var status = String(rowValues[7] || "").trim();   // H열: 진행상태 (인덱스 7)
+
   // 상태별 아이콘 (스타일 A: 예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
   var statusIcon = "";
   if (status === "완료") {
