@@ -112,7 +112,10 @@ function setupNewWorkspaceFromScratch() {
   }
   buildDashboardCalendarGrid(dashSheet);
 
-  // 3. 기본 "시트1" 정리 (다른 시트가 2개 이상 있을 때)
+  // 3. [사용가이드] 시트 생성 및 매뉴얼 작성
+  var guideSheet = createOrUpdateUsageGuideSheet(ss);
+
+  // 4. 기본 "시트1" 정리 (다른 시트가 2개 이상 있을 때)
   var sheets = ss.getSheets();
   for (var s = 0; s < sheets.length; s++) {
     var sName = sheets[s].getName();
@@ -123,9 +126,17 @@ function setupNewWorkspaceFromScratch() {
     }
   }
 
-  // 시트 순서: 대시보드를 첫 번째 탭으로
-  ss.setActiveSheet(dashSheet);
-  ss.moveActiveSheet(1);
+  // 시트 순서: 대시보드(1) -> 현장데이터(2) -> 사용가이드(3)
+  try {
+    ss.setActiveSheet(dashSheet);
+    ss.moveActiveSheet(1);
+    ss.setActiveSheet(siteSheet);
+    ss.moveActiveSheet(2);
+    if (guideSheet) {
+      ss.setActiveSheet(guideSheet);
+      ss.moveActiveSheet(3);
+    }
+  } catch(e) {}
 
   // 대시보드 달력 최신화
   SpreadsheetApp.flush();
@@ -134,12 +145,16 @@ function setupNewWorkspaceFromScratch() {
   // 실시간 트리거 자동 설치
   ensureRealtimeTriggerInstalledSilent();
 
+  // 최초 활성 시트는 대시보드로
+  ss.setActiveSheet(dashSheet);
+
   if (ui) {
     ui.alert(
       "🎉 새 워크스페이스 구축 완료!",
-      "[대시보드] 및 [현장데이터] 시트가 성공적으로 자동 생성되었습니다!\n\n" +
-      "1. '현장데이터' 시트에서 현장명, 날짜, 공종을 등록하시면 실시간으로 대시보드와 구글 캘린더에 연동됩니다.\n" +
-      "2. 모바일 웹 변경 기능을 사용하시려면 [확장 프로그램] > [Apps Script] > [배포] > [새 배포]에서 웹앱을 배포해주세요.",
+      "[대시보드], [현장데이터], [사용가이드] 시트가 성공적으로 자동 생성되었습니다!\n\n" +
+      "1. '사용가이드' 탭에서 캘린더 색상 범례와 작성 규칙을 한눈에 확인하실 수 있습니다.\n" +
+      "2. '현장데이터' 시트에서 현장명, 날짜, 공종을 등록하시면 실시간으로 대시보드와 구글 캘린더에 연동됩니다.\n" +
+      "3. 모바일 웹 변경 기능을 사용하시려면 [확장 프로그램] > [Apps Script] > [배포] > [새 배포]에서 웹앱을 배포해주세요.",
       ui.ButtonSet.OK
     );
   }
@@ -477,7 +492,8 @@ function onOpen() {
     .addSeparator()
     .addItem("🧹 빈 행 유령 이력/ID 일괄 청소", "cleanupEmptyRowsMetadata")
     .addSeparator()
-    .addItem("✨ 새 스프레드시트 초기 환경 자동 구축 (대시보드 + 현장데이터)", "setupNewWorkspaceFromScratch")
+    .addItem("📖 사용 가이드 & 색상 범례 시트 생성/갱신", "createOrUpdateUsageGuideSheetMenu")
+    .addItem("✨ 새 스프레드시트 초기 환경 자동 구축 (대시보드 + 현장데이터 + 사용가이드)", "setupNewWorkspaceFromScratch")
     .addToUi();
 }
 
@@ -2515,6 +2531,11 @@ function hasDayOfWeekHeader(sheet) {
  */
 function isSiteScheduleSheet(sheet) {
   if (!sheet) return false;
+  // 사용가이드/매뉴얼 시트는 절대 현장데이터 시트가 아님!
+  var name = sheet.getName().toLowerCase();
+  if (name.indexOf("가이드") !== -1 || name.indexOf("guide") !== -1 || name.indexOf("매뉴얼") !== -1 || name.indexOf("manual") !== -1) {
+    return false;
+  }
   // 요일 헤더('일, 월, 화...')가 있는 시트는 대시보드이므로 절대 현장데이터 시트가 아님!
   if (hasDayOfWeekHeader(sheet)) return false;
 
@@ -2534,7 +2555,6 @@ function isSiteScheduleSheet(sheet) {
   } catch(e) {}
 
   // 2순위: 시트 이름 기준
-  var name = sheet.getName().toLowerCase();
   if (name.indexOf("현장") !== -1 || name.indexOf("공정") !== -1 || name.indexOf("site") !== -1) {
     return true;
   }
@@ -2576,12 +2596,15 @@ function findSiteScheduleSheet(ss) {
     if (isSiteScheduleSheet(sheets[i])) return sheets[i];
   }
 
-  // 2순위: 대시보드가 아닌 시트 중 첫 번째
+  // 2순위: 대시보드나 가이드가 아닌 시트 중 첫 번째
   var dash = findDashboardSheet(ss);
   for (var k = 0; k < sheets.length; k++) {
-    if (!dash || sheets[k].getSheetId() !== dash.getSheetId()) {
-      if (!hasDayOfWeekHeader(sheets[k])) {
-        return sheets[k];
+    var sName = sheets[k].getName().toLowerCase();
+    if (sName.indexOf("가이드") === -1 && sName.indexOf("guide") === -1 && sName.indexOf("매뉴얼") === -1 && sName.indexOf("manual") === -1) {
+      if (!dash || sheets[k].getSheetId() !== dash.getSheetId()) {
+        if (!hasDayOfWeekHeader(sheets[k])) {
+          return sheets[k];
+        }
       }
     }
   }
@@ -3546,4 +3569,273 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
     plainText: plainLines.join('\n'),
     htmlBody: html
   };
+}
+
+
+// ========================================================
+// 12. [사용가이드 시트 자동 생성 및 매뉴얼 구축 엔진]
+// ========================================================
+
+/**
+ * [메뉴 실행용] 사용 가이드 & 색상 범례 시트 생성 대화상자
+ */
+function createOrUpdateUsageGuideSheetMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = createOrUpdateUsageGuideSheet(ss);
+  if (sheet) {
+    ss.setActiveSheet(sheet);
+    SpreadsheetApp.getUi().alert(
+      "📖 사용 가이드 구축 완료",
+      "[사용가이드] 시트가 성공적으로 생성 및 최신화되었습니다!\n\n" +
+      "• 1. 🎨 상태별 캘린더 색상 범례 (Peacock 파랑, Basil 녹색, Tomato 빨강 등)\n" +
+      "• 2. 📝 '현장데이터' 컬럼별 작성 규칙 (A~H열)\n" +
+      "• 3. 🚀 4대 핵심 스마트 기능 (양방향 연동, 모바일 빠른 변경, 모닝 브리핑, 지연 감지)\n" +
+      "• 4. 🛠️ 상단 메뉴 기능 안내\n\n" +
+      "다른 작업자분들도 '사용가이드' 탭을 통해 손쉽게 사용법을 숙지하실 수 있습니다.",
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * [사용가이드] 시트 자동 생성 및 최신 매뉴얼/색상 범례 작성 엔진
+ * @param {Spreadsheet} [ss] 대상 스프레드시트
+ * @returns {Sheet} 생성된 사용가이드 시트
+ */
+function createOrUpdateUsageGuideSheet(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = "사용가이드";
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  sheet.clear();
+  sheet.setHiddenGridlines(false);
+  try { sheet.setTabColor("#2563eb"); } catch(e) {}
+
+  // 1. 열 너비 설정
+  sheet.setColumnWidth(1, 30);  // A열: 좌측 여백
+  sheet.setColumnWidth(2, 130); // B열: 구분 / 상태명
+  sheet.setColumnWidth(3, 190); // C열: 캘린더 색상 / 항목명
+  sheet.setColumnWidth(4, 180); // D열: 시트 표기 / 아이콘 / 형식
+  sheet.setColumnWidth(5, 420); // E열: 상세 설명 및 기준
+  sheet.setColumnWidth(6, 260); // F열: 실무 팁 및 주의사항
+
+  // 2. 전체 기본 폰트 적용
+  sheet.getRange(1, 1, 60, 6)
+    .setFontFamily("Segoe UI")
+    .setFontSize(10)
+    .setVerticalAlignment("middle");
+
+  // 3. 타이틀 헤더 (2~3행)
+  sheet.getRange("B2:F2").merge()
+    .setValue("📋 우성아이디 현장관리 & 구글 캘린더 연동 시스템 사용 가이드")
+    .setFontSize(15)
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#1e293b")
+    .setHorizontalAlignment("center");
+  sheet.setRowHeight(2, 46);
+
+  sheet.getRange("B3:F3").merge()
+    .setValue("💡 현장 데이터 작성 규격, 캘린더 색상 범례, 실시간 양방향 연동, 모바일 빠른 변경 및 모닝 브리핑 안내서")
+    .setFontSize(10)
+    .setFontColor("#64748b")
+    .setBackground("#f8fafc")
+    .setHorizontalAlignment("center");
+  sheet.setRowHeight(3, 28);
+
+  sheet.setRowHeight(4, 16); // 여백
+
+  // ==========================================
+  // 섹션 1: 🎨 상태별 캘린더 색상 & 시트 표기 범례
+  // ==========================================
+  sheet.getRange("B5:F5").merge()
+    .setValue("1. 🎨 상태별 캘린더 블록 색상 & 시트 표기 범례 (한눈에 알아보기)")
+    .setFontSize(12)
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#2563eb")
+    .setHorizontalAlignment("left");
+  sheet.setRowHeight(5, 34);
+
+  var legendHeaders = ["상태 구분", "구글 캘린더 블록 색상", "시트 및 캘린더 표기", "의미 및 적용 기준", "실무 활용 팁"];
+  sheet.getRange(6, 2, 1, 5).setValues([legendHeaders])
+    .setFontWeight("bold")
+    .setFontColor("#1e293b")
+    .setBackground("#e2e8f0")
+    .setHorizontalAlignment("center");
+  sheet.setRowHeight(6, 30);
+
+  var legendData = [
+    ["진행 중", "Peacock (청록/파랑)", "▶️ 🟦 [현장명] 공종", "현재 현장에서 시공/작업이 진행 중인 핵심 공정", "드롭다운 '진행 중' 선택 시 파란 블록 자동 지정"],
+    ["완료", "Basil (진초록)", "✅ 🟦 [현장명] 공종", "공정 작업 및 현장 마감/검수가 최종 완료된 상태", "완료 시 지연 경고가 즉시 해제되며 녹색 블록 전환"],
+    ["⚠️ 지연", "Tomato (빨강)", "⚠️ [지연] ▶️ 🟦 ...", "마감일이 오늘 이전인데 아직 완료되지 않은 공정 (자동 감지)", "시트 행이 연분홍색(#fff1f2)으로 자동 하이라이트"],
+    ["AS", "Flamingo (산호/주황)", "🛠️ 🟦 [현장명] 공종", "입주 후 하자 보수, 잔손보기 및 사후 관리 공정", "공종명에 보수 상세 작성 시 캘린더에 연동"],
+    ["예정 (공유)", "Pale Blue (연파랑)", "🟦 [현장명] 공종", "향후 착공 예정 공정 중 외부에 공유 완료된 일정", "기본 등록 상태이며 E열(공유) 체크박스가 켜진 상태"],
+    ["예정 (미공유)", "Graphite (회색)", "🟥 [현장명] 공종", "내부 검토 단계이거나 외부에 공개하지 않은 비공개 일정", "E열(공유) 체크박스 해제 시 붉은 사각 및 회색 블록"]
+  ];
+  sheet.getRange(7, 2, legendData.length, 5).setValues(legendData);
+
+  // 섹션 1 셀 스타일링
+  for (var r = 0; r < legendData.length; r++) {
+    sheet.setRowHeight(7 + r, 28);
+    sheet.getRange(7 + r, 2).setHorizontalAlignment("center").setFontWeight("bold");
+    sheet.getRange(7 + r, 3).setHorizontalAlignment("center").setFontWeight("bold");
+    sheet.getRange(7 + r, 4).setHorizontalAlignment("center");
+  }
+  sheet.getRange("B7").setFontColor("#1d4ed8").setBackground("#dbeafe");
+  sheet.getRange("C7").setFontColor("#0369a1").setBackground("#bae6fd");
+  sheet.getRange("B8").setFontColor("#15803d").setBackground("#dcfce7");
+  sheet.getRange("C8").setFontColor("#15803d").setBackground("#bbf7d0");
+  sheet.getRange("B9").setFontColor("#b91c1c").setBackground("#fee2e2");
+  sheet.getRange("C9").setFontColor("#b91c1c").setBackground("#fecaca");
+  sheet.getRange("B10").setFontColor("#c2410c").setBackground("#ffedd5");
+  sheet.getRange("C10").setFontColor("#c2410c").setBackground("#fed7aa");
+  sheet.getRange("B11").setFontColor("#b45309").setBackground("#fef3c7");
+  sheet.getRange("C11").setFontColor("#0284c7").setBackground("#e0f2fe");
+  sheet.getRange("B12").setFontColor("#475569").setBackground("#f1f5f9");
+  sheet.getRange("C12").setFontColor("#475569").setBackground("#e2e8f0");
+
+  sheet.getRange("B6:F12").setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+
+  sheet.setRowHeight(13, 16); // 여백
+
+  // ==========================================
+  // 섹션 2: 📝 현장데이터 시트 컬럼별 입력 규칙
+  // ==========================================
+  sheet.getRange("B14:F14").merge()
+    .setValue("2. 📝 '현장데이터' 시트 컬럼별 작성 규칙 및 예시")
+    .setFontSize(12)
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#0284c7")
+    .setHorizontalAlignment("left");
+  sheet.setRowHeight(14, 34);
+
+  var inputHeaders = ["열 (컬럼)", "항목명", "입력 형식 및 예시", "연동 동작 및 상세 설명", "주의사항 및 팁"];
+  sheet.getRange(15, 2, 1, 5).setValues([inputHeaders])
+    .setFontWeight("bold")
+    .setFontColor("#1e293b")
+    .setBackground("#e2e8f0")
+    .setHorizontalAlignment("center");
+  sheet.setRowHeight(15, 30);
+
+  var inputData = [
+    ["A열", "현장", "텍스트 (예: 래미안 101호)", "캘린더 제목의 [현장명] 및 위치(Location)로 자동 지정", "현장명이 비어있으면 캘린더 동기화에서 제외됨"],
+    ["B열", "날짜", "단일: 26.10.15 / 기간: 26.10.15 ~ 26.10.18 / 시간: 26.10.15 14:00 ~ 16:00", "종일 일정 및 시간 일정을 완벽 파싱하여 대시보드와 캘린더에 연동", "점(.)과 물결(~) 구분 기호 권장 (연도 생략 시 올해 자동 적용)"],
+    ["C열", "공종", "텍스트 (예: 목공, 타일, 전기, 도배)", "캘린더 제목 및 상세 설명에 표시되는 핵심 공정 내용", "필수 입력 항목"],
+    ["D열", "협력업체", "텍스트 (예: 우성목재, 김반장)", "캘린더 본문 Description 및 모닝 브리핑 리포트에 업체 정보 전달", "선택 입력 항목"],
+    ["E열", "공유", "체크박스 (TRUE / FALSE)", "체크 시 🟦(공유 완료), 체크 해제 시 🟥(미공유 회색 블록)", "협력업체 공개 여부를 클릭 한 번으로 손쉽게 제어"],
+    ["F열", "비고", "텍스트 (예: 오후 자재 입고)", "캘린더 제목 괄호 (비고) 및 상세 설명에 메모 자동 기록", "비고만 수정 시 불필요한 캘린더 호출을 생략하여 속도 보호"],
+    ["G열", "담당자", "텍스트 (예: 김팀장, 이과장)", "캘린더 본문 및 모닝 브리핑 리포트에 현장 담당자 정보 표기", "선택 입력 항목"],
+    ["H열", "진행상태", "드롭다운: 예정, 진행 중, 완료, AS", "선택 즉시 캘린더 아이콘, 블록 색상, 대시보드 서식이 자동 변경됨", "표준 규격인 '진행 중'(공백 포함) 사용 (빨간 에러 삼각형 방지)"],
+    ["I~N열", "시스템 열", "캘린더ID, 타임스탬프, 최초/최종 작성자 및 일시", "Last-Modified-Wins 양방향 충돌 방지 및 이력 관리를 위한 자동 열", "사용자가 직접 수정하지 마세요 (시스템이 100% 자동 관리)"]
+  ];
+  sheet.getRange(16, 2, inputData.length, 5).setValues(inputData);
+
+  for (var i = 0; i < inputData.length; i++) {
+    sheet.setRowHeight(16 + i, 28);
+    sheet.getRange(16 + i, 2).setHorizontalAlignment("center").setFontWeight("bold").setBackground("#f8fafc");
+    sheet.getRange(16 + i, 3).setHorizontalAlignment("center").setFontWeight("bold");
+    sheet.getRange(16 + i, 4).setHorizontalAlignment("left");
+  }
+
+  sheet.getRange("B15:F24").setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+
+  sheet.setRowHeight(25, 16); // 여백
+
+  // ==========================================
+  // 섹션 3: 📱 핵심 스마트 기능 4가지 사용법
+  // ==========================================
+  sheet.getRange("B26:F26").merge()
+    .setValue("3. 🚀 알아두면 유용한 4대 핵심 스마트 기능")
+    .setFontSize(12)
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#0f766e")
+    .setHorizontalAlignment("left");
+  sheet.setRowHeight(26, 34);
+
+  var featureHeaders = ["기능명", "핵심 요약", "사용 방법", "시스템 동작 원리", "추천 사용자"];
+  sheet.getRange(27, 2, 1, 5).setValues([featureHeaders])
+    .setFontWeight("bold")
+    .setFontColor("#1e293b")
+    .setBackground("#e2e8f0")
+    .setHorizontalAlignment("center");
+  sheet.setRowHeight(27, 30);
+
+  var featureData = [
+    ["🔄 실시간 양방향 연동", "시트 ↔ 캘린더 자동 동기화", "시트에서 수정 시 캘린더 즉시 반영 / 캘린더에서 날짜 옮기면 시트 반영", "최종 수정 시각(Last-Modified-Wins) 비교로 최신 데이터 자동 보존", "현장 소장 및 관리자"],
+    ["📱 모바일 빠른 변경", "스마트폰 원터치 상태 변경", "캘린더 일정 본문 하단의 [📱 모바일 빠른 변경 링크] 터치", "시트를 열지 않고도 웹 브라우저에서 '진행 중' or '완료' 1초 변경", "외부 현장 근무자/반장"],
+    ["☀️ 모닝 브리핑 발송", "매일 아침 8시 현장 리포트", "메뉴 [🚀 현장 관리] > [⏰ 매일 아침 8시 모닝 브리핑 켜기]", "오늘 진행 공정 + 마감 경과 지연 공정을 이메일 요약 카드로 자동 발송", "대표님 및 총괄 관리자"],
+    ["⚠️ 공정 지연 리스크 감지", "마감일 경과 공정 자동 추적", "메뉴 [🚀 현장 관리] > [🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사]", "마감일 지난 미완료 공정은 시트 연분홍 하이라이트 & 캘린더 빨간 블록", "일정 관리 및 QA 담당자"]
+  ];
+  sheet.getRange(28, 2, featureData.length, 5).setValues(featureData);
+
+  for (var f = 0; f < featureData.length; f++) {
+    sheet.setRowHeight(28 + f, 30);
+    sheet.getRange(28 + f, 2).setHorizontalAlignment("center").setFontWeight("bold").setBackground("#f0fdf4");
+    sheet.getRange(28 + f, 3).setHorizontalAlignment("center").setFontWeight("bold");
+    sheet.getRange(28 + f, 6).setHorizontalAlignment("center");
+  }
+
+  sheet.getRange("B27:F31").setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+
+  sheet.setRowHeight(32, 16); // 여백
+
+  // ==========================================
+  // 섹션 4: 🛠️ 상단 메뉴([🚀 현장 관리]) 주요 기능 안내
+  // ==========================================
+  sheet.getRange("B33:F33").merge()
+    .setValue("4. 🛠️ 스프레드시트 상단 메뉴([🚀 현장 관리]) 주요 기능")
+    .setFontSize(12)
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#334155")
+    .setHorizontalAlignment("left");
+  sheet.setRowHeight(33, 34);
+
+  var menuHeaders = ["메뉴명", "실행 목적", "상세 동작", "권장 실행 주기", "비고"];
+  sheet.getRange(34, 2, 1, 5).setValues([menuHeaders])
+    .setFontWeight("bold")
+    .setFontColor("#1e293b")
+    .setBackground("#e2e8f0")
+    .setHorizontalAlignment("center");
+  sheet.setRowHeight(34, 30);
+
+  var menuData = [
+    ["📅 최근 & 예정 일정 동기화", "캘린더 최신화 (가장 빠름)", "최근 30일 이내 ~ 미래 일정만 선별하여 구글 캘린더에 고속 동기화", "필요 시 수시 실행", "추천 ⭐⭐⭐"],
+    ["📦 전체 일정 순차 동기화", "대량 일정 안전 일괄 등록", "구글 API 속도 제한(Rate Limit)을 방어하며 25건씩 분할하여 안전 등록", "최초 연동 또는 대량 등록 시", "서버 락 방지"],
+    ["🎨 색상 & 지연 공정 검사", "지연 현장 긴급 점검", "전체 현장의 마감일을 스캔하여 지연 공정을 붉은색으로 하이라이트", "주 1~2회 또는 수시", "리스크 선제 방어"],
+    ["☀️ 모닝 브리핑 즉시 테스트", "이메일 리포트 미리보기", "현재 등록된 오늘 일정과 지연 공정을 즉시 취합하여 본인 이메일로 발송", "설정 후 최초 1회 확인", "테스트용"],
+    ["⏰ 아침 8시 모닝 브리핑 켜기", "일일 자동 발송 예약", "매일 오전 8시 시간 기반 타이머를 자동 등록하여 브리핑 자동 발송", "시스템 구축 시 1회 켜기", "자동화"],
+    ["🔧 드롭다운 유효성 복구", "빨간 삼각형 에러 제거", "'진행 중' 드롭다운 목록 및 서식을 표준화하여 빨간 삼각형 오류 원클릭 복구", "에러 발생 시 즉시", "자동 복구"],
+    ["🔄 대시보드 갱신 (달력)", "월간 달력 새로고침", "상단 년/월에 맞추어 현장데이터 일정들을 월간 달력 칸에 즉시 다시 배치", "수정 후 즉시 자동 연동됨", "수동 확인용"],
+    ["✨ 새 워크스페이스 구축", "새 시트 1클릭 자동 완성", "완전 빈 새 스프레드시트에 [대시보드], [현장데이터], [사용가이드] 일괄 생성", "새 프로젝트 시작 시 1회", "원클릭 구축"]
+  ];
+  sheet.getRange(35, 2, menuData.length, 5).setValues(menuData);
+
+  for (var m = 0; m < menuData.length; m++) {
+    sheet.setRowHeight(35 + m, 26);
+    sheet.getRange(35 + m, 2).setHorizontalAlignment("left").setFontWeight("bold").setBackground("#f8fafc");
+    sheet.getRange(35 + m, 3).setHorizontalAlignment("center");
+    sheet.getRange(35 + m, 5).setHorizontalAlignment("center");
+    sheet.getRange(35 + m, 6).setHorizontalAlignment("center");
+  }
+
+  sheet.getRange("B34:F42").setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+
+  // 안내 팁 푸터
+  sheet.setRowHeight(43, 16);
+  sheet.getRange("B44:F44").merge()
+    .setValue("💡 팁: 시트 사용 중 궁금한 점이 있거나 새로운 현장을 등록할 때는 언제든 이 [사용가이드] 탭을 참고하세요. 항상 안전 시공 되시길 응원합니다! (우성아이디)")
+    .setFontSize(9)
+    .setFontColor("#64748b")
+    .setHorizontalAlignment("center");
+  sheet.setRowHeight(44, 24);
+
+  SpreadsheetApp.flush();
+  return sheet;
 }

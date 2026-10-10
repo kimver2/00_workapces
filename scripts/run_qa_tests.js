@@ -28,7 +28,10 @@ try {
 const sandbox = {
   Logger: { log: () => {} },
   console: console,
-  SpreadsheetApp: {},
+  SpreadsheetApp: {
+    BorderStyle: { SOLID: 'SOLID' },
+    flush: () => {}
+  },
   CalendarApp: {
     EventColor: {
       PALE_BLUE: "1",
@@ -254,6 +257,46 @@ assertTest('모닝 브리핑 HTML 내 오늘 공정 섹션 정상 렌더링', br
 assertTest('모닝 브리핑 HTML 내 지연 공정 경고 박스 렌더링', briefingOutput.htmlBody.indexOf('공정 지연 현장') !== -1 && briefingOutput.htmlBody.indexOf('한남동 빌라') !== -1);
 assertTest('모닝 브리핑 Plain-text 내 바로가기 링크 포함', briefingOutput.plainText.indexOf('스프레드시트 바로가기') !== -1);
 
+// Feature: [사용가이드] 시트 자동 생성 및 매뉴얼 구축 엔진 검증
+function createMockSheet(name) {
+  const sheetObj = {
+    getName: () => name,
+    clear: () => {},
+    setHiddenGridlines: () => {},
+    setTabColor: () => {},
+    setColumnWidth: () => {},
+    setRowHeight: () => {},
+    getRange: () => {
+      const rangeObj = {
+        merge: () => rangeObj,
+        setValue: (val) => { rangeObj.val = val; return rangeObj; },
+        setValues: (vals) => { rangeObj.vals = vals; return rangeObj; },
+        setFontSize: () => rangeObj,
+        setFontWeight: () => rangeObj,
+        setFontColor: () => rangeObj,
+        setBackground: () => rangeObj,
+        setHorizontalAlignment: () => rangeObj,
+        setVerticalAlignment: () => rangeObj,
+        setFontFamily: () => rangeObj,
+        setBorder: () => rangeObj
+      };
+      return rangeObj;
+    }
+  };
+  return sheetObj;
+}
+
+const mockGuideSheet = createMockSheet('사용가이드');
+const mockSs = {
+  getSheetByName: (n) => (n === '사용가이드' ? mockGuideSheet : null),
+  insertSheet: (n) => mockGuideSheet
+};
+const resGuide = sandbox.createOrUpdateUsageGuideSheet(mockSs);
+assertTest('createOrUpdateUsageGuideSheet 런타임 실행: 사용가이드 시트 정상 생성/반환', resGuide !== null && resGuide.getName() === '사용가이드');
+
+const isSiteSheetFn = sandbox.isSiteScheduleSheet;
+assertTest('isSiteScheduleSheet 판별: 사용가이드 시트는 현장데이터 시트에서 완전 배제', isSiteSheetFn(mockGuideSheet) === false);
+
 console.log('\n🔍 [Step 4: 코드리뷰 정적 보안/안전성 감사]');
 // Rate limit 방어 패턴 검사
 const hasDiffCheck = code.indexOf('curTitle === details.title') !== -1;
@@ -364,6 +407,16 @@ assertTest('모닝 브리핑 8시 일일 타이머 등록/해제 관리 엔진 �
 
 const hasBriefingMenu = code.indexOf('"sendDailyBriefingTestNow"') !== -1 && code.indexOf('"enableDailyMorningBriefing"') !== -1 && code.indexOf('"checkAndHighlightDelayedSchedules"') !== -1;
 assertTest('현장 관리 상단 메뉴 내 색상검사/모닝브리핑/이메일설정 메뉴 등록 여부', hasBriefingMenu);
+
+// [신규 QA] 사용가이드 엔진 및 부트스트랩 연동 검증
+const hasGuideSheetBuilder = code.indexOf('function createOrUpdateUsageGuideSheet(') !== -1;
+assertTest('사용가이드 자동 생성 및 매뉴얼 작성 엔진(createOrUpdateUsageGuideSheet) 탑재 여부', hasGuideSheetBuilder);
+
+const hasGuideInBootstrap = code.indexOf('var guideSheet = createOrUpdateUsageGuideSheet(ss)') !== -1;
+assertTest('새 워크스페이스 구축(setupNewWorkspaceFromScratch) 시 사용가이드 자동 생성 연동 여부', hasGuideInBootstrap);
+
+const hasGuideMenu = code.indexOf('"createOrUpdateUsageGuideSheetMenu"') !== -1;
+assertTest('상단 메뉴([🚀 현장 관리]) 내 사용가이드 생성/갱신 메뉴 등록 여부', hasGuideMenu);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
