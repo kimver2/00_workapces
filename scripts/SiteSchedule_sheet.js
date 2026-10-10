@@ -89,9 +89,9 @@ function onEdit(e) {
     }
   }
 
-  // ② [현장데이터 시트] 데이터 행(2행 이상)의 1~6열(현장, 날짜, 공종, 협력업체, 공유, 비고) 수정 시 대시보드 갱신
+  // ② [현장데이터 시트] 데이터 행(2행 이상)의 1~8열(현장, 날짜, 공종, 협력업체, 공유, 비고, 담당자, 진행상태) 수정 시 대시보드 갱신
   if (isSiteScheduleSheet(sheet)) {
-    if (row >= 2 && col >= 1 && col <= 6) {
+    if (row >= 2 && col >= 1 && col <= 8) {
       refreshDashboardCalendar(ss);
       return;
     }
@@ -116,7 +116,7 @@ function enableRealtimeCalendarSync() {
     if (triggers[i].getHandlerFunction() === functionName) {
       SpreadsheetApp.getUi().alert(
         "⚡ 실시간 연동 활성화 상태",
-        "이미 실시간 구글 캘린더 연동이 켜져 있습니다!\n\n'현장데이터' 시트에서 날짜나 공종을 입력하면 자동으로 구글 캘린더에 즉시 반영됩니다.",
+        "이미 실시간 구글 캘린더 연동이 켜져 있습니다!\n\n'현장데이터' 시트에서 비고를 제외한 모든 항목(현장, 날짜, 공종, 협력업체, 공유 체크박스, 담당자, 진행상태)을 수정하면 즉시 구글 캘린더에 실시간으로 자동 반영됩니다.",
         SpreadsheetApp.getUi().ButtonSet.OK
       );
       return;
@@ -132,9 +132,34 @@ function enableRealtimeCalendarSync() {
   SpreadsheetApp.getUi().alert(
     "✅ 실시간 캘린더 연동 활성화 완료",
     "실시간 구글 캘린더 연동이 성공적으로 켜졌습니다!\n\n" +
-    "앞으로 '현장데이터' 시트에서 날짜나 공종, 담당자를 입력하거나 수정하면 실시간으로 구글 캘린더에 자동 추가/수정/삭제됩니다.",
+    "앞으로 '현장데이터' 시트에서 비고를 제외한 모든 변경(현장, 날짜, 공종, 협력업체, 공유 체크박스, 담당자, 진행상태) 발생 시 즉시 구글 캘린더에 실시간으로 자동 추가/수정/삭제됩니다.",
     SpreadsheetApp.getUi().ButtonSet.OK
   );
+}
+
+/**
+ * 실시간 캘린더 연동 트리거가 미설치된 경우 백그라운드 자동 등록 (무음 모드)
+ */
+function ensureRealtimeTriggerInstalledSilent() {
+  try {
+    var functionName = "handleCalendarEditTrigger";
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === functionName) {
+        return; // 이미 등록됨
+      }
+    }
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (ss) {
+      ScriptApp.newTrigger(functionName)
+        .forSpreadsheet(ss)
+        .onEdit()
+        .create();
+      Logger.log("⚡ 실시간 캘린더 연동 트리거 자동 설치 완료");
+    }
+  } catch(e) {
+    Logger.log("실시간 트리거 자동 설치 건너뜀: " + e.toString());
+  }
 }
 
 /**
@@ -161,46 +186,64 @@ function disableRealtimeCalendarSync() {
 
 /**
  * 설치형 onEdit 트리거 핸들러 (실시간 캘린더 수정/등록/삭제 및 작성자/수정자 추적)
+ * - 비고(6열)를 제외한 모든 변경 발생 시 구글 캘린더에 실시간 자동 반영
  */
 function handleCalendarEditTrigger(e) {
   if (!e || !e.range) return;
   var sheet = e.range.getSheet();
   if (!isSiteScheduleSheet(sheet)) return;
 
-  var row = e.range.getRow();
-  var col = e.range.getColumn();
-  if (row < 2) return;
+  var startRow = e.range.getRow();
+  var endRow = e.range.getLastRow();
+  var startCol = e.range.getColumn();
+  var endCol = e.range.getLastColumn();
 
-  // A~H열(1~8열: 현장, 날짜, 공종, 협력업체, 체크박스, 비고, 담당자, 진행상태) 수정 시
-  if (col >= 1 && col <= 8) {
-    try {
-      SpreadsheetApp.flush(); // 방금 입력된 셀 값 메모리 즉시 동기화
-      ensureCalendarSyncColumns(sheet);
+  if (endRow < 2) return;
+  // 1~8열(A~H열) 범위 밖의 수정은 무시
+  if (startCol > 8 || endCol < 1) return;
 
-      var now = new Date();
-      var nowStr = formatDateTime(now);
-      var currentUser = getCurrentUserIdentifier();
+  // [사용자 요구사항]: 6열(F열: 비고)만 단독으로 수정된 경우 -> 캘린더 실시간 동기화 완전 제외!
+  var isOnlyMemo = (startCol === 6 && endCol === 6);
 
+  try {
+    SpreadsheetApp.flush(); // 방금 입력된 셀 값 메모리 즉시 동기화
+    ensureCalendarSyncColumns(sheet);
+
+    var now = new Date();
+    var nowMs = now.getTime();
+    var nowStr = formatDateTime(now);
+    var currentUser = getCurrentUserIdentifier();
+
+    for (var r = Math.max(startRow, 2); r <= endRow; r++) {
       // 최초작성일/작성자(K, L열)가 비어있으면 최초 작성 정보 기록
-      var cellCreatedDate = sheet.getRange(row, 11);
+      var cellCreatedDate = sheet.getRange(r, 11);
       if (!cellCreatedDate.getValue()) {
         cellCreatedDate.setValue(nowStr);
-        sheet.getRange(row, 12).setValue(currentUser);
+        sheet.getRange(r, 12).setValue(currentUser);
       }
 
       // 최종수정일/수정자(M, N열) 갱신
-      sheet.getRange(row, 13).setValue(nowStr);
-      sheet.getRange(row, 14).setValue(currentUser);
+      sheet.getRange(r, 13).setValue(nowStr);
+      sheet.getRange(r, 14).setValue(currentUser);
 
-      // 시트의 최종 수정 시각 밀리초 타임스탬프 기록 (J열: 10열)
-      sheet.getRange(row, 10).setValue(now.getTime());
-      SpreadsheetApp.flush();
+      // 비고를 제외한 변경(1~5열, 7~8열: 현장, 날짜, 공종, 협력업체, 공유 체크박스, 담당자, 진행상태) 시 즉시 캘린더 실시간 반영!
+      if (!isOnlyMemo) {
+        // 시트의 최종 수정 시각 밀리초 타임스탬프 기록 (J열: 10열)
+        sheet.getRange(r, 10).setValue(nowMs);
+        SpreadsheetApp.flush();
 
-      // 캘린더 동기화 실행 (시트에서 방금 수정한 것이므로 forceSheetToCal = true)
-      syncSingleRowToCalendar(sheet, row, true);
-    } catch (err) {
-      Logger.log("캘린더 실시간 동기화 에러 (행 " + row + "): " + err.toString());
+        // 캘린더 동기화 실행 (forceSheetToCal = true로 시트 날짜 원천 보호)
+        syncSingleRowToCalendar(sheet, r, true);
+      }
     }
+
+    if (isOnlyMemo) {
+      // 비고만 단독 변경된 경우 캘린더 동기화는 생략하고 대시보드 달력만 즉시 갱신
+      var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
+      refreshDashboardCalendar(ss);
+    }
+  } catch (err) {
+    Logger.log("캘린더 실시간 동기화 에러: " + err.toString());
   }
 }
 
@@ -912,6 +955,9 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
     SpreadsheetApp.getUi().alert("현장데이터 시트를 찾을 수 없습니다.");
     return;
   }
+
+  // 실시간 트리거 백그라운드 자동 등록 보장
+  ensureRealtimeTriggerInstalledSilent();
 
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {

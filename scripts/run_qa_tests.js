@@ -240,6 +240,16 @@ assertTest('모바일 드롭다운 상태변경 웹앱 엔드포인트(doGet) �
 const hasReverseStatusSync = code.indexOf('calTitle.indexOf("✅")') !== -1 && code.indexOf('sheet.getRange(row, 8).setValue(detectedStatus)') !== -1;
 assertTest('캘린더 제목 상태 이모지 역방향 동기화 엔진 탑재 여부', hasReverseStatusSync);
 
+// [신규 QA] 비고(6열) 제외 실시간 캘린더 연동 및 무음 트리거 설치 검증
+const hasMemoExclusion = code.indexOf('isOnlyMemo = (startCol === 6 && endCol === 6)') !== -1 && code.indexOf('if (!isOnlyMemo)') !== -1;
+assertTest('비고(6열) 단독 수정 시 캘린더 실시간 동기화 제외 및 타 열 즉시 반영 가드 존재 여부', hasMemoExclusion);
+
+const hasSilentTriggerInstall = code.indexOf('function ensureRealtimeTriggerInstalledSilent()') !== -1 && code.indexOf('ensureRealtimeTriggerInstalledSilent()') !== -1;
+assertTest('실시간 트리거 백그라운드 무음 자동 설치(Silent Auto Install) 엔진 탑재 여부', hasSilentTriggerInstall);
+
+const hasOnEditExtendedRange = code.indexOf('col >= 1 && col <= 8') !== -1;
+assertTest('단순 onEdit 트리거 1~8열(진행상태/담당자 포함) 대시보드 연동 확장 여부', hasOnEditExtendedRange);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
