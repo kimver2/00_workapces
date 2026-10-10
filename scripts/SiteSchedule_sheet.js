@@ -40,6 +40,8 @@ function onOpen() {
     .addItem("⚡ 실시간 캘린더 연동 켜기 (시트 수정 시 실시간 반영)", "enableRealtimeCalendarSync")
     .addItem("❌ 실시간 캘린더 연동 끄기", "disableRealtimeCalendarSync")
     .addSeparator()
+    .addItem("🔧 진행상태 드롭다운 복구 ('진행 중' 빨간 삼각형 제거)", "fixStatusDropdownValidation")
+    .addSeparator()
     .addItem("📥 캘린더 수정사항 가져오기 (수동 즉시 반영)", "syncFromCalendarToSheet")
     .addItem("⚡ 캘린더 ➔ 시트 1분 주기 자동 동기화 켜기 (초고속)", "enableCalendarToSheet1MinSync")
     .addItem("⏰ 캘린더 ➔ 시트 5분 주기 자동 동기화 켜기 (표준)", "enableCalendarToSheet5MinSync")
@@ -399,14 +401,14 @@ function syncFromCalendarToSheet() {
     if (calTitle.indexOf("✅") !== -1) {
       detectedStatus = "완료";
     } else if (calTitle.indexOf("▶️") !== -1 || calTitle.indexOf("▶") !== -1) {
-      detectedStatus = "진행중";
+      detectedStatus = "진행 중";
     } else if (calTitle.indexOf("🛠️") !== -1 || calTitle.indexOf("🛠") !== -1) {
       detectedStatus = "AS";
-    } else if ((calTitle.indexOf("🟦") !== -1 || calTitle.indexOf("🟥") !== -1) && (currentSheetStatus === "완료" || currentSheetStatus === "진행중" || currentSheetStatus === "AS")) {
+    } else if ((calTitle.indexOf("🟦") !== -1 || calTitle.indexOf("🟥") !== -1) && (currentSheetStatus === "완료" || currentSheetStatus.indexOf("진행") !== -1 || currentSheetStatus === "AS")) {
       detectedStatus = "예정";
     }
 
-    if (detectedStatus && detectedStatus !== currentSheetStatus && calUpdated > sheetUpdated + 3000) {
+    if (detectedStatus && detectedStatus.replace(/\s+/g, "") !== currentSheetStatus.replace(/\s+/g, "") && calUpdated > sheetUpdated + 3000) {
       sheet.getRange(row, 8).setValue(detectedStatus); // H열 진행상태 갱신
       sheet.getRange(row, 10).setValue(calUpdated);
       sheet.getRange(row, 13).setValue(formatDateTime(calUpdatedDate));
@@ -1276,13 +1278,28 @@ function ensureCalendarSyncColumns(sheet) {
       .setHorizontalAlignment("center")
       .setFontColor("#64748b");
 
-    // 8열(진행상태) 드롭다운 데이터 유효성 검사 (예정, 진행중, 완료, AS) 설정
+    // 8열(진행상태) 드롭다운 데이터 유효성 검사 (예정, 진행 중, 완료, AS) 설정
     try {
       var rule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(["예정", "진행중", "완료", "AS"], true)
+        .requireValueInList(["예정", "진행 중", "완료", "AS"], true)
         .setAllowInvalid(true)
         .build();
       sheet.getRange(2, 8, lastRow - 1, 1).setDataValidation(rule);
+
+      // '진행중'(공백 없음)으로 입력된 셀이 있다면 '진행 중'(표준)으로 자동 정규화하여 빨간 삼각형 에러 방지
+      var statusRange = sheet.getRange(2, 8, lastRow - 1, 1);
+      var statusVals = statusRange.getValues();
+      var normChanged = false;
+      for (var si = 0; si < statusVals.length; si++) {
+        var sv = String(statusVals[si][0] || "").trim();
+        if (sv === "진행중") {
+          statusVals[si][0] = "진행 중";
+          normChanged = true;
+        }
+      }
+      if (normChanged) {
+        statusRange.setValues(statusVals);
+      }
     } catch (e) {}
   }
 
@@ -1290,6 +1307,23 @@ function ensureCalendarSyncColumns(sheet) {
   try {
     sheet.hideColumns(9, 2);
   } catch(e) {}
+}
+
+/**
+ * 진행상태(H열) 드롭다운 유효성 검사 및 '진행 중' 서식 완벽 복구
+ * - '진행 중'(공백 포함) 표준값을 허용 목록에 등록하여 빨간색 에러 삼각형을 즉시 제거합니다.
+ */
+function fixStatusDropdownValidation() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("현장데이터 시트를 찾을 수 없습니다.");
+    return;
+  }
+
+  ensureCalendarSyncColumns(sheet);
+  SpreadsheetApp.flush();
+  ss.toast("진행상태 드롭다운('진행 중' 포함) 유효성 검사가 정상화되어 빨간색 에러 표시가 제거되었습니다.", "상태 드롭다운 정상화", 4);
 }
 
 
@@ -2399,14 +2433,14 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus) 
     "    <div class='section-label'>⚡ 원터치 빠른 선택</div>" +
     "    <div class='btn-grid'>" +
     "      <button type='button' class='status-btn btn-plan " + (currentStatus === "예정" ? "active" : "") + "' onclick='selectStatus(\"예정\")'>📅 예정</button>" +
-    "      <button type='button' class='status-btn btn-progress " + (currentStatus === "진행중" ? "active" : "") + "' onclick='selectStatus(\"진행중\")'>▶️ 진행중</button>" +
+    "      <button type='button' class='status-btn btn-progress " + (currentStatus.indexOf("진행") !== -1 ? "active" : "") + "' onclick='selectStatus(\"진행 중\")'>▶️ 진행 중</button>" +
     "      <button type='button' class='status-btn btn-done " + (currentStatus === "완료" ? "active" : "") + "' onclick='selectStatus(\"완료\")'>✅ 완료</button>" +
     "      <button type='button' class='status-btn btn-as " + (currentStatus === "AS" ? "active" : "") + "' onclick='selectStatus(\"AS\")'>🛠️ AS</button>" +
     "    </div>" +
     "    <div class='section-label'>또는 드롭다운 메뉴로 선택</div>" +
     "    <select id='statusSelect' class='select-dropdown' onchange='onDropdownChange()'>" +
     "      <option value='예정' " + (currentStatus === "예정" ? "selected" : "") + ">📅 예정</option>" +
-    "      <option value='진행중' " + (currentStatus === "진행중" ? "selected" : "") + ">▶️ 진행중</option>" +
+    "      <option value='진행 중' " + (currentStatus.indexOf("진행") !== -1 ? "selected" : "") + ">▶️ 진행 중</option>" +
     "      <option value='완료' " + (currentStatus === "완료" ? "selected" : "") + ">✅ 완료</option>" +
     "      <option value='AS' " + (currentStatus === "AS" ? "selected" : "") + ">🛠️ AS</option>" +
     "    </select>" +
@@ -2429,9 +2463,11 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus) 
     "    }" +
     "    function updateBtnUI() {" +
     "      var btns = document.querySelectorAll('.status-btn');" +
+    "      var cleanSel = selected.replace(/\\s+/g, '');" +
     "      btns.forEach(function(b) {" +
     "        b.classList.remove('active');" +
-    "        if (b.innerText.indexOf(selected) !== -1) b.classList.add('active');" +
+    "        var cleanText = b.innerText.replace(/\\s+/g, '');" +
+    "        if (cleanText.indexOf(cleanSel) !== -1) b.classList.add('active');" +
     "      });" +
     "    }" +
     "    function saveStatus() {" +

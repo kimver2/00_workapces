@@ -250,6 +250,13 @@ assertTest('실시간 트리거 백그라운드 무음 자동 설치(Silent Auto
 const hasOnEditExtendedRange = code.indexOf('col >= 1 && col <= 8') !== -1;
 assertTest('단순 onEdit 트리거 1~8열(진행상태/담당자 포함) 대시보드 연동 확장 여부', hasOnEditExtendedRange);
 
+// [신규 QA] 드롭다운 '진행 중'(공백 포함) 유효성 검사 및 빨간 삼각형 오류 복구 검증
+const hasSpacedValidation = code.indexOf('.requireValueInList(["예정", "진행 중", "완료", "AS"], true)') !== -1;
+assertTest('진행상태 드롭다운 목록 내 "진행 중"(공백 포함) 표준 규격 탑재 여부 (빨간 삼각형 에러 방지)', hasSpacedValidation);
+
+const hasFixDropdownFn = code.indexOf('function fixStatusDropdownValidation()') !== -1;
+assertTest('진행상태 드롭다운 서식 복구 전용 함수(fixStatusDropdownValidation) 탑재 여부', hasFixDropdownFn);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
