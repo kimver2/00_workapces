@@ -257,6 +257,16 @@ assertTest('진행상태 드롭다운 목록 내 "진행 중"(공백 포함) 표
 const hasFixDropdownFn = code.indexOf('function fixStatusDropdownValidation()') !== -1;
 assertTest('진행상태 드롭다운 서식 복구 전용 함수(fixStatusDropdownValidation) 탑재 여부', hasFixDropdownFn);
 
+// [신규 QA] 완전 빈 새 스프레드시트 원클릭 자동 구축(Bootstrap) 엔진 검증
+const hasBootstrapWorkspace = code.indexOf('function setupNewWorkspaceFromScratch()') !== -1;
+assertTest('새 스프레드시트 원클릭 자동 구축 함수(setupNewWorkspaceFromScratch) 탑재 여부', hasBootstrapWorkspace);
+
+const hasCalendarGridBuilder = code.indexOf('function buildDashboardCalendarGrid(') !== -1;
+assertTest('대시보드 만년달력 그리드/수식 자동 생성 엔진(buildDashboardCalendarGrid) 탑재 여부', hasCalendarGridBuilder);
+
+const hasSiteConditionalFormatBuilder = code.indexOf('function setupSiteSheetConditionalFormatting(') !== -1;
+assertTest('현장데이터 상태별 조건부 서식 자동 생성 엔진(setupSiteSheetConditionalFormatting) 탑재 여부', hasSiteConditionalFormatBuilder);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

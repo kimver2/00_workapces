@@ -29,6 +29,417 @@ var DEFAULT_CALENDAR_ID_OR_NAME = "현장 일정";
 
 
 // ========================================================
+// 0. [원클릭 자동 구축] 새 스프레드시트 초기 환경 자동 생성
+// ========================================================
+
+/**
+ * [원클릭 자동 구축] 새 스프레드시트에 [대시보드] 및 [현장데이터] 시트와 서식을 100% 자동 생성
+ */
+function setupNewWorkspaceFromScratch() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch(e) {}
+
+  if (ui) {
+    var resp = ui.alert(
+      "✨ 새 워크스페이스 원클릭 자동 구축",
+      "이 스프레드시트에 [대시보드] 및 [현장데이터] 시트와 서식을 자동으로 생성하시겠습니까?\n\n(이미 시트가 존재할 경우 최신 규격으로 정비됩니다.)",
+      ui.ButtonSet.OK_CANCEL
+    );
+    if (resp !== ui.Button.OK) return;
+  }
+
+  // 1. [현장데이터] 시트 생성 및 초기화
+  var siteSheet = findSiteScheduleSheet(ss);
+  if (!siteSheet) {
+    siteSheet = ss.insertSheet("현장데이터");
+  }
+  siteSheet.setHiddenGridlines(false);
+
+  // 1행 헤더 설정
+  var headers = [
+    "현장", "날짜", "공종", "협력업체", "공유", "비고", "담당자", "진행상태",
+    "캘린더ID", "최종수정시각", "최초작성일", "최초작성자", "최종수정일", "최종수정자"
+  ];
+  siteSheet.getRange(1, 1, 1, headers.length).setValues([headers])
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#1e293b")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  siteSheet.setRowHeight(1, 36);
+
+  // 열 너비 설정
+  var colWidths = [150, 180, 120, 130, 60, 160, 90, 100, 90, 100, 120, 85, 120, 85];
+  for (var c = 0; c < colWidths.length; c++) {
+    siteSheet.setColumnWidth(c + 1, colWidths[c]);
+  }
+
+  // 샘플 데이터 및 기본 행 (행이 헤더 1행뿐인 경우)
+  if (siteSheet.getLastRow() < 2) {
+    var now = new Date();
+    var nowMs = now.getTime();
+    var nowStr = formatDateTime(now);
+    var currentUser = getCurrentUserIdentifier();
+    var sampleTasks = ["실측", "철거", "목공", "마감"];
+    var sampleRows = [];
+    for (var i = 0; i < sampleTasks.length; i++) {
+      sampleRows.push([
+        "신규 현장 1", "", sampleTasks[i], "", false, "", "", "예정",
+        "", nowMs, nowStr, currentUser, nowStr, currentUser
+      ]);
+    }
+    siteSheet.getRange(2, 1, sampleRows.length, 14).setValues(sampleRows);
+
+    try {
+      siteSheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE);
+      siteSheet.getRange("2:5").shiftRowGroupDepth(1);
+    } catch(e) {}
+  }
+
+  // E열 공유 체크박스 설정
+  var siteLastRow = Math.max(siteSheet.getLastRow(), 2);
+  siteSheet.getRange(2, 5, siteLastRow - 1, 1).insertCheckboxes().setHorizontalAlignment("center");
+
+  // H열 진행상태 유효성 검사 및 조건부 서식
+  ensureCalendarSyncColumns(siteSheet);
+  setupSiteSheetConditionalFormatting(siteSheet);
+
+  // 2. [대시보드] 시트 생성 및 만년달력 구축
+  var dashSheet = findDashboardSheet(ss);
+  if (!dashSheet) {
+    dashSheet = ss.insertSheet("대시보드", 0);
+  }
+  buildDashboardCalendarGrid(dashSheet);
+
+  // 3. 기본 "시트1" 정리 (다른 시트가 2개 이상 있을 때)
+  var sheets = ss.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var sName = sheets[s].getName();
+    if (sName === "시트1" || sName === "Sheet1") {
+      if (ss.getSheets().length > 2) {
+        try { ss.deleteSheet(sheets[s]); } catch(e) {}
+      }
+    }
+  }
+
+  // 시트 순서: 대시보드를 첫 번째 탭으로
+  ss.setActiveSheet(dashSheet);
+  ss.moveActiveSheet(1);
+
+  // 대시보드 달력 최신화
+  SpreadsheetApp.flush();
+  refreshDashboardCalendar(ss);
+
+  // 실시간 트리거 자동 설치
+  ensureRealtimeTriggerInstalledSilent();
+
+  if (ui) {
+    ui.alert(
+      "🎉 새 워크스페이스 구축 완료!",
+      "[대시보드] 및 [현장데이터] 시트가 성공적으로 자동 생성되었습니다!\n\n" +
+      "1. '현장데이터' 시트에서 현장명, 날짜, 공종을 등록하시면 실시간으로 대시보드와 구글 캘린더에 연동됩니다.\n" +
+      "2. 모바일 웹 변경 기능을 사용하시려면 [확장 프로그램] > [Apps Script] > [배포] > [새 배포]에서 웹앱을 배포해주세요.",
+      ui.ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * 현장데이터 시트 H열(진행상태) 조건부 서식 자동 설정
+ */
+function setupSiteSheetConditionalFormatting(sheet) {
+  if (!sheet) return;
+  var lastRow = Math.max(sheet.getLastRow(), 100);
+  var statusRange = sheet.getRange(2, 8, lastRow - 1, 1);
+
+  var ruleProgress = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextContains("진행")
+    .setFontColor("#1d4ed8")
+    .setBackground("#dbeafe")
+    .setBold(true)
+    .setRanges([statusRange])
+    .build();
+
+  var ruleDone = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextContains("완료")
+    .setFontColor("#15803d")
+    .setBackground("#dcfce7")
+    .setBold(true)
+    .setRanges([statusRange])
+    .build();
+
+  var ruleAS = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextContains("AS")
+    .setFontColor("#b91c1c")
+    .setBackground("#fee2e2")
+    .setBold(true)
+    .setRanges([statusRange])
+    .build();
+
+  var rulePlan = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextContains("예정")
+    .setFontColor("#b45309")
+    .setBackground("#fef3c7")
+    .setBold(true)
+    .setRanges([statusRange])
+    .build();
+
+  sheet.setConditionalFormatRules([ruleProgress, ruleDone, ruleAS, rulePlan]);
+}
+
+/**
+ * 대시보드 시트에 만년달력 그리드, 연/월 드롭다운, Today 버튼, 서식 자동 구성
+ */
+function buildDashboardCalendarGrid(sheet) {
+  if (!sheet) return;
+  sheet.clear();
+  sheet.setHiddenGridlines(true);
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).setBackground("#ffffff");
+
+  var today = new Date();
+  var curYear = today.getFullYear();
+  var curMonth = today.getMonth() + 1;
+
+  // 1) 동적 연도 수식 (Z1:Z5)
+  sheet.getRange("Z1").setFormula("=SEQUENCE(5, 1, YEAR(TODAY()) - 2, 1)");
+
+  // 2) 대한민국 법정 공휴일 데이터 자동 수집 (X1:Y300)
+  autoSyncKoreanHolidays(curYear, sheet);
+
+  // X, Y, Z열 숨김
+  try { sheet.hideColumns(24, 3); } catch(e) {}
+
+  // 3) B2:E2 연도/월 컨트롤 바
+  sheet.getRange("B2").setValue("년도").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#f1f5f9");
+  sheet.getRange("D2").setValue("월").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#f1f5f9");
+
+  var yearRule = SpreadsheetApp.newDataValidation()
+    .requireValueInRange(sheet.getRange("Z1:Z5"), true)
+    .build();
+  sheet.getRange("C2")
+    .setDataValidation(yearRule)
+    .setValue(curYear)
+    .setHorizontalAlignment("center")
+    .setFontWeight("bold")
+    .setBackground("#ffffff");
+
+  var months = [];
+  for (var m = 1; m <= 12; m++) months.push(m.toString());
+  var monthRule = SpreadsheetApp.newDataValidation().requireValueInList(months, true).build();
+  sheet.getRange("E2")
+    .setDataValidation(monthRule)
+    .setValue(curMonth)
+    .setHorizontalAlignment("center")
+    .setFontWeight("bold")
+    .setBackground("#ffffff");
+
+  sheet.getRange("B2:C2").setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange("D2:E2").setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+
+  // 4) G2:H2 Today 스마트 버튼
+  sheet.getRange("G2").insertCheckboxes().setValue(false).setHorizontalAlignment("center");
+  sheet.getRange("H2").setValue("Today").setFontWeight("bold").setFontColor("#1d4ed8").setHorizontalAlignment("left");
+  sheet.getRange("G2:H2")
+    .setBackground("#eff6ff")
+    .setBorder(true, true, true, true, true, true, "#bfdbfe", SpreadsheetApp.BorderStyle.SOLID);
+
+  // 5) B4:H4 요일 헤더
+  var days = ["일", "월", "화", "수", "목", "금", "토"];
+  var headerRange = sheet.getRange("B4:H4");
+  headerRange.setValues([days])
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setBackground("#f8fafc")
+    .setBorder(true, true, true, true, true, true, "#000000", SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange("B4").setFontColor("#dc2626"); // 일요일 빨강
+  sheet.getRange("H4").setFontColor("#2563eb"); // 토요일 파랑
+
+  // 6) 주차별 날짜 수식 (B5, B7, B9, B11, B13, B15)
+  var weekOffsets = [0, 1, 2, 3, 4, 5];
+  var formulaRows = [5, 7, 9, 11, 13, 15];
+
+  for (var w = 0; w < weekOffsets.length; w++) {
+    var r = formulaRows[w];
+    var formula = '=LET(' +
+      'start, DATE($C$2, $E$2, 1) - WEEKDAY(DATE($C$2, $E$2, 1), 1) + 1 + (' + (w * 7) + '), ' +
+      'days, SEQUENCE(1, 7, start, 1), ' +
+      'MAP(days, LAMBDA(d, ' +
+        'IF(MONTH(d) <> $E$2, ' +
+          'TEXT(DAY(d), "0"), ' +
+          'IFNA(TEXT(DAY(d), "0") & " (" & VLOOKUP(d, $X$1:$Y$300, 2, FALSE) & ")", TEXT(DAY(d), "0"))' +
+        ')' +
+      '))' +
+    ')';
+    sheet.getRange("B" + r).setFormula(formula);
+  }
+
+  // 7) 크기 및 테두리 서식
+  var dateRows = [5, 7, 9, 11, 13, 15];
+  var taskRows = [6, 8, 10, 12, 14, 16];
+
+  for (var col = 2; col <= 8; col++) {
+    sheet.setColumnWidth(col, 200);
+  }
+  sheet.setRowHeight(4, 30);
+
+  dateRows.forEach(function(row) {
+    sheet.setRowHeight(row, 28);
+    sheet.getRange(row, 2, 1, 7)
+      .setFontSize(9.5)
+      .setFontWeight("bold")
+      .setHorizontalAlignment("left")
+      .setBackground("#f8fafc");
+  });
+
+  taskRows.forEach(function(row) {
+    sheet.setRowHeight(row, 200);
+    sheet.getRange(row, 2, 1, 7)
+      .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+      .setVerticalAlignment("top")
+      .setHorizontalAlignment("left")
+      .setFontSize(9)
+      .setBackground("#ffffff");
+  });
+
+  for (var wi = 0; wi < dateRows.length; wi++) {
+    var rDate = dateRows[wi];
+    var rTask = taskRows[wi];
+    sheet.getRange(rDate, 2, 2, 7)
+      .setBorder(true, true, true, true, true, null, "#000000", SpreadsheetApp.BorderStyle.SOLID);
+    sheet.getRange(rDate, 2, 1, 7)
+      .setBorder(null, null, true, null, null, null, "#e2e8f0", SpreadsheetApp.BorderStyle.SOLID);
+    sheet.getRange(rTask, 2, 1, 7)
+      .setBorder(true, null, null, null, null, null, "#e2e8f0", SpreadsheetApp.BorderStyle.SOLID);
+  }
+
+  // 8) 대시보드 달력 조건부 서식
+  var calDateRangeList = [];
+  dateRows.forEach(function(r) {
+    calDateRangeList.push(sheet.getRange("B" + r + ":H" + r));
+  });
+
+  var cellDateFormula = 'DATE($C$2, $E$2, 1) - WEEKDAY(DATE($C$2, $E$2, 1), 1) + 1 + (INT((ROW(B5)-5)/2)*7) + (COLUMN(B5)-2)';
+
+  var ruleOtherMonth = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=' + cellDateFormula + ' <> DATE($C$2, $E$2, DAY(' + cellDateFormula + '))')
+    .setFontColor("#94a3b8")
+    .setBackground("#f1f5f9")
+    .setRanges(calDateRangeList)
+    .build();
+
+  var ruleToday = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=' + cellDateFormula + ' = TODAY()')
+    .setBackground("#fef08a")
+    .setFontColor("#854d0e")
+    .setRanges(calDateRangeList)
+    .build();
+
+  var ruleHoliday = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=ISNUMBER(SEARCH("(", B5))')
+    .setFontColor("#dc2626")
+    .setBackground("#fef2f2")
+    .setBold(true)
+    .setRanges(calDateRangeList)
+    .build();
+
+  var ruleSunday = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=COLUMN(B5)=2')
+    .setFontColor("#dc2626")
+    .setRanges(calDateRangeList)
+    .build();
+
+  var ruleSaturday = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=COLUMN(B5)=8')
+    .setFontColor("#2563eb")
+    .setRanges(calDateRangeList)
+    .build();
+
+  sheet.setConditionalFormatRules([ruleOtherMonth, ruleToday, ruleHoliday, ruleSunday, ruleSaturday]);
+}
+
+/**
+ * 대한민국 법정 공휴일 데이터 자동 수집
+ */
+function autoSyncKoreanHolidays(baseYear, targetSheet) {
+  var sheet = targetSheet || SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  if (!baseYear) baseYear = new Date().getFullYear();
+
+  var nonHolidayKeywords = [
+    "식목일", "국군의 날", "국군의날", "제헌절", "어버이날", "스승의 날", "스승의날",
+    "근로자의 날", "근로자의날", "노동절", "발렌타인", "화이트데이", "할로윈", "크리스마스 이브",
+    "초복", "중복", "말복", "단오", "칠석", "대보름", "정월대보름", "한식", "동지", "입춘", "춘분", "하지", "추분",
+    "경찰의 날", "소방의 날", "학생독립운동기념일", "농업인의 날", "무역의 날", "금융의 날",
+    "체육의 날", "문화의 날", "세계 한인의 날", "임산부의 날", "노인의 날", "청년의 날",
+    "철도의 날", "정보보호의 날", "바다의 날", "발명의 날", "성년의 날", "부부의 날", "방재의 날",
+    "과학의 날", "정보통신의 날", "보건의 날", "예비군의 날", "서해수호의 날", "상공의 날", "납세자의 날",
+    "3·15", "4·19", "5·18", "6·10", "독도의 날", "섣달 그믐날", "섣달그믐"
+  ];
+
+  var holidayData = [];
+  try {
+    var cal = CalendarApp.getCalendarById("ko.south_korea#holiday@group.v.calendar.google.com");
+    if (cal) {
+      var start = new Date(baseYear - 2, 0, 1);
+      var end = new Date(baseYear + 3, 0, 1);
+      var events = cal.getEvents(start, end);
+      for (var i = 0; i < events.length; i++) {
+        var ev = events[i];
+        var title = ev.getTitle();
+        var isNonHoliday = false;
+        for (var k = 0; k < nonHolidayKeywords.length; k++) {
+          if (title.indexOf(nonHolidayKeywords[k]) !== -1) {
+            isNonHoliday = true;
+            break;
+          }
+        }
+        if (isNonHoliday) continue;
+        var rawDate = ev.getStartTime();
+        var cleanDate = new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate());
+        var displayTitle = title.trim();
+        if (/쉬는\s*날|대체공휴일|대체휴일/.test(displayTitle)) {
+          displayTitle = "대체공휴일";
+        }
+        holidayData.push([cleanDate, displayTitle]);
+      }
+    }
+  } catch (e) {
+    Logger.log("Calendar sync: " + e.toString());
+  }
+
+  if (holidayData.length === 0) {
+    var defaultHolidays = [
+      ["2024-01-01", "신정"], ["2024-02-09", "설날연휴"], ["2024-02-10", "설날"], ["2024-02-11", "설날연휴"], ["2024-02-12", "대체공휴일"],
+      ["2024-03-01", "삼일절"], ["2024-04-10", "총선"], ["2024-05-05", "어린이날"], ["2024-05-06", "대체공휴일"], ["2024-05-15", "부처님오신날"],
+      ["2024-06-06", "현충일"], ["2024-08-15", "광복절"], ["2024-09-16", "추석연휴"], ["2024-09-17", "추석"], ["2024-09-18", "추석연휴"],
+      ["2024-10-03", "개천절"], ["2024-10-09", "한글날"], ["2024-12-25", "성탄절"],
+      ["2025-01-01", "신정"], ["2025-01-28", "설날연휴"], ["2025-01-29", "설날"], ["2025-01-30", "설날연휴"],
+      ["2025-03-01", "삼일절"], ["2025-03-03", "대체공휴일"], ["2025-05-05", "어린이날"], ["2025-05-06", "대체공휴일"],
+      ["2025-06-06", "현충일"], ["2025-08-15", "광복절"], ["2025-10-03", "개천절"], ["2025-10-05", "추석연휴"],
+      ["2025-10-06", "추석"], ["2025-10-07", "추석연휴"], ["2025-10-08", "대체공휴일"], ["2025-10-09", "한글날"], ["2025-12-25", "성탄절"],
+      ["2026-01-01", "신정"], ["2026-02-16", "설날연휴"], ["2026-02-17", "설날"], ["2026-02-18", "설날연휴"],
+      ["2026-03-01", "삼일절"], ["2026-03-02", "대체공휴일"], ["2026-05-05", "어린이날"], ["2026-05-24", "부처님오신날"],
+      ["2026-05-25", "대체공휴일"], ["2026-06-03", "지방선거"], ["2026-06-06", "현충일"], ["2026-08-15", "광복절"],
+      ["2026-08-17", "대체공휴일"], ["2026-09-24", "추석연휴"], ["2026-09-25", "추석"], ["2026-09-26", "추석연휴"],
+      ["2026-09-28", "대체공휴일"], ["2026-10-03", "개천절"], ["2026-10-05", "대체공휴일"], ["2026-10-09", "한글날"], ["2026-12-25", "성탄절"],
+      ["2027-01-01", "신정"], ["2027-02-06", "설날연휴"], ["2027-02-07", "설날"], ["2027-02-08", "설날연휴"], ["2027-02-09", "대체공휴일"],
+      ["2027-03-01", "삼일절"], ["2027-05-05", "어린이날"], ["2027-05-13", "부처님오신날"], ["2027-06-06", "현충일"], ["2027-08-15", "광복절"],
+      ["2027-08-16", "대체공휴일"], ["2027-09-14", "추석연휴"], ["2027-09-15", "추석"], ["2027-09-16", "추석연휴"], ["2027-10-03", "개천절"],
+      ["2027-10-04", "대체공휴일"], ["2027-10-09", "한글날"], ["2027-10-11", "대체공휴일"], ["2027-12-25", "성탄절"]
+    ];
+    defaultHolidays.forEach(function(item) {
+      holidayData.push([new Date(item[0]), item[1]]);
+    });
+  }
+
+  if (holidayData.length > 0) {
+    sheet.getRange("X1:Y300").clearContent();
+    sheet.getRange(1, 24, holidayData.length, 2).setValues(holidayData);
+  }
+}
+
+
+// ========================================================
 // 1. 스프레드시트가 열릴 때 상단에 [🚀 현장 관리] 메뉴 자동 등록
 // ========================================================
 function onOpen() {
@@ -58,6 +469,8 @@ function onOpen() {
     .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
     .addSeparator()
     .addItem("🧹 빈 행 유령 이력/ID 일괄 청소", "cleanupEmptyRowsMetadata")
+    .addSeparator()
+    .addItem("✨ 새 스프레드시트 초기 환경 자동 구축 (대시보드 + 현장데이터)", "setupNewWorkspaceFromScratch")
     .addToUi();
 }
 
