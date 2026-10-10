@@ -643,7 +643,7 @@ function buildEventDetails(rowValues, rowNumber) {
   descLines.push("--------------------------------");
   if (createdAt) descLines.push("⏱️ 최초작성: " + createdAt + (createdBy ? " (" + createdBy + ")" : ""));
   if (updatedAt) descLines.push("🔄 최종수정: " + updatedAt + (updatedBy ? " (" + updatedBy + ")" : ""));
-  descLines.push("📊 스프레드시트 연동 (Row: " + rowNumber + ")");
+  descLines.push("📊 우성아이디 현장관리 시트 실시간 연동");
 
   return {
     title: title,
