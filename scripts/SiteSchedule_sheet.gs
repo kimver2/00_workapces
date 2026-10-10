@@ -194,9 +194,10 @@ function handleCalendarEditTrigger(e) {
 
       // 시트의 최종 수정 시각 밀리초 타임스탬프 기록 (J열: 10열)
       sheet.getRange(row, 10).setValue(now.getTime());
+      SpreadsheetApp.flush();
 
-      // 캘린더 동기화 실행 (Last-Modified-Wins 검사 포함)
-      syncSingleRowToCalendar(sheet, row);
+      // 캘린더 동기화 실행 (시트에서 방금 수정한 것이므로 forceSheetToCal = true)
+      syncSingleRowToCalendar(sheet, row, true);
     } catch (err) {
       Logger.log("캘린더 실시간 동기화 에러 (행 " + row + "): " + err.toString());
     }
@@ -244,7 +245,15 @@ function syncFromCalendarToSheet() {
     var currentSheetDate = rowVals[1];               // B열: 날짜
     var taskName = String(rowVals[2] || "").trim(); // C열: 공종
     var existingId = String(rowVals[8] || "").trim(); // I열: 캘린더ID
-    var sheetUpdated = parseInt(rowVals[9], 10) || 0; // J열: 시트수정시각
+    var rawUpdated = rowVals[9];
+    var sheetUpdated = 0;
+    if (rawUpdated instanceof Date) {
+      sheetUpdated = rawUpdated.getTime();
+    } else if (typeof rawUpdated === "number") {
+      sheetUpdated = rawUpdated;
+    } else {
+      sheetUpdated = parseInt(rawUpdated, 10) || 0;
+    }
 
     // ① 현장명과 공종이 모두 없는 빈 행은 캘린더 동기화에서 완전 제외!
     if (!siteName && !taskName) {
@@ -346,7 +355,7 @@ function syncFromCalendarToSheet() {
     var detectedStatus = "";
     if (calTitle.indexOf("✅") !== -1) {
       detectedStatus = "완료";
-    } else if (calTitle.indexOf("▶️") !== -1) {
+    } else if (calTitle.indexOf("▶️") !== -1 || calTitle.indexOf("▶") !== -1) {
       detectedStatus = "진행중";
     } else if (calTitle.indexOf("🛠️") !== -1 || calTitle.indexOf("🛠") !== -1) {
       detectedStatus = "AS";
@@ -675,14 +684,15 @@ function buildEventDetails(rowValues, rowNumber) {
   var memo = String(rowValues[5] || "").trim();     // F열: 비고 (인덱스 5)
   var manager = String(rowValues[6] || "").trim();  // G열: 담당자 (인덱스 6)
   var status = String(rowValues[7] || "").trim();   // H열: 진행상태 (인덱스 7)
+  var statusClean = status.replace(/\s+/g, "");
 
   // 상태별 아이콘 (스타일 A: 예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
   var statusIcon = "";
-  if (status === "완료") {
+  if (statusClean.indexOf("완료") !== -1 || statusClean.indexOf("✅") !== -1) {
     statusIcon = "✅ ";
-  } else if (status === "진행중") {
+  } else if (statusClean.indexOf("진행") !== -1 || statusClean.indexOf("▶") !== -1) {
     statusIcon = "▶️ ";
-  } else if (status === "AS" || status === "A/S") {
+  } else if (statusClean.indexOf("AS") !== -1 || statusClean.indexOf("A/S") !== -1 || statusClean.indexOf("as") !== -1 || statusClean.indexOf("🛠") !== -1) {
     statusIcon = "🛠️ ";
   }
 
@@ -741,13 +751,25 @@ function buildEventDetails(rowValues, rowNumber) {
 }
 
 /**
- * 단일 행을 구글 캘린더에 동기화 (Last-Modified-Wins 적용)
+ * 단일 행을 구글 캘린더에 동기화 (시트 -> 캘린더 반영 및 Last-Modified-Wins 적용)
+ * @param {Sheet} sheet 현장데이터 시트
+ * @param {number} row 대상 행 번호
+ * @param {boolean} [forceSheetToCal=true] 시트의 변경사항을 캘린더에 우선 반영할지 여부 (기본 true: 시트 날짜 보호)
  */
-function syncSingleRowToCalendar(sheet, row) {
+function syncSingleRowToCalendar(sheet, row, forceSheetToCal) {
   if (row < 2) return;
+  if (forceSheetToCal === undefined) forceSheetToCal = true; // 시트 수정 작업 시 캘린더 역덮어쓰기 원천 방지
   var rowValues = sheet.getRange(row, 1, 1, 14).getValues()[0];
   var existingEventId = String(rowValues[8] || "").trim(); // I열: 캘린더ID
-  var sheetUpdated = parseInt(rowValues[9], 10) || 0;     // J열: 시트최종수정시각
+  var rawUpdated = rowValues[9];
+  var sheetUpdated = 0;
+  if (rawUpdated instanceof Date) {
+    sheetUpdated = rawUpdated.getTime();
+  } else if (typeof rawUpdated === "number") {
+    sheetUpdated = rawUpdated;
+  } else {
+    sheetUpdated = parseInt(rawUpdated, 10) || 0;
+  }
 
   var details = buildEventDetails(rowValues, row);
   var cal = getTargetCalendar();
@@ -778,11 +800,10 @@ function syncSingleRowToCalendar(sheet, row) {
 
   if (event) {
     var calUpdatedDate = event.getLastUpdated();
-    var calUpdated = calUpdatedDate.getTime();
+    var calUpdated = calUpdatedDate ? calUpdatedDate.getTime() : 0;
 
-    // 만약 캘린더가 시트보다 3초 이상 더 최근에 수정되었다면:
-    // (캘린더의 수정을 덮어쓰지 않고 오히려 캘린더 날짜를 시트로 가져옴!)
-    if (calUpdated > sheetUpdated + 3000) {
+    // forceSheetToCal이 false이고, 시트 타임스탬프가 유효하며, 캘린더가 10초 이상 더 최근에 수정된 경우에만 캘린더 -> 시트 반영
+    if (!forceSheetToCal && sheetUpdated > 0 && calUpdated > sheetUpdated + 10000) {
       var isAllDay = event.isAllDayEvent();
       var calStart = isAllDay ? event.getAllDayStartDate() : event.getStartTime();
       var calEnd = isAllDay ? event.getAllDayEndDate() : event.getEndTime();
@@ -1164,6 +1185,18 @@ function ensureCalendarSyncColumns(sheet) {
     sheet.insertColumnsAfter(maxCols, 14 - maxCols);
   }
 
+  // 8열(H열) 진행상태 헤더 및 드롭다운 검증
+  var statusCell = sheet.getRange(1, 8);
+  var currentStatusHeader = String(statusCell.getValue() || "").trim();
+  if (!currentStatusHeader || currentStatusHeader.indexOf("상태") === -1) {
+    statusCell.setValue("진행상태")
+      .setFontWeight("bold")
+      .setFontColor("#ffffff")
+      .setBackground("#334155")
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle");
+  }
+
   var headers = [
     { col: 9, title: "캘린더ID" },
     { col: 10, title: "최종수정시각" },
@@ -1196,6 +1229,15 @@ function ensureCalendarSyncColumns(sheet) {
     sheet.getRange(2, 11, lastRow - 1, 4)
       .setHorizontalAlignment("center")
       .setFontColor("#64748b");
+
+    // 8열(진행상태) 드롭다운 데이터 유효성 검사 (예정, 진행중, 완료, AS) 설정
+    try {
+      var rule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(["예정", "진행중", "완료", "AS"], true)
+        .setAllowInvalid(true)
+        .build();
+      sheet.getRange(2, 8, lastRow - 1, 1).setDataValidation(rule);
+    } catch (e) {}
   }
 
   // 9, 10열(시스템 열) 숨김
@@ -1247,11 +1289,11 @@ function refreshDashboardCalendar(ss) {
   // 4. 달력의 모든 일정 내용 칸을 깨끗하게 비움 (기존 월 일정 완전 삭제)
   clearAllDashboardContentCells(dashSheet, dowRow);
 
-  // 5. 현장데이터 시트에서 전체 데이터 읽기 (1~6열: 현장, 날짜, 공종, 협력업체, 공유, 비고)
+  // 5. 현장데이터 시트에서 전체 데이터 읽기 (1~8열: 현장, 날짜, 공종, 협력업체, 공유, 비고, 담당자, 진행상태)
   var lastRow = siteSheet.getLastRow();
   if (lastRow < 2) return;
 
-  var siteData = siteSheet.getRange(2, 1, lastRow - 1, 6).getValues();
+  var siteData = siteSheet.getRange(2, 1, lastRow - 1, 8).getValues();
 
   // 6. 현재 대시보드 달력의 날짜 위치 맵 구성: map[day] = { row, col }
   var cellPositions = buildCalendarCellMap(dashSheet, dowRow, targetMonth);
@@ -1265,6 +1307,7 @@ function refreshDashboardCalendar(ss) {
     var dateVal = siteData[i][1];
     var taskName = String(siteData[i][2] || "").trim();
     var memo = String(siteData[i][5] || "").trim(); // F열: 비고 (인덱스 5)
+    var status = String(siteData[i][7] || "").trim(); // H열: 진행상태 (인덱스 7)
 
     if (!siteName || !dateVal || !taskName) continue;
 
@@ -1276,11 +1319,22 @@ function refreshDashboardCalendar(ss) {
     var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
     var prefixIcon = isShared ? "🟦 " : "🟥 ";
 
+    // 상태별 아이콘 (스타일 A: 예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
+    var statusClean = status.replace(/\s+/g, "");
+    var statusIcon = "";
+    if (statusClean.indexOf("완료") !== -1 || statusClean.indexOf("✅") !== -1) {
+      statusIcon = "✅ ";
+    } else if (statusClean.indexOf("진행") !== -1 || statusClean.indexOf("▶") !== -1) {
+      statusIcon = "▶️ ";
+    } else if (statusClean.indexOf("AS") !== -1 || statusClean.indexOf("A/S") !== -1 || statusClean.indexOf("as") !== -1 || statusClean.indexOf("🛠") !== -1) {
+      statusIcon = "🛠️ ";
+    }
+
     // 시간 정보가 있는 경우 시간 표기 추가 (예: 15:00)
     var timeDisplay = (rangeInfo.hasTime && rangeInfo.timeStr) ? " (" + rangeInfo.timeStr + ")" : "";
 
-    // 대시보드 일정 텍스트 포맷 (아이콘 + 현장명 + 공종 + 시간 + 비고)
-    var itemText = prefixIcon + "[" + siteName + "] " + taskName + timeDisplay + (memo ? " (" + memo + ")" : "");
+    // 대시보드 일정 텍스트 포맷 (상태아이콘 + 공유아이콘 + 현장명 + 공종 + 시간 + 비고)
+    var itemText = statusIcon + prefixIcon + "[" + siteName + "] " + taskName + timeDisplay + (memo ? " (" + memo + ")" : "");
 
     // 기간 일정(예: 10/7 ~ 10/9) 처리
     if (rangeInfo.isRange && rangeInfo.displayEndDate) {
@@ -2211,8 +2265,8 @@ function doGet(e) {
       sheet.getRange(row, 13).setValue(formatDateTime(now)); // M열 최종수정일
       sheet.getRange(row, 14).setValue("모바일 웹"); // N열 최종수정자
 
-      // 캘린더 및 대시보드 즉시 동기화
-      syncSingleRowToCalendar(sheet, row);
+      // 캘린더 및 대시보드 즉시 동기화 (forceSheetToCal = true)
+      syncSingleRowToCalendar(sheet, row, true);
       SpreadsheetApp.flush();
 
       return ContentService.createTextOutput(JSON.stringify({ success: true, status: newStatus }))

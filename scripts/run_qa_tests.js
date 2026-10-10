@@ -130,11 +130,29 @@ rowProg[7] = '진행중';
 const resProg = buildDetailsFn(rowProg, 16);
 assertTest('상태 "진행중" 시 캘린더 제목에 "▶️ " 아이콘 정상 부여', resProg && resProg.title.startsWith('▶️ 🟦'));
 
+// 2-1. 상태 '진행 중' (공백 포함) 엣지 케이스 테스트
+const rowProgSpace = [...baseMockRow];
+rowProgSpace[7] = '진행 중';
+const resProgSpace = buildDetailsFn(rowProgSpace, 161);
+assertTest('상태 "진행 중"(공백 포함) 시에도 캘린더 제목에 "▶️ " 아이콘 정상 부여', resProgSpace && resProgSpace.title.startsWith('▶️ 🟦'));
+
+// 2-2. 상태 '▶️ 진행중' (기존 이모지 포함 입력) 엣지 케이스 테스트
+const rowProgEmoji = [...baseMockRow];
+rowProgEmoji[7] = '▶️ 진행중';
+const resProgEmoji = buildDetailsFn(rowProgEmoji, 162);
+assertTest('상태 "▶️ 진행중"(이모지 포함) 시에도 캘린더 제목에 "▶️ " 정상 부여', resProgEmoji && resProgEmoji.title.startsWith('▶️ 🟦'));
+
 // 3. 상태 'AS' 런타임 호출 테스트
 const rowAs = [...baseMockRow];
 rowAs[7] = 'AS';
 const resAs = buildDetailsFn(rowAs, 17);
 assertTest('상태 "AS" 시 캘린더 제목에 "🛠️ " 아이콘 정상 부여', resAs && resAs.title.startsWith('🛠️ 🟦'));
+
+// 3-1. 상태 'A/S' (슬래시 포함) 런타임 호출 테스트
+const rowAsSlash = [...baseMockRow];
+rowAsSlash[7] = 'A/S';
+const resAsSlash = buildDetailsFn(rowAsSlash, 171);
+assertTest('상태 "A/S"(슬래시 포함) 시 캘린더 제목에 "🛠️ " 아이콘 정상 부여', resAsSlash && resAsSlash.title.startsWith('🛠️ 🟦'));
 
 // 4. 상태 '예정' 런타임 호출 테스트
 const rowPlan = [...baseMockRow];
@@ -207,8 +225,14 @@ const hasPriorityQueue = code.indexOf('pendingIndices.concat(existingIndices)') 
 assertTest('미등록 신규 일정 최우선 처리 큐(Priority Queue) 존재 여부', hasPriorityQueue);
 
 // [신규 QA] 상태별 아이콘(스타일 A) 및 모바일 웹앱 드롭다운 연동 검증
-const hasStatusIconsInTitle = code.indexOf('status === "완료"') !== -1 && code.indexOf('"✅ "') !== -1 && code.indexOf('"▶️ "') !== -1 && code.indexOf('"🛠️ "') !== -1;
+const hasStatusIconsInTitle = code.indexOf('statusClean.indexOf("완료")') !== -1 && code.indexOf('"✅ "') !== -1 && code.indexOf('"▶️ "') !== -1 && code.indexOf('"🛠️ "') !== -1;
 assertTest('캘린더 제목 상태별 아이콘(완료: ✅, 진행중: ▶️, AS: 🛠️) 표기 엔진 존재 여부', hasStatusIconsInTitle);
+
+const hasForceSheetProtection = code.indexOf('forceSheetToCal === undefined') !== -1 && code.indexOf('!forceSheetToCal && sheetUpdated > 0 && calUpdated > sheetUpdated + 10000') !== -1;
+assertTest('시트 수정 시 캘린더 날짜 역덮어쓰기 방지 안전 가드(forceSheetToCal) 존재 여부', hasForceSheetProtection);
+
+const hasDash8Cols = code.indexOf('siteSheet.getRange(2, 1, lastRow - 1, 8).getValues()') !== -1 && code.indexOf('itemText = statusIcon + prefixIcon') !== -1;
+assertTest('대시보드 달력 8열(진행상태) 연동 및 상태 아이콘 표시 엔진 탑재 여부', hasDash8Cols);
 
 const hasMobileDoGet = code.indexOf('function doGet(e)') !== -1 && code.indexOf('buildMobileStatusHtml') !== -1;
 assertTest('모바일 드롭다운 상태변경 웹앱 엔드포인트(doGet) 탑재 여부', hasMobileDoGet);
