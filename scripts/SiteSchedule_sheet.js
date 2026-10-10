@@ -793,6 +793,7 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   var values = range.getValues();
   var syncedCount = 0;
   var updatedCount = 0;
+  var skippedCount = 0;
   var rateLimitHit = false;
 
   var now = new Date();
@@ -825,8 +826,8 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   }
 
   for (var idx = 0; idx < targetIndices.length; idx++) {
-    // 1회 신규 생성 25건 제한 (구글 Rate Limit 방지)
-    if (syncedCount >= 25) {
+    // 1회 신규 생성 및 수정 합계 25건 제한 (구글 서버 버스트 한도 원천 차단)
+    if ((syncedCount + updatedCount) >= 25) {
       break;
     }
 
@@ -873,18 +874,46 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
 
     if (event) {
       try {
-        event.setTitle(details.title);
-        event.setDescription(details.description);
-        event.setLocation(details.siteName);
+        // [구글 한도 절약 1단계: 스마트 변경 감지 (Smart Diff Check)]
+        var curTitle = event.getTitle();
+        var curDesc = event.getDescription();
+        var curLoc = event.getLocation();
+        var isAllDay = event.isAllDayEvent();
+        var calStart = isAllDay ? event.getAllDayStartDate() : event.getStartTime();
+        var calEnd = isAllDay ? event.getAllDayEndDate() : event.getEndTime();
+
+        var dateMatches = false;
         if (details.parsedDate.isRange) {
-          event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
+          dateMatches = isAllDay && isDateEqual(calStart, details.parsedDate.startDate) && isDateEqual(calEnd, details.parsedDate.endDate);
         } else {
-          event.setAllDayDate(details.parsedDate.startDate);
+          dateMatches = isAllDay && isDateEqual(calStart, details.parsedDate.startDate);
         }
+
+        // 이미 캘린더와 시트 내용이 100% 동일한 경우 -> 구글 서버 호출 0회 패스!
+        if (curTitle === details.title && curDesc === details.description && curLoc === details.siteName && dateMatches) {
+          skippedCount++;
+          continue;
+        }
+
+        // [구글 한도 절약 2단계: 실제 변경된 속성만 최소 호출]
+        if (curTitle !== details.title) event.setTitle(details.title);
+        if (curDesc !== details.description) event.setDescription(details.description);
+        if (curLoc !== details.siteName) event.setLocation(details.siteName);
+        if (!dateMatches) {
+          if (details.parsedDate.isRange) {
+            event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
+          } else {
+            event.setAllDayDate(details.parsedDate.startDate);
+          }
+        }
+
         sheet.getRange(row, 10).setValue(nowMs);
         updatedCount++;
+        // 갱신 시에도 초당 호출 제한 방지 딜레이 (0.35초)
+        Utilities.sleep(350);
       } catch (err) {
-        if (String(err).indexOf("짧은 시간") !== -1 || String(err).indexOf("too many") !== -1) {
+        var errMsg = String(err);
+        if (errMsg.indexOf("짧은 시간") !== -1 || errMsg.indexOf("too many") !== -1 || errMsg.indexOf("Rate limit") !== -1 || errMsg.indexOf("quota") !== -1 || errMsg.indexOf("exhausted") !== -1) {
           rateLimitHit = true;
           break;
         }
@@ -905,7 +934,8 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
           Utilities.sleep(350);
         }
       } catch (err) {
-        if (String(err).indexOf("짧은 시간") !== -1 || String(err).indexOf("too many") !== -1) {
+        var errMsg = String(err);
+        if (errMsg.indexOf("짧은 시간") !== -1 || errMsg.indexOf("too many") !== -1 || errMsg.indexOf("Rate limit") !== -1 || errMsg.indexOf("quota") !== -1 || errMsg.indexOf("exhausted") !== -1) {
           rateLimitHit = true;
           break;
         }
@@ -920,18 +950,20 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
     SpreadsheetApp.getUi().alert(
       "⏳ 구글 캘린더 생성 한도 알림",
       "구글 서버의 일시적 속도 제한(Rate Limit)에 도달했습니다.\n\n" +
-      "• 지금까지 안전하게 처리된 일정: " + (syncedCount + updatedCount) + "건 (신규 " + syncedCount + "건, 갱신 " + updatedCount + "건)\n\n" +
+      "• 지금까지 안전하게 처리된 일정: " + (syncedCount + updatedCount) + "건 (신규 " + syncedCount + "건, 갱신 " + updatedCount + "건)\n" +
+      (skippedCount > 0 ? "• 변경 없음(API 절약 통과): " + skippedCount + "건\n\n" : "\n") +
       "이미 처리된 일정은 시트에 안전하게 저장되었습니다.\n" +
       "구글 정책상 약 10~15분 후 다시 실행하시면 남은 일정이 이어서 안전하게 등록됩니다.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
-  } else if (syncedCount >= 25) {
+  } else if ((syncedCount + updatedCount) >= 25) {
     SpreadsheetApp.getUi().alert(
       "📦 안전 분할 동기화 완료 (1차 25건)",
-      "구글 서버 락을 방지하기 위해 1차로 25건이 안전하게 등록되었습니다!\n\n" +
+      "구글 서버 락을 방지하기 위해 1차로 25건이 안전하게 처리되었습니다!\n\n" +
       "- 신규 등록: " + syncedCount + "건\n" +
-      "- 업데이트: " + updatedCount + "건\n\n" +
-      "남은 일정이 있다면 메뉴에서 다시 실행하시면 다음 25건이 이어서 순차 등록됩니다.",
+      "- 갱신 완료: " + updatedCount + "건\n" +
+      (skippedCount > 0 ? "- 변경 없음(자동 통과): " + skippedCount + "건\n\n" : "\n") +
+      "남은 미동기화 일정이 있다면 메뉴에서 다시 실행하시면 다음 25건이 이어서 순차 등록됩니다.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } else {
@@ -939,8 +971,9 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       "📅 구글 캘린더 동기화 완료",
       "대상 캘린더: [" + calName + "]\n\n" +
       "- 신규 등록: " + syncedCount + "건\n" +
-      "- 업데이트: " + updatedCount + "건\n\n" +
-      "모든 대상 일정이 성공적으로 동기화되었습니다!",
+      "- 갱신 완료: " + updatedCount + "건\n" +
+      (skippedCount > 0 ? "- 변경 없음(자동 통과): " + skippedCount + "건\n\n" : "\n") +
+      "모든 대상 일정이 성공적으로 최신화되었습니다!",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
