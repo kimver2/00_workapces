@@ -871,6 +871,8 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   var updatedCount = 0;
   var skippedCount = 0;
   var rateLimitHit = false;
+  var timeLimitReached = false;
+  var startTime = Date.now();
 
   var now = new Date();
   var nowMs = now.getTime();
@@ -878,8 +880,10 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   var currentUser = getCurrentUserIdentifier();
   var thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  // 대상 행 인덱스 필터링
-  var targetIndices = [];
+  // 대상 행 인덱스 필터링 및 우선순위 정렬 (신규 미등록 일정 ➔ 기존 일정 순)
+  var pendingIndices = [];
+  var existingIndices = [];
+
   for (var i = 0; i < values.length; i++) {
     var dateVal = values[i][1];
     if (!dateVal) continue;
@@ -887,14 +891,22 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
     if (onlyRecent) {
       var parsed = parseScheduleDateRange(dateVal);
       if (parsed && parsed.startDate) {
-        if (parsed.startDate >= thirtyDaysAgo) {
-          targetIndices.push(i);
+        if (parsed.startDate < thirtyDaysAgo) {
+          continue;
         }
       }
+    }
+
+    var existingId = String(values[i][8] || "").trim();
+    if (!existingId) {
+      pendingIndices.push(i);
     } else {
-      targetIndices.push(i);
+      existingIndices.push(i);
     }
   }
+
+  // 1순위: 미등록 신규 일정 우선 처리, 2순위: 기존 일정 검사
+  var targetIndices = pendingIndices.concat(existingIndices);
 
   if (targetIndices.length === 0) {
     SpreadsheetApp.getUi().alert("동기화할 대상 일정이 없습니다.");
@@ -902,8 +914,19 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   }
 
   for (var idx = 0; idx < targetIndices.length; idx++) {
-    // 1회 신규 생성 및 수정 합계 25건 제한 (구글 서버 버스트 한도 원천 차단)
+    // 1) 1회 신규 생성 및 수정 합계 25건 제한 (구글 서버 버스트 한도 원천 차단)
     if ((syncedCount + updatedCount) >= 25) {
+      break;
+    }
+
+    // 2) [핵심 방어: 6분 타임아웃 원천 차단] 스크립트 실행 시간이 2분 30초(150초) 초과 시 안전 조기 종료
+    if (Date.now() - startTime > 150000) {
+      timeLimitReached = true;
+      break;
+    }
+
+    // 3) 총 검사 행 수가 40건 초과 시 안전 분할 탈출 (불필요한 구글 원격 API 과다 호출 차단)
+    if (idx >= 40 && (syncedCount + updatedCount) > 0) {
       break;
     }
 
@@ -1061,14 +1084,14 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       "구글 정책상 약 10~15분 후 다시 실행하시면 남은 일정이 이어서 안전하게 등록됩니다.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
-  } else if ((syncedCount + updatedCount) >= 25) {
+  } else if ((syncedCount + updatedCount) >= 25 || timeLimitReached) {
     SpreadsheetApp.getUi().alert(
-      "📦 안전 분할 동기화 완료 (1차 25건)",
-      "구글 서버 락을 방지하기 위해 1차로 25건이 안전하게 처리되었습니다!\n\n" +
+      "📦 안전 분할 동기화 완료 (1차 안전 처리)",
+      "구글 서버 Rate Limit 및 실행 시간 초과를 방지하기 위해 안전하게 분할 처리되었습니다!\n\n" +
       "- 신규 등록: " + syncedCount + "건\n" +
       "- 갱신 완료: " + updatedCount + "건\n" +
       (skippedCount > 0 ? "- 변경 없음(자동 통과): " + skippedCount + "건\n\n" : "\n") +
-      "남은 미동기화 일정이 있다면 메뉴에서 다시 실행하시면 다음 25건이 이어서 순차 등록됩니다.",
+      "남은 미동기화 일정이 있다면 메뉴에서 다시 실행하시면 다음 일정이 이어서 순차 등록됩니다.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } else {
