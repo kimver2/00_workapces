@@ -1154,6 +1154,18 @@ function refreshDashboardCalendar(ss) {
   var siteSheet = findSiteScheduleSheet(ss);
   if (!dashSheet || !siteSheet) return;
 
+  // [절대 방어 가드 1] 대시보드 시트와 현장데이터 시트가 동일 시트이면 즉시 중단 (시트 오염 원천 차단)
+  if (dashSheet.getSheetId() === siteSheet.getSheetId()) {
+    Logger.log("⚠️ 경고: 대시보드 시트와 현장데이터 시트가 동일 시트로 판정되어 대시보드 갱신을 중단합니다.");
+    return;
+  }
+
+  // [절대 방어 가드 2] 대시보드 시트에 요일 헤더가 없으면 즉시 중단
+  if (!hasDayOfWeekHeader(dashSheet)) {
+    Logger.log("⚠️ 경고: 대시보드 시트에서 요일 헤더를 찾을 수 없어 대시보드 갱신을 중단합니다.");
+    return;
+  }
+
   // 구글 시트 수식(새 월 날짜 계산) 강제 반영
   SpreadsheetApp.flush();
 
@@ -1793,83 +1805,84 @@ function parseDateComponents(val) {
 // ========================================================
 
 /**
- * 현장데이터 시트인지 판별 (1행 헤더 구조 최우선 검사)
+ * 시트 상단(1~8행) 내에 '일, 월, 화, 수, 목, 금, 토' 요일 헤더가 존재하는지 검사
  */
-function isSiteScheduleSheet(sheet) {
+function hasDayOfWeekHeader(sheet) {
   if (!sheet) return false;
-
-  // 1순위: 1행 헤더 내용으로 완벽 판별 (현장명, 날짜, 공종 열 존재 여부)
   try {
-    if (sheet.getLastRow() >= 1 && sheet.getLastColumn() >= 3) {
-      var row1Values = sheet.getRange(1, 1, 1, Math.min(sheet.getLastColumn(), 10)).getValues()[0];
-      var row1Str = row1Values.join(" ");
-      if (row1Str.indexOf("현장") !== -1 && (row1Str.indexOf("공종") !== -1 || row1Str.indexOf("날짜") !== -1 || row1Str.indexOf("진행상태") !== -1)) {
-        return true;
+    var maxR = Math.min(sheet.getLastRow(), 8);
+    var maxC = Math.min(sheet.getLastColumn(), 10);
+    if (maxR < 2 || maxC < 4) return false;
+
+    var vals = sheet.getRange(1, 1, maxR, maxC).getValues();
+    for (var r = 0; r < vals.length; r++) {
+      var matchCount = 0;
+      for (var c = 0; c < vals[r].length; c++) {
+        var str = String(vals[r][c] || "").trim();
+        if (str === "일" || str === "월" || str === "화" || str === "수" || str === "목" || str === "금" || str === "토" ||
+            str === "일요일" || str === "월요일" || str === "SUN" || str === "MON") {
+          matchCount++;
+        }
       }
-      if (String(row1Values[0]).trim() === "현장" && String(row1Values[1]).trim() === "날짜") {
-        return true;
-      }
+      if (matchCount >= 4) return true;
     }
   } catch(e) {}
-
-  // 2순위: 시트 이름 기준
-  var name = sheet.getName().toLowerCase();
-  if (name === "현장데이터" || name === "현장 데이터" || name === "01_현장데이터" ||
-      name.indexOf("현장데이터") !== -1 || name.indexOf("site") !== -1 || name.indexOf("공정표") !== -1) {
-    return true;
-  }
   return false;
 }
 
 /**
- * 대시보드(달력) 시트인지 판별 (요일 헤더 및 달력 구조 최우선 검사)
+ * 현장데이터 시트인지 판별 (1~4행 헤더 구조 및 요일 헤더 부재 검사)
  */
-function isDashboardSheet(sheet) {
+function isSiteScheduleSheet(sheet) {
   if (!sheet) return false;
-  // 현장데이터 시트라면 절대 대시보드가 아님!
-  if (isSiteScheduleSheet(sheet)) return false;
+  // 요일 헤더('일, 월, 화...')가 있는 시트는 대시보드이므로 절대 현장데이터 시트가 아님!
+  if (hasDayOfWeekHeader(sheet)) return false;
 
-  // 1순위: 시트 상단(1~6행) 내에 '일, 월, 화, 수, 목, 금, 토' 요일 헤더가 존재하는지 구조 검사
+  // 1순위: 1~4행 내에 '현장' 및 ('공종' 또는 '날짜' 또는 '진행상태') 헤더가 있는지 검사
   try {
-    var maxR = Math.min(sheet.getLastRow(), 8);
-    var maxC = Math.min(sheet.getLastColumn(), 10);
-    if (maxR >= 3 && maxC >= 7) {
+    var maxR = Math.min(sheet.getLastRow(), 4);
+    var maxC = Math.min(sheet.getLastColumn(), 12);
+    if (maxR >= 1 && maxC >= 3) {
       var vals = sheet.getRange(1, 1, maxR, maxC).getValues();
       for (var r = 0; r < vals.length; r++) {
-        var rowText = vals[r].join(" ");
-        if (rowText.indexOf("일") !== -1 && rowText.indexOf("월") !== -1 && rowText.indexOf("화") !== -1 && rowText.indexOf("수") !== -1) {
+        var rowStr = vals[r].join(" ");
+        if (rowStr.indexOf("현장") !== -1 && (rowStr.indexOf("공종") !== -1 || rowStr.indexOf("날짜") !== -1 || rowStr.indexOf("진행상태") !== -1)) {
           return true;
         }
       }
     }
   } catch(e) {}
 
-  // 2순위: 탭 이름 기준
+  // 2순위: 시트 이름 기준
   var name = sheet.getName().toLowerCase();
-  if (name.indexOf("dashboard") !== -1 || name.indexOf("대시보드") !== -1 ||
-      name.indexOf("만년달력") !== -1 || name.indexOf("달력") !== -1 ||
-      name.indexOf("캘린더") !== -1 || name.indexOf("calendar") !== -1 ||
-      name.indexOf("스케줄") !== -1 || name.indexOf("월간") !== -1 ||
-      sheet.getSheetId() === 244837509) {
+  if (name.indexOf("현장") !== -1 || name.indexOf("공정") !== -1 || name.indexOf("site") !== -1) {
     return true;
   }
-
   return false;
+}
+
+/**
+ * 대시보드(달력) 시트인지 판별 (반드시 요일 헤더 '일, 월, 화...'가 있어야만 함!)
+ */
+function isDashboardSheet(sheet) {
+  if (!sheet) return false;
+  // 요일 헤더가 상단에 없는 시트는 탭 이름이 무엇이든 절대로 대시보드 시트가 아님!
+  return hasDayOfWeekHeader(sheet);
 }
 
 function findDashboardSheet(ss) {
   var sheets = ss.getSheets();
 
-  // 1순위: 구조 기반으로 대시보드 시트 찾기
+  // 1순위: 요일 헤더 구조를 갖춘 진짜 대시보드 달력 시트 찾기
   for (var i = 0; i < sheets.length; i++) {
     if (isDashboardSheet(sheets[i])) return sheets[i];
   }
 
-  // 2순위: 탭 이름 후보 검색
-  var candidates = ["dashboard", "Dashboard", "대시보드", "00_대시보드", "만년달력", "달력", "캘린더", "Calendar", "calendar", "월간일정", "스케줄"];
+  // 2순위: 탭 이름 후보 중 요일 헤더를 갖춘 시트
+  var candidates = ["dashboard", "Dashboard", "대시보드", "00_대시보드", "만년달력", "달력", "00_Calendar", "Calendar"];
   for (var k = 0; k < candidates.length; k++) {
     var s = ss.getSheetByName(candidates[k]);
-    if (s && !isSiteScheduleSheet(s)) return s;
+    if (s && hasDayOfWeekHeader(s)) return s;
   }
 
   return null;
@@ -1883,17 +1896,17 @@ function findSiteScheduleSheet(ss) {
     if (isSiteScheduleSheet(sheets[i])) return sheets[i];
   }
 
-  // 2순위: 탭 이름 후보 검색
-  var candidates = ["현장데이터", "현장 데이터", "01_현장데이터", "현장일정", "공정표", "현장데이터시트", "현장"];
-  for (var k = 0; k < candidates.length; k++) {
-    var s = ss.getSheetByName(candidates[k]);
-    if (s) return s;
+  // 2순위: 대시보드가 아닌 시트 중 첫 번째
+  var dash = findDashboardSheet(ss);
+  for (var k = 0; k < sheets.length; k++) {
+    if (!dash || sheets[k].getSheetId() !== dash.getSheetId()) {
+      if (!hasDayOfWeekHeader(sheets[k])) {
+        return sheets[k];
+      }
+    }
   }
 
-  if (sheets.length > 1 && isDashboardSheet(sheets[0])) {
-    return sheets[1];
-  }
-  return sheets[0];
+  return sheets.length > 1 ? sheets[1] : sheets[0];
 }
 
 
@@ -2031,6 +2044,13 @@ function cleanupEmptyRowsMetadata() {
     var rowVals = values[i];
     var siteName = String(rowVals[0] || "").trim();
     var taskName = String(rowVals[2] || "").trim();
+
+    // B열(날짜열)에 대시보드 달력 텍스트([현장명] 공종...)가 잘못 덮어써진 경우 자동 복구
+    var rawDateStr = String(rowVals[1] || "");
+    if (rawDateStr.indexOf("[") !== -1 && (rawDateStr.indexOf("호]") !== -1 || rawDateStr.indexOf("\n") !== -1 || rawDateStr.indexOf("목공") !== -1 || rawDateStr.indexOf("퍼플렉스") !== -1)) {
+      sheet.getRange(row, 2).clearContent();
+      cleaned++;
+    }
 
     // 현장명과 공종이 모두 없는 빈 행인 경우
     if (!siteName && !taskName) {

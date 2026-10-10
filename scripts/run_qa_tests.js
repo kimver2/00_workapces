@@ -125,6 +125,13 @@ assertTest('셀 수정 즉시 커밋용 SpreadsheetApp.flush() 호출 존재 여
 const hasDashRefreshInSync = code.indexOf('refreshDashboardCalendar(ss)') !== -1;
 assertTest('단일 행 수정 직후 대시보드 실시간 연쇄 갱신 호출 존재 여부', hasDashRefreshInSync);
 
+// 대시보드-현장데이터 교차 오염 방지 가드 검사
+const hasSheetConflictGuard = code.indexOf('dashSheet.getSheetId() === siteSheet.getSheetId()') !== -1;
+assertTest('대시보드-현장데이터 동일 시트 오염 방지 가드 존재 여부', hasSheetConflictGuard);
+
+const hasStrictDowCheck = code.indexOf('hasDayOfWeekHeader(sheet)') !== -1;
+assertTest('요일 헤더(일~토) 기반 엄격한 대시보드 판별 엔진 존재 여부', hasStrictDowCheck);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
