@@ -29,9 +29,29 @@ const sandbox = {
   Logger: { log: () => {} },
   console: console,
   SpreadsheetApp: {},
-  CalendarApp: {},
+  CalendarApp: {
+    EventColor: {
+      PALE_BLUE: "1",
+      PALE_GREEN: "2",
+      MAUVE: "3",
+      PALE_RED: "4",
+      YELLOW: "5",
+      ORANGE: "6",
+      CYAN: "7",
+      GRAY: "8",
+      BLUE: "9",
+      GREEN: "10",
+      RED: "11"
+    }
+  },
+  MailApp: {
+    sendEmail: (opt) => { sandbox.lastSentEmail = opt; }
+  },
   Utilities: { sleep: () => {} },
-  Session: { getActiveUser: () => ({ getEmail: () => 'qa-tester@woosung.com' }) },
+  Session: {
+    getActiveUser: () => ({ getEmail: () => 'qa-tester@woosung.com' }),
+    getEffectiveUser: () => ({ getEmail: () => 'qa-tester@woosung.com' })
+  },
   PropertiesService: {
     getDocumentProperties: () => ({
       getProperty: () => '',
@@ -175,10 +195,72 @@ const htmlOutput = buildHtmlFn(15, '래미안 101동', '26.10.15', '목공', '�
 assertTest('buildMobileStatusHtml 런타임 실행: 유효한 HTML 문자열 반환', typeof htmlOutput === 'string' && htmlOutput.indexOf('<!DOCTYPE html>') !== -1);
 assertTest('모바일 HTML 내 4대 상태 버튼(예정, 진행중, 완료, AS) 정상 렌더링', htmlOutput.indexOf('btn-done') !== -1 && htmlOutput.indexOf('btn-progress') !== -1);
 
+console.log('\n🔍 [Step 3.6: 신규 3대 기능 런타임 엔진 검증 (Feature 1, 2, 4)]');
+
+// Feature 1: 구글 캘린더 자체 블록 색상 ID 매핑 검증
+const getColorFn = sandbox.getCalendarColorForStatus;
+assertTest('블록 색상 - 완료 상태: "10" (Basil 초록)', getColorFn('완료', false, true) === '10');
+assertTest('블록 색상 - 공정 지연 상태: "11" (Tomato 빨강)', getColorFn('진행중', true, true) === '11');
+assertTest('블록 색상 - 진행 중 상태: "7" (Peacock 청록/파랑)', getColorFn('진행중', false, true) === '7');
+assertTest('블록 색상 - AS 상태: "4" (Flamingo 산호/주황)', getColorFn('AS', false, true) === '4');
+assertTest('블록 색상 - 미공유 상태: "8" (Graphite 회색)', getColorFn('예정', false, false) === '8');
+assertTest('블록 색상 - 기본 예정(공유): "1" (Pale Blue 연파랑)', getColorFn('예정', false, true) === '1');
+
+// Feature 2: 공정 지연 자동 감지 (isScheduleDelayed) 검증
+const isDelayedFn = sandbox.isScheduleDelayed;
+const mockRefToday = new Date(2026, 9, 15, 10, 0, 0); // 2026-10-15
+
+// 과거 단일 일정 (26.10.10) -> 마감일 지남
+const parsedPast = parseFn('26.10.10');
+assertTest('지연 감지 - 마감일 경과(26.10.10) & 예정 상태: true (지연)', isDelayedFn(parsedPast, '예정', mockRefToday) === true);
+assertTest('지연 감지 - 마감일 경과(26.10.10) & 진행중 상태: true (지연)', isDelayedFn(parsedPast, '진행중', mockRefToday) === true);
+assertTest('지연 감지 - 마감일 경과(26.10.10) & 완료 상태: false (완료는 지연 아님)', isDelayedFn(parsedPast, '완료', mockRefToday) === false);
+
+// 오늘 단일 일정 (26.10.15) -> 오늘 마감 (아직 지연 아님)
+const parsedToday = parseFn('26.10.15');
+assertTest('지연 감지 - 오늘 당일 일정(26.10.15): false (당일은 정상 진행)', isDelayedFn(parsedToday, '진행중', mockRefToday) === false);
+
+// 기간 일정 (26.10.11 ~ 26.10.13) -> 13일 마감 경과
+const parsedPastRange = parseFn('26.10.11 ~ 26.10.13');
+assertTest('지연 감지 - 기간 일정 종료일 경과(10/13): true (지연)', isDelayedFn(parsedPastRange, '진행중', mockRefToday) === true);
+
+// 기간 일정 (26.10.11 ~ 26.10.16) -> 16일 마감 미래
+const parsedFutureRange = parseFn('26.10.11 ~ 26.10.16');
+assertTest('지연 감지 - 기간 일정 진행 중(10/11~10/16): false (정상 진행)', isDelayedFn(parsedFutureRange, '진행중', mockRefToday) === false);
+
+// buildEventDetails 내 지연 및 색상 통합 검증
+const rowDelayed = [...baseMockRow];
+rowDelayed[1] = '26.10.10'; // 과거 날짜
+rowDelayed[7] = '진행 중';
+const resDelayed = buildDetailsFn(rowDelayed, 20, mockRefToday);
+assertTest('지연 공정 제목에 "⚠️ [지연] " 자동 부착', resDelayed && resDelayed.title.startsWith('⚠️ [지연] ▶️ 🟦'));
+assertTest('지연 공정 색상에 "11" (Tomato 빨강) 자동 지정', resDelayed && resDelayed.color === '11');
+assertTest('지연 공정 본문 Description에 경고 문구 삽입', resDelayed && resDelayed.description.indexOf('⚠️ [공정 지연 경고]') !== -1);
+assertTest('지연 공정 isDelayed 플래그 true', resDelayed && resDelayed.isDelayed === true);
+
+// Feature 4: 활성 공정 감지 및 모닝 브리핑 이메일 생성기 검증
+const isTodayActiveFn = sandbox.isScheduleActiveToday;
+assertTest('활성 공정 감지 - 당일 단일 일정(26.10.15): true', isTodayActiveFn(parsedToday, mockRefToday) === true);
+assertTest('활성 공정 감지 - 오늘 포함 기간 일정(10/11~10/16): true', isTodayActiveFn(parsedFutureRange, mockRefToday) === true);
+assertTest('활성 공정 감지 - 과거 완료된 일정(10/10): false', isTodayActiveFn(parsedPast, mockRefToday) === false);
+
+const buildBriefingFn = sandbox.buildMorningBriefingEmailContent;
+const mockTodayTasks = [{ siteName: '역삼동 현장', taskName: '도배', status: '진행 중', dateStr: '26.10.15', manager: '이과장', memo: '오후 시공' }];
+const mockDelayedTasks = [{ siteName: '한남동 빌라', taskName: '설비', status: '진행 중', dateStr: '26.10.12', manager: '박팀장', memo: '자재 대기' }];
+
+const briefingOutput = buildBriefingFn('26.10.15', '목요일', mockTodayTasks, mockDelayedTasks, 'https://docs.google.com/test', 'https://script.google.com/test');
+assertTest('모닝 브리핑 이메일 생성: HTML 및 Plain-text 생성 성공', briefingOutput && typeof briefingOutput.htmlBody === 'string' && typeof briefingOutput.plainText === 'string');
+assertTest('모닝 브리핑 HTML 내 오늘 공정 섹션 정상 렌더링', briefingOutput.htmlBody.indexOf('오늘 착공 및 진행 공정') !== -1 && briefingOutput.htmlBody.indexOf('역삼동 현장') !== -1);
+assertTest('모닝 브리핑 HTML 내 지연 공정 경고 박스 렌더링', briefingOutput.htmlBody.indexOf('공정 지연 현장') !== -1 && briefingOutput.htmlBody.indexOf('한남동 빌라') !== -1);
+assertTest('모닝 브리핑 Plain-text 내 바로가기 링크 포함', briefingOutput.plainText.indexOf('스프레드시트 바로가기') !== -1);
+
 console.log('\n🔍 [Step 4: 코드리뷰 정적 보안/안전성 감사]');
 // Rate limit 방어 패턴 검사
 const hasDiffCheck = code.indexOf('curTitle === details.title') !== -1;
 assertTest('스마트 변경 감지(Smart Diff Check) 패턴 존재 여부', hasDiffCheck);
+
+const hasColorInDiffCheck = code.indexOf('(!details.color || curColor === details.color)') !== -1;
+assertTest('스마트 변경 감지 내 색상(color) Diff Check 포함 여부', hasColorInDiffCheck);
 
 const hasSleep = code.indexOf('Utilities.sleep(350)') !== -1;
 assertTest('API Rate Limit 방어용 안전 딜레이(350ms) 적용 여부', hasSleep);
@@ -231,8 +313,8 @@ assertTest('캘린더 제목 상태별 아이콘(완료: ✅, 진행중: ▶️,
 const hasForceSheetProtection = code.indexOf('forceSheetToCal === undefined') !== -1 && code.indexOf('!forceSheetToCal && sheetUpdated > 0 && calUpdated > sheetUpdated + 10000') !== -1;
 assertTest('시트 수정 시 캘린더 날짜 역덮어쓰기 방지 안전 가드(forceSheetToCal) 존재 여부', hasForceSheetProtection);
 
-const hasDash8Cols = code.indexOf('siteSheet.getRange(2, 1, lastRow - 1, 8).getValues()') !== -1 && code.indexOf('itemText = statusIcon + prefixIcon') !== -1;
-assertTest('대시보드 달력 8열(진행상태) 연동 및 상태 아이콘 표시 엔진 탑재 여부', hasDash8Cols);
+const hasDash8Cols = code.indexOf('siteSheet.getRange(2, 1, lastRow - 1, 8).getValues()') !== -1 && (code.indexOf('itemText = delayPrefix + statusIcon + prefixIcon') !== -1 || code.indexOf('itemText = statusIcon + prefixIcon') !== -1);
+assertTest('대시보드 달력 8열(진행상태) 연동 및 지연/상태 아이콘 표시 엔진 탑재 여부', hasDash8Cols);
 
 const hasMobileDoGet = code.indexOf('function doGet(e)') !== -1 && code.indexOf('buildMobileStatusHtml') !== -1;
 assertTest('모바일 드롭다운 상태변경 웹앱 엔드포인트(doGet) 탑재 여부', hasMobileDoGet);
@@ -267,6 +349,22 @@ assertTest('대시보드 만년달력 그리드/수식 자동 생성 엔진(buil
 const hasSiteConditionalFormatBuilder = code.indexOf('function setupSiteSheetConditionalFormatting(') !== -1;
 assertTest('현장데이터 상태별 조건부 서식 자동 생성 엔진(setupSiteSheetConditionalFormatting) 탑재 여부', hasSiteConditionalFormatBuilder);
 
+// [신규 QA] Feature 1, 2, 4 전용 엔진 및 메뉴 등록 검증
+const hasColorSetters = code.indexOf('event.setColor(details.color)') !== -1;
+assertTest('구글 캘린더 자체 블록 색상 자동 지정(event.setColor) 엔진 탑재 여부 (Feature 1)', hasColorSetters);
+
+const hasDelayHighlighter = code.indexOf('function checkAndHighlightDelayedSchedules()') !== -1;
+assertTest('시트 공정 지연 검사 및 하이라이트 전용 함수 탑재 여부 (Feature 2)', hasDelayHighlighter);
+
+const hasMorningBriefingSendEngine = code.indexOf('function sendDailySiteMorningBriefing(') !== -1;
+assertTest('매일 아침 8시 모닝 브리핑 자동 발송 코어 엔진 탑재 여부 (Feature 4)', hasMorningBriefingSendEngine);
+
+const hasBriefingTriggerSetup = code.indexOf('function enableDailyMorningBriefing()') !== -1 && code.indexOf('function disableDailyMorningBriefing()') !== -1;
+assertTest('모닝 브리핑 8시 일일 타이머 등록/해제 관리 엔진 탑재 여부 (Feature 4)', hasBriefingTriggerSetup);
+
+const hasBriefingMenu = code.indexOf('"sendDailyBriefingTestNow"') !== -1 && code.indexOf('"enableDailyMorningBriefing"') !== -1 && code.indexOf('"checkAndHighlightDelayedSchedules"') !== -1;
+assertTest('현장 관리 상단 메뉴 내 색상검사/모닝브리핑/이메일설정 메뉴 등록 여부', hasBriefingMenu);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -276,3 +374,4 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
+
