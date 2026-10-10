@@ -274,33 +274,44 @@ function syncFromCalendarToSheet() {
     var calEnd = isAllDay ? event.getAllDayEndDate() : event.getEndTime();
     if (!calStart) continue;
 
-    // 종일 일정의 종료일 처리 (구글 캘린더 종일 종료일은 exclusive)
-    var realCalEnd = null;
-    if (isAllDay && calEnd) {
-      var diffDays = Math.round((calEnd.getTime() - calStart.getTime()) / (24 * 60 * 60 * 1000));
-      if (diffDays > 1) {
-        realCalEnd = new Date(calEnd.getTime() - 24 * 60 * 60 * 1000);
-      }
-    } else if (!isAllDay && calEnd) {
-      if (!isDateEqual(calStart, calEnd)) {
-        realCalEnd = calEnd;
+    var currentRange = parseScheduleDateRange(currentSheetDate);
+    var isSame = false;
+
+    if (currentRange) {
+      if (isAllDay && !currentRange.hasTime) {
+        var realCalEnd = null;
+        if (calEnd) {
+          var diffDays = Math.round((calEnd.getTime() - calStart.getTime()) / (24 * 60 * 60 * 1000));
+          if (diffDays > 1) {
+            realCalEnd = new Date(calEnd.getTime() - 24 * 60 * 60 * 1000);
+          }
+        }
+        var curEnd = currentRange.isRange ? currentRange.displayEndDate : null;
+        isSame = isDateEqual(calStart, currentRange.startDate) && isDateEqual(realCalEnd, curEnd);
+      } else if (!isAllDay && currentRange.hasTime) {
+        isSame = (calStart.getTime() === currentRange.startTime.getTime() &&
+                  (calEnd && currentRange.endTime ? calEnd.getTime() === currentRange.endTime.getTime() : true));
       }
     }
 
-    // 시트의 현재 날짜 파싱
-    var currentRange = parseScheduleDateRange(currentSheetDate);
-    var currentStart = currentRange ? currentRange.startDate : null;
-    var currentEnd = (currentRange && currentRange.isRange) ? currentRange.displayEndDate : null;
-
-    // 날짜 일치 여부 비교
-    var isSame = isDateEqual(calStart, currentStart) && isDateEqual(realCalEnd, currentEnd);
-
     if (!isSame) {
-      // 날짜가 서로 다름! [마지막 수정 시간 기반 비교 (Last-Modified-Wins)]
+      // 날짜/시간이 서로 다름! [마지막 수정 시간 기반 비교 (Last-Modified-Wins)]
       // 시트 ➔ 캘린더 전송 직후 발생하는 미세 타임스탬프 오차(Race Condition) 방지를 위해 10초 안전 마진 적용
       if (calUpdated > sheetUpdated + 10000) {
         // [캘린더가 10초 이상 더 최신일 때만] ➔ 캘린더의 날짜를 시트에 반영!
-        var newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
+        var newDateStr = "";
+        if (!isAllDay) {
+          newDateStr = formatDateWithTime(calStart, calEnd);
+        } else {
+          var realCalEnd = null;
+          if (calEnd) {
+            var diffDays = Math.round((calEnd.getTime() - calStart.getTime()) / (24 * 60 * 60 * 1000));
+            if (diffDays > 1) {
+              realCalEnd = new Date(calEnd.getTime() - 24 * 60 * 60 * 1000);
+            }
+          }
+          newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
+        }
         sheet.getRange(row, 2).setValue(newDateStr);
         sheet.getRange(row, 10).setValue(calUpdated);
 
@@ -310,12 +321,16 @@ function syncFromCalendarToSheet() {
 
         updatedCount++;
       } else if (sheetUpdated > calUpdated + 3000) {
-        // [시트가 3초 이상 더 최신] ➔ 시트의 날짜를 캘린더에 덮어쓰기!
+        // [시트가 3초 이상 더 최신] ➔ 시트의 날짜/시간을 캘린더에 덮어쓰기!
         if (currentRange) {
-          if (currentRange.isRange) {
-            event.setAllDayDates(currentRange.startDate, currentRange.endDate);
+          if (currentRange.hasTime) {
+            event.setTime(currentRange.startTime, currentRange.endTime);
           } else {
-            event.setAllDayDate(currentRange.startDate);
+            if (currentRange.isRange) {
+              event.setAllDayDates(currentRange.startDate, currentRange.endDate);
+            } else {
+              event.setAllDayDate(currentRange.startDate);
+            }
           }
           sheet.getRange(row, 10).setValue(Date.now());
           updatedCount++;
@@ -444,6 +459,36 @@ function formatDateTime(d) {
   var min = String(d.getMinutes());
   if (min.length < 2) min = "0" + min;
   return yy + "." + mm + "." + dd + " " + hh + ":" + min;
+}
+
+/**
+ * 캘린더의 시간 일정(Timed Event)을 시트 날짜 표기 형식으로 변환
+ * - 시작과 종료가 같은 날이고 1시간 기본 차이면: 26.10.11 15:00
+ * - 같은 날이고 1시간 이상 차이면: 26.10.11 15:00 ~ 17:00
+ * - 다른 날로 걸쳐진 경우: 26.10.11 15:00 ~ 26.10.12 11:00
+ */
+function formatDateWithTime(start, end) {
+  if (!start) return "";
+  var startStr = formatDateTime(start);
+  if (!end || start.getTime() === end.getTime()) {
+    return startStr;
+  }
+
+  var isSameDay = isDateEqual(start, end);
+  var diffMs = end.getTime() - start.getTime();
+
+  if (isSameDay) {
+    if (diffMs === 3600000) {
+      return startStr;
+    }
+    var eh = String(end.getHours());
+    if (eh.length < 2) eh = "0" + eh;
+    var em = String(end.getMinutes());
+    if (em.length < 2) em = "0" + em;
+    return startStr + " ~ " + eh + ":" + em;
+  } else {
+    return startStr + " ~ " + formatDateTime(end);
+  }
 }
 
 /**
@@ -699,16 +744,20 @@ function syncSingleRowToCalendar(sheet, row) {
       var isAllDay = event.isAllDayEvent();
       var calStart = isAllDay ? event.getAllDayStartDate() : event.getStartTime();
       var calEnd = isAllDay ? event.getAllDayEndDate() : event.getEndTime();
-      var realCalEnd = null;
-      if (isAllDay && calEnd) {
-        var diffDays = Math.round((calEnd.getTime() - calStart.getTime()) / (24 * 60 * 60 * 1000));
-        if (diffDays > 1) {
-          realCalEnd = new Date(calEnd.getTime() - 24 * 60 * 60 * 1000);
+      var newDateStr = "";
+
+      if (!isAllDay) {
+        newDateStr = formatDateWithTime(calStart, calEnd);
+      } else {
+        var realCalEnd = null;
+        if (calEnd) {
+          var diffDays = Math.round((calEnd.getTime() - calStart.getTime()) / (24 * 60 * 60 * 1000));
+          if (diffDays > 1) {
+            realCalEnd = new Date(calEnd.getTime() - 24 * 60 * 60 * 1000);
+          }
         }
-      } else if (!isAllDay && calEnd) {
-        if (!isDateEqual(calStart, calEnd)) realCalEnd = calEnd;
+        newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
       }
-      var newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
       sheet.getRange(row, 2).setValue(newDateStr);
       sheet.getRange(row, 10).setValue(calUpdated);
       sheet.getRange(row, 13).setValue(formatDateTime(calUpdatedDate));
@@ -723,22 +772,30 @@ function syncSingleRowToCalendar(sheet, row) {
     event.setTitle(details.title);
     event.setDescription(details.description);
     event.setLocation(details.siteName);
-    if (details.parsedDate.isRange) {
-      event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
+    if (details.parsedDate.hasTime) {
+      event.setTime(details.parsedDate.startTime, details.parsedDate.endTime);
     } else {
-      event.setAllDayDate(details.parsedDate.startDate);
+      if (details.parsedDate.isRange) {
+        event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
+      } else {
+        event.setAllDayDate(details.parsedDate.startDate);
+      }
     }
     sheet.getRange(row, 10).setValue(Date.now());
   } else {
-    // 3) 기존 ID가 없거나 유효하지 않은 경우 -> [1 Row = 1 Event 원칙] 무조건 이 행을 위한 새 이벤트 단독 1개 생성!
+    // 3) 기존 ID가 없거나 유효하지 않은 경우 -> 새 이벤트 생성
     var opt = {
       description: details.description,
       location: details.siteName
     };
-    if (details.parsedDate.isRange) {
-      event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
+    if (details.parsedDate.hasTime) {
+      event = cal.createEvent(details.title, details.parsedDate.startTime, details.parsedDate.endTime, opt);
     } else {
-      event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
+      if (details.parsedDate.isRange) {
+        event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
+      } else {
+        event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
+      }
     }
 
     if (event) {
@@ -883,10 +940,19 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
         var calEnd = isAllDay ? event.getAllDayEndDate() : event.getEndTime();
 
         var dateMatches = false;
-        if (details.parsedDate.isRange) {
-          dateMatches = isAllDay && isDateEqual(calStart, details.parsedDate.startDate) && isDateEqual(calEnd, details.parsedDate.endDate);
+        if (details.parsedDate.hasTime) {
+          if (!isAllDay && calStart && calEnd) {
+            dateMatches = (calStart.getTime() === details.parsedDate.startTime.getTime() &&
+                           calEnd.getTime() === details.parsedDate.endTime.getTime());
+          }
         } else {
-          dateMatches = isAllDay && isDateEqual(calStart, details.parsedDate.startDate);
+          if (isAllDay && calStart) {
+            if (details.parsedDate.isRange) {
+              dateMatches = isDateEqual(calStart, details.parsedDate.startDate) && isDateEqual(calEnd, details.parsedDate.endDate);
+            } else {
+              dateMatches = isDateEqual(calStart, details.parsedDate.startDate);
+            }
+          }
         }
 
         // 이미 캘린더와 시트 내용이 100% 동일한 경우 -> 구글 서버 호출 0회 패스!
@@ -900,10 +966,14 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
         if (curDesc !== details.description) event.setDescription(details.description);
         if (curLoc !== details.siteName) event.setLocation(details.siteName);
         if (!dateMatches) {
-          if (details.parsedDate.isRange) {
-            event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
+          if (details.parsedDate.hasTime) {
+            event.setTime(details.parsedDate.startTime, details.parsedDate.endTime);
           } else {
-            event.setAllDayDate(details.parsedDate.startDate);
+            if (details.parsedDate.isRange) {
+              event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
+            } else {
+              event.setAllDayDate(details.parsedDate.startDate);
+            }
           }
         }
 
@@ -921,10 +991,14 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
     } else {
       try {
         var opt = { description: details.description, location: details.siteName };
-        if (details.parsedDate.isRange) {
-          event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
+        if (details.parsedDate.hasTime) {
+          event = cal.createEvent(details.title, details.parsedDate.startTime, details.parsedDate.endTime, opt);
         } else {
-          event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
+          if (details.parsedDate.isRange) {
+            event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
+          } else {
+            event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
+          }
         }
         if (event) {
           sheet.getRange(row, 9).setValue(event.getId());
@@ -1095,8 +1169,11 @@ function refreshDashboardCalendar(ss) {
     var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
     var prefixIcon = isShared ? "🟦 " : "🟥 ";
 
-    // 대시보드 일정 텍스트 포맷 (아이콘 + 현장명 + 공종 + 비고)
-    var itemText = prefixIcon + "[" + siteName + "] " + taskName + (memo ? " (" + memo + ")" : "");
+    // 시간 정보가 있는 경우 시간 표기 추가 (예: 15:00)
+    var timeDisplay = (rangeInfo.hasTime && rangeInfo.timeStr) ? " (" + rangeInfo.timeStr + ")" : "";
+
+    // 대시보드 일정 텍스트 포맷 (아이콘 + 현장명 + 공종 + 시간 + 비고)
+    var itemText = prefixIcon + "[" + siteName + "] " + taskName + timeDisplay + (memo ? " (" + memo + ")" : "");
 
     // 기간 일정(예: 10/7 ~ 10/9) 처리
     if (rangeInfo.isRange && rangeInfo.displayEndDate) {
@@ -1380,67 +1457,253 @@ function getDashboardSelectedYearMonth(dashSheet, dowRow) {
 
 /**
  * 다양한 형태의 날짜 및 기간을 파싱
- * 반환값: { startDate, endDate, displayEndDate, isRange, year, month, day }
+ * 반환값: {
+ *   startDate, endDate, displayEndDate, isRange,
+ *   hasTime, startTime, endTime, timeStr,
+ *   year, month, day
+ * }
  */
 function parseScheduleDateRange(val) {
   if (!val) return null;
 
+  // 1. 셀 값이 Date 객체인 경우
   if (val instanceof Date && !isNaN(val.getTime())) {
-    var d = new Date(val.getFullYear(), val.getMonth(), val.getDate());
+    var hasTime = (val.getHours() !== 0 || val.getMinutes() !== 0);
+    var y = val.getFullYear();
+    var m = val.getMonth() + 1;
+    var d = val.getDate();
+    if (hasTime) {
+      var startTime = new Date(val.getTime());
+      var endTime = new Date(val.getTime() + 3600000); // 기본 1시간
+      var hh = String(val.getHours());
+      if (hh.length < 2) hh = "0" + hh;
+      var mm = String(val.getMinutes());
+      if (mm.length < 2) mm = "0" + mm;
+      return {
+        startDate: new Date(y, m - 1, d),
+        endDate: null,
+        displayEndDate: null,
+        isRange: false,
+        hasTime: true,
+        startTime: startTime,
+        endTime: endTime,
+        timeStr: hh + ":" + mm,
+        year: y,
+        month: m,
+        day: d
+      };
+    } else {
+      var dObj = new Date(y, m - 1, d);
+      return {
+        startDate: dObj,
+        endDate: null,
+        displayEndDate: null,
+        isRange: false,
+        hasTime: false,
+        startTime: null,
+        endTime: null,
+        timeStr: "",
+        year: y,
+        month: m,
+        day: d
+      };
+    }
+  }
+
+  var str = String(val).trim();
+  if (!str) return null;
+
+  // 2. 기간 구분자 감지: "Oct 21 → Oct 22", "10/21 ~ 10/22", "26.10.21 - 26.10.22", "26.10.11 15:00 ~ 17:00"
+  var separatorRegex = /\s*(?:→|~|\s-\s|\s~|\.\.\.)\s*/;
+  if (separatorRegex.test(str)) {
+    var parts = str.split(separatorRegex);
+    if (parts.length >= 2) {
+      var p1 = parseDateTimeComponents(parts[0].trim());
+      var p2 = parseDateTimeComponents(parts[1].trim());
+
+      if (p1) {
+        var startYear = p1.year || (p2 ? p2.year : 2026);
+        var sDate = new Date(startYear, p1.month - 1, p1.day);
+
+        // 시간 일정인 경우 (p1 또는 p2에 시간 정보 포함)
+        if (p1.hasTime || (p2 && p2.hasTime)) {
+          var sHour = p1.hasTime ? p1.hour : 9;
+          var sMin = p1.hasTime ? p1.minute : 0;
+          var startTime = new Date(startYear, p1.month - 1, p1.day, sHour, sMin, 0);
+
+          var endTime = null;
+          var timeStr = "";
+          if (p2) {
+            var endYear = p2.year || startYear;
+            var endMonth = p2.month ? p2.month - 1 : p1.month - 1;
+            var endDay = p2.day || p1.day;
+            var eHour = p2.hasTime ? p2.hour : (p1.hasTime ? p1.hour + 1 : 18);
+            var eMin = p2.hasTime ? p2.minute : 0;
+            endTime = new Date(endYear, endMonth, endDay, eHour, eMin, 0);
+
+            var shStr = (sHour < 10 ? "0" : "") + sHour + ":" + (sMin < 10 ? "0" : "") + sMin;
+            var ehStr = (eHour < 10 ? "0" : "") + eHour + ":" + (eMin < 10 ? "0" : "") + eMin;
+            timeStr = shStr + "~" + ehStr;
+          } else {
+            endTime = new Date(startTime.getTime() + 3600000);
+            timeStr = (sHour < 10 ? "0" : "") + sHour + ":" + (sMin < 10 ? "0" : "") + sMin;
+          }
+
+          var dispEnd = p2 && p2.day ? new Date(endTime.getFullYear(), endTime.getMonth(), endTime.getDate()) : sDate;
+
+          return {
+            startDate: sDate,
+            endDate: dispEnd,
+            displayEndDate: dispEnd,
+            isRange: !isDateEqual(sDate, dispEnd),
+            hasTime: true,
+            startTime: startTime,
+            endTime: endTime,
+            timeStr: timeStr,
+            year: startYear,
+            month: p1.month,
+            day: p1.day
+          };
+        } else if (p2) {
+          // 종일 기간 일정 (시간 없음)
+          var endYear = p2.year || startYear;
+          var eDate = new Date(endYear, p2.month - 1, p2.day + 1); // exclusive +1일
+          var dispEnd = new Date(endYear, p2.month - 1, p2.day);
+          return {
+            startDate: sDate,
+            endDate: eDate,
+            displayEndDate: dispEnd,
+            isRange: true,
+            hasTime: false,
+            startTime: null,
+            endTime: null,
+            timeStr: "",
+            year: startYear,
+            month: p1.month,
+            day: p1.day
+          };
+        }
+      }
+    }
+  }
+
+  // 3. 단일 날짜 및 시간 파싱 (예: "26.10.11 15:00" 또는 "26.10.11")
+  var comp = parseDateTimeComponents(str);
+  if (comp) {
+    var y = comp.year || 2026;
+    var sDate = new Date(y, comp.month - 1, comp.day);
+
+    if (comp.hasTime) {
+      var startTime = new Date(y, comp.month - 1, comp.day, comp.hour, comp.minute, 0);
+      var endTime = new Date(startTime.getTime() + 3600000); // 기본 1시간
+      var sh = (comp.hour < 10 ? "0" : "") + comp.hour;
+      var sm = (comp.minute < 10 ? "0" : "") + comp.minute;
+      return {
+        startDate: sDate,
+        endDate: null,
+        displayEndDate: null,
+        isRange: false,
+        hasTime: true,
+        startTime: startTime,
+        endTime: endTime,
+        timeStr: sh + ":" + sm,
+        year: y,
+        month: comp.month,
+        day: comp.day
+      };
+    } else {
+      return {
+        startDate: sDate,
+        endDate: null,
+        displayEndDate: null,
+        isRange: false,
+        hasTime: false,
+        startTime: null,
+        endTime: null,
+        timeStr: "",
+        year: y,
+        month: comp.month,
+        day: comp.day
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 단일 토큰에서 날짜 및 시간 분해 파싱
+ * 반환값: { year, month, day, hour, minute, hasTime }
+ */
+function parseDateTimeComponents(val) {
+  if (!val) return null;
+
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    var hasT = (val.getHours() !== 0 || val.getMinutes() !== 0);
     return {
-      startDate: d,
-      endDate: null,
-      displayEndDate: null,
-      isRange: false,
-      year: d.getFullYear(),
-      month: d.getMonth() + 1,
-      day: d.getDate()
+      year: val.getFullYear(),
+      month: val.getMonth() + 1,
+      day: val.getDate(),
+      hour: val.getHours(),
+      minute: val.getMinutes(),
+      hasTime: hasT
     };
   }
 
   var str = String(val).trim();
   if (!str) return null;
 
-  // 기간 날짜 구분자 감지: "Oct 21 → Oct 22", "10/21 ~ 10/22", "26.10.21 - 26.10.22"
-  var separatorRegex = /\s*(?:→|~|\s-\s|\s~|\.\.\.)\s*/;
-  if (separatorRegex.test(str)) {
-    var parts = str.split(separatorRegex);
-    if (parts.length >= 2) {
-      var p1 = parseDateComponents(parts[0].trim());
-      var p2 = parseDateComponents(parts[1].trim());
-      if (p1 && p2) {
-        var startYear = p1.year || p2.year || 2026;
-        var endYear = p2.year || p1.year || startYear;
-        var sDate = new Date(startYear, p1.month - 1, p1.day);
-        // 구글 캘린더 종일 일정의 종료일은 exclusive이므로 +1일
-        var eDate = new Date(endYear, p2.month - 1, p2.day + 1);
-        var dispEnd = new Date(endYear, p2.month - 1, p2.day);
-        return {
-          startDate: sDate,
-          endDate: eDate,
-          displayEndDate: dispEnd,
-          isRange: true,
-          year: startYear,
-          month: p1.month,
-          day: p1.day
-        };
-      }
+  var hour = null;
+  var minute = null;
+  var hasTime = false;
+
+  // 1. 시간 패턴 추출 (예: "15:00", " 15:00", "T15:00")
+  var timeRegex = /(?:^|\s|[T])(\d{1,2}):(\d{2})(?::(\d{2}))?/;
+  var timeMatch = str.match(timeRegex);
+  if (timeMatch) {
+    var h = parseInt(timeMatch[1], 10);
+    var min = parseInt(timeMatch[2], 10);
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+      hour = h;
+      minute = min;
+      hasTime = true;
+      str = str.replace(timeRegex, " ").trim();
     }
   }
 
-  // 단일 날짜 파싱
-  var comp = parseDateComponents(str);
-  if (comp) {
-    var y = comp.year || 2026;
-    var sDate = new Date(y, comp.month - 1, comp.day);
+  // 시간이 추출되고 남은 문자열이 비어있으면 (예: "17:00")
+  if (!str && hasTime) {
     return {
-      startDate: sDate,
-      endDate: null,
-      displayEndDate: null,
-      isRange: false,
-      year: y,
-      month: comp.month,
-      day: comp.day
+      year: null,
+      month: null,
+      day: null,
+      hour: hour,
+      minute: minute,
+      hasTime: true
+    };
+  }
+
+  // 2. 날짜 파싱
+  var dateComp = parseDateComponents(str);
+  if (dateComp) {
+    return {
+      year: dateComp.year,
+      month: dateComp.month,
+      day: dateComp.day,
+      hour: hour,
+      minute: minute,
+      hasTime: hasTime
+    };
+  }
+
+  if (hasTime) {
+    return {
+      year: null,
+      month: null,
+      day: null,
+      hour: hour,
+      minute: minute,
+      hasTime: true
     };
   }
 
