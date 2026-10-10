@@ -297,6 +297,95 @@ assertTest('createOrUpdateUsageGuideSheet 런타임 실행: 사용가이드 시�
 const isSiteSheetFn = sandbox.isSiteScheduleSheet;
 assertTest('isSiteScheduleSheet 판별: 사용가이드 시트는 현장데이터 시트에서 완전 배제', isSiteSheetFn(mockGuideSheet) === false);
 
+console.log('\n🔍 [Step 3.7: 구성원 시트 연동 및 다중 수신자 모닝 브리핑 엔진 런타임 검증]');
+
+function createMockMembersSheet(name, headerRow, dataRows) {
+  const fullGrid = [headerRow, ...dataRows];
+  return {
+    getName: () => name,
+    getSheetId: () => Math.floor(Math.random() * 100000) + 1000,
+    getLastRow: () => fullGrid.length,
+    getLastColumn: () => (headerRow ? headerRow.length : 0),
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => {
+        const slice = [];
+        for (let rowIdx = r - 1; rowIdx < r - 1 + nr && rowIdx < fullGrid.length; rowIdx++) {
+          const rowData = fullGrid[rowIdx] || [];
+          slice.push(rowData.slice(c - 1, c - 1 + nc));
+        }
+        return slice;
+      }
+    })
+  };
+}
+
+const mockMemberHeaders = ['이름', '직책', '이메일', '연락처', '모닝 브리핑 수신'];
+const mockMemberData = [
+  ['홍길동', '현장소장', 'hong@woosung.com', '010-1111-2222', true],
+  ['김철수', '공무과장', 'kim@woosung.com', '010-3333-4444', false],
+  ['이영희', '인테리어실장', 'lee@woosung.com', '010-5555-6666', 'TRUE'],
+  ['박대리', '설계대리', 'not-an-email', '010-7777-8888', true],
+  ['최주임', '현장주임', 'hong@woosung.com', '010-9999-0000', true] // 중복 이메일
+];
+
+const mockMemberSheet = createMockMembersSheet('구성원', mockMemberHeaders, mockMemberData);
+const extractedEmails = sandbox.extractMemberBriefingEmails(mockMemberSheet);
+
+assertTest('구성원 시트 이메일 추출: 체크된 인원만 추출 (true, "TRUE")', extractedEmails.indexOf('hong@woosung.com') !== -1 && extractedEmails.indexOf('lee@woosung.com') !== -1);
+assertTest('구성원 시트 이메일 추출: 체크 해제된 인원(false) 제외', extractedEmails.indexOf('kim@woosung.com') === -1);
+assertTest('구성원 시트 이메일 추출: 유효하지 않은 이메일 형식 필터링', extractedEmails.indexOf('not-an-email') === -1);
+assertTest('구성원 시트 이메일 추출: 중복 이메일 자동 제거 (Deduplication)', extractedEmails.filter(e => e === 'hong@woosung.com').length === 1);
+assertTest('구성원 시트 이메일 추출: 최종 수신자 수 일치 (2명)', extractedEmails.length === 2);
+
+// 체크박스 열이 없는 일반 이메일 명단 시트 테스트
+const mockSimpleMemberSheet = createMockMembersSheet('팀원', ['성명', '이메일주소', '연락처'], [
+  ['박팀장', 'park@woosung.com', '010-1234-5678'],
+  ['정소장', 'jung@woosung.com', '010-8765-4321']
+]);
+const extractedSimpleEmails = sandbox.extractMemberBriefingEmails(mockSimpleMemberSheet);
+assertTest('수신 체크박스 열 부재 시: 모든 유효 이메일 자동 추출', extractedSimpleEmails.length === 2 && extractedSimpleEmails.indexOf('park@woosung.com') !== -1 && extractedSimpleEmails.indexOf('jung@woosung.com') !== -1);
+
+// findMembersSheet 탐색 검증
+const mockSsWithMembers = {
+  getSheets: () => [mockGuideSheet, mockMemberSheet]
+};
+const foundMemberSheet = sandbox.findMembersSheet(mockSsWithMembers);
+assertTest('findMembersSheet 탐색: "구성원" 시트 자동 감지', foundMemberSheet !== null && foundMemberSheet.getName() === '구성원');
+
+const mockSsNoMembers = {
+  getSheets: () => [mockGuideSheet]
+};
+assertTest('findMembersSheet 탐색: 구성원 시트 부재 시 null 반환', sandbox.findMembersSheet(mockSsNoMembers) === null);
+
+// getDailyBriefingRecipientEmail 우선순위 3단계 검증
+// 1순위: [구성원] 시트
+const multiEmailResult = sandbox.getDailyBriefingRecipientEmail(mockSsWithMembers);
+assertTest('모닝 브리핑 수신처 1순위: [구성원] 시트 자동 연동 (쉼표 구분)', multiEmailResult === 'hong@woosung.com, lee@woosung.com');
+
+// 2순위: 문서 속성(DAILY_BRIEFING_EMAIL)
+let testDocProp = 'custom-briefing@woosung.com';
+sandbox.PropertiesService = {
+  getDocumentProperties: () => ({
+    getProperty: (k) => (k === 'DAILY_BRIEFING_EMAIL' ? testDocProp : ''),
+    setProperty: (k, v) => { testDocProp = v; },
+    deleteProperty: () => { testDocProp = ''; }
+  })
+};
+const propEmailResult = sandbox.getDailyBriefingRecipientEmail(mockSsNoMembers);
+assertTest('모닝 브리핑 수신처 2순위: 문서 속성(DAILY_BRIEFING_EMAIL) 설정값 연동', propEmailResult === 'custom-briefing@woosung.com');
+
+// 3순위: 로그인된 기본 사용자
+testDocProp = '';
+const defaultEmailResult = sandbox.getDailyBriefingRecipientEmail(mockSsNoMembers);
+assertTest('모닝 브리핑 수신처 3순위: 로그인 계정(qa-tester@woosung.com) 안전 폴백', defaultEmailResult === 'qa-tester@woosung.com');
+
+// [구성원] 시트 캘린더 동기화 오작동 방지 가드 검증
+assertTest('isSiteScheduleSheet 판별: "구성원" 시트는 현장데이터에서 완전 배제', isSiteSheetFn(mockMemberSheet) === false);
+assertTest('isSiteScheduleSheet 판별: "팀원" 시트는 현장데이터에서 완전 배제', isSiteSheetFn(createMockSheet('팀원')) === false);
+assertTest('isSiteScheduleSheet 판별: "조직도" 시트는 현장데이터에서 완전 배제', isSiteSheetFn(createMockSheet('조직도')) === false);
+assertTest('isSiteScheduleSheet 판별: "직원명단" 시트는 현장데이터에서 완전 배제', isSiteSheetFn(createMockSheet('직원명단')) === false);
+assertTest('isSiteScheduleSheet 판별: "Team_List" 시트는 현장데이터에서 완전 배제', isSiteSheetFn(createMockSheet('Team_List')) === false);
+
 console.log('\n🔍 [Step 4: 코드리뷰 정적 보안/안전성 감사]');
 // Rate limit 방어 패턴 검사
 const hasDiffCheck = code.indexOf('curTitle === details.title') !== -1;
@@ -417,6 +506,22 @@ assertTest('새 워크스페이스 구축(setupNewWorkspaceFromScratch) 시 사�
 
 const hasGuideMenu = code.indexOf('"createOrUpdateUsageGuideSheetMenu"') !== -1;
 assertTest('상단 메뉴([🚀 현장 관리]) 내 사용가이드 생성/갱신 메뉴 등록 여부', hasGuideMenu);
+
+// [신규 QA] 구성원 시트 다중 수신자 모닝 브리핑 및 오염 방지 가드 검증
+const hasFindMembersFn = code.indexOf('function findMembersSheet(') !== -1;
+assertTest('구성원 시트 자동 감지 엔진(findMembersSheet) 탑재 여부', hasFindMembersFn);
+
+const hasExtractMemberEmailsFn = code.indexOf('function extractMemberBriefingEmails(') !== -1;
+assertTest('구성원 시트 이메일/수신체크박스 자동 추출 엔진(extractMemberBriefingEmails) 탑재 여부', hasExtractMemberEmailsFn);
+
+const hasMultiRecipientBriefing = code.indexOf('findMembersSheet(ss)') !== -1 && code.indexOf('extractMemberBriefingEmails(memberSheet)') !== -1;
+assertTest('모닝 브리핑 수신처 [구성원] 시트 최우선 연동 로직 탑재 여부', hasMultiRecipientBriefing);
+
+const hasMemberSheetExclusion = code.indexOf('name.indexOf("구성원") !== -1') !== -1 && code.indexOf('name.indexOf("팀원") !== -1') !== -1;
+assertTest('isSiteScheduleSheet 내 구성원/팀원/직원 시트 캘린더 연동 배제 가드 탑재 여부', hasMemberSheetExclusion);
+
+const hasFindSiteMemberGuard = code.indexOf('sName.indexOf("구성원") === -1') !== -1 && code.indexOf('sName.indexOf("팀원") === -1') !== -1;
+assertTest('findSiteScheduleSheet 내 구성원/팀원 시트 오탐지 방지 가드 탑재 여부', hasFindSiteMemberGuard);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);

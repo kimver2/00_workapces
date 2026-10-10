@@ -2531,9 +2531,11 @@ function hasDayOfWeekHeader(sheet) {
  */
 function isSiteScheduleSheet(sheet) {
   if (!sheet) return false;
-  // 사용가이드/매뉴얼 시트는 절대 현장데이터 시트가 아님!
+  // 사용가이드/매뉴얼/구성원 시트는 절대 현장데이터 시트가 아님!
   var name = sheet.getName().toLowerCase();
-  if (name.indexOf("가이드") !== -1 || name.indexOf("guide") !== -1 || name.indexOf("매뉴얼") !== -1 || name.indexOf("manual") !== -1) {
+  if (name.indexOf("가이드") !== -1 || name.indexOf("guide") !== -1 || name.indexOf("매뉴얼") !== -1 || name.indexOf("manual") !== -1 ||
+      name.indexOf("구성원") !== -1 || name.indexOf("팀원") !== -1 || name.indexOf("직원") !== -1 || name.indexOf("조직도") !== -1 ||
+      name.indexOf("member") !== -1 || name.indexOf("team") !== -1) {
     return false;
   }
   // 요일 헤더('일, 월, 화...')가 있는 시트는 대시보드이므로 절대 현장데이터 시트가 아님!
@@ -2596,11 +2598,13 @@ function findSiteScheduleSheet(ss) {
     if (isSiteScheduleSheet(sheets[i])) return sheets[i];
   }
 
-  // 2순위: 대시보드나 가이드가 아닌 시트 중 첫 번째
+  // 2순위: 대시보드나 가이드/구성원이 아닌 시트 중 첫 번째
   var dash = findDashboardSheet(ss);
   for (var k = 0; k < sheets.length; k++) {
     var sName = sheets[k].getName().toLowerCase();
-    if (sName.indexOf("가이드") === -1 && sName.indexOf("guide") === -1 && sName.indexOf("매뉴얼") === -1 && sName.indexOf("manual") === -1) {
+    if (sName.indexOf("가이드") === -1 && sName.indexOf("guide") === -1 && sName.indexOf("매뉴얼") === -1 && sName.indexOf("manual") === -1 &&
+        sName.indexOf("구성원") === -1 && sName.indexOf("팀원") === -1 && sName.indexOf("직원") === -1 && sName.indexOf("조직도") === -1 &&
+        sName.indexOf("member") === -1 && sName.indexOf("team") === -1) {
       if (!dash || sheets[k].getSheetId() !== dash.getSheetId()) {
         if (!hasDayOfWeekHeader(sheets[k])) {
           return sheets[k];
@@ -3188,14 +3192,109 @@ function checkAndHighlightDelayedSchedules() {
 }
 
 /**
- * 모닝 브리핑 수신 이메일 가져오기 (문서 속성 또는 현재 사용자)
+ * [구성원] (또는 팀원/직원/조직도) 시트 찾기
  */
-function getDailyBriefingRecipientEmail() {
+function findMembersSheet(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) return null;
+  var sheets = ss.getSheets();
+  var candidateNames = ["구성원", "팀원", "직원", "조직도", "members", "team", "member"];
+  for (var i = 0; i < sheets.length; i++) {
+    var sName = sheets[i].getName().trim().toLowerCase();
+    for (var c = 0; c < candidateNames.length; c++) {
+      if (sName === candidateNames[c] || sName.indexOf(candidateNames[c]) !== -1) {
+        return sheets[i];
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * [구성원] 시트에서 모닝 브리핑 수신 대상 이메일 목록 추출
+ */
+function extractMemberBriefingEmails(sheet) {
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+
+  // 1~3행 헤더 탐색
+  var headerRows = Math.min(lastRow, 3);
+  var headerVals = sheet.getRange(1, 1, headerRows, lastCol).getValues();
+  var emailColIdx = -1;
+  var receiveColIdx = -1;
+  var startDataRow = 2;
+
+  for (var r = 0; r < headerRows; r++) {
+    for (var c = 0; c < lastCol; c++) {
+      var hStr = String(headerVals[r][c] || "").trim().toLowerCase();
+      if (emailColIdx === -1 && (hStr.indexOf("이메일") !== -1 || hStr.indexOf("email") !== -1 || hStr.indexOf("메일") !== -1)) {
+        emailColIdx = c;
+        startDataRow = Math.max(startDataRow, r + 2);
+      }
+      if (receiveColIdx === -1 && (hStr.indexOf("수신") !== -1 || hStr.indexOf("브리핑") !== -1 || hStr.indexOf("발송") !== -1 || hStr.indexOf("receive") !== -1)) {
+        receiveColIdx = c;
+        startDataRow = Math.max(startDataRow, r + 2);
+      }
+    }
+  }
+
+  if (emailColIdx === -1) return [];
+  if (lastRow < startDataRow) return [];
+
+  var data = sheet.getRange(startDataRow, 1, lastRow - startDataRow + 1, lastCol).getValues();
+  var resultEmails = [];
+  var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  for (var i = 0; i < data.length; i++) {
+    var rowVals = data[i];
+    var rawEmail = String(rowVals[emailColIdx] || "").trim();
+    if (!rawEmail || !emailRegex.test(rawEmail)) continue;
+
+    // 수신 여부 체크박스 열이 있다면 확인
+    if (receiveColIdx !== -1) {
+      var recvVal = rowVals[receiveColIdx];
+      var isChecked = (recvVal === true || String(recvVal).trim().toUpperCase() === "TRUE" || String(recvVal).trim() === "1" || String(recvVal).trim() === "V" || String(recvVal).trim() === "O");
+      if (!isChecked) continue; // 체크 안 된 인원은 제외
+    }
+
+    if (resultEmails.indexOf(rawEmail) === -1) {
+      resultEmails.push(rawEmail);
+    }
+  }
+
+  return resultEmails;
+}
+
+/**
+ * 모닝 브리핑 수신 이메일 가져오기
+ * 1순위: [구성원] 시트에서 수신 체크된 이메일 자동 추출
+ * 2순위: 문서 속성(DAILY_BRIEFING_EMAIL)에 설정된 이메일
+ * 3순위: 로그인된 사용자 계정 이메일
+ */
+function getDailyBriefingRecipientEmail(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1순위: [구성원] 시트 자동 탐색
+  if (ss) {
+    var memberSheet = findMembersSheet(ss);
+    if (memberSheet && memberSheet.getLastRow() >= 2) {
+      var memberEmails = extractMemberBriefingEmails(memberSheet);
+      if (memberEmails && memberEmails.length > 0) {
+        return memberEmails.join(", ");
+      }
+    }
+  }
+
+  // 2순위: 문서 속성 설정값
   var docProps = PropertiesService.getDocumentProperties();
   var savedEmail = docProps.getProperty("DAILY_BRIEFING_EMAIL");
   if (savedEmail && savedEmail.trim()) {
     return savedEmail.trim();
   }
+
+  // 3순위: 기본 사용자 계정
   var userEmail = "";
   try {
     userEmail = Session.getEffectiveUser().getEmail();
@@ -3213,10 +3312,19 @@ function getDailyBriefingRecipientEmail() {
  */
 function configureBriefingEmail() {
   var ui = SpreadsheetApp.getUi();
-  var currentEmail = getDailyBriefingRecipientEmail();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var memberSheet = findMembersSheet(ss);
+  var memberEmails = (memberSheet ? extractMemberBriefingEmails(memberSheet) : []);
+  var currentEmail = getDailyBriefingRecipientEmail(ss);
+
+  var infoNotice = "";
+  if (memberEmails.length > 0) {
+    infoNotice = "\n\n💡 현재 ['" + memberSheet.getName() + "'] 시트에서 " + memberEmails.length + "명의 수신 이메일이 자동 연동되고 있습니다.";
+  }
+
   var prompt = ui.prompt(
     "📧 모닝 브리핑 수신 이메일 설정",
-    "매일 아침 8시 현장 공정 브리핑을 수신할 이메일 주소를 입력하세요.\n(여러 명인 경우 쉼표로 구분, 비워두면 로그인된 본인 계정 사용)\n\n현재 수신처: " + (currentEmail || "(미설정)"),
+    "매일 아침 8시 현장 공정 브리핑을 수신할 이메일 주소를 입력하세요.\n(여러 명인 경우 쉼표로 구분, [구성원] 시트가 있으면 해당 시트가 최우선 적용됩니다.)\n\n현재 수신처: " + (currentEmail || "(미설정)") + infoNotice,
     ui.ButtonSet.OK_CANCEL
   );
 
@@ -3227,7 +3335,7 @@ function configureBriefingEmail() {
       ui.alert("✅ 수신 이메일이 [" + newEmail + "](으)로 설정되었습니다.");
     } else {
       PropertiesService.getDocumentProperties().deleteProperty("DAILY_BRIEFING_EMAIL");
-      ui.alert("✅ 기본 이메일 계정(" + getDailyBriefingRecipientEmail() + ")으로 재설정되었습니다.");
+      ui.alert("✅ 기본 이메일 계정으로 재설정되었습니다.");
     }
   }
 }
@@ -3306,7 +3414,7 @@ function sendDailySiteMorningBriefing(isManualTest) {
     return;
   }
 
-  var recipient = getDailyBriefingRecipientEmail();
+  var recipient = getDailyBriefingRecipientEmail(ss);
   if (!recipient) {
     if (isManualTest) {
       SpreadsheetApp.getUi().alert("수신자 이메일 주소를 확인할 수 없습니다. [📧 모닝 브리핑 수신 이메일 변경] 메뉴에서 설정해주세요.");
