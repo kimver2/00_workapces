@@ -3553,29 +3553,29 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
   html += '<html><head><meta charset="utf-8">';
   html += '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
   html += '<style>';
-  html += 'body { margin: 0; padding: 20px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1e293b; }';
-  html += '.container { max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }';
-  html += '.header { background: #1e293b; color: #ffffff; padding: 24px 28px; text-align: left; }';
-  html += '.header h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }';
+  html += 'body { margin: 0; padding: 24px 16px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1e293b; }';
+  html += '.container { max-width: 880px; width: 100%; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }';
+  html += '.header { background: #1e293b; color: #ffffff; padding: 26px 32px; text-align: left; }';
+  html += '.header h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }';
   html += '.header p { margin: 6px 0 0 0; font-size: 13px; color: #94a3b8; }';
-  html += '.section { padding: 20px 24px; }';
-  html += '.section-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }';
-  html += '.task-table { width: 100%; border-collapse: collapse; font-size: 13px; }';
-  html += '.task-table th { background: #f8fafc; color: #475569; font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; }';
-  html += '.task-table td { padding: 11px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }';
-  html += '.badge { display: inline-block; padding: 3px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; }';
+  html += '.section { padding: 24px 32px; }';
+  html += '.section-title { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 14px; }';
+  html += '.task-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }';
+  html += '.task-table th { background: #f8fafc; color: #475569; font-weight: 600; text-align: left; padding: 11px 12px; border-bottom: 1px solid #e2e8f0; }';
+  html += '.task-table td { padding: 12px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }';
+  html += '.badge { display: inline-block; padding: 3px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; white-space: nowrap; }';
   html += '.badge-prog { background: #dbeafe; color: #1e40af; }';
   html += '.badge-done { background: #dcfce7; color: #15803d; }';
   html += '.badge-delay { background: #fee2e2; color: #b91c1c; }';
   html += '.badge-plan { background: #fef3c7; color: #92400e; }';
   html += '.badge-as { background: #fee2e2; color: #991b1b; }';
-  html += '.btn-container { text-align: center; padding: 20px 28px; background: #f8fafc; border-top: 1px solid #e2e8f0; }';
-  html += '.btn { display: inline-block; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none; margin: 4px; }';
-  html += '.btn-primary { background: #2563eb; color: #ffffff; }';
-  html += '.btn-secondary { background: #ffffff; color: #334155; border: 1px solid #cbd5e1; }';
-  html += '.footer { padding: 16px 28px; text-align: center; font-size: 11px; color: #94a3b8; }';
+  html += '.btn-container { text-align: center; padding: 24px 32px; background: #f8fafc; border-top: 1px solid #e2e8f0; }';
+  html += '.btn { display: inline-block; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none !important; margin: 6px; }';
+  html += '.btn-primary { background-color: #1d4ed8 !important; color: #ffffff !important; border: 1px solid #1e40af; }';
+  html += '.btn-secondary { background-color: #ffffff !important; color: #0f172a !important; border: 1px solid #cbd5e1; }';
+  html += '.footer { padding: 18px 32px; text-align: center; font-size: 11px; color: #94a3b8; }';
   html += '</style></head><body>';
-  html += '<div class="container">';
+  html += '<div class="container" style="max-width:880px;width:100%;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.06);border:1px solid #e2e8f0;">';
 
   // Header
   html += '<div class="header">';
@@ -3611,17 +3611,17 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
     html += '  <div style="background:#fff1f2;border:1px solid #fda4af;border-radius:8px;padding:16px;">';
     html += '    <div style="font-size:14px;font-weight:700;color:#be123c;margin-bottom:8px;">⚠️ 긴급 확인 필요: 공정 지연 현장 (' + delayedCount + '건)</div>';
     html += '    <div style="font-size:12px;color:#9f1239;margin-bottom:12px;">마감 예정일이 지났으나 미완료 상태인 공정입니다. 현장 확인 및 일정 조정이 필요합니다.</div>';
-    html += '    <table class="task-table">';
-    html += '      <thead><tr><th>현장명</th><th>공종</th><th>예정 마감일</th><th>담당자</th><th>비고</th></tr></thead>';
+    html += '    <table class="task-table" style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">';
+    html += '      <thead><tr><th style="width:18%;">현장명</th><th style="width:20%;">공종</th><th style="width:14%;">예정 마감일</th><th style="width:14%;">담당자</th><th style="width:34%;">비고</th></tr></thead>';
     html += '      <tbody>';
     for (var k = 0; k < delayedTasks.length; k++) {
       var it = delayedTasks[k];
       html += '      <tr>';
-      html += '        <td style="font-weight:700;color:#0f172a;">[' + it.siteName + ']</td>';
-      html += '        <td>' + it.taskName + '</td>';
-      html += '        <td style="color:#e11d48;font-weight:600;">' + it.dateStr + '</td>';
+      html += '        <td style="font-weight:700;color:#0f172a;word-break:break-word;">[' + it.siteName + ']</td>';
+      html += '        <td style="word-break:break-word;">' + it.taskName + '</td>';
+      html += '        <td style="color:#e11d48;font-weight:600;white-space:nowrap;">' + it.dateStr + '</td>';
       html += '        <td>' + (it.manager || '-') + '</td>';
-      html += '        <td style="color:#64748b;">' + (it.memo || '-') + '</td>';
+      html += '        <td style="color:#334155;word-break:break-word;overflow-wrap:break-word;line-height:1.45;font-size:12.5px;">' + (it.memo || '-') + '</td>';
       html += '      </tr>';
     }
     html += '      </tbody>';
@@ -3638,8 +3638,8 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
     html += '    오늘 예정된 현장 공정이 없습니다. 평온하고 안전한 하루 되세요! ☕';
     html += '  </div>';
   } else {
-    html += '  <table class="task-table">';
-    html += '    <thead><tr><th>현장명</th><th>공종</th><th>상태</th><th>담당/협력</th><th>비고</th></tr></thead>';
+    html += '  <table class="task-table" style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">';
+    html += '    <thead><tr><th style="width:18%;">현장명</th><th style="width:20%;">공종</th><th style="width:12%;text-align:center;">상태</th><th style="width:16%;">담당/협력</th><th style="width:34%;">비고</th></tr></thead>';
     html += '    <tbody>';
     for (var m = 0; m < todayTasks.length; m++) {
       var item = todayTasks[m];
@@ -3653,11 +3653,11 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
       if (item.partner) managerInfo += (managerInfo ? ' / ' : '') + item.partner;
 
       html += '    <tr>';
-      html += '      <td style="font-weight:700;color:#0f172a;">[' + item.siteName + ']</td>';
-      html += '      <td><b>' + item.taskName + '</b><br><span style="font-size:11px;color:#64748b;">' + item.dateStr + '</span></td>';
-      html += '      <td><span class="badge ' + badgeClass + '">' + item.status + '</span></td>';
-      html += '      <td>' + (managerInfo || '-') + '</td>';
-      html += '      <td style="color:#64748b;">' + (item.memo || '-') + '</td>';
+      html += '      <td style="font-weight:700;color:#0f172a;word-break:break-word;">[' + item.siteName + ']</td>';
+      html += '      <td style="word-break:break-word;"><b>' + item.taskName + '</b><br><span style="font-size:11px;color:#64748b;">' + item.dateStr + '</span></td>';
+      html += '      <td style="text-align:center;"><span class="badge ' + badgeClass + '">' + item.status + '</span></td>';
+      html += '      <td style="word-break:break-word;">' + (managerInfo || '-') + '</td>';
+      html += '      <td style="color:#334155;word-break:break-word;overflow-wrap:break-word;line-height:1.45;font-size:12.5px;">' + (item.memo || '-') + '</td>';
       html += '    </tr>';
     }
     html += '    </tbody>';
@@ -3666,12 +3666,12 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
   html += '</div>';
 
   // Quick Action Buttons
-  html += '<div class="btn-container">';
+  html += '<div class="btn-container" style="text-align:center;padding:24px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">';
   if (sheetUrl) {
-    html += '  <a href="' + sheetUrl + '" class="btn btn-primary" target="_blank">📊 스프레드시트 전체 보기</a>';
+    html += '  <a href="' + sheetUrl + '" class="btn btn-primary" target="_blank" style="display:inline-block;background-color:#1d4ed8;color:#ffffff !important;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none !important;margin:6px;box-shadow:0 2px 6px rgba(29,78,216,0.25);border:1px solid #1e40af;"><span style="color:#ffffff !important;text-decoration:none !important;font-weight:700;font-size:14px;">📊 스프레드시트 전체 보기</span></a>';
   }
   if (webAppUrl) {
-    html += '  <a href="' + webAppUrl + '" class="btn btn-secondary" target="_blank">📱 모바일 빠른 관리</a>';
+    html += '  <a href="' + webAppUrl + '" class="btn btn-secondary" target="_blank" style="display:inline-block;background-color:#ffffff;color:#0f172a !important;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none !important;margin:6px;border:1px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,0.05);"><span style="color:#0f172a !important;text-decoration:none !important;font-weight:700;font-size:14px;">📱 모바일 빠른 관리</span></a>';
   }
   html += '</div>';
 
