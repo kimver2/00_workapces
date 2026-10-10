@@ -173,6 +173,7 @@ function handleCalendarEditTrigger(e) {
   // A~H열(1~8열: 현장, 날짜, 공종, 협력업체, 체크박스, 비고, 담당자, 진행상태) 수정 시
   if (col >= 1 && col <= 8) {
     try {
+      SpreadsheetApp.flush(); // 방금 입력된 셀 값 메모리 즉시 동기화
       ensureCalendarSyncColumns(sheet);
 
       var now = new Date();
@@ -768,7 +769,21 @@ function syncSingleRowToCalendar(sheet, row) {
       return;
     }
 
-    // 시트가 더 최근에 수정된 경우 -> 캘린더 이벤트 속성 업데이트
+    // 시트가 더 최근에 수정된 경우:
+    // [핵심 해결책] 종일 일정 <-> 시간 일정 간 유형 전환 처리!
+    var isCalAllDay = event.isAllDayEvent();
+    var needTime = details.parsedDate.hasTime;
+
+    if (isCalAllDay !== !needTime) {
+      try {
+        event.deleteEvent();
+      } catch (e) {}
+      event = null; // 신규 생성 분기로 전달
+    }
+  }
+
+  if (event) {
+    // 동일한 유형 내에서의 속성 업데이트
     event.setTitle(details.title);
     event.setDescription(details.description);
     event.setLocation(details.siteName);
@@ -783,7 +798,7 @@ function syncSingleRowToCalendar(sheet, row) {
     }
     sheet.getRange(row, 10).setValue(Date.now());
   } else {
-    // 3) 기존 ID가 없거나 유효하지 않은 경우 -> 새 이벤트 생성
+    // 3) 신규 생성 (또는 종일<->시간 유형 전환으로 인한 재생성)
     var opt = {
       description: details.description,
       location: details.siteName
@@ -803,6 +818,10 @@ function syncSingleRowToCalendar(sheet, row) {
       sheet.getRange(row, 10).setValue(Date.now());
     }
   }
+
+  // 실시간 수정 즉시 대시보드 달력까지 연쇄 갱신
+  var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
+  refreshDashboardCalendar(ss);
 
   ensureCalendarSyncColumns(sheet);
 }
@@ -931,56 +950,66 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
 
     if (event) {
       try {
-        // [구글 한도 절약 1단계: 스마트 변경 감지 (Smart Diff Check)]
-        var curTitle = event.getTitle();
-        var curDesc = event.getDescription();
-        var curLoc = event.getLocation();
         var isAllDay = event.isAllDayEvent();
-        var calStart = isAllDay ? event.getAllDayStartDate() : event.getStartTime();
-        var calEnd = isAllDay ? event.getAllDayEndDate() : event.getEndTime();
+        var needTime = details.parsedDate.hasTime;
 
-        var dateMatches = false;
-        if (details.parsedDate.hasTime) {
-          if (!isAllDay && calStart && calEnd) {
-            dateMatches = (calStart.getTime() === details.parsedDate.startTime.getTime() &&
-                           calEnd.getTime() === details.parsedDate.endTime.getTime());
-          }
+        // [종일 <-> 시간 유형 전환 처리]
+        if (isAllDay !== !needTime) {
+          try {
+            event.deleteEvent();
+          } catch(e) {}
+          event = null;
         } else {
-          if (isAllDay && calStart) {
-            if (details.parsedDate.isRange) {
-              dateMatches = isDateEqual(calStart, details.parsedDate.startDate) && isDateEqual(calEnd, details.parsedDate.endDate);
-            } else {
-              dateMatches = isDateEqual(calStart, details.parsedDate.startDate);
-            }
-          }
-        }
+          // [구글 한도 절약 1단계: 스마트 변경 감지 (Smart Diff Check)]
+          var curTitle = event.getTitle();
+          var curDesc = event.getDescription();
+          var curLoc = event.getLocation();
+          var calStart = isAllDay ? event.getAllDayStartDate() : event.getStartTime();
+          var calEnd = isAllDay ? event.getAllDayEndDate() : event.getEndTime();
 
-        // 이미 캘린더와 시트 내용이 100% 동일한 경우 -> 구글 서버 호출 0회 패스!
-        if (curTitle === details.title && curDesc === details.description && curLoc === details.siteName && dateMatches) {
-          skippedCount++;
-          continue;
-        }
-
-        // [구글 한도 절약 2단계: 실제 변경된 속성만 최소 호출]
-        if (curTitle !== details.title) event.setTitle(details.title);
-        if (curDesc !== details.description) event.setDescription(details.description);
-        if (curLoc !== details.siteName) event.setLocation(details.siteName);
-        if (!dateMatches) {
+          var dateMatches = false;
           if (details.parsedDate.hasTime) {
-            event.setTime(details.parsedDate.startTime, details.parsedDate.endTime);
+            if (!isAllDay && calStart && calEnd) {
+              dateMatches = (calStart.getTime() === details.parsedDate.startTime.getTime() &&
+                             calEnd.getTime() === details.parsedDate.endTime.getTime());
+            }
           } else {
-            if (details.parsedDate.isRange) {
-              event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
-            } else {
-              event.setAllDayDate(details.parsedDate.startDate);
+            if (isAllDay && calStart) {
+              if (details.parsedDate.isRange) {
+                dateMatches = isDateEqual(calStart, details.parsedDate.startDate) && isDateEqual(calEnd, details.parsedDate.endDate);
+              } else {
+                dateMatches = isDateEqual(calStart, details.parsedDate.startDate);
+              }
             }
           }
-        }
 
-        sheet.getRange(row, 10).setValue(nowMs);
-        updatedCount++;
-        // 갱신 시에도 초당 호출 제한 방지 딜레이 (0.35초)
-        Utilities.sleep(350);
+          // 이미 캘린더와 시트 내용이 100% 동일한 경우 -> 구글 서버 호출 0회 패스!
+          if (curTitle === details.title && curDesc === details.description && curLoc === details.siteName && dateMatches) {
+            skippedCount++;
+            continue;
+          }
+
+          // [구글 한도 절약 2단계: 실제 변경된 속성만 최소 호출]
+          if (curTitle !== details.title) event.setTitle(details.title);
+          if (curDesc !== details.description) event.setDescription(details.description);
+          if (curLoc !== details.siteName) event.setLocation(details.siteName);
+          if (!dateMatches) {
+            if (details.parsedDate.hasTime) {
+              event.setTime(details.parsedDate.startTime, details.parsedDate.endTime);
+            } else {
+              if (details.parsedDate.isRange) {
+                event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
+              } else {
+                event.setAllDayDate(details.parsedDate.startDate);
+              }
+            }
+          }
+
+          sheet.getRange(row, 10).setValue(nowMs);
+          updatedCount++;
+          // 갱신 시에도 초당 호출 제한 방지 딜레이 (0.35초)
+          Utilities.sleep(350);
+        }
       } catch (err) {
         var errMsg = String(err);
         if (errMsg.indexOf("짧은 시간") !== -1 || errMsg.indexOf("too many") !== -1 || errMsg.indexOf("Rate limit") !== -1 || errMsg.indexOf("quota") !== -1 || errMsg.indexOf("exhausted") !== -1) {
@@ -988,7 +1017,9 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
           break;
         }
       }
-    } else {
+    }
+
+    if (!event) {
       try {
         var opt = { description: details.description, location: details.siteName };
         if (details.parsedDate.hasTime) {

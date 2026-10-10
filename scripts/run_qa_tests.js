@@ -115,6 +115,16 @@ assertTest('신규+수정 통합 25건 안전 분할 배치 제한 존재 여부
 const hasNoVolatileRow = code.indexOf('스프레드시트 연동 (Row:') === -1;
 assertTest('가변 행 번호(Row: XX) 완전 제거 여부', hasNoVolatileRow);
 
+// 종일<->시간 전환 및 셀 즉시 반영 검사
+const hasTypeTransition = code.indexOf('isCalAllDay !== !needTime') !== -1;
+assertTest('종일<->시간 유형 전환 시 안전 재생성(delete & recreate) 로직 존재 여부', hasTypeTransition);
+
+const hasFlushInTrigger = code.indexOf('SpreadsheetApp.flush()') !== -1;
+assertTest('셀 수정 즉시 커밋용 SpreadsheetApp.flush() 호출 존재 여부', hasFlushInTrigger);
+
+const hasDashRefreshInSync = code.indexOf('refreshDashboardCalendar(ss)') !== -1;
+assertTest('단일 행 수정 직후 대시보드 실시간 연쇄 갱신 호출 존재 여부', hasDashRefreshInSync);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
