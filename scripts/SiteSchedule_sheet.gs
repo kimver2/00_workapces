@@ -490,7 +490,7 @@ function onOpen() {
       .addItem("⏰ 캘린더 ➔ 시트 5분 주기 자동 동기화 켜기", "enableCalendarToSheet5MinSync")
       .addItem("⏹️ 캘린더 ➔ 시트 자동 동기화 끄기", "disableCalendarToSheetAutoSync")
       .addSeparator()
-      .addItem("📦 전체 일정 순차 동기화 (과거 포함 25건씩 분할)", "syncAllSiteSchedulesToGoogleCalendar")
+      .addItem("📦 전체 일정 연속 동기화 (25건씩 자동 대기 연속 처리)", "syncAllSiteSchedulesToGoogleCalendar")
     )
 
     // [서브메뉴 3: 현장 데이터 편집 / 보기 편의 기능]
@@ -1497,7 +1497,7 @@ function syncRecentSiteSchedulesToGoogleCalendar() {
 }
 
 /**
- * 전체 일정 순차 동기화 (25건씩 안전 분할)
+ * 전체 일정 연속 동기화 (25건씩 자동 대기 연속 처리)
  */
 function syncAllSiteSchedulesToGoogleCalendar() {
   syncSiteSchedulesBatchSafe(false);
@@ -1505,6 +1505,7 @@ function syncAllSiteSchedulesToGoogleCalendar() {
 
 /**
  * 구글 Rate Limit(속도 제한) 방지 안전 배치 동기화 엔진
+ * (25건 처리 시마다 2초 자동 대기 후 연속 실행 + 4분 30초 안전 타임아웃 가드)
  */
 function syncSiteSchedulesBatchSafe(onlyRecent) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1536,6 +1537,8 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   var syncedCount = 0;
   var updatedCount = 0;
   var skippedCount = 0;
+  var batchChangeCount = 0; // 이번 배치(25건) 변경 건수 카운터
+  var batchNum = 1;         // 배치 차수
   var rateLimitHit = false;
   var timeLimitReached = false;
   var startTime = Date.now();
@@ -1580,19 +1583,25 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   }
 
   for (var idx = 0; idx < targetIndices.length; idx++) {
-    // 1) 1회 신규 생성 및 수정 합계 25건 제한 (구글 서버 버스트 한도 원천 차단)
-    if ((syncedCount + updatedCount) >= 25) {
-      break;
+    // 1) [25건 단위 자동 쿨다운 & 연속 배치 실행]
+    // 25건 생성/수정 완료 시마다 구글 API 버스트 쿼터 보호를 위해 2초 대기 후 자동으로 다음 25건을 계속 진행합니다.
+    if (batchChangeCount >= 25) {
+      SpreadsheetApp.flush();
+      try {
+        ss.toast(
+          "🔄 배치 " + batchNum + "차 완료 (" + (syncedCount + updatedCount) + "건 처리됨) - API 보호 2초 대기 후 자동으로 계속 동기화합니다...",
+          "구글 캘린더 동기화",
+          4
+        );
+      } catch(e) {}
+      Utilities.sleep(2000);
+      batchChangeCount = 0;
+      batchNum++;
     }
 
-    // 2) [핵심 방어: 6분 타임아웃 원천 차단] 스크립트 실행 시간이 2분(120초) 초과 시 안전 조기 종료
-    if (Date.now() - startTime > 120000) {
+    // 2) [핵심 방어: 구글 6분 타임아웃 원천 차단] 스크립트 실행 시간이 4분 30초(270초) 초과 시 안전 조기 종료
+    if (Date.now() - startTime > 270000) {
       timeLimitReached = true;
-      break;
-    }
-
-    // 3) 총 검사 행 수가 30건 도달 시 무조건 안전 분할 탈출 (불필요한 구글 원격 API 과다 호출 차단)
-    if (idx >= 30) {
       break;
     }
 
@@ -1700,6 +1709,7 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
 
           sheet.getRange(row, 10).setValue(nowMs);
           updatedCount++;
+          batchChangeCount++;
           // 갱신 시에도 초당 호출 제한 방지 딜레이 (0.35초)
           Utilities.sleep(350);
         }
@@ -1731,6 +1741,7 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
           sheet.getRange(row, 9).setValue(event.getId());
           sheet.getRange(row, 10).setValue(nowMs);
           syncedCount++;
+          batchChangeCount++;
           // 구글 Rate Limit 방지용 딜레이 (0.35초)
           Utilities.sleep(350);
         }
@@ -1764,24 +1775,26 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       "구글 정책상 약 10~15분 후 다시 실행하시면 남은 일정이 이어서 안전하게 등록됩니다.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
-  } else if ((syncedCount + updatedCount) >= 25 || timeLimitReached) {
+  } else if (timeLimitReached) {
     SpreadsheetApp.getUi().alert(
-      "📦 안전 분할 동기화 완료 (1차 안전 처리)",
-      "구글 서버 Rate Limit 및 실행 시간 초과를 방지하기 위해 안전하게 분할 처리되었습니다!\n\n" +
+      "⏱️ 실행 시간 안전 일시 정지 (4분 30초 가드)",
+      "구글 스크립트 6분 강제 종료를 방지하기 위해 안전 시간(4분 30초)에 도달하여 일시 정지되었습니다.\n\n" +
       "- 신규 등록: " + syncedCount + "건\n" +
       "- 갱신 완료: " + updatedCount + "건\n" +
       (skippedCount > 0 ? "- 변경 없음(자동 통과): " + skippedCount + "건\n\n" : "\n") +
-      "남은 미동기화 일정이 있다면 메뉴에서 다시 실행하시면 다음 일정이 이어서 순차 등록됩니다.",
+      "남은 일정이 있다면 메뉴에서 한 번 더 실행하시면 다음 일정이 이어서 순차 등록됩니다.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } else {
     SpreadsheetApp.getUi().alert(
-      "📅 구글 캘린더 동기화 완료",
+      "🎉 구글 캘린더 동기화 완료!",
       "대상 캘린더: [" + calName + "]\n\n" +
-      "- 신규 등록: " + syncedCount + "건\n" +
-      "- 갱신 완료: " + updatedCount + "건\n" +
-      (skippedCount > 0 ? "- 변경 없음(자동 통과): " + skippedCount + "건\n\n" : "\n") +
-      "모든 대상 일정이 성공적으로 최신화되었습니다!",
+      "모든 대상 일정의 동기화가 성공적으로 완료되었습니다!\n" +
+      (batchNum > 1 ? "• 총 처리 배치: " + batchNum + "차 (25건씩 자동 대기 연속 실행)\n" : "") +
+      "• 신규 등록: " + syncedCount + "건\n" +
+      "• 갱신 완료: " + updatedCount + "건\n" +
+      (skippedCount > 0 ? "• 변경 없음(API 절약 통과): " + skippedCount + "건\n" : "") +
+      "\n이제 구글 캘린더와 시트가 100% 일치합니다.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }

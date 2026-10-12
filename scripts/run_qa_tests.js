@@ -489,8 +489,8 @@ assertTest('스마트 변경 감지 내 색상(color) Diff Check 포함 여부',
 const hasSleep = code.indexOf('Utilities.sleep(350)') !== -1;
 assertTest('API Rate Limit 방어용 안전 딜레이(350ms) 적용 여부', hasSleep);
 
-const hasBatchLimit = code.indexOf('(syncedCount + updatedCount) >= 25') !== -1;
-assertTest('신규+수정 통합 25건 안전 분할 배치 제한 존재 여부', hasBatchLimit);
+const hasBatchCooldown = code.indexOf('batchChangeCount >= 25') !== -1;
+assertTest('25건 단위 자동 쿨다운 대기 및 연속 배치 동기화 엔진 탑재 여부', hasBatchCooldown);
 
 const hasNoVolatileRow = code.indexOf('스프레드시트 연동 (Row:') === -1;
 assertTest('가변 행 번호(Row: XX) 완전 제거 여부', hasNoVolatileRow);
@@ -650,8 +650,8 @@ assertTest('지연 공정 검사: 60초 안전 실행 시간 가드(Timeout Guar
 const hasSyncFromCalBatch = code.indexOf('inspectedCount >= 30') !== -1 && code.indexOf('Date.now() - startTime > 90000') !== -1 && code.indexOf('range.setValues(values)') !== -1;
 assertTest('캘린더➔시트 역동기화: 90초 타임아웃 가드, 30건 검사 한도 및 1회 배치 쓰기 탑재 여부', hasSyncFromCalBatch);
 
-const hasBatchSafeSyncStrictCap = code.indexOf('idx >= 30') !== -1 && code.indexOf('Date.now() - startTime > 120000') !== -1;
-assertTest('구글 캘린더 동기화: 무조건 30건 안전 분할 탈출 및 120초 타임아웃 가드 탑재 여부', hasBatchSafeSyncStrictCap);
+const hasBatchSafeSyncTimeoutGuard = code.indexOf('Date.now() - startTime > 270000') !== -1 && code.indexOf('Utilities.sleep(2000)') !== -1;
+assertTest('구글 캘린더 동기화: 25건 2초 쿨다운 및 4분 30초 안전 실행시간 가드 탑재 여부', hasBatchSafeSyncTimeoutGuard);
 
 const hasSkipDashboardRefreshInEdit = code.indexOf('syncSingleRowToCalendar(sheet, r, true, true)') !== -1 && code.indexOf('skipDashboardRefresh') !== -1;
 assertTest('실시간 수정 트리거: 개별 행마다 대시보드 중복 렌더링 방지(skipDashboardRefresh) 탑재 여부', hasSkipDashboardRefreshInEdit);
