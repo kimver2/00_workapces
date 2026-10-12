@@ -1255,17 +1255,26 @@ function buildEventDetails(rowValues, rowNumber, refDate) {
   if (partner) descLines.push("🏢 협력업체: " + partner);
   if (memo) descLines.push("📝 비고: " + memo);
   descLines.push("--------------------------------");
-  if (createdAt) descLines.push("⏱️ 최초작성: " + createdAt + (createdBy ? " (" + createdBy + ")" : ""));
-  if (updatedAt) descLines.push("🔄 최종수정: " + updatedAt + (updatedBy ? " (" + updatedBy + ")" : ""));
 
+  // 진행상태 변경 링크 (단축 안내문구 클릭 이동 HTML 하이퍼링크)
   var webAppUrl = getWebAppUrl();
   if (webAppUrl && rowNumber) {
-    descLines.push("--------------------------------");
-    descLines.push("📱 [진행상태 모바일 빠른 변경 링크]");
-    descLines.push(webAppUrl + "?row=" + rowNumber);
+    var statusChangeUrl = webAppUrl + "?row=" + rowNumber;
+    descLines.push("<a href=\"" + statusChangeUrl + "\">📱 [진행상태 변경]</a>");
   }
 
-  descLines.push("📊 우성아이디 현장관리 시트 실시간 연동");
+  // 스프레드시트 바로가기 링크 ([우성아이디 현장 관리 시트])
+  var sheetUrl = "";
+  try {
+    var activeSs = getAppSpreadsheet();
+    if (activeSs) sheetUrl = activeSs.getUrl();
+  } catch(e) {}
+
+  if (sheetUrl) {
+    descLines.push("<a href=\"" + sheetUrl + "\">📊 [우성아이디 현장 관리 시트]</a>");
+  } else {
+    descLines.push("📊 [우성아이디 현장 관리 시트]");
+  }
 
   return {
     title: title,

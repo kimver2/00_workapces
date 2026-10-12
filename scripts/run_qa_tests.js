@@ -30,7 +30,12 @@ const sandbox = {
   console: console,
   SpreadsheetApp: {
     BorderStyle: { SOLID: 'SOLID' },
-    flush: () => {}
+    flush: () => {},
+    getActiveSpreadsheet: () => ({
+      getUrl: () => 'https://docs.google.com/spreadsheets/d/test-sheet-id/edit',
+      getSheets: () => [],
+      getSheetByName: () => null
+    })
   },
   CalendarApp: {
     EventColor: {
@@ -191,6 +196,19 @@ assertTest('진행상태가 빈 문자열일 때 ReferenceError 없이 안전 �
 
 // 6. 모바일 웹앱 링크 Description 포함 여부 테스트
 assertTest('일정 설명(Description)에 모바일 웹앱 링크(?row=15) 정상 삽입', resDone && resDone.description.indexOf('?row=15') !== -1);
+
+// 6-1. 캘린더 본문 하이퍼링크 및 감사 추적 영역 제거 검증
+const rowWithAudit = [...baseMockRow];
+rowWithAudit[10] = '2026-10-15 09:00:00';
+rowWithAudit[11] = '김팀장';
+rowWithAudit[12] = '2026-10-15 10:00:00';
+rowWithAudit[13] = '이과장';
+const resWithAudit = buildDetailsFn(rowWithAudit, 15);
+
+assertTest('캘린더 상세 설명: 최초작성 정보 영역 완전 제거 확인', resWithAudit && resWithAudit.description.indexOf('최초작성') === -1);
+assertTest('캘린더 상세 설명: 최종수정 정보 영역 완전 제거 확인', resWithAudit && resWithAudit.description.indexOf('최종수정') === -1);
+assertTest('캘린더 상세 설명: [진행상태 변경] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('<a href="https://script.google.com/macros/s/test/exec?row=15">📱 [진행상태 변경]</a>') !== -1);
+assertTest('캘린더 상세 설명: [우성아이디 현장 관리 시트] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('<a href="https://docs.google.com/spreadsheets/d/test-sheet-id/edit">📊 [우성아이디 현장 관리 시트]</a>') !== -1);
 
 // 7. buildMobileStatusHtml 런타임 실행 테스트
 const buildHtmlFn = sandbox.buildMobileStatusHtml;
@@ -632,6 +650,17 @@ assertTest('대시보드 달력 기간 일정 전개: 366일 무한루프 방지
 
 const hasBatchEmptyRowCleanup = code.indexOf('function cleanupEmptyRowsMetadata()') !== -1 && code.indexOf('sheet.getRange(2, 1, lastRow - 1, 14).setValues(values)') !== -1;
 assertTest('빈 행 메타데이터 청소: 1회 setValues 배치 쓰기 최적화 탑재 여부', hasBatchEmptyRowCleanup);
+
+// [신규 QA] 캘린더 상세 설명 간소화 및 하이퍼링크 탑재 검증
+const buildEventDetailsCode = code.slice(code.indexOf('function buildEventDetails('), code.indexOf('function syncSingleRowToCalendar('));
+const hasAuditRemoved = buildEventDetailsCode.indexOf('⏱️ 최초작성') === -1 && buildEventDetailsCode.indexOf('🔄 최종수정') === -1;
+assertTest('buildEventDetails 내 최초작성/최종수정 영역 완전 배제 검증', hasAuditRemoved);
+
+const hasClickableStatusLink = buildEventDetailsCode.indexOf('descLines.push("<a href=\\"" + statusChangeUrl + "\\">📱 [진행상태 변경]</a>");') !== -1;
+assertTest('buildEventDetails 내 [진행상태 변경] HTML 하이퍼링크 구현 검증', hasClickableStatusLink);
+
+const hasClickableSheetLink = buildEventDetailsCode.indexOf('descLines.push("<a href=\\"" + sheetUrl + "\\">📊 [우성아이디 현장 관리 시트]</a>");') !== -1;
+assertTest('buildEventDetails 내 [우성아이디 현장 관리 시트] HTML 하이퍼링크 구현 검증', hasClickableSheetLink);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
