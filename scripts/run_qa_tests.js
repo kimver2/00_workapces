@@ -514,6 +514,15 @@ assertTest('대시보드 달력 8열(진행상태) 연동 및 지연/상태 아�
 const hasMobileDoGet = code.indexOf('function doGet(e)') !== -1 && code.indexOf('buildMobileStatusHtml') !== -1;
 assertTest('모바일 드롭다운 상태변경 웹앱 엔드포인트(doGet) 탑재 여부', hasMobileDoGet);
 
+const hasWebRpcHandler = code.indexOf('function updateScheduleStatusFromWeb(') !== -1;
+assertTest('모바일 웹앱 RPC 서버 핸들러(updateScheduleStatusFromWeb) 탑재 여부', hasWebRpcHandler);
+
+const hasGoogleScriptRunCall = code.indexOf('google.script.run') !== -1 && code.indexOf('updateScheduleStatusFromWeb') !== -1;
+assertTest('모바일 웹앱 클라이언트 google.script.run RPC 호출 탑재 여부 (CORS/네트워크 오류 원천 차단)', hasGoogleScriptRunCall);
+
+const hasAppSpreadsheetFallback = code.indexOf('function getAppSpreadsheet()') !== -1;
+assertTest('독립 웹앱 실행 시 스프레드시트 자동 폴백 엔진(getAppSpreadsheet) 탑재 여부', hasAppSpreadsheetFallback);
+
 const hasReverseStatusSync = code.indexOf('calTitle.indexOf("✅")') !== -1 && (code.indexOf('sheet.getRange(row, 8).setValue(detectedStatus)') !== -1 || code.indexOf('rowVals[7] = detectedStatus') !== -1);
 assertTest('캘린더 제목 상태 이모지 역방향 동기화 엔진 탑재 여부', hasReverseStatusSync);
 

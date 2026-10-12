@@ -458,6 +458,12 @@ function autoSyncKoreanHolidays(baseYear, targetSheet) {
 // 1. 스프레드시트가 열릴 때 상단에 [🚀 현장 관리] 메뉴 자동 등록
 // ========================================================
 function onOpen() {
+  try {
+    var activeSs = SpreadsheetApp.getActiveSpreadsheet();
+    if (activeSs) {
+      PropertiesService.getDocumentProperties().setProperty("SPREADSHEET_ID", activeSs.getId());
+    }
+  } catch(e) {}
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🚀 현장 관리")
     // [자주 쓰는 핵심 3대 기능]
@@ -2598,7 +2604,24 @@ function isDashboardSheet(sheet) {
   return hasDayOfWeekHeader(sheet);
 }
 
+/**
+ * 활성 스프레드시트 가져오기 (웹앱 독립 실행 시 속성 저장 ID 자동 폴백)
+ */
+function getAppSpreadsheet() {
+  var ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch(e) {}
+  if (!ss) {
+    try {
+      var savedId = PropertiesService.getDocumentProperties().getProperty("SPREADSHEET_ID");
+      if (savedId) ss = SpreadsheetApp.openById(savedId);
+    } catch(e) {}
+  }
+  return ss;
+}
+
 function findDashboardSheet(ss) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
   var sheets = ss.getSheets();
 
   // 1순위: 요일 헤더 구조를 갖춘 진짜 대시보드 달력 시트 찾기
@@ -2617,6 +2640,8 @@ function findDashboardSheet(ss) {
 }
 
 function findSiteScheduleSheet(ss) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
   var sheets = ss.getSheets();
 
   // 1순위: 구조 기반으로 현장데이터 시트 찾기
@@ -2869,6 +2894,41 @@ function configureWebAppUrl() {
 }
 
 /**
+ * 모바일 웹앱 상태 변경 서버 함수 (google.script.run 클라이언트 RPC 연동)
+ */
+function updateScheduleStatusFromWeb(row, newStatus) {
+  var rowNum = parseInt(row, 10);
+  if (!rowNum || rowNum < 2 || !newStatus) {
+    return { success: false, error: "유효하지 않은 요청 데이터입니다." };
+  }
+
+  var ss = getAppSpreadsheet();
+  if (!ss) {
+    return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+  }
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) {
+    return { success: false, error: "현장데이터 시트를 찾을 수 없습니다." };
+  }
+
+  try {
+    sheet.getRange(rowNum, 8).setValue(newStatus); // H열 진행상태 업데이트
+    var now = new Date();
+    sheet.getRange(rowNum, 10).setValue(now.getTime()); // J열 타임스탬프
+    sheet.getRange(rowNum, 13).setValue(formatDateTime(now)); // M열 최종수정일
+    sheet.getRange(rowNum, 14).setValue("모바일 웹"); // N열 최종수정자
+
+    // 캘린더 및 대시보드 즉시 동기화 (forceSheetToCal = true)
+    syncSingleRowToCalendar(sheet, rowNum, true);
+    SpreadsheetApp.flush();
+
+    return { success: true, status: newStatus };
+  } catch(err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
  * 모바일 웹 드롭다운 상태 변경 화면 (doGet)
  */
 function doGet(e) {
@@ -2877,28 +2937,38 @@ function doGet(e) {
   var action = p.action;
   var newStatus = p.status;
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getAppSpreadsheet();
   var sheet = findSiteScheduleSheet(ss);
 
-  // 1) 상태 업데이트 요청 (AJAX fetch)
+  // 1) 상태 업데이트 요청 (URL 파라미터 직접 호출 또는 GET 이동 폴백)
   if (action === "update" && row >= 2 && newStatus && sheet) {
-    try {
-      sheet.getRange(row, 8).setValue(newStatus); // H열 진행상태 업데이트
-      var now = new Date();
-      sheet.getRange(row, 10).setValue(now.getTime()); // J열 타임스탬프
-      sheet.getRange(row, 13).setValue(formatDateTime(now)); // M열 최종수정일
-      sheet.getRange(row, 14).setValue("모바일 웹"); // N열 최종수정자
-
-      // 캘린더 및 대시보드 즉시 동기화 (forceSheetToCal = true)
-      syncSingleRowToCalendar(sheet, row, true);
-      SpreadsheetApp.flush();
-
-      return ContentService.createTextOutput(JSON.stringify({ success: true, status: newStatus }))
-        .setMimeType(ContentService.MimeType.JSON);
-    } catch(err) {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+    var resObj = updateScheduleStatusFromWeb(row, newStatus);
+    if (p.format === "json") {
+      return ContentService.createTextOutput(JSON.stringify(resObj))
         .setMimeType(ContentService.MimeType.JSON);
     }
+
+    var siteName = "";
+    var taskName = "";
+    try {
+      siteName = String(sheet.getRange(row, 1).getValue() || "").trim();
+      taskName = String(sheet.getRange(row, 3).getValue() || "").trim();
+    } catch(err) {}
+
+    var resHtml = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
+      "<style>body { background:#f1f5f9; display:flex; justify-content:center; align-items:center; min-height:100vh; padding:16px; font-family:-apple-system, sans-serif; }" +
+      ".box { background:#fff; padding:32px 24px; border-radius:18px; text-align:center; max-width:380px; width:100%; box-shadow:0 8px 24px rgba(0,0,0,0.08); }" +
+      "h2 { color:#15803d; font-size:20px; margin-bottom:12px; }" +
+      "p { color:#475569; font-size:14px; line-height:1.6; margin-bottom:20px; }" +
+      ".btn { display:inline-block; padding:12px 24px; background:#2563eb; color:#fff; text-decoration:none; border-radius:10px; font-weight:700; font-size:14px; }" +
+      "</style></head><body>" +
+      "<div class='box'>" +
+      "<h2>✅ 상태 변경 완료</h2>" +
+      "<p>[" + (siteName || "현장") + "] <b>" + (taskName || "공정") + "</b>의 진행상태가<br><b>[" + newStatus + "]</b>(으)로 정상 변경되었습니다.<br><br>시트와 구글 캘린더에 실시간 반영되었습니다.</p>" +
+      "<a href='javascript:window.close()' class='btn'>창 닫기</a>" +
+      "</div></body></html>";
+    return HtmlService.createHtmlOutput(resHtml)
+      .setTitle("상태 변경 완료 - " + newStatus);
   }
 
   // 2) 모바일 UI 화면 출력
@@ -2916,8 +2986,9 @@ function doGet(e) {
   var dateStr = String(rowVals[1] || "-").trim();
   var taskName = String(rowVals[2] || "-").trim();
   var currentStatus = String(rowVals[7] || "예정").trim() || "예정";
+  var webAppUrl = getWebAppUrl();
 
-  var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus);
+  var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl);
   return HtmlService.createHtmlOutput(html)
     .setTitle("현장 공정 상태 변경 - " + siteName)
     .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
@@ -2926,7 +2997,8 @@ function doGet(e) {
 /**
  * 모바일 반응형 상태 변경 HTML 생성기
  */
-function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus) {
+function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl) {
+  if (webAppUrl === undefined) webAppUrl = getWebAppUrl();
   var html = "<!DOCTYPE html>" +
     "<html>" +
     "<head>" +
@@ -3020,35 +3092,50 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus) 
     "      btn.disabled = true;" +
     "      btn.innerText = '저장 처리 중...';" +
     "      toast.style.display = 'none';" +
-    "      var url = window.location.href.split('?')[0] + '?action=update&row=" + row + "&status=' + encodeURIComponent(selected);" +
-    "      fetch(url)" +
-    "        .then(function(r) { return r.json(); })" +
-    "        .then(function(res) {" +
-    "          btn.disabled = false;" +
-    "          btn.innerText = '💾 상태 변경 저장하기';" +
-    "          if (res && res.success) {" +
-    "            document.getElementById('currStatusDisplay').innerText = selected;" +
-    "            toast.className = 'toast toast-success';" +
-    "            toast.innerHTML = '✅ 상태가 <b>[' + selected + ']</b>(으)로 즉시 변경되었습니다!<br><span style=\"font-size:12px;font-weight:normal;\">시트와 캘린더에 실시간 반영 완료되었습니다. 창을 닫으셔도 됩니다.</span>';" +
-    "            toast.style.display = 'block';" +
-    "          } else {" +
-    "            toast.className = 'toast toast-error';" +
-    "            toast.innerText = '⚠️ 변경 실패: ' + (res.error || '오류가 발생했습니다.');" +
-    "            toast.style.display = 'block';" +
-    "          }" +
-    "        })" +
-    "        .catch(function(err) {" +
+    "      if (typeof google !== 'undefined' && google.script && google.script.run) {" +
+    "        google.script.run" +
+    "          .withSuccessHandler(function(res) {" +
+    "            btn.disabled = false;" +
+    "            btn.innerText = '💾 상태 변경 저장하기';" +
+    "            if (res && res.success) {" +
+    "              document.getElementById('currStatusDisplay').innerText = selected;" +
+    "              toast.className = 'toast toast-success';" +
+    "              toast.innerHTML = '✅ 상태가 <b>[' + selected + ']</b>(으)로 즉시 변경되었습니다!<br><span style=\"font-size:12px;font-weight:normal;\">시트와 캘린더에 실시간 반영 완료되었습니다. 창을 닫으셔도 됩니다.</span>';" +
+    "              toast.style.display = 'block';" +
+    "            } else {" +
+    "              toast.className = 'toast toast-error';" +
+    "              toast.innerText = '⚠️ 변경 실패: ' + ((res && res.error) ? res.error : '오류가 발생했습니다.');" +
+    "              toast.style.display = 'block';" +
+    "            }" +
+    "          })" +
+    "          .withFailureHandler(function(err) {" +
+    "            console.warn('google.script.run 실패, URL 폴백 시도:', err);" +
+    "            execFallback();" +
+    "          })" +
+    "          .updateScheduleStatusFromWeb(" + row + ", selected);" +
+    "        return;" +
+    "      }" +
+    "      execFallback();" +
+    "      function execFallback() {" +
+    "        var baseEndpoint = '" + (webAppUrl || "") + "';" +
+    "        if (!baseEndpoint && window.location.href.indexOf('macros/s/') !== -1) {" +
+    "          baseEndpoint = window.location.href.split('?')[0];" +
+    "        }" +
+    "        if (baseEndpoint) {" +
+    "          var targetUrl = baseEndpoint + '?action=update&row=" + row + "&status=' + encodeURIComponent(selected);" +
+    "          window.location.href = targetUrl;" +
+    "        } else {" +
     "          btn.disabled = false;" +
     "          btn.innerText = '💾 상태 변경 저장하기';" +
     "          toast.className = 'toast toast-error';" +
-    "          toast.innerText = '⚠️ 네트워크 오류가 발생했습니다. 다시 시도해주세요.';" +
+    "          toast.innerText = '⚠️ 웹앱 환경을 확인할 수 없습니다. 브라우저에서 다시 열어주세요.';" +
     "          toast.style.display = 'block';" +
-    "        });" +
+    "        }" +
+    "      }" +
     "    }" +
     "  </script>" +
     "</body>" +
     "</html>";
-
   return html;
 }
 
