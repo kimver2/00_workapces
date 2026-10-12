@@ -1999,8 +1999,8 @@ function refreshDashboardCalendar(ss) {
     // 시간 정보가 있는 경우 시간 표기 추가 (예: 15:00)
     var timeDisplay = (rangeInfo.hasTime && rangeInfo.timeStr) ? " (" + rangeInfo.timeStr + ")" : "";
 
-    // 대시보드 일정 텍스트 포맷 (지연경고 + 상태아이콘 + 공유아이콘 + 현장명 + 공종 + 시간 + 비고)
-    var itemText = delayPrefix + statusIcon + prefixIcon + "[" + siteName + "] " + taskName + timeDisplay + (memo ? " (" + memo + ")" : "");
+    // 대시보드 일정 텍스트 포맷 (지연경고 + 상태아이콘 + 공유아이콘 + 현장명 + 공종 + 시간, 비고 제외)
+    var itemText = delayPrefix + statusIcon + prefixIcon + "[" + siteName + "] " + taskName + timeDisplay;
 
     // 기간 일정(예: 10/7 ~ 10/9) 처리
     if (rangeInfo.isRange && rangeInfo.displayEndDate) {

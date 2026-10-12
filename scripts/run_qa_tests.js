@@ -690,6 +690,11 @@ const hasAllFormatsInNewSite = addNewSiteCode.indexOf('insertCheckboxes()') !== 
                                addNewSiteCode.indexOf('setBorder(') !== -1;
 assertTest('신규 현장 추가 시 체크박스/수직가운데/드롭다운/조건부서식/테두리 100% 자동 적용 검증', hasAllFormatsInNewSite);
 
+// [신규 QA] 대시보드 달력 셀 내 비고(memo) 완전 배제 검증
+const refreshDashCode = code.slice(code.indexOf('function refreshDashboardCalendar('), code.indexOf('function syncAllSiteSchedulesToDashboard('));
+const hasNoMemoInDashboardItem = refreshDashCode.indexOf('var itemText = delayPrefix + statusIcon + prefixIcon + "[" + siteName + "] " + taskName + timeDisplay;') !== -1;
+assertTest('대시보드 달력 셀 텍스트 내 비고(memo) 완전 배제 검증', hasNoMemoInDashboardItem);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
