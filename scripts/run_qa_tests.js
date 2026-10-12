@@ -697,7 +697,26 @@ assertTest('신규 현장 추가 시 체크박스/수직가운데/드롭다운/�
 // [신규 QA] 대시보드 달력 셀 내 비고(memo) 완전 배제 검증
 const refreshDashCode = code.slice(code.indexOf('function refreshDashboardCalendar('), code.indexOf('function syncAllSiteSchedulesToDashboard('));
 const hasNoMemoInDashboardItem = refreshDashCode.indexOf('var itemText = delayPrefix + statusIcon + prefixIcon + "[" + siteName + "] " + taskName + timeDisplay;') !== -1;
-assertTest('대시보드 달력 셀 텍스트 내 비고(memo) 완전 배제 검증', hasNoMemoInDashboardItem);
+// [신규 QA 종합 감사 1] 모바일 웹앱 내 드롭다운(select id=statusSelect) 및 관련 핸들러 완전 삭제 검증
+const mobileHtmlCode = code.slice(code.indexOf('function buildMobileStatusHtml('), code.indexOf('function getEffectiveEndDate('));
+const hasNoSelectInMobile = mobileHtmlCode.indexOf('<select') === -1 &&
+                            mobileHtmlCode.indexOf('statusSelect') === -1 &&
+                            mobileHtmlCode.indexOf('onDropdownChange') === -1 &&
+                            mobileHtmlCode.indexOf('select-dropdown') === -1;
+assertTest('모바일 웹앱 내 불필요 드롭다운 HTML/JS/CSS 전수 안전 삭제 검증 (TypeError 방어)', hasNoSelectInMobile);
+
+// [신규 QA 종합 감사 2] 모바일 웹앱 HTML 특수문자 이스케이프 엔진 검증
+const escapeHtmlFn = sandbox.escapeHtmlForInput;
+assertTest('특수문자 XSS/HTML 파싱 깨짐 방어: <, >, &, ", \' 정상 치환',
+  typeof escapeHtmlFn === 'function' &&
+  escapeHtmlFn('<test & "quote" \'val\'>') === '&lt;test &amp; &quot;quote&quot; &#039;val&#039;&gt;'
+);
+
+// [신규 QA 종합 감사 3] 모바일 웹앱 메모(비고) 줄바꿈 및 빈값 안전 처리 검증
+assertTest('escapeHtmlForInput: null/undefined 입력 시 빈 문자열 안전 폴백',
+  typeof escapeHtmlFn === 'function' &&
+  escapeHtmlFn(null) === '' && escapeHtmlFn(undefined) === '' && escapeHtmlFn('') === ''
+);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
