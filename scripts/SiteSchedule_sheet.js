@@ -95,11 +95,11 @@ function setupNewWorkspaceFromScratch() {
     var nowMs = now.getTime();
     var nowStr = formatDateTime(now);
     var currentUser = getCurrentUserIdentifier();
-    var sampleTasks = ["실측", "철거", "목공", "마감"];
+    var sampleTasks = ["상담", "철거", "목공", "마감"];
     var sampleRows = [];
     for (var i = 0; i < sampleTasks.length; i++) {
       sampleRows.push([
-        "신규 현장 1", "", sampleTasks[i], "", false, "", "", "예정",
+        "신규 현장 1", "", sampleTasks[i], "", false, "", "조항만", "예정",
         "", nowMs, nowStr, currentUser, nowStr, currentUser
       ]);
     }
@@ -111,13 +111,29 @@ function setupNewWorkspaceFromScratch() {
     } catch(e) {}
   }
 
-  // E열 공유 체크박스 설정
+  // 1행 고정 및 기본 정렬/테두리 서식
   var siteLastRow = Math.max(siteSheet.getLastRow(), 2);
+  siteSheet.setFrozenRows(1);
+  siteSheet.getRange(2, 1, siteLastRow - 1, 14).setVerticalAlignment("middle");
+  [1, 2, 3, 5, 7, 8, 11, 12, 13, 14].forEach(function(col) {
+    siteSheet.getRange(2, col, siteLastRow - 1, 1).setHorizontalAlignment("center");
+  });
+  [4, 6].forEach(function(col) {
+    siteSheet.getRange(2, col, siteLastRow - 1, 1).setHorizontalAlignment("left");
+  });
+  siteSheet.getRange(2, 1, siteLastRow - 1, 8).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+
+  // E열 공유 체크박스 설정
   siteSheet.getRange(2, 5, siteLastRow - 1, 1).insertCheckboxes().setHorizontalAlignment("center");
 
-  // H열 진행상태 유효성 검사 및 조건부 서식
-  ensureCalendarSyncColumns(siteSheet);
+  // C열(공종), G열(담당자), H열(진행상태) 드롭다운 유효성 검사 설정
+  applySiteScheduleValidations(siteSheet, 2, siteLastRow - 1);
+
+  // C열, G열, H열 노션 스타일 뱃지 조건부 서식 설정
   setupSiteSheetConditionalFormatting(siteSheet);
+
+  // 보조열(9~14열) 검증
+  ensureCalendarSyncColumns(siteSheet);
 
   // 2. [대시보드] 시트 생성 및 만년달력 구축
   var dashSheet = ss.getSheetByName("대시보드") || findDashboardSheet(ss);
@@ -175,46 +191,168 @@ function setupNewWorkspaceFromScratch() {
 }
 
 /**
- * 현장데이터 시트 H열(진행상태) 조건부 서식 자동 설정
+ * 공종 기본 드롭다운 목록 반환
+ */
+function getAvailableTasks() {
+  return [
+    "상담", "신고", "철거", "마루철거", "설비", "누수보수", "미장",
+    "전기입선", "전기마감", "목공", "타일", "줄눈", "필름", "도장",
+    "SMC", "도기", "도기세팅 천장", "퍼플렉스", "코킹", "도배", "바닥", "마루시공",
+    "창호", "창호a/s", "도어설치", "중문", "터닝도어", "현관부속",
+    "주방", "가구", "수납가구", "마감", "잔마감", "청소", "입주", "현장촬영", "S/A"
+  ];
+}
+
+/**
+ * 담당자 드롭다운 목록 반환 (구성원 시트 연동 + 기본 담당자 조합)
+ */
+function getAvailableManagers(ss) {
+  var managers = [];
+  try {
+    if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+    var mSheet = findMembersSheet(ss);
+    if (mSheet && mSheet.getLastRow() >= 2) {
+      var lastR = mSheet.getLastRow();
+      var lastC = mSheet.getLastColumn();
+      var hVals = mSheet.getRange(1, 1, 1, lastC).getValues()[0];
+      var nameCol = -1;
+      for (var c = 0; c < lastC; c++) {
+        var hStr = String(hVals[c] || "").trim();
+        if (hStr.indexOf("이름") !== -1 || hStr.indexOf("성명") !== -1 || hStr.indexOf("담당자") !== -1 || hStr.indexOf("직원") !== -1 || hStr.indexOf("팀원") !== -1) {
+          nameCol = c + 1;
+          break;
+        }
+      }
+      if (nameCol !== -1) {
+        var names = mSheet.getRange(2, nameCol, lastR - 1, 1).getValues();
+        for (var i = 0; i < names.length; i++) {
+          var nm = String(names[i][0] || "").trim();
+          if (nm && managers.indexOf(nm) === -1) {
+            managers.push(nm);
+          }
+        }
+      }
+    }
+  } catch(e) {}
+
+  if (managers.length === 0) {
+    managers = ["조항만", "송지은", "전예린", "영하"];
+  }
+
+  // 복합 담당자 조합 추가 (빨간 삼각형 에러 방지)
+  var baseCount = managers.length;
+  for (var a = 0; a < baseCount; a++) {
+    for (var b = a + 1; b < baseCount; b++) {
+      var comb = managers[a] + ", " + managers[b];
+      if (managers.indexOf(comb) === -1) {
+        managers.push(comb);
+      }
+    }
+  }
+
+  return managers;
+}
+
+/**
+ * 현장데이터 시트 C열(공종), G열(담당자), H열(진행상태) 드롭다운 유효성 검사 일괄 적용
+ */
+function applySiteScheduleValidations(sheet, startRow, numRows) {
+  if (!sheet) return;
+  startRow = startRow || 2;
+  numRows = numRows || Math.max(sheet.getLastRow() - startRow + 1, 100);
+  if (numRows < 1) return;
+
+  var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. 공종(3열, C열) 드롭다운 (자유 입력 허용)
+  var tasks = getAvailableTasks();
+  var taskRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(tasks, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(startRow, 3, numRows, 1).setDataValidation(taskRule);
+
+  // 2. 담당자(7열, G열) 드롭다운 (자유 입력 허용)
+  var managers = getAvailableManagers(ss);
+  var managerRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(managers, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(startRow, 7, numRows, 1).setDataValidation(managerRule);
+
+  // 3. 진행상태(8열, H열) 드롭다운
+  var statuses = ["예정", "진행 중", "완료", "AS"];
+  var statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(statuses, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(startRow, 8, numRows, 1).setDataValidation(statusRule);
+}
+
+/**
+ * 현장데이터 시트 H열(진행상태), G열(담당자), C열(공종) 노션 스타일 조건부 서식 자동 설정
  */
 function setupSiteSheetConditionalFormatting(sheet) {
   if (!sheet) return;
   var lastRow = Math.max(sheet.getLastRow(), 100);
-  var statusRange = sheet.getRange(2, 8, lastRow - 1, 1);
+  var rangeC = sheet.getRange(2, 3, lastRow - 1, 1); // C열: 공종
+  var rangeG = sheet.getRange(2, 7, lastRow - 1, 1); // G열: 담당자
+  var statusRange = sheet.getRange(2, 8, lastRow - 1, 1); // H열: 진행상태
 
-  var ruleProgress = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextContains("진행")
-    .setFontColor("#1d4ed8")
-    .setBackground("#dbeafe")
-    .setBold(true)
-    .setRanges([statusRange])
-    .build();
+  var rules = [];
 
-  var ruleDone = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextContains("완료")
-    .setFontColor("#15803d")
-    .setBackground("#dcfce7")
-    .setBold(true)
-    .setRanges([statusRange])
-    .build();
+  // 1. 진행상태 색상 (H열)
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("진행").setFontColor("#1d4ed8").setBackground("#dbeafe").setBold(true).setRanges([statusRange]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("완료").setFontColor("#15803d").setBackground("#dcfce7").setBold(true).setRanges([statusRange]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("AS").setFontColor("#b91c1c").setBackground("#fee2e2").setBold(true).setRanges([statusRange]).build());
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("예정").setFontColor("#b45309").setBackground("#fef3c7").setBold(true).setRanges([statusRange]).build());
 
-  var ruleAS = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextContains("AS")
-    .setFontColor("#b91c1c")
-    .setBackground("#fee2e2")
-    .setBold(true)
-    .setRanges([statusRange])
-    .build();
+  // 2. 담당자 인물 뱃지 색상 (G열)
+  var managerColorMap = [
+    { key: "조항만", bg: "#dbeafe", font: "#1e40af" }, // 블루
+    { key: "송지은", bg: "#fce7f3", font: "#be185d" }, // 로즈핑크
+    { key: "전예린", bg: "#f3e8ff", font: "#7e22ce" }, // 퍼플
+    { key: "영하", bg: "#ccfbf1", font: "#0f766e" }    // 민트
+  ];
+  managerColorMap.forEach(function(item) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains(item.key)
+      .setBackground(item.bg)
+      .setFontColor(item.font)
+      .setBold(true)
+      .setRanges([rangeG])
+      .build());
+  });
 
-  var rulePlan = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextContains("예정")
-    .setFontColor("#b45309")
-    .setBackground("#fef3c7")
-    .setBold(true)
-    .setRanges([statusRange])
-    .build();
+  // 3. 공종별 뱃지 색상 (C열)
+  var taskColorMap = [
+    { keys: ["철거", "마루철거"], bg: "#f1f5f9", font: "#334155" },
+    { keys: ["설비", "누수보수", "미장"], bg: "#cffafe", font: "#0e7490" },
+    { keys: ["전기입선", "전기마감"], bg: "#fef3c7", font: "#b45309" },
+    { keys: ["목공"], bg: "#ffedd5", font: "#9a3412" },
+    { keys: ["타일", "줄눈", "퍼플렉스"], bg: "#ccfbf1", font: "#0f766e" },
+    { keys: ["필름", "도장"], bg: "#f3e8ff", font: "#7e22ce" },
+    { keys: ["도배"], bg: "#dcfce7", font: "#15803d" },
+    { keys: ["창호", "중문", "도어", "터닝도어", "현관부속"], bg: "#dbeafe", font: "#1d4ed8" },
+    { keys: ["바닥", "마루시공"], bg: "#fef9c3", font: "#854d0e" },
+    { keys: ["주방", "가구", "수납가구"], bg: "#fce7f3", font: "#be185d" },
+    { keys: ["SMC", "도기"], bg: "#e0f2fe", font: "#0284c7" },
+    { keys: ["마감", "잔마감", "코킹", "청소"], bg: "#d1fae5", font: "#047857" },
+    { keys: ["상담", "신고", "입주", "현장촬영"], bg: "#e0e7ff", font: "#3730a3" }
+  ];
+  taskColorMap.forEach(function(item) {
+    item.keys.forEach(function(k) {
+      rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenTextContains(k)
+        .setBackground(item.bg)
+        .setFontColor(item.font)
+        .setBold(true)
+        .setRanges([rangeC])
+        .build());
+    });
+  });
 
-  sheet.setConditionalFormatRules([ruleProgress, ruleDone, ruleAS, rulePlan]);
+  sheet.setConditionalFormatRules(rules);
 }
 
 /**
@@ -519,7 +657,7 @@ function onOpen() {
     // [서브메뉴 4: 고급 설정 & 시스템 관리 (1회성 / 유지보수 전용)]
     .addSubMenu(ui.createMenu("⚙️ 고급 설정 & 시스템 관리")
       .addItem("📖 사용 가이드 & 색상 범례 시트 생성/갱신", "createOrUpdateUsageGuideSheetMenu")
-      .addItem("🔧 진행상태 드롭다운 복구 ('진행 중' 빨간 삼각형 제거)", "fixStatusDropdownValidation")
+      .addItem("🔧 공종/담당자/상태 드롭다운 및 서식 전체 복구", "fixStatusDropdownValidation")
       .addItem("🧹 빈 행 유령 이력/ID 일괄 청소", "cleanupEmptyRowsMetadata")
       .addItem("⚙️ 연동 캘린더 변경 / 확인", "configureTargetCalendar")
       .addItem("📱 모바일 상태변경 웹앱 배포 URL 설정", "configureWebAppUrl")
@@ -1930,8 +2068,7 @@ function ensureCalendarSyncColumns(sheet) {
 }
 
 /**
- * 진행상태(H열) 드롭다운 유효성 검사 및 '진행 중' 서식 완벽 복구
- * - '진행 중'(공백 포함) 표준값을 허용 목록에 등록하여 빨간색 에러 삼각형을 즉시 제거합니다.
+ * 공종(C열), 담당자(G열), 진행상태(H열) 드롭다운 유효성 검사 및 노션 스타일 뱃지 서식 전체 복구
  */
 function fixStatusDropdownValidation() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1941,9 +2078,33 @@ function fixStatusDropdownValidation() {
     return;
   }
 
+  var maxRows = Math.max(sheet.getLastRow(), 100);
+
+  // 1. 1행 고정 및 기본 정렬/테두리 서식
+  sheet.setFrozenRows(1);
+  sheet.getRange(2, 1, maxRows - 1, 14).setVerticalAlignment("middle");
+  [1, 2, 3, 5, 7, 8, 11, 12, 13, 14].forEach(function(col) {
+    sheet.getRange(2, col, maxRows - 1, 1).setHorizontalAlignment("center");
+  });
+  [4, 6].forEach(function(col) {
+    sheet.getRange(2, col, maxRows - 1, 1).setHorizontalAlignment("left");
+  });
+  sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 2), 8).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+
+  // 2. E열 체크박스 설정
+  sheet.getRange(2, 5, maxRows - 1, 1).insertCheckboxes().setHorizontalAlignment("center");
+
+  // 3. C열(공종), G열(담당자), H열(진행상태) 드롭다운 유효성 검사 일괄 적용
+  applySiteScheduleValidations(sheet, 2, maxRows - 1);
+
+  // 4. C열, G열, H열 노션 스타일 뱃지 조건부 서식 전수 적용
+  setupSiteSheetConditionalFormatting(sheet);
+
+  // 5. 보조열(9~14열) 검증
   ensureCalendarSyncColumns(sheet);
+
   SpreadsheetApp.flush();
-  ss.toast("진행상태 드롭다운('진행 중' 포함) 유효성 검사가 정상화되어 빨간색 에러 표시가 제거되었습니다.", "상태 드롭다운 정상화", 4);
+  ss.toast("공종(C열), 담당자(G열), 진행상태(H열) 드롭다운 및 노션 스타일 뱃지 서식이 전수 복구되었습니다!", "서식 전체 복구 완료", 4);
 }
 
 
@@ -2849,22 +3010,9 @@ function addNewSiteAtTop() {
     sheet.getRange(2, col, 4, 1).setHorizontalAlignment("left");
   });
 
-  // H열(진행상태) 드롭다운 유효성 검사 명시적 보장
+  // C열(공종), G열(담당자), H열(진행상태) 드롭다운 유효성 검사 일괄 적용
   try {
-    var statusRule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(["예정", "진행 중", "완료", "AS"], true)
-      .setAllowInvalid(true)
-      .build();
-    sheet.getRange(2, 8, 4, 1).setDataValidation(statusRule);
-  } catch(e) {}
-
-  // 담당자(7열) 및 공종(3열) 드롭다운 유효성 검사 상속 복사
-  try {
-    var sourceRow = sheet.getLastRow();
-    if (sourceRow > 5) {
-      sheet.getRange(sourceRow, 7).copyTo(sheet.getRange(2, 7, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
-      sheet.getRange(sourceRow, 3).copyTo(sheet.getRange(2, 3, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
-    }
+    applySiteScheduleValidations(sheet, 2, 4);
   } catch(e) {}
 
   // 격자 테두리(Border) 깔끔하게 적용
