@@ -230,6 +230,19 @@ assertTest('모바일 HTML 내 공유 상태 토글 버튼(공유 ON, 미공유 
 assertTest('모바일 HTML 내 [공유/진행상태/비고 저장하기] 버튼 정상 렌더링', htmlOutput.indexOf('공유/진행상태/비고 저장하기') !== -1 || htmlOutput.indexOf('공유/진행상태 저장하기') !== -1);
 assertTest('모바일 HTML 내 [현장 비고/특이사항 메모] textarea 정상 렌더링', htmlOutput.indexOf('id=\'memoInput\'') !== -1);
 
+// [신규 QA] 모바일 웹앱 내장 JavaScript 구문 무결성 정밀 검증 (SyntaxError 방지)
+const scriptMatch = htmlOutput.match(/<script>([\s\S]*?)<\/script>/);
+let isScriptSyntaxValid = false;
+if (scriptMatch) {
+  try {
+    new Function(scriptMatch[1]);
+    isScriptSyntaxValid = true;
+  } catch (e) {
+    isScriptSyntaxValid = false;
+  }
+}
+assertTest('모바일 웹앱 내장 <script> 클라이언트 자바스크립트 구문 100% 정상 파싱 검증', isScriptSyntaxValid);
+
 console.log('\n🔍 [Step 3.6: 신규 3대 기능 런타임 엔진 검증 (Feature 1, 2, 4)]');
 
 // Feature 1: 구글 캘린더 자체 블록 색상 ID 매핑 검증

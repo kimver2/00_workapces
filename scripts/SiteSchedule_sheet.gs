@@ -3361,6 +3361,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "        var baseEndpoint = '" + (webAppUrl || "") + "';" +
     "        if (!baseEndpoint && window.location.href.indexOf('macros/s/') !== -1) {" +
     "          baseEndpoint = window.location.href.split('?')[0];" +
+    "        }" +
     "        if (baseEndpoint) {" +
     "          var targetUrl = baseEndpoint + '?action=update&row=" + row + "&status=' + encodeURIComponent(selected) + '&shared=' + selectedShare + '&memo=' + encodeURIComponent(memoVal)" + (eventId ? " + '&id=" + encodeURIComponent(eventId) + "'" : "") + ";" +
     "          window.location.href = targetUrl;" +
