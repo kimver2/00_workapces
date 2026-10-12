@@ -3187,12 +3187,12 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 공유:</span><span class='info-val' id='currShareDisplay'>" + (isSharedBool ? "🟦 공유 완료" : "🟥 미공유") + "</span></div>" +
     "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 상태:</span><span class='info-val' id='currStatusDisplay'>" + currentStatus + "</span></div>" +
     "    </div>" +
-    "    <div class='section-label'>🔗 고객/캘린더 공유 상태 설정</div>" +
+    "    <div class='section-label'>🔗 공유 상태 설정</div>" +
     "    <div class='share-grid'>" +
     "      <button type='button' id='btnShareOn' class='share-btn " + (isSharedBool ? "active-on" : "") + "' onclick='selectShare(true)'>🟦 공유 (ON)</button>" +
     "      <button type='button' id='btnShareOff' class='share-btn " + (!isSharedBool ? "active-off" : "") + "' onclick='selectShare(false)'>🟥 미공유 (OFF)</button>" +
     "    </div>" +
-    "    <div class='section-label'>⚡ 진행상태 선택</div>" +
+    "    <div class='section-label'>⚡ 진행 상태 설정</div>" +
     "    <div class='btn-grid'>" +
     "      <button type='button' class='status-btn btn-plan " + (currentStatus === "예정" ? "active" : "") + "' onclick='selectStatus(\"예정\")'>📅 예정</button>" +
     "      <button type='button' class='status-btn btn-progress " + (currentStatus.indexOf("진행") !== -1 ? "active" : "") + "' onclick='selectStatus(\"진행 중\")'>▶️ 진행 중</button>" +
