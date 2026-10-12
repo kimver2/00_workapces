@@ -3164,8 +3164,6 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "    .btn-progress.active { background: #e0f2fe; color: #0284c7; border-color: #0284c7; border-width: 3px; transform: scale(1.02); }" +
     "    .btn-done.active { background: #dcfce7; color: #16a34a; border-color: #16a34a; border-width: 3px; transform: scale(1.02); }" +
     "    .btn-as.active { background: #ffedd5; color: #ea580c; border-color: #ea580c; border-width: 3px; transform: scale(1.02); }" +
-    "    .select-dropdown { width: 100%; height: 50px; font-size: 16px; font-weight: 600; padding: 0 16px; border-radius: 12px; border: 2px solid #cbd5e1; background: #ffffff; color: #1e293b; margin-bottom: 20px; outline: none; transition: border-color 0.2s; -webkit-appearance: none; background-image: url(\"data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e\"); background-repeat: no-repeat; background-position: right 14px center; background-size: 18px; }" +
-    "    .select-dropdown:focus { border-color: #2563eb; }" +
     "    .memo-textarea { width: 100%; min-height: 80px; padding: 12px 14px; border-radius: 12px; border: 2px solid #cbd5e1; background: #ffffff; color: #1e293b; font-size: 14.5px; font-family: inherit; line-height: 1.5; outline: none; resize: vertical; margin-bottom: 20px; transition: border-color 0.2s; }" +
     "    .memo-textarea:focus { border-color: #2563eb; }" +
     "    .submit-btn { width: 100%; height: 52px; background: #2563eb; color: #ffffff; border: none; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3); }" +
@@ -3194,20 +3192,13 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "      <button type='button' id='btnShareOn' class='share-btn " + (isSharedBool ? "active-on" : "") + "' onclick='selectShare(true)'>🟦 공유 (ON)</button>" +
     "      <button type='button' id='btnShareOff' class='share-btn " + (!isSharedBool ? "active-off" : "") + "' onclick='selectShare(false)'>🟥 미공유 (OFF)</button>" +
     "    </div>" +
-    "    <div class='section-label'>⚡ 진행상태 빠른 선택</div>" +
+    "    <div class='section-label'>⚡ 진행상태 선택</div>" +
     "    <div class='btn-grid'>" +
     "      <button type='button' class='status-btn btn-plan " + (currentStatus === "예정" ? "active" : "") + "' onclick='selectStatus(\"예정\")'>📅 예정</button>" +
     "      <button type='button' class='status-btn btn-progress " + (currentStatus.indexOf("진행") !== -1 ? "active" : "") + "' onclick='selectStatus(\"진행 중\")'>▶️ 진행 중</button>" +
     "      <button type='button' class='status-btn btn-done " + (currentStatus === "완료" ? "active" : "") + "' onclick='selectStatus(\"완료\")'>✅ 완료</button>" +
     "      <button type='button' class='status-btn btn-as " + (currentStatus === "AS" ? "active" : "") + "' onclick='selectStatus(\"AS\")'>🛠️ AS</button>" +
     "    </div>" +
-    "    <div class='section-label'>또는 드롭다운 메뉴로 선택</div>" +
-    "    <select id='statusSelect' class='select-dropdown' onchange='onDropdownChange()'>" +
-    "      <option value='예정' " + (currentStatus === "예정" ? "selected" : "") + ">📅 예정</option>" +
-    "      <option value='진행 중' " + (currentStatus.indexOf("진행") !== -1 ? "selected" : "") + ">▶️ 진행 중</option>" +
-    "      <option value='완료' " + (currentStatus === "완료" ? "selected" : "") + ">✅ 완료</option>" +
-    "      <option value='AS' " + (currentStatus === "AS" ? "selected" : "") + ">🛠️ AS</option>" +
-    "    </select>" +
     "    <div class='section-label'>📝 현장 비고 / 특이사항 메모</div>" +
     "    <textarea id='memoInput' class='memo-textarea' placeholder='현장 특이사항이나 전달사항을 입력하세요 (예: 자재 입고 완료, 오후 시공)'>" + escapeHtmlForInput(memo) + "</textarea>" +
     "    <button type='button' id='saveBtn' class='submit-btn' onclick='saveStatus()'>" +
@@ -3236,11 +3227,6 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "    }" +
     "    function selectStatus(s) {" +
     "      selected = s;" +
-    "      document.getElementById('statusSelect').value = s;" +
-    "      updateBtnUI();" +
-    "    }" +
-    "    function onDropdownChange() {" +
-    "      selected = document.getElementById('statusSelect').value;" +
     "      updateBtnUI();" +
     "    }" +
     "    function updateBtnUI() {" +
