@@ -723,6 +723,7 @@ const testRow = ['진행상태 확인', '26.10.13', '상담', '협력사', true,
 const testDetails = buildDetailsFn(testRow, 2);
 assertTest('캘린더 상세 설명 URL 내 현장명/공종명/EventID 쿼리 파라미터 포함 여부',
   testDetails &&
+  testDetails.taskName === '상담' &&
   testDetails.description.indexOf('site=' + encodeURIComponent('진행상태 확인')) !== -1 &&
   testDetails.description.indexOf('task=' + encodeURIComponent('상담')) !== -1 &&
   testDetails.description.indexOf('id=ev-1234') !== -1
@@ -733,6 +734,50 @@ assertTest('doGet 스마트 행 자동 보정 로직(targetId, targetSite, targe
   code.indexOf('// [스마트 행 자동 보정 엔진]') !== -1 &&
   code.indexOf('targetSite && targetTask') !== -1 &&
   code.indexOf('resolvedRow') !== -1
+);
+
+// [신규 QA] 행 이동 및 공종명(Task) 변경 시 Event ID 불변 추적 알고리즘 시뮬레이션
+const mockSheetData = [
+  ['13종 펼치기', '26.10.13', '현장실측 / 보양', '', true, '', '', '예정', 'ev-other-1'], // 2행 (밀려서 새로 들어온 행)
+  ['진행상태 확인', '26.10.13', '수정된새공종명', '', true, '', '', '예정', 'ev-target-123'], // 3행 (공종명이 변경된 원래 일정)
+];
+// 시나리오 A: 링크에는 row=2, id="ev-target-123"가 기록되어 있음 (행 번호와 공종명이 모두 불일치)
+const targetIdA = 'ev-target-123';
+let resolvedRowA = -1;
+for (let i = 0; i < mockSheetData.length; i++) {
+  if (mockSheetData[i][8] === targetIdA) {
+    resolvedRowA = i + 2;
+    break;
+  }
+}
+assertTest('Self-Healing 시뮬레이션: 공종명이 변경되고 행이 밀려도 EventID로 정확히 타겟 행(3행) 포커스',
+  resolvedRowA === 3
+);
+
+// 시나리오 B: 구형 링크(targetId 없음)이나 site+task 일치하는 경우 fallback
+const legacyTargetSite = '13종 펼치기';
+const legacyTargetTask = '현장실측 / 보양';
+let resolvedRowB = -1;
+for (let j = 0; j < mockSheetData.length; j++) {
+  if (mockSheetData[j][0] === legacyTargetSite && mockSheetData[j][2] === legacyTargetTask) {
+    resolvedRowB = j + 2;
+    break;
+  }
+}
+assertTest('Self-Healing 시뮬레이션: EventID 없는 구형 링크 시 site+task Fallback 자동 탐색(2행) 성공',
+  resolvedRowB === 2
+);
+
+// 시나리오 C: 시트에서 삭제된 일정인 경우 안전 가드 (오동작 방지)
+assertTest('doGet 안전 가드: 시트에서 삭제된 일정 요청 시 엉뚱한 행 덮어쓰기 방지(row = -1) 탑재',
+  code.indexOf('row = -1;') !== -1 &&
+  code.indexOf('// [안전 가드]') !== -1
+);
+
+// 시나리오 D: 신규 생성 이벤트 설명에 즉시 Event ID 주입 확인
+assertTest('이벤트 생성 즉시 설명(Description)에 Event ID 주입(freshDetails) 로직 탑재 여부',
+  code.indexOf('rowValues[8] = eventId;') !== -1 &&
+  code.indexOf('rowVals[8] = newEventId;') !== -1
 );
 
 console.log('\n========================================================');

@@ -1321,6 +1321,7 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   return {
     title: title,
     siteName: siteName,
+    taskName: taskName,
     parsedDate: parsedDate,
     description: descLines.join("\n"),
     color: eventColor,
@@ -1469,8 +1470,18 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
           event.setColor(details.color);
         } catch (e) {}
       }
-      sheet.getRange(row, 9).setValue(event.getId());
+      var eventId = event.getId();
+      sheet.getRange(row, 9).setValue(eventId);
       sheet.getRange(row, 10).setValue(Date.now());
+
+      // 신규 생성 직후 이벤트 링크에 고유 ID 즉시 주입 (행 밀림 방지 영구 보장)
+      try {
+        rowValues[8] = eventId;
+        var freshDetails = buildEventDetails(rowValues, row, null, sheet);
+        if (freshDetails && freshDetails.description) {
+          event.setDescription(freshDetails.description);
+        }
+      } catch(e) {}
     }
   }
 
@@ -1742,8 +1753,16 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
           if (details.color) {
             try { event.setColor(details.color); } catch (e) {}
           }
-          sheet.getRange(row, 9).setValue(event.getId());
+          var newEventId = event.getId();
+          sheet.getRange(row, 9).setValue(newEventId);
           sheet.getRange(row, 10).setValue(nowMs);
+          rowVals[8] = newEventId;
+          try {
+            var freshDetails = buildEventDetails(rowVals, row, null, sheet);
+            if (freshDetails && freshDetails.description) {
+              event.setDescription(freshDetails.description);
+            }
+          } catch (e) {}
           syncedCount++;
           batchChangeCount++;
           // 구글 Rate Limit 방지용 딜레이 (0.35초)
@@ -3102,6 +3121,10 @@ function doGet(e) {
         if (resolvedRow !== -1) {
           Logger.log("🔄 행 번호 자동 보정 완료: " + row + "행 ➔ " + resolvedRow + "행 (현장: " + targetSite + " / " + targetTask + ")");
           row = resolvedRow;
+        } else {
+          // [안전 가드] targetId나 현장/공종 정보가 제공되었으나 시트 어디에도 일치하는 데이터가 없는 경우(삭제 등):
+          // 이전 row 번호로 엉뚱한 행을 보여주거나 덮어쓰지 않도록 유효하지 않음(-1) 처리
+          row = -1;
         }
       }
     }
@@ -3159,7 +3182,7 @@ function doGet(e) {
     return HtmlService.createHtmlOutput("<h3 style='font-family:sans-serif;text-align:center;margin-top:50px;'>⚠️ 이미 삭제되었거나 유효하지 않은 일정입니다.</h3>");
   }
 
-  var rowVals = sheet.getRange(row, 1, 1, 8).getValues()[0];
+  var rowVals = sheet.getRange(row, 1, 1, 9).getValues()[0];
   var siteName = String(rowVals[0] || "-").trim();
   var dateStr = String(rowVals[1] || "-").trim();
   var taskName = String(rowVals[2] || "-").trim();
@@ -3167,9 +3190,10 @@ function doGet(e) {
   var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
   var memo = String(rowVals[5] || "").trim(); // F열 비고
   var currentStatus = String(rowVals[7] || "예정").trim() || "예정";
+  var eventIdVal = String(rowVals[8] || targetId || "").trim();
   var webAppUrl = getWebAppUrl();
 
-  var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared, memo);
+  var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared, memo, eventIdVal);
   return HtmlService.createHtmlOutput(html)
     .setTitle("현장 공정 공유/진행상태/비고 관리 - " + siteName)
     .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
@@ -3191,10 +3215,11 @@ function escapeHtmlForInput(text) {
 /**
  * 모바일 반응형 상태 변경 HTML 생성기 (비고 편집 추가)
  */
-function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared, memo) {
+function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared, memo, eventId) {
   if (webAppUrl === undefined) webAppUrl = getWebAppUrl();
   if (isShared === undefined) isShared = true;
   if (memo === undefined || memo === null) memo = "";
+  if (eventId === undefined || eventId === null) eventId = "";
   var isSharedBool = (isShared === true || String(isShared).trim().toUpperCase() === "TRUE" || String(isShared).trim() === "1");
 
   var html = "<!DOCTYPE html>" +
@@ -3336,9 +3361,8 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "        var baseEndpoint = '" + (webAppUrl || "") + "';" +
     "        if (!baseEndpoint && window.location.href.indexOf('macros/s/') !== -1) {" +
     "          baseEndpoint = window.location.href.split('?')[0];" +
-    "        }" +
     "        if (baseEndpoint) {" +
-    "          var targetUrl = baseEndpoint + '?action=update&row=" + row + "&status=' + encodeURIComponent(selected) + '&shared=' + selectedShare + '&memo=' + encodeURIComponent(memoVal);" +
+    "          var targetUrl = baseEndpoint + '?action=update&row=" + row + "&status=' + encodeURIComponent(selected) + '&shared=' + selectedShare + '&memo=' + encodeURIComponent(memoVal)" + (eventId ? " + '&id=" + encodeURIComponent(eventId) + "'" : "") + ";" +
     "          window.location.href = targetUrl;" +
     "        } else {" +
     "          btn.disabled = false;" +
