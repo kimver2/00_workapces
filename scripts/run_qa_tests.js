@@ -227,7 +227,8 @@ const htmlOutput = buildHtmlFn(15, '래미안 101동', '26.10.15', '목공', '�
 assertTest('buildMobileStatusHtml 런타임 실행: 유효한 HTML 문자열 반환', typeof htmlOutput === 'string' && htmlOutput.indexOf('<!DOCTYPE html>') !== -1);
 assertTest('모바일 HTML 내 4대 상태 버튼(예정, 진행중, 완료, AS) 정상 렌더링', htmlOutput.indexOf('btn-done') !== -1 && htmlOutput.indexOf('btn-progress') !== -1);
 assertTest('모바일 HTML 내 공유 상태 토글 버튼(공유 ON, 미공유 OFF) 정상 렌더링', htmlOutput.indexOf('btnShareOn') !== -1 && htmlOutput.indexOf('btnShareOff') !== -1);
-assertTest('모바일 HTML 내 [공유/진행상태 저장하기] 버튼 정상 렌더링', htmlOutput.indexOf('공유/진행상태 저장하기') !== -1);
+assertTest('모바일 HTML 내 [공유/진행상태/비고 저장하기] 버튼 정상 렌더링', htmlOutput.indexOf('공유/진행상태/비고 저장하기') !== -1 || htmlOutput.indexOf('공유/진행상태 저장하기') !== -1);
+assertTest('모바일 HTML 내 [현장 비고/특이사항 메모] textarea 정상 렌더링', htmlOutput.indexOf('id=\'memoInput\'') !== -1);
 
 console.log('\n🔍 [Step 3.6: 신규 3대 기능 런타임 엔진 검증 (Feature 1, 2, 4)]');
 
@@ -675,8 +676,11 @@ assertTest('buildEventDetails 내 [공유/진행상태 변경] HTML 하이퍼링
 const hasClickableSheetLink = buildEventDetailsCode.indexOf('descLines.push("<a href=\\"" + sheetUrl + "\\">📊 [우성아이디 현장 관리 시트]</a>");') !== -1;
 assertTest('buildEventDetails 내 [우성아이디 현장 관리 시트] HTML 하이퍼링크 구현 검증', hasClickableSheetLink);
 
-const hasShareToggleInWeb = code.indexOf('updateScheduleStatusFromWeb(row, newStatus, newShared)') !== -1 && code.indexOf('selectShare(') !== -1;
+const hasShareToggleInWeb = (code.indexOf('updateScheduleStatusFromWeb(row, newStatus, newShared') !== -1 || code.indexOf('updateScheduleStatusFromWeb(row, selected, selectedShare') !== -1) && code.indexOf('selectShare(') !== -1;
 assertTest('모바일 웹앱 내 공유 상태(E열) 동시 업데이트 및 UI 토글 엔진 탑재 검증', hasShareToggleInWeb);
+
+const hasMemoInWebApp = code.indexOf('id=\'memoInput\'') !== -1 && code.indexOf('sheet.getRange(rowNum, 6).setValue(cleanMemo)') !== -1;
+assertTest('모바일 웹앱 내 현장 비고(F열) 실시간 입력/수정/저장 엔진 탑재 검증', hasMemoInWebApp);
 
 // [신규 QA] 신규 현장 추가 시 서식/체크박스/드롭다운/조건부서식 100% 자동 적용 검증
 const hasAddNewSiteFn = code.indexOf('function addNewSiteAtTop()') !== -1;
