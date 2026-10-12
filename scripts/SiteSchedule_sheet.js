@@ -2789,6 +2789,7 @@ function addNewSiteAtTop() {
   }
 
   sheet.getRange(2, 1, 4, 14).setValues(newRows);
+  sheet.getRange(2, 1, 4, 14).setVerticalAlignment("middle");
   sheet.getRange(2, 5, 4, 1).insertCheckboxes();
 
   [1, 2, 3, 5, 7, 8, 11, 12, 13, 14].forEach(function(col) {
@@ -2798,11 +2799,32 @@ function addNewSiteAtTop() {
     sheet.getRange(2, col, 4, 1).setHorizontalAlignment("left");
   });
 
+  // H열(진행상태) 드롭다운 유효성 검사 명시적 보장
+  try {
+    var statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["예정", "진행 중", "완료", "AS"], true)
+      .setAllowInvalid(true)
+      .build();
+    sheet.getRange(2, 8, 4, 1).setDataValidation(statusRule);
+  } catch(e) {}
+
+  // 담당자(7열) 및 공종(3열) 드롭다운 유효성 검사 상속 복사
   try {
     var sourceRow = sheet.getLastRow();
-    sheet.getRange(sourceRow, 7).copyTo(sheet.getRange(2, 7, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
-    sheet.getRange(sourceRow, 3).copyTo(sheet.getRange(2, 3, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
-    sheet.getRange(sourceRow, 8).copyTo(sheet.getRange(2, 8, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+    if (sourceRow > 5) {
+      sheet.getRange(sourceRow, 7).copyTo(sheet.getRange(2, 7, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+      sheet.getRange(sourceRow, 3).copyTo(sheet.getRange(2, 3, 4, 1), SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+    }
+  } catch(e) {}
+
+  // 격자 테두리(Border) 깔끔하게 적용
+  try {
+    sheet.getRange(2, 1, 4, 8).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+  } catch(e) {}
+
+  // 조건부 서식(진행상태 색상 등) 전수 갱신 보장
+  try {
+    setupSiteSheetConditionalFormatting(sheet);
   } catch(e) {}
 
   try {

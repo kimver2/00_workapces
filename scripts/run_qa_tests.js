@@ -676,6 +676,18 @@ assertTest('buildEventDetails 내 [우성아이디 현장 관리 시트] HTML �
 const hasShareToggleInWeb = code.indexOf('updateScheduleStatusFromWeb(row, newStatus, newShared)') !== -1 && code.indexOf('selectShare(') !== -1;
 assertTest('모바일 웹앱 내 공유 상태(E열) 동시 업데이트 및 UI 토글 엔진 탑재 검증', hasShareToggleInWeb);
 
+// [신규 QA] 신규 현장 추가 시 서식/체크박스/드롭다운/조건부서식 100% 자동 적용 검증
+const hasAddNewSiteFn = code.indexOf('function addNewSiteAtTop()') !== -1;
+assertTest('신규 현장 추가 함수(addNewSiteAtTop) 탑재 여부', hasAddNewSiteFn);
+
+const addNewSiteCode = code.slice(code.indexOf('function addNewSiteAtTop()'), code.indexOf('function cleanupEmptyRowsMetadata()'));
+const hasAllFormatsInNewSite = addNewSiteCode.indexOf('insertCheckboxes()') !== -1 &&
+                               addNewSiteCode.indexOf('setVerticalAlignment("middle")') !== -1 &&
+                               addNewSiteCode.indexOf('setDataValidation(statusRule)') !== -1 &&
+                               addNewSiteCode.indexOf('setupSiteSheetConditionalFormatting(sheet)') !== -1 &&
+                               addNewSiteCode.indexOf('setBorder(') !== -1;
+assertTest('신규 현장 추가 시 체크박스/수직가운데/드롭다운/조건부서식/테두리 100% 자동 적용 검증', hasAllFormatsInNewSite);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
