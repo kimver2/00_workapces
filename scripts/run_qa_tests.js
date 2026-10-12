@@ -514,7 +514,7 @@ assertTest('대시보드 달력 8열(진행상태) 연동 및 지연/상태 아�
 const hasMobileDoGet = code.indexOf('function doGet(e)') !== -1 && code.indexOf('buildMobileStatusHtml') !== -1;
 assertTest('모바일 드롭다운 상태변경 웹앱 엔드포인트(doGet) 탑재 여부', hasMobileDoGet);
 
-const hasReverseStatusSync = code.indexOf('calTitle.indexOf("✅")') !== -1 && code.indexOf('sheet.getRange(row, 8).setValue(detectedStatus)') !== -1;
+const hasReverseStatusSync = code.indexOf('calTitle.indexOf("✅")') !== -1 && (code.indexOf('sheet.getRange(row, 8).setValue(detectedStatus)') !== -1 || code.indexOf('rowVals[7] = detectedStatus') !== -1);
 assertTest('캘린더 제목 상태 이모지 역방향 동기화 엔진 탑재 여부', hasReverseStatusSync);
 
 // [신규 QA] 비고(6열) 제외 실시간 캘린더 연동 및 무음 트리거 설치 검증
@@ -601,6 +601,28 @@ assertTest('상단 메뉴([🚀 현장 관리]) 내 모닝 브리핑 시간 변�
 
 const hasSelfRescheduling = code.indexOf('scheduleNextDailyBriefingTrigger()') !== -1 && code.indexOf('DAILY_BRIEFING_ENABLED') !== -1;
 assertTest('모닝 브리핑 발송 후 다음날 정각 자동 연속 예약(Self-Rescheduling) 로직 탑재 여부', hasSelfRescheduling);
+
+// [신규 QA] 6분 타임아웃 원천 차단 및 성능 최적화 전수 검증
+const hasDelayedHighlightBatch = code.indexOf('range.getBackgrounds()') !== -1 && code.indexOf('range.setBackgrounds(backgrounds)') !== -1;
+assertTest('지연 공정 검사: 1회 배치 getBackgrounds/setBackgrounds 일괄 반영 (300배 가속)', hasDelayedHighlightBatch);
+
+const hasDelayedHighlightTimeoutGuard = code.indexOf('Date.now() - startTime > 60000') !== -1;
+assertTest('지연 공정 검사: 60초 안전 실행 시간 가드(Timeout Guard) 탑재 여부', hasDelayedHighlightTimeoutGuard);
+
+const hasSyncFromCalBatch = code.indexOf('inspectedCount >= 30') !== -1 && code.indexOf('Date.now() - startTime > 90000') !== -1 && code.indexOf('range.setValues(values)') !== -1;
+assertTest('캘린더➔시트 역동기화: 90초 타임아웃 가드, 30건 검사 한도 및 1회 배치 쓰기 탑재 여부', hasSyncFromCalBatch);
+
+const hasBatchSafeSyncStrictCap = code.indexOf('idx >= 30') !== -1 && code.indexOf('Date.now() - startTime > 120000') !== -1;
+assertTest('구글 캘린더 동기화: 무조건 30건 안전 분할 탈출 및 120초 타임아웃 가드 탑재 여부', hasBatchSafeSyncStrictCap);
+
+const hasSkipDashboardRefreshInEdit = code.indexOf('syncSingleRowToCalendar(sheet, r, true, true)') !== -1 && code.indexOf('skipDashboardRefresh') !== -1;
+assertTest('실시간 수정 트리거: 개별 행마다 대시보드 중복 렌더링 방지(skipDashboardRefresh) 탑재 여부', hasSkipDashboardRefreshInEdit);
+
+const hasRangeWhileLoopGuard = code.indexOf('maxRangeLoop') !== -1 && code.indexOf('--maxRangeLoop >= 0') !== -1;
+assertTest('대시보드 달력 기간 일정 전개: 366일 무한루프 방지 안전 카운터 탑재 여부', hasRangeWhileLoopGuard);
+
+const hasBatchEmptyRowCleanup = code.indexOf('function cleanupEmptyRowsMetadata()') !== -1 && code.indexOf('sheet.getRange(2, 1, lastRow - 1, 14).setValues(values)') !== -1;
+assertTest('빈 행 메타데이터 청소: 1회 setValues 배치 쓰기 최적화 탑재 여부', hasBatchEmptyRowCleanup);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);

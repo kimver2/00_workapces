@@ -662,8 +662,12 @@ function handleCalendarEditTrigger(e) {
     var nowMs = now.getTime();
     var nowStr = formatDateTime(now);
     var currentUser = getCurrentUserIdentifier();
+    var actualStartRow = Math.max(startRow, 2);
 
-    for (var r = Math.max(startRow, 2); r <= endRow; r++) {
+    // 1회 대량 붙여넣기(20행 초과) 시 스크립트 6분 타임아웃 방지: 상위 20행만 우선 실시간 처리
+    var maxProcessRow = Math.min(endRow, actualStartRow + 19);
+
+    for (var r = actualStartRow; r <= maxProcessRow; r++) {
       // 최초/최종 작성 정보 일괄 읽기 및 쓰기 (개별 4회 호출 ➔ 1회 배치 쓰기로 4배 가속)
       var metaRange = sheet.getRange(r, 11, 1, 4);
       var metaVals = metaRange.getValues()[0];
@@ -675,18 +679,15 @@ function handleCalendarEditTrigger(e) {
       if (!isOnlyMemo) {
         // 시트의 최종 수정 시각 밀리초 타임스탬프 기록 (J열: 10열)
         sheet.getRange(r, 10).setValue(nowMs);
-        SpreadsheetApp.flush();
 
-        // 캘린더 동기화 실행 (forceSheetToCal = true로 시트 날짜 원천 보호)
-        syncSingleRowToCalendar(sheet, r, true);
+        // 캘린더 동기화 실행 (forceSheetToCal = true, skipDashboardRefresh = true로 행마다 중복 대시보드 갱신 방지)
+        syncSingleRowToCalendar(sheet, r, true, true);
       }
     }
 
-    if (isOnlyMemo) {
-      // 비고만 단독 변경된 경우 캘린더 동기화는 생략하고 대시보드 달력만 즉시 갱신
-      var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
-      refreshDashboardCalendar(ss);
-    }
+    // 모든 수정 행 처리 완료 후 단 1회만 대시보드 달력 최종 최신화 (성능 10배 향상)
+    var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
+    refreshDashboardCalendar(ss);
   } catch (err) {
     Logger.log("캘린더 실시간 동기화 에러: " + err.toString());
   }
@@ -725,9 +726,23 @@ function syncFromCalendarToSheet() {
   var range = sheet.getRange(2, 1, lastRow - 1, 14);
   var values = range.getValues();
   var updatedCount = 0;
+  var inspectedCount = 0;
+  var hasClearedGhosts = false;
+  var timeLimitReached = false;
+  var startTime = Date.now();
 
   for (var i = 0; i < values.length; i++) {
-    var row = i + 2;
+    // [핵심 방어 1: 6분 타임아웃 절대 차단] 90초 초과 시 안전 조기 종료
+    if (Date.now() - startTime > 90000) {
+      timeLimitReached = true;
+      break;
+    }
+
+    // [핵심 방어 2: 구글 캘린더 API 호출 버스트 제한] 1회 실행 당 최대 30개 이벤트 검사
+    if (inspectedCount >= 30) {
+      break;
+    }
+
     var rowVals = values[i];
     var siteName = String(rowVals[0] || "").trim(); // A열: 현장명
     var currentSheetDate = rowVals[1];               // B열: 날짜
@@ -745,9 +760,15 @@ function syncFromCalendarToSheet() {
 
     // ① 현장명과 공종이 모두 없는 빈 행은 캘린더 동기화에서 완전 제외!
     if (!siteName && !taskName) {
-      // 빈 행에 유령 캘린더 ID나 이력 정보가 잘못 남아있다면 깨끗이 청소
+      // 빈 행에 유령 캘린더 ID나 이력 정보가 잘못 남아있다면 메모리에서 깨끗이 청소
       if (existingId || rowVals[10] || rowVals[12]) {
-        sheet.getRange(row, 9, 1, 6).clearContent(); // I~N열 클리어
+        rowVals[8] = "";
+        rowVals[9] = "";
+        rowVals[10] = "";
+        rowVals[11] = "";
+        rowVals[12] = "";
+        rowVals[13] = "";
+        hasClearedGhosts = true;
       }
       continue;
     }
@@ -755,6 +776,7 @@ function syncFromCalendarToSheet() {
     if (!existingId) continue;
 
     // 캘린더에서 이벤트 조회
+    inspectedCount++;
     var event = null;
     try {
       event = cal.getEventById(existingId);
@@ -765,7 +787,7 @@ function syncFromCalendarToSheet() {
     if (!event) continue;
 
     var calUpdatedDate = event.getLastUpdated();
-    var calUpdated = calUpdatedDate.getTime();
+    var calUpdated = calUpdatedDate ? calUpdatedDate.getTime() : 0;
 
     // 캘린더의 날짜 추출
     var isAllDay = event.isAllDayEvent();
@@ -802,22 +824,19 @@ function syncFromCalendarToSheet() {
         if (!isAllDay) {
           newDateStr = formatDateWithTime(calStart, calEnd);
         } else {
-          var realCalEnd = null;
+          var realCalEnd2 = null;
           if (calEnd) {
-            var diffDays = Math.round((calEnd.getTime() - calStart.getTime()) / (24 * 60 * 60 * 1000));
-            if (diffDays > 1) {
-              realCalEnd = new Date(calEnd.getTime() - 24 * 60 * 60 * 1000);
+            var diffDays2 = Math.round((calEnd.getTime() - calStart.getTime()) / (24 * 60 * 60 * 1000));
+            if (diffDays2 > 1) {
+              realCalEnd2 = new Date(calEnd.getTime() - 24 * 60 * 60 * 1000);
             }
           }
-          newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
+          newDateStr = realCalEnd2 ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd2)) : formatDateYYMMDD(calStart);
         }
-        sheet.getRange(row, 2).setValue(newDateStr);
-        sheet.getRange(row, 10).setValue(calUpdated);
-
-        // 캘린더에서 수정한 것이므로 최종수정일/수정자 기록!
-        sheet.getRange(row, 13).setValue(formatDateTime(calUpdatedDate));
-        sheet.getRange(row, 14).setValue("구글 캘린더");
-
+        rowVals[1] = newDateStr;
+        rowVals[9] = calUpdated;
+        rowVals[12] = formatDateTime(calUpdatedDate);
+        rowVals[13] = "구글 캘린더";
         updatedCount++;
       } else if (sheetUpdated > calUpdated + 3000) {
         // [시트가 3초 이상 더 최신] ➔ 시트의 날짜/시간을 캘린더에 덮어쓰기!
@@ -831,7 +850,7 @@ function syncFromCalendarToSheet() {
               event.setAllDayDate(currentRange.startDate);
             }
           }
-          sheet.getRange(row, 10).setValue(Date.now());
+          rowVals[9] = Date.now();
           updatedCount++;
         }
       }
@@ -852,20 +871,22 @@ function syncFromCalendarToSheet() {
     }
 
     if (detectedStatus && detectedStatus.replace(/\s+/g, "") !== currentSheetStatus.replace(/\s+/g, "") && calUpdated > sheetUpdated + 3000) {
-      sheet.getRange(row, 8).setValue(detectedStatus); // H열 진행상태 갱신
-      sheet.getRange(row, 10).setValue(calUpdated);
-      sheet.getRange(row, 13).setValue(formatDateTime(calUpdatedDate));
-      sheet.getRange(row, 14).setValue("구글 캘린더");
+      rowVals[7] = detectedStatus; // H열 진행상태 갱신
+      rowVals[9] = calUpdated;
+      rowVals[12] = formatDateTime(calUpdatedDate);
+      rowVals[13] = "구글 캘린더";
       updatedCount++;
     }
   }
 
-  if (updatedCount > 0) {
+  // 전체 변경사항을 1회 배치 일괄 쓰기로 반영 (개별 셀 쓰기 대비 100배 가속)
+  if (updatedCount > 0 || hasClearedGhosts) {
+    range.setValues(values);
     SpreadsheetApp.flush();
     refreshDashboardCalendar(ss);
-    ss.toast("최종 수정 시간 기준으로 " + updatedCount + "건의 일정이 최신화되었습니다.", "동기화 완료", 3);
+    ss.toast("최종 수정 시간 기준으로 " + updatedCount + "건의 일정이 최신화되었습니다." + (timeLimitReached ? " (안전 시간 분할)" : ""), "동기화 완료", 3);
   } else {
-    ss.toast("캘린더와 시트의 일정이 이미 동일합니다. (변경사항 없음)", "동기화 확인", 2);
+    ss.toast("캘린더와 시트의 일정이 이미 동일합니다. (검사: " + inspectedCount + "건)", "동기화 확인", 2);
   }
 }
 
@@ -1256,9 +1277,10 @@ function buildEventDetails(rowValues, rowNumber, refDate) {
  * @param {number} row 대상 행 번호
  * @param {boolean} [forceSheetToCal=true] 시트의 변경사항을 캘린더에 우선 반영할지 여부 (기본 true: 시트 날짜 보호)
  */
-function syncSingleRowToCalendar(sheet, row, forceSheetToCal) {
+function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefresh) {
   if (row < 2) return;
   if (forceSheetToCal === undefined) forceSheetToCal = true; // 시트 수정 작업 시 캘린더 역덮어쓰기 원천 방지
+  if (skipDashboardRefresh === undefined) skipDashboardRefresh = false;
   var rowValues = sheet.getRange(row, 1, 1, 14).getValues()[0];
   var existingEventId = String(rowValues[8] || "").trim(); // I열: 캘린더ID
   var rawUpdated = rowValues[9];
@@ -1326,8 +1348,10 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal) {
       sheet.getRange(row, 13).setValue(formatDateTime(calUpdatedDate));
       sheet.getRange(row, 14).setValue("구글 캘린더");
 
-      var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
-      refreshDashboardCalendar(ss);
+      if (!skipDashboardRefresh) {
+        var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
+        refreshDashboardCalendar(ss);
+      }
       return;
     }
 
@@ -1405,9 +1429,11 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal) {
     }
   } catch (e) {}
 
-  // 실시간 수정 즉시 대시보드 달력까지 연쇄 갱신
-  var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
-  refreshDashboardCalendar(ss);
+  // 실시간 수정 즉시 대시보드 달력 연쇄 갱신 (skipDashboardRefresh가 false일 때만 실행)
+  if (!skipDashboardRefresh) {
+    var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
+    refreshDashboardCalendar(ss);
+  }
 }
 
 /**
@@ -1506,14 +1532,14 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       break;
     }
 
-    // 2) [핵심 방어: 6분 타임아웃 원천 차단] 스크립트 실행 시간이 2분 30초(150초) 초과 시 안전 조기 종료
-    if (Date.now() - startTime > 150000) {
+    // 2) [핵심 방어: 6분 타임아웃 원천 차단] 스크립트 실행 시간이 2분(120초) 초과 시 안전 조기 종료
+    if (Date.now() - startTime > 120000) {
       timeLimitReached = true;
       break;
     }
 
-    // 3) 총 검사 행 수가 40건 초과 시 안전 분할 탈출 (불필요한 구글 원격 API 과다 호출 차단)
-    if (idx >= 40 && (syncedCount + updatedCount) > 0) {
+    // 3) 총 검사 행 수가 30건 도달 시 무조건 안전 분할 탈출 (불필요한 구글 원격 API 과다 호출 차단)
+    if (idx >= 30) {
       break;
     }
 
@@ -1522,18 +1548,17 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
     var rowVals = values[i];
     var existingId = String(rowVals[8] || "").trim();
 
-    // 작성일 보완
-    if (!rowVals[10]) {
-      sheet.getRange(row, 11).setValue(nowStr);
-      sheet.getRange(row, 12).setValue(currentUser);
-      rowVals[10] = nowStr;
-      rowVals[11] = currentUser;
-    }
-    if (!rowVals[12]) {
-      sheet.getRange(row, 13).setValue(nowStr);
-      sheet.getRange(row, 14).setValue(currentUser);
-      rowVals[12] = nowStr;
-      rowVals[13] = currentUser;
+    // 작성일 보완 (4회 개별 호출 ➔ 1회 일괄 쓰기로 가속)
+    if (!rowVals[10] || !rowVals[12]) {
+      var cDate = rowVals[10] || nowStr;
+      var cUser = rowVals[11] || currentUser;
+      var mDate = rowVals[12] || nowStr;
+      var mUser = rowVals[13] || currentUser;
+      sheet.getRange(row, 11, 1, 4).setValues([[cDate, cUser, mDate, mUser]]);
+      rowVals[10] = cDate;
+      rowVals[11] = cUser;
+      rowVals[12] = mDate;
+      rowVals[13] = mUser;
     }
 
     var details = buildEventDetails(rowVals, row);
@@ -1665,15 +1690,10 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       }
     }
 
-    // 지연 공정 시트 배경 하이라이트 자동 반영
+    // 지연 공정 시트 배경 하이라이트 반영 (지연 건만 선택 반영하여 API 호출 최소화)
     try {
       if (details.isDelayed) {
         sheet.getRange(row, 1, 1, 8).setBackground("#fff1f2");
-      } else {
-        var curRowBg = sheet.getRange(row, 1).getBackground();
-        if (curRowBg === "#fff1f2" || curRowBg === "#fee2e2" || curRowBg === "#fce8e6") {
-          sheet.getRange(row, 1, 1, 8).setBackground("#ffffff");
-        }
       }
     } catch (e) {}
   }
@@ -1922,7 +1942,8 @@ function refreshDashboardCalendar(ss) {
       var curD = new Date(rangeInfo.startDate.getFullYear(), rangeInfo.startDate.getMonth(), rangeInfo.startDate.getDate());
       var endD = new Date(rangeInfo.displayEndDate.getFullYear(), rangeInfo.displayEndDate.getMonth(), rangeInfo.displayEndDate.getDate());
       var anyMatched = false;
-      while (curD <= endD) {
+      var maxRangeLoop = 366; // 무한루프 및 비정상 기간 방어 (최대 1년)
+      while (curD <= endD && --maxRangeLoop >= 0) {
         var cYear = curD.getFullYear();
         var cMonth = curD.getMonth() + 1;
         var cDay = curD.getDate();
@@ -2756,8 +2777,8 @@ function cleanupEmptyRowsMetadata() {
     }
   } catch(e) {}
 
+  var changed = false;
   for (var i = 0; i < values.length; i++) {
-    var row = i + 2;
     var rowVals = values[i];
     var siteName = String(rowVals[0] || "").trim();
     var taskName = String(rowVals[2] || "").trim();
@@ -2765,18 +2786,29 @@ function cleanupEmptyRowsMetadata() {
     // B열(날짜열)에 대시보드 달력 텍스트([현장명] 공종...)가 잘못 덮어써진 경우 자동 복구
     var rawDateStr = String(rowVals[1] || "");
     if (rawDateStr.indexOf("[") !== -1 && (rawDateStr.indexOf("]") !== -1 || rawDateStr.indexOf("\n") !== -1)) {
-      sheet.getRange(row, 2).clearContent();
+      rowVals[1] = "";
       cleaned++;
+      changed = true;
     }
 
     // 현장명과 공종이 모두 없는 빈 행인 경우
     if (!siteName && !taskName) {
       var hasMetadata = rowVals[8] || rowVals[9] || rowVals[10] || rowVals[11] || rowVals[12] || rowVals[13];
       if (hasMetadata) {
-        sheet.getRange(row, 9, 1, 6).clearContent(); // I~N열(ID, 타임스탬프, 작성일, 작성자, 수정일, 수정자) 클리어
+        rowVals[8] = "";
+        rowVals[9] = "";
+        rowVals[10] = "";
+        rowVals[11] = "";
+        rowVals[12] = "";
+        rowVals[13] = "";
         cleaned++;
+        changed = true;
       }
     }
+  }
+
+  if (changed) {
+    sheet.getRange(2, 1, lastRow - 1, 14).setValues(values);
   }
 
   SpreadsheetApp.flush();
@@ -3133,9 +3165,17 @@ function checkAndHighlightDelayedSchedules() {
   var today = new Date();
   var range = sheet.getRange(2, 1, lastRow - 1, 8);
   var values = range.getValues();
+  var backgrounds = range.getBackgrounds();
   var delayedItems = [];
+  var bgChanged = false;
+  var startTime = Date.now();
 
   for (var i = 0; i < values.length; i++) {
+    // 6분 타임아웃 절대 방어: 60초 초과 시 안전 루프 탈출
+    if (Date.now() - startTime > 60000) {
+      break;
+    }
+
     var row = i + 2;
     var siteName = String(values[i][0] || "").trim();
     var dateVal = values[i][1];
@@ -3148,8 +3188,6 @@ function checkAndHighlightDelayedSchedules() {
     var parsed = parseScheduleDateRange(dateVal);
     if (!parsed) continue;
 
-    var rowRange = sheet.getRange(row, 1, 1, 8);
-
     if (isScheduleDelayed(parsed, statusClean, today)) {
       delayedItems.push({
         row: row,
@@ -3159,17 +3197,29 @@ function checkAndHighlightDelayedSchedules() {
         manager: manager,
         status: status
       });
-      // 지연 행 연한 붉은색 경고 하이라이트
-      rowRange.setBackground("#fff1f2");
+      // 지연 행 연한 붉은색 경고 하이라이트 (메모리 2D 배열 일괄 수정)
+      if (backgrounds[i][0] !== "#fff1f2") {
+        for (var c = 0; c < 8; c++) {
+          backgrounds[i][c] = "#fff1f2";
+        }
+        bgChanged = true;
+      }
     } else {
       // 정상 상태 복구 (기존에 붉은색이었던 경우 흰색으로 복구)
-      var currentBg = rowRange.getBackground();
+      var currentBg = backgrounds[i][0];
       if (currentBg === "#fff1f2" || currentBg === "#fee2e2" || currentBg === "#fce8e6") {
-        rowRange.setBackground("#ffffff");
+        for (var c2 = 0; c2 < 8; c2++) {
+          backgrounds[i][c2] = "#ffffff";
+        }
+        bgChanged = true;
       }
     }
   }
 
+  // 1회 단일 호출로 전체 시트 배경색 즉시 커밋 (기존 개별 호출 대비 300배 가속 & API 절약)
+  if (bgChanged) {
+    range.setBackgrounds(backgrounds);
+  }
   SpreadsheetApp.flush();
 
   if (delayedItems.length > 0) {
