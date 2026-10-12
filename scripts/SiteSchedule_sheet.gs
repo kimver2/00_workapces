@@ -1256,11 +1256,11 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   if (memo) descLines.push("📝 비고: " + memo);
   descLines.push("--------------------------------");
 
-  // 진행상태 변경 링크 (단축 안내문구 클릭 이동 HTML 하이퍼링크)
+  // 공유/진행상태 변경 링크 (단축 안내문구 클릭 이동 HTML 하이퍼링크)
   var webAppUrl = getWebAppUrl();
   if (webAppUrl && rowNumber) {
     var statusChangeUrl = webAppUrl + "?row=" + rowNumber;
-    descLines.push("<a href=\"" + statusChangeUrl + "\">📱 [진행상태 변경]</a>");
+    descLines.push("<a href=\"" + statusChangeUrl + "\">📱 [공유/진행상태 변경]</a>");
   }
 
   // 스프레드시트 바로가기 링크 ([우성아이디 현장 관리 시트] - 해당 행 포커스 이동)
@@ -2943,7 +2943,7 @@ function configureWebAppUrl() {
 /**
  * 모바일 웹앱 상태 변경 서버 함수 (google.script.run 클라이언트 RPC 연동)
  */
-function updateScheduleStatusFromWeb(row, newStatus) {
+function updateScheduleStatusFromWeb(row, newStatus, newShared) {
   var rowNum = parseInt(row, 10);
   if (!rowNum || rowNum < 2 || !newStatus) {
     return { success: false, error: "유효하지 않은 요청 데이터입니다." };
@@ -2960,6 +2960,15 @@ function updateScheduleStatusFromWeb(row, newStatus) {
 
   try {
     sheet.getRange(rowNum, 8).setValue(newStatus); // H열 진행상태 업데이트
+
+    // E열 공유 상태 업데이트 (파라미터가 명시적으로 전달된 경우)
+    var updatedShared = null;
+    if (newShared !== undefined && newShared !== null) {
+      var isSharedBool = (newShared === true || String(newShared).trim().toLowerCase() === "true" || String(newShared).trim() === "1");
+      sheet.getRange(rowNum, 5).setValue(isSharedBool); // E열 공유 체크박스 업데이트
+      updatedShared = isSharedBool;
+    }
+
     var now = new Date();
     sheet.getRange(rowNum, 10).setValue(now.getTime()); // J열 타임스탬프
     sheet.getRange(rowNum, 13).setValue(formatDateTime(now)); // M열 최종수정일
@@ -2969,7 +2978,11 @@ function updateScheduleStatusFromWeb(row, newStatus) {
     syncSingleRowToCalendar(sheet, rowNum, true);
     SpreadsheetApp.flush();
 
-    return { success: true, status: newStatus };
+    return { 
+      success: true, 
+      status: newStatus,
+      shared: updatedShared
+    };
   } catch(err) {
     return { success: false, error: err.toString() };
   }
@@ -2983,13 +2996,14 @@ function doGet(e) {
   var row = parseInt(p.row, 10);
   var action = p.action;
   var newStatus = p.status;
+  var newShared = p.shared;
 
   var ss = getAppSpreadsheet();
   var sheet = findSiteScheduleSheet(ss);
 
   // 1) 상태 업데이트 요청 (URL 파라미터 직접 호출 또는 GET 이동 폴백)
   if (action === "update" && row >= 2 && newStatus && sheet) {
-    var resObj = updateScheduleStatusFromWeb(row, newStatus);
+    var resObj = updateScheduleStatusFromWeb(row, newStatus, newShared);
     if (p.format === "json") {
       return ContentService.createTextOutput(JSON.stringify(resObj))
         .setMimeType(ContentService.MimeType.JSON);
@@ -3002,6 +3016,12 @@ function doGet(e) {
       taskName = String(sheet.getRange(row, 3).getValue() || "").trim();
     } catch(err) {}
 
+    var shareNotice = "";
+    if (newShared !== undefined && newShared !== null) {
+      var isSh = (newShared === true || String(newShared).toLowerCase() === "true" || String(newShared) === "1");
+      shareNotice = "<br>공유 상태: <b>[" + (isSh ? "🟦 공유(ON)" : "🟥 미공유(OFF)") + "]</b>";
+    }
+
     var resHtml = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
       "<style>body { background:#f1f5f9; display:flex; justify-content:center; align-items:center; min-height:100vh; padding:16px; font-family:-apple-system, sans-serif; }" +
       ".box { background:#fff; padding:32px 24px; border-radius:18px; text-align:center; max-width:380px; width:100%; box-shadow:0 8px 24px rgba(0,0,0,0.08); }" +
@@ -3010,12 +3030,12 @@ function doGet(e) {
       ".btn { display:inline-block; padding:12px 24px; background:#2563eb; color:#fff; text-decoration:none; border-radius:10px; font-weight:700; font-size:14px; }" +
       "</style></head><body>" +
       "<div class='box'>" +
-      "<h2>✅ 상태 변경 완료</h2>" +
-      "<p>[" + (siteName || "현장") + "] <b>" + (taskName || "공정") + "</b>의 진행상태가<br><b>[" + newStatus + "]</b>(으)로 정상 변경되었습니다.<br><br>시트와 구글 캘린더에 실시간 반영되었습니다.</p>" +
+      "<h2>✅ 공유/진행상태 변경 완료</h2>" +
+      "<p>[" + (siteName || "현장") + "] <b>" + (taskName || "공정") + "</b>의" + shareNotice + "<br>진행상태가 <b>[" + newStatus + "]</b>(으)로<br>정상 변경되었습니다.<br><br>시트와 구글 캘린더에 실시간 반영되었습니다.</p>" +
       "<a href='javascript:window.close()' class='btn'>창 닫기</a>" +
       "</div></body></html>";
     return HtmlService.createHtmlOutput(resHtml)
-      .setTitle("상태 변경 완료 - " + newStatus);
+      .setTitle("공유/진행상태 변경 완료 - " + newStatus);
   }
 
   // 2) 모바일 UI 화면 출력
@@ -3032,26 +3052,31 @@ function doGet(e) {
   var siteName = String(rowVals[0] || "-").trim();
   var dateStr = String(rowVals[1] || "-").trim();
   var taskName = String(rowVals[2] || "-").trim();
+  var rawShare = rowVals[4];
+  var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
   var currentStatus = String(rowVals[7] || "예정").trim() || "예정";
   var webAppUrl = getWebAppUrl();
 
-  var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl);
+  var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared);
   return HtmlService.createHtmlOutput(html)
-    .setTitle("현장 공정 상태 변경 - " + siteName)
+    .setTitle("현장 공정 공유/진행상태 변경 - " + siteName)
     .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
 }
 
 /**
  * 모바일 반응형 상태 변경 HTML 생성기
  */
-function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl) {
+function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared) {
   if (webAppUrl === undefined) webAppUrl = getWebAppUrl();
+  if (isShared === undefined) isShared = true;
+  var isSharedBool = (isShared === true || String(isShared).trim().toUpperCase() === "TRUE" || String(isShared).trim() === "1");
+
   var html = "<!DOCTYPE html>" +
     "<html>" +
     "<head>" +
     "  <meta charset='utf-8'>" +
     "  <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>" +
-    "  <title>현장 공정 상태 변경</title>" +
+    "  <title>현장 공정 공유/진행상태 변경</title>" +
     "  <style>" +
     "    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }" +
     "    body { background-color: #f1f5f9; color: #1e293b; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }" +
@@ -3061,10 +3086,14 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "    .title { font-size: 20px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }" +
     "    .subtitle { font-size: 15px; color: #64748b; font-weight: 600; }" +
     "    .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 14px; line-height: 1.6; }" +
-    "    .info-row { display: flex; justify-content: space-between; }" +
+    "    .info-row { display: flex; justify-content: space-between; align-items: center; }" +
     "    .info-label { color: #64748b; }" +
     "    .info-val { font-weight: 600; color: #1e293b; }" +
     "    .section-label { font-size: 14px; font-weight: 700; color: #334155; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }" +
+    "    .share-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }" +
+    "    .share-btn { padding: 13px 8px; border-radius: 12px; border: 2px solid #cbd5e1; font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; justify-content: center; gap: 6px; background: #ffffff; color: #64748b; }" +
+    "    .share-btn.active-on { background: #eff6ff; color: #1d4ed8; border-color: #2563eb; border-width: 3px; transform: scale(1.02); }" +
+    "    .share-btn.active-off { background: #fef2f2; color: #b91c1c; border-color: #ef4444; border-width: 3px; transform: scale(1.02); }" +
     "    .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }" +
     "    .status-btn { padding: 14px 8px; border-radius: 12px; border: 2px solid #cbd5e1; font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; justify-content: center; gap: 6px; background: #ffffff; }" +
     "    .btn-plan.active { background: #f1f5f9; color: #334155; border-color: #64748b; border-width: 3px; transform: scale(1.02); }" +
@@ -3085,15 +3114,21 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "<body>" +
     "  <div class='card'>" +
     "    <div class='header'>" +
-    "      <div class='badge'>현장 공정 상태 관리</div>" +
+    "      <div class='badge'>현장 공정 공유/진행상태 관리</div>" +
     "      <div class='title'>" + siteName + "</div>" +
     "      <div class='subtitle'>" + taskName + "</div>" +
     "    </div>" +
     "    <div class='info-box'>" +
     "      <div class='info-row'><span class='info-label'>일시:</span><span class='info-val'>" + dateStr + "</span></div>" +
+    "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 공유:</span><span class='info-val' id='currShareDisplay'>" + (isSharedBool ? "🟦 공유 완료" : "🟥 미공유") + "</span></div>" +
     "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 상태:</span><span class='info-val' id='currStatusDisplay'>" + currentStatus + "</span></div>" +
     "    </div>" +
-    "    <div class='section-label'>⚡ 원터치 빠른 선택</div>" +
+    "    <div class='section-label'>🔗 고객/캘린더 공유 상태 설정</div>" +
+    "    <div class='share-grid'>" +
+    "      <button type='button' id='btnShareOn' class='share-btn " + (isSharedBool ? "active-on" : "") + "' onclick='selectShare(true)'>🟦 공유 (ON)</button>" +
+    "      <button type='button' id='btnShareOff' class='share-btn " + (!isSharedBool ? "active-off" : "") + "' onclick='selectShare(false)'>🟥 미공유 (OFF)</button>" +
+    "    </div>" +
+    "    <div class='section-label'>⚡ 진행상태 빠른 선택</div>" +
     "    <div class='btn-grid'>" +
     "      <button type='button' class='status-btn btn-plan " + (currentStatus === "예정" ? "active" : "") + "' onclick='selectStatus(\"예정\")'>📅 예정</button>" +
     "      <button type='button' class='status-btn btn-progress " + (currentStatus.indexOf("진행") !== -1 ? "active" : "") + "' onclick='selectStatus(\"진행 중\")'>▶️ 진행 중</button>" +
@@ -3108,13 +3143,29 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "      <option value='AS' " + (currentStatus === "AS" ? "selected" : "") + ">🛠️ AS</option>" +
     "    </select>" +
     "    <button type='button' id='saveBtn' class='submit-btn' onclick='saveStatus()'>" +
-    "      <span>💾 상태 변경 저장하기</span>" +
+    "      <span>💾 공유/진행상태 저장하기</span>" +
     "    </button>" +
     "    <div id='toast' class='toast'></div>" +
     "    <div class='footer'>우성아이디 현장관리 시스템</div>" +
     "  </div>" +
     "  <script>" +
     "    var selected = '" + currentStatus + "';" +
+    "    var selectedShare = " + (isSharedBool ? "true" : "false") + ";" +
+    "    function selectShare(val) {" +
+    "      selectedShare = val;" +
+    "      updateShareUI();" +
+    "    }" +
+    "    function updateShareUI() {" +
+    "      var onBtn = document.getElementById('btnShareOn');" +
+    "      var offBtn = document.getElementById('btnShareOff');" +
+    "      if (selectedShare) {" +
+    "        onBtn.classList.add('active-on');" +
+    "        offBtn.classList.remove('active-off');" +
+    "      } else {" +
+    "        onBtn.classList.remove('active-on');" +
+    "        offBtn.classList.add('active-off');" +
+    "      }" +
+    "    }" +
     "    function selectStatus(s) {" +
     "      selected = s;" +
     "      document.getElementById('statusSelect').value = s;" +
@@ -3143,11 +3194,12 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "        google.script.run" +
     "          .withSuccessHandler(function(res) {" +
     "            btn.disabled = false;" +
-    "            btn.innerText = '💾 상태 변경 저장하기';" +
+    "            btn.innerText = '💾 공유/진행상태 저장하기';" +
     "            if (res && res.success) {" +
     "              document.getElementById('currStatusDisplay').innerText = selected;" +
+    "              document.getElementById('currShareDisplay').innerText = selectedShare ? '🟦 공유 완료' : '🟥 미공유';" +
     "              toast.className = 'toast toast-success';" +
-    "              toast.innerHTML = '✅ 상태가 <b>[' + selected + ']</b>(으)로 즉시 변경되었습니다!<br><span style=\"font-size:12px;font-weight:normal;\">시트와 캘린더에 실시간 반영 완료되었습니다. 창을 닫으셔도 됩니다.</span>';" +
+    "              toast.innerHTML = '✅ 공유 상태 [<b>' + (selectedShare ? '🟦 공유(ON)' : '🟥 미공유(OFF)') + '</b>] 및 진행상태 [<b>' + selected + '</b>](으)로 즉시 변경되었습니다!<br><span style=\"font-size:12px;font-weight:normal;\">시트와 캘린더에 실시간 반영 완료되었습니다. 창을 닫으셔도 됩니다.</span>';" +
     "              toast.style.display = 'block';" +
     "            } else {" +
     "              toast.className = 'toast toast-error';" +
@@ -3159,7 +3211,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "            console.warn('google.script.run 실패, URL 폴백 시도:', err);" +
     "            execFallback();" +
     "          })" +
-    "          .updateScheduleStatusFromWeb(" + row + ", selected);" +
+    "          .updateScheduleStatusFromWeb(" + row + ", selected, selectedShare);" +
     "        return;" +
     "      }" +
     "      execFallback();" +
@@ -3169,11 +3221,11 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "          baseEndpoint = window.location.href.split('?')[0];" +
     "        }" +
     "        if (baseEndpoint) {" +
-    "          var targetUrl = baseEndpoint + '?action=update&row=" + row + "&status=' + encodeURIComponent(selected);" +
+    "          var targetUrl = baseEndpoint + '?action=update&row=" + row + "&status=' + encodeURIComponent(selected) + '&shared=' + selectedShare;" +
     "          window.location.href = targetUrl;" +
     "        } else {" +
     "          btn.disabled = false;" +
-    "          btn.innerText = '💾 상태 변경 저장하기';" +
+    "          btn.innerText = '💾 공유/진행상태 저장하기';" +
     "          toast.className = 'toast toast-error';" +
     "          toast.innerText = '⚠️ 웹앱 환경을 확인할 수 없습니다. 브라우저에서 다시 열어주세요.';" +
     "          toast.style.display = 'block';" +

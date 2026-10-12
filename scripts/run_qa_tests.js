@@ -207,6 +207,7 @@ const resWithAudit = buildDetailsFn(rowWithAudit, 15);
 
 assertTest('캘린더 상세 설명: 최초작성 정보 영역 완전 제거 확인', resWithAudit && resWithAudit.description.indexOf('최초작성') === -1);
 assertTest('캘린더 상세 설명: 최종수정 정보 영역 완전 제거 확인', resWithAudit && resWithAudit.description.indexOf('최종수정') === -1);
+assertTest('캘린더 상세 설명: [공유/진행상태 변경] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('<a href="https://script.google.com/macros/s/test/exec?row=15">📱 [공유/진행상태 변경]</a>') !== -1);
 assertTest('캘린더 상세 설명: [우성아이디 현장 관리 시트] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('📊 [우성아이디 현장 관리 시트]</a>') !== -1);
 assertTest('캘린더 상세 설명: 스프레드시트 링크에 해당 행 포커스(range=A15:H15) 자동 반영', resWithAudit && resWithAudit.description.indexOf('range=A15:H15') !== -1);
 
@@ -220,9 +221,11 @@ assertTest('캘린더 상세 설명: targetSheet 연동 시 #gid=100&range=A15:H
 
 // 7. buildMobileStatusHtml 런타임 실행 테스트
 const buildHtmlFn = sandbox.buildMobileStatusHtml;
-const htmlOutput = buildHtmlFn(15, '래미안 101동', '26.10.15', '목공', '완료');
+const htmlOutput = buildHtmlFn(15, '래미안 101동', '26.10.15', '목공', '완료', 'https://script.google.com/test', true);
 assertTest('buildMobileStatusHtml 런타임 실행: 유효한 HTML 문자열 반환', typeof htmlOutput === 'string' && htmlOutput.indexOf('<!DOCTYPE html>') !== -1);
 assertTest('모바일 HTML 내 4대 상태 버튼(예정, 진행중, 완료, AS) 정상 렌더링', htmlOutput.indexOf('btn-done') !== -1 && htmlOutput.indexOf('btn-progress') !== -1);
+assertTest('모바일 HTML 내 공유 상태 토글 버튼(공유 ON, 미공유 OFF) 정상 렌더링', htmlOutput.indexOf('btnShareOn') !== -1 && htmlOutput.indexOf('btnShareOff') !== -1);
+assertTest('모바일 HTML 내 [공유/진행상태 저장하기] 버튼 정상 렌더링', htmlOutput.indexOf('공유/진행상태 저장하기') !== -1);
 
 console.log('\n🔍 [Step 3.6: 신규 3대 기능 런타임 엔진 검증 (Feature 1, 2, 4)]');
 
@@ -664,11 +667,14 @@ const buildEventDetailsCode = code.slice(code.indexOf('function buildEventDetail
 const hasAuditRemoved = buildEventDetailsCode.indexOf('⏱️ 최초작성') === -1 && buildEventDetailsCode.indexOf('🔄 최종수정') === -1;
 assertTest('buildEventDetails 내 최초작성/최종수정 영역 완전 배제 검증', hasAuditRemoved);
 
-const hasClickableStatusLink = buildEventDetailsCode.indexOf('descLines.push("<a href=\\"" + statusChangeUrl + "\\">📱 [진행상태 변경]</a>");') !== -1;
-assertTest('buildEventDetails 내 [진행상태 변경] HTML 하이퍼링크 구현 검증', hasClickableStatusLink);
+const hasClickableStatusLink = buildEventDetailsCode.indexOf('descLines.push("<a href=\\"" + statusChangeUrl + "\\">📱 [공유/진행상태 변경]</a>");') !== -1;
+assertTest('buildEventDetails 내 [공유/진행상태 변경] HTML 하이퍼링크 구현 검증', hasClickableStatusLink);
 
 const hasClickableSheetLink = buildEventDetailsCode.indexOf('descLines.push("<a href=\\"" + sheetUrl + "\\">📊 [우성아이디 현장 관리 시트]</a>");') !== -1;
 assertTest('buildEventDetails 내 [우성아이디 현장 관리 시트] HTML 하이퍼링크 구현 검증', hasClickableSheetLink);
+
+const hasShareToggleInWeb = code.indexOf('updateScheduleStatusFromWeb(row, newStatus, newShared)') !== -1 && code.indexOf('selectShare(') !== -1;
+assertTest('모바일 웹앱 내 공유 상태(E열) 동시 업데이트 및 UI 토글 엔진 탑재 검증', hasShareToggleInWeb);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
