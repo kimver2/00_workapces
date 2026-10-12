@@ -469,8 +469,9 @@ function onOpen() {
     .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
     .addSeparator()
     .addItem("☀️ 모닝 브리핑 지금 즉시 테스트 발송", "sendDailyBriefingTestNow")
-    .addItem("⏰ 매일 아침 8시 모닝 브리핑 켜기", "enableDailyMorningBriefing")
+    .addItem("⏰ 모닝 브리핑 자동 발송 켜기 (설정 시간 정각)", "enableDailyMorningBriefing")
     .addItem("🔕 모닝 브리핑 자동 발송 끄기", "disableDailyMorningBriefing")
+    .addItem("🕒 모닝 브리핑 발송 시간 변경 (기본 08:00 정각)", "configureBriefingTime")
     .addItem("📧 모닝 브리핑 수신 이메일 변경", "configureBriefingEmail")
     .addSeparator()
     .addItem("🔧 진행상태 드롭다운 복구 ('진행 중' 빨간 삼각형 제거)", "fixStatusDropdownValidation")
@@ -3352,9 +3353,22 @@ function configureBriefingEmail() {
 }
 
 /**
- * 매일 아침 8시 모닝 브리핑 시간 기반 트리거 활성화
+ * 모닝 브리핑 설정 시간 가져오기 (기본값: "08:00")
  */
-function enableDailyMorningBriefing() {
+function getDailyBriefingConfiguredTime() {
+  var docProps = PropertiesService.getDocumentProperties();
+  var saved = docProps.getProperty("DAILY_BRIEFING_TIME");
+  if (saved && /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/.test(saved.trim())) {
+    return saved.trim();
+  }
+  return "08:00";
+}
+
+/**
+ * 다음 모닝 브리핑 실행 시각 계산 및 정각 트리거 등록 (1분 오차 정밀 실행)
+ * - Google 기본 1시간 범위 지연을 방지하기 위해 단발성 정밀 시각 트리거를 자동 연속 예약합니다.
+ */
+function scheduleNextDailyBriefingTrigger() {
   var functionName = "sendDailySiteMorningBriefing";
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
@@ -3363,27 +3377,102 @@ function enableDailyMorningBriefing() {
     }
   }
 
-  // 매일 오전 8시 실행 트리거 생성
+  var timeStr = getDailyBriefingConfiguredTime();
+  var parts = timeStr.split(":");
+  var targetHour = parseInt(parts[0], 10);
+  var targetMin = parseInt(parts[1], 10);
+
+  var now = new Date();
+  var nextRun = new Date(now.getFullYear(), now.getMonth(), now.getDate(), targetHour, targetMin, 0, 0);
+
+  // 현재 시각보다 이미 지났거나 1분 이내라면 내일 같은 시각으로 예약
+  if (nextRun.getTime() <= now.getTime() + 60000) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+
   ScriptApp.newTrigger(functionName)
     .timeBased()
-    .everyDays(1)
-    .atHour(8)
+    .at(nextRun)
     .create();
 
-  var recipient = getDailyBriefingRecipientEmail();
+  return nextRun;
+}
+
+/**
+ * 모닝 브리핑 발송 시간 설정 메뉴 (원하는 시간 정각 지정)
+ */
+function configureBriefingTime() {
+  var ui = SpreadsheetApp.getUi();
+  var currentTime = getDailyBriefingConfiguredTime();
+
+  var prompt = ui.prompt(
+    "⏰ 모닝 브리핑 발송 시간 설정",
+    "매일 모닝 브리핑 이메일을 발송할 시간을 입력하세요 (24시간 형식 HH:mm).\n\n" +
+    "• 예시: 08:00 (오전 8시 정각), 07:30 (오전 7시 30분), 08:15 등\n" +
+    "• 현재 설정 시간: " + currentTime + " 정각\n\n" +
+    "(참고: 정각 예약 엔진이 적용되어 입력하신 시각에 오차 없이 발송됩니다)",
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (prompt.getSelectedButton() === ui.Button.OK) {
+    var inputVal = prompt.getResponseText().trim();
+    var match = inputVal.match(/^([01]?[0-9]|2[0-3]):([0-5][0-9])$/);
+    if (!match) {
+      ui.alert("⚠️ 입력 형식이 올바르지 않습니다.\n\n'08:00', '07:30'과 같이 24시간 형식(HH:mm)으로 입력해주세요.");
+      return;
+    }
+
+    var hour = ("0" + parseInt(match[1], 10)).slice(-2);
+    var min = ("0" + parseInt(match[2], 10)).slice(-2);
+    var formattedTime = hour + ":" + min;
+
+    var docProps = PropertiesService.getDocumentProperties();
+    docProps.setProperty("DAILY_BRIEFING_TIME", formattedTime);
+
+    var isEnabled = docProps.getProperty("DAILY_BRIEFING_ENABLED");
+    var nextRunMsg = "";
+    if (isEnabled === "true") {
+      var nextRun = scheduleNextDailyBriefingTrigger();
+      var dateStr = Utilities.formatDate(nextRun, Session.getScriptTimeZone() || "Asia/Seoul", "yyyy-MM-dd HH:mm");
+      nextRunMsg = "\n\n🚀 다음 발송 예정 시각: " + dateStr;
+    } else {
+      nextRunMsg = "\n\n💡 현재 자동 발송이 꺼져 있습니다. [⏰ 모닝 브리핑 자동 발송 켜기] 메뉴를 누르면 활성화됩니다.";
+    }
+
+    ui.alert("✅ 모닝 브리핑 발송 시간이 [" + formattedTime + " 정각]으로 설정되었습니다." + nextRunMsg);
+  }
+}
+
+/**
+ * 모닝 브리핑 시간 기반 정각 트리거 활성화
+ */
+function enableDailyMorningBriefing() {
+  var docProps = PropertiesService.getDocumentProperties();
+  docProps.setProperty("DAILY_BRIEFING_ENABLED", "true");
+
+  var nextRun = scheduleNextDailyBriefingTrigger();
+  var timeStr = getDailyBriefingConfiguredTime();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var recipient = getDailyBriefingRecipientEmail(ss);
+  var dateStr = Utilities.formatDate(nextRun, Session.getScriptTimeZone() || "Asia/Seoul", "yyyy-MM-dd HH:mm");
+
   SpreadsheetApp.getUi().alert(
-    "☀️ 매일 아침 8시 모닝 브리핑 자동 발송 활성화",
-    "매일 오전 8시에 '오늘의 현장 공정 및 지연 현장 브리핑'이 자동으로 발송됩니다!\n\n" +
-    "• 수신처: " + (recipient || "스프레드시트 소유자 계정") + "\n" +
-    "• 메뉴에서 [☀️ 모닝 브리핑 지금 즉시 테스트 발송]을 눌러 미리 받아보실 수 있습니다.",
+    "☀️ 모닝 브리핑 자동 발송 활성화 (정각 발송)",
+    "매일 " + timeStr + " 정각에 '오늘의 현장 공정 및 지연 현장 브리핑'이 자동으로 발송됩니다!\n\n" +
+    "• 다음 발송 예정: " + dateStr + "\n" +
+    "• 수신처: " + (recipient || "스프레드시트 소유자 계정") + "\n\n" +
+    "💡 발송 시간 변경은 [🕒 모닝 브리핑 발송 시간 변경] 메뉴에서 언제든지 가능합니다.",
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
 
 /**
- * 매일 아침 모닝 브리핑 자동 발송 끄기
+ * 매일 모닝 브리핑 자동 발송 끄기
  */
 function disableDailyMorningBriefing() {
+  var docProps = PropertiesService.getDocumentProperties();
+  docProps.setProperty("DAILY_BRIEFING_ENABLED", "false");
+
   var functionName = "sendDailySiteMorningBriefing";
   var triggers = ScriptApp.getProjectTriggers();
   var removed = 0;
@@ -3394,7 +3483,7 @@ function disableDailyMorningBriefing() {
     }
   }
   if (removed > 0) {
-    SpreadsheetApp.getUi().alert("🔕 매일 아침 모닝 브리핑 자동 발송이 해제되었습니다.");
+    SpreadsheetApp.getUi().alert("🔕 매일 모닝 브리핑 자동 발송이 해제되었습니다.");
   } else {
     SpreadsheetApp.getUi().alert("현재 활성화된 모닝 브리핑 자동 발송 트리거가 없습니다.");
   }
@@ -3502,6 +3591,16 @@ function sendDailySiteMorningBriefing(isManualTest) {
       "이메일 수신함을 확인해보세요.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
+  } else {
+    // 자동 일일 실행인 경우, 다음 날 설정 시각 정각 트리거 자동 재스케줄링 (Self-Rescheduling)
+    try {
+      var isEnabled = PropertiesService.getDocumentProperties().getProperty("DAILY_BRIEFING_ENABLED");
+      if (isEnabled === "true") {
+        scheduleNextDailyBriefingTrigger();
+      }
+    } catch(e) {
+      Logger.log("모닝 브리핑 자동 재스케줄링 오류: " + e.message);
+    }
   }
 }
 

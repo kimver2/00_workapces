@@ -397,6 +397,58 @@ assertTest('isSiteScheduleSheet 판별: "조직도" 시트는 현장데이터에
 assertTest('isSiteScheduleSheet 판별: "직원명단" 시트는 현장데이터에서 완전 배제', isSiteSheetFn(createMockSheet('직원명단')) === false);
 assertTest('isSiteScheduleSheet 판별: "Team_List" 시트는 현장데이터에서 완전 배제', isSiteSheetFn(createMockSheet('Team_List')) === false);
 
+console.log('\n🔍 [Step 3.8: 모닝 브리핑 정각(Exact Time) 스케줄링 및 시간 설정 엔진 검증]');
+
+// 1. 기본 설정 시간 ("08:00")
+let propMap = {};
+sandbox.PropertiesService = {
+  getDocumentProperties: () => ({
+    getProperty: (k) => propMap[k] || '',
+    setProperty: (k, v) => { propMap[k] = v; },
+    deleteProperty: (k) => { delete propMap[k]; }
+  })
+};
+
+const defaultTime = sandbox.getDailyBriefingConfiguredTime();
+assertTest('모닝 브리핑 시간 설정: 미지정 시 기본 "08:00" 반환', defaultTime === '08:00');
+
+// 2. 사용자 시간 설정
+propMap['DAILY_BRIEFING_TIME'] = '07:30';
+const customTime = sandbox.getDailyBriefingConfiguredTime();
+assertTest('모닝 브리핑 시간 설정: 사용자 지정 "07:30" 정상 반환', customTime === '07:30');
+
+// 3. 비정상 포맷 필터링
+propMap['DAILY_BRIEFING_TIME'] = 'invalid-time';
+const fallbackTime = sandbox.getDailyBriefingConfiguredTime();
+assertTest('모닝 브리핑 시간 설정: 비정상 포맷 입력 시 "08:00" 안전 폴백', fallbackTime === '08:00');
+
+// 4. scheduleNextDailyBriefingTrigger 정밀 계산 검증
+let createdTriggerInfo = null;
+let deletedCount = 0;
+sandbox.ScriptApp = {
+  getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/test/exec' }),
+  getProjectTriggers: () => ([{ getHandlerFunction: () => 'sendDailySiteMorningBriefing' }]),
+  deleteTrigger: () => { deletedCount++; },
+  newTrigger: (fn) => ({
+    timeBased: () => ({
+      at: (d) => ({
+        create: () => {
+          createdTriggerInfo = { fn: fn, date: d };
+          return {};
+        }
+      })
+    })
+  })
+};
+
+propMap['DAILY_BRIEFING_TIME'] = '08:00';
+const scheduledTarget = sandbox.scheduleNextDailyBriefingTrigger();
+assertTest('정각 스케줄러: 기존 단발성 트리거 정리(deleteTrigger) 여부', deletedCount > 0);
+assertTest('정각 스케줄러: targetDate 생성 성공 및 Date 객체 반환', scheduledTarget && Object.prototype.toString.call(scheduledTarget) === '[object Date]');
+assertTest('정각 스케줄러: 목표 시간 8시 0분 정각(08:00:00) 설정 여부', scheduledTarget.getHours() === 8 && scheduledTarget.getMinutes() === 0 && scheduledTarget.getSeconds() === 0);
+assertTest('정각 스케줄러: 미래 시점 예약 보장 (target > Date.now())', scheduledTarget.getTime() > Date.now());
+assertTest('정각 스케줄러: ScriptApp.at(target) 정확한 함수 및 일시로 트리거 생성', createdTriggerInfo && createdTriggerInfo.fn === 'sendDailySiteMorningBriefing' && createdTriggerInfo.date.getTime() === scheduledTarget.getTime());
+
 console.log('\n🔍 [Step 4: 코드리뷰 정적 보안/안전성 감사]');
 // Rate limit 방어 패턴 검사
 const hasDiffCheck = code.indexOf('curTitle === details.title') !== -1;
@@ -533,6 +585,22 @@ assertTest('isSiteScheduleSheet 내 구성원/팀원/직원 시트 캘린더 연
 
 const hasFindSiteMemberGuard = code.indexOf('sName.indexOf("구성원") === -1') !== -1 && code.indexOf('sName.indexOf("팀원") === -1') !== -1;
 assertTest('findSiteScheduleSheet 내 구성원/팀원 시트 오탐지 방지 가드 탑재 여부', hasFindSiteMemberGuard);
+
+// [신규 QA] 모닝 브리핑 정각(Exact Time) 스케줄러 및 시간 설정 정적 검증
+const hasConfiguredTimeFn = code.indexOf('function getDailyBriefingConfiguredTime(') !== -1;
+assertTest('모닝 브리핑 설정 시간 조회 함수(getDailyBriefingConfiguredTime) 탑재 여부', hasConfiguredTimeFn);
+
+const hasScheduleExactTriggerFn = code.indexOf('function scheduleNextDailyBriefingTrigger(') !== -1;
+assertTest('모닝 브리핑 정각 정밀 예약 엔진(scheduleNextDailyBriefingTrigger) 탑재 여부', hasScheduleExactTriggerFn);
+
+const hasConfigureBriefingTimeFn = code.indexOf('function configureBriefingTime(') !== -1;
+assertTest('모닝 브리핑 발송 시간 변경 대화상자 함수(configureBriefingTime) 탑재 여부', hasConfigureBriefingTimeFn);
+
+const hasBriefingTimeMenu = code.indexOf('"configureBriefingTime"') !== -1;
+assertTest('상단 메뉴([🚀 현장 관리]) 내 모닝 브리핑 시간 변경 메뉴 등록 여부', hasBriefingTimeMenu);
+
+const hasSelfRescheduling = code.indexOf('scheduleNextDailyBriefingTrigger()') !== -1 && code.indexOf('DAILY_BRIEFING_ENABLED') !== -1;
+assertTest('모닝 브리핑 발송 후 다음날 정각 자동 연속 예약(Self-Rescheduling) 로직 탑재 여부', hasSelfRescheduling);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
