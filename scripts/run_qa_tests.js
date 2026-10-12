@@ -209,7 +209,7 @@ const resWithAudit = buildDetailsFn(rowWithAudit, 15);
 
 assertTest('캘린더 상세 설명: 최초작성 정보 영역 완전 제거 확인', resWithAudit && resWithAudit.description.indexOf('최초작성') === -1);
 assertTest('캘린더 상세 설명: 최종수정 정보 영역 완전 제거 확인', resWithAudit && resWithAudit.description.indexOf('최종수정') === -1);
-assertTest('캘린더 상세 설명: [공유/진행상태 변경] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('<a href="https://script.google.com/macros/s/test/exec?row=15">📱 [공유/진행상태 변경]</a>') !== -1);
+assertTest('캘린더 상세 설명: [공유/진행상태 변경] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('href="https://script.google.com/macros/s/test/exec?row=15') !== -1 && resWithAudit.description.indexOf('📱 [공유/진행상태 변경]</a>') !== -1);
 assertTest('캘린더 상세 설명: [우성아이디 현장 관리 시트] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('📊 [우성아이디 현장 관리 시트]</a>') !== -1);
 assertTest('캘린더 상세 설명: 스프레드시트 링크에 해당 행 포커스(range=A15:H15) 자동 반영', resWithAudit && resWithAudit.description.indexOf('range=A15:H15') !== -1);
 
@@ -716,6 +716,23 @@ assertTest('특수문자 XSS/HTML 파싱 깨짐 방어: <, >, &, ", \' 정상 �
 assertTest('escapeHtmlForInput: null/undefined 입력 시 빈 문자열 안전 폴백',
   typeof escapeHtmlFn === 'function' &&
   escapeHtmlFn(null) === '' && escapeHtmlFn(undefined) === '' && escapeHtmlFn('') === ''
+);
+
+// [신규 QA] 캘린더 일정 내 모바일 웹앱 링크에 현장명(site) 및 공종명(task) 파라미터 자동 탑재 검증
+const testRow = ['진행상태 확인', '26.10.13', '상담', '협력사', true, '', '담당자', '예정', 'ev-1234'];
+const testDetails = buildDetailsFn(testRow, 2);
+assertTest('캘린더 상세 설명 URL 내 현장명/공종명/EventID 쿼리 파라미터 포함 여부',
+  testDetails &&
+  testDetails.description.indexOf('site=' + encodeURIComponent('진행상태 확인')) !== -1 &&
+  testDetails.description.indexOf('task=' + encodeURIComponent('상담')) !== -1 &&
+  testDetails.description.indexOf('id=ev-1234') !== -1
+);
+
+// [신규 QA] doGet 스마트 행 위치 자동 재탐색(Self-Healing Row Resolver) 엔진 탑재 검증
+assertTest('doGet 스마트 행 자동 보정 로직(targetId, targetSite, targetTask 기반 스캔) 탑재 여부',
+  code.indexOf('// [스마트 행 자동 보정 엔진]') !== -1 &&
+  code.indexOf('targetSite && targetTask') !== -1 &&
+  code.indexOf('resolvedRow') !== -1
 );
 
 console.log('\n========================================================');

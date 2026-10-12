@@ -1258,7 +1258,12 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   // 공유/진행상태 변경 링크 (단축 안내문구 클릭 이동 HTML 하이퍼링크)
   var webAppUrl = getWebAppUrl();
   if (webAppUrl && rowNumber) {
-    var statusChangeUrl = webAppUrl + "?row=" + rowNumber;
+    var queryParts = ["row=" + rowNumber];
+    if (siteName) queryParts.push("site=" + encodeURIComponent(siteName));
+    if (taskName) queryParts.push("task=" + encodeURIComponent(taskName));
+    var eventId = String(rowValues[8] || "").trim();
+    if (eventId) queryParts.push("id=" + encodeURIComponent(eventId));
+    var statusChangeUrl = webAppUrl + "?" + queryParts.join("&");
     descLines.push("<a href=\"" + statusChangeUrl + "\">📱 [공유/진행상태 변경]</a>");
   }
 
@@ -3037,6 +3042,9 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
 function doGet(e) {
   var p = (e && e.parameter) ? e.parameter : {};
   var row = parseInt(p.row, 10);
+  var targetSite = p.site ? String(p.site).trim() : "";
+  var targetTask = p.task ? String(p.task).trim() : "";
+  var targetId = p.id ? String(p.id).trim() : "";
   var action = p.action;
   var newStatus = p.status;
   var newShared = p.shared;
@@ -3044,6 +3052,60 @@ function doGet(e) {
 
   var ss = getAppSpreadsheet();
   var sheet = findSiteScheduleSheet(ss);
+
+  // [스마트 행 자동 보정 엔진]
+  // 신규 현장 추가, 행 삭제, 정렬 등으로 인해 시트 행 번호가 밀린 경우 실시간 자동 재탐색
+  if (sheet && (targetId || targetSite || targetTask)) {
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var allData = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
+      var isCurrentRowMatch = false;
+
+      // 1. 전달받은 row 위치의 행이 실제로 해당 현장/공종인지 확인
+      if (row >= 2 && row <= lastRow) {
+        var curRowVals = allData[row - 2];
+        var curSite = String(curRowVals[0] || "").trim();
+        var curTask = String(curRowVals[2] || "").trim();
+        var curId = String(curRowVals[8] || "").trim();
+
+        if (targetId && curId === targetId) {
+          isCurrentRowMatch = true;
+        } else if (targetSite && targetTask && curSite === targetSite && curTask === targetTask) {
+          isCurrentRowMatch = true;
+        }
+      }
+
+      // 2. 만약 행이 밀려서 맞지 않는 경우, 시트 전체에서 진짜 위치를 찾아 자동 보정
+      if (!isCurrentRowMatch) {
+        var resolvedRow = -1;
+        // 1순위: 캘린더 고유 Event ID 일치 행 탐색
+        if (targetId) {
+          for (var i = 0; i < allData.length; i++) {
+            if (String(allData[i][8] || "").trim() === targetId) {
+              resolvedRow = i + 2;
+              break;
+            }
+          }
+        }
+        // 2순위: 현장명 + 공종명 일치 행 탐색
+        if (resolvedRow === -1 && targetSite && targetTask) {
+          for (var j = 0; j < allData.length; j++) {
+            var sVal = String(allData[j][0] || "").trim();
+            var tVal = String(allData[j][2] || "").trim();
+            if (sVal === targetSite && tVal === targetTask) {
+              resolvedRow = j + 2;
+              break;
+            }
+          }
+        }
+
+        if (resolvedRow !== -1) {
+          Logger.log("🔄 행 번호 자동 보정 완료: " + row + "행 ➔ " + resolvedRow + "행 (현장: " + targetSite + " / " + targetTask + ")");
+          row = resolvedRow;
+        }
+      }
+    }
+  }
 
   // 1) 상태 업데이트 요청 (URL 파라미터 직접 호출 또는 GET 이동 폴백)
   if (action === "update" && row >= 2 && newStatus && sheet) {
