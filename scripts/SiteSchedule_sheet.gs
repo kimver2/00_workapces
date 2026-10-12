@@ -50,9 +50,23 @@ function setupNewWorkspaceFromScratch() {
   }
 
   // 1. [현장데이터] 시트 생성 및 초기화
-  var siteSheet = findSiteScheduleSheet(ss);
+  var siteSheet = ss.getSheetByName("현장데이터");
   if (!siteSheet) {
-    siteSheet = ss.insertSheet("현장데이터");
+    var existingSiteSheet = findSiteScheduleSheet(ss);
+    if (existingSiteSheet && isSiteScheduleSheet(existingSiteSheet)) {
+      siteSheet = existingSiteSheet;
+      try { siteSheet.setName("현장데이터"); } catch(e) {}
+    } else {
+      var defaultSheet1 = ss.getSheetByName("시트1") || ss.getSheetByName("Sheet1");
+      if (defaultSheet1) {
+        siteSheet = defaultSheet1;
+        try { siteSheet.setName("현장데이터"); } catch(e) {
+          siteSheet = ss.insertSheet("현장데이터");
+        }
+      } else {
+        siteSheet = ss.insertSheet("현장데이터");
+      }
+    }
   }
   siteSheet.setHiddenGridlines(false);
 
@@ -106,7 +120,7 @@ function setupNewWorkspaceFromScratch() {
   setupSiteSheetConditionalFormatting(siteSheet);
 
   // 2. [대시보드] 시트 생성 및 만년달력 구축
-  var dashSheet = findDashboardSheet(ss);
+  var dashSheet = ss.getSheetByName("대시보드") || findDashboardSheet(ss);
   if (!dashSheet) {
     dashSheet = ss.insertSheet("대시보드", 0);
   }
@@ -115,12 +129,12 @@ function setupNewWorkspaceFromScratch() {
   // 3. [사용가이드] 시트 생성 및 매뉴얼 작성
   var guideSheet = createOrUpdateUsageGuideSheet(ss);
 
-  // 4. 기본 "시트1" 정리 (다른 시트가 2개 이상 있을 때)
+  // 4. 기본 "시트1" 정리 (현장데이터로 이름이 바뀌지 않고 남아있는 잉여 빈 시트가 있는 경우에만 삭제)
   var sheets = ss.getSheets();
   for (var s = 0; s < sheets.length; s++) {
     var sName = sheets[s].getName();
     if (sName === "시트1" || sName === "Sheet1") {
-      if (ss.getSheets().length > 2) {
+      if (ss.getSheets().length > 2 && sheets[s].getSheetId() !== siteSheet.getSheetId()) {
         try { ss.deleteSheet(sheets[s]); } catch(e) {}
       }
     }
