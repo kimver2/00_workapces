@@ -458,43 +458,54 @@ function autoSyncKoreanHolidays(baseYear, targetSheet) {
 // 1. 스프레드시트가 열릴 때 상단에 [🚀 현장 관리] 메뉴 자동 등록
 // ========================================================
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu("🚀 현장 관리")
-    .addItem("📅 최근 & 예정 일정 우선 동기화 (최근 1개월~미래)", "syncRecentSiteSchedulesToGoogleCalendar")
-    .addItem("📦 전체 일정 순차 동기화 (25건씩 안전 분할)", "syncAllSiteSchedulesToGoogleCalendar")
-    .addSeparator()
-    .addItem("⚡ 실시간 캘린더 연동 켜기 (시트 수정 시 실시간 반영)", "enableRealtimeCalendarSync")
-    .addItem("❌ 실시간 캘린더 연동 끄기", "disableRealtimeCalendarSync")
-    .addSeparator()
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu("🚀 현장 관리")
+    // [자주 쓰는 핵심 3대 기능]
+    .addItem("📅 구글 캘린더 동기화 (최근 1개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
     .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
+    .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
     .addSeparator()
-    .addItem("☀️ 모닝 브리핑 지금 즉시 테스트 발송", "sendDailyBriefingTestNow")
-    .addItem("⏰ 모닝 브리핑 자동 발송 켜기 (설정 시간 정각)", "enableDailyMorningBriefing")
-    .addItem("🔕 모닝 브리핑 자동 발송 끄기", "disableDailyMorningBriefing")
-    .addItem("🕒 모닝 브리핑 발송 시간 변경 (기본 08:00 정각)", "configureBriefingTime")
-    .addItem("📧 모닝 브리핑 수신 이메일 변경", "configureBriefingEmail")
+
+    // [서브메뉴 1: 모닝 브리핑 관리]
+    .addSubMenu(ui.createMenu("☀️ 모닝 브리핑 관리")
+      .addItem("✉️ 지금 즉시 테스트 발송", "sendDailyBriefingTestNow")
+      .addItem("⏰ 자동 발송 켜기 (정각 발송)", "enableDailyMorningBriefing")
+      .addItem("🔕 자동 발송 끄기", "disableDailyMorningBriefing")
+      .addItem("🕒 발송 시간 변경 (기본 08:00 정각)", "configureBriefingTime")
+      .addItem("📧 수신 이메일 변경", "configureBriefingEmail")
+    )
+
+    // [서브메뉴 2: 캘린더 연동 설정]
+    .addSubMenu(ui.createMenu("⚡ 캘린더 연동 설정")
+      .addItem("⚡ 실시간 시트➔캘린더 연동 켜기 (수정 시 즉시 반영)", "enableRealtimeCalendarSync")
+      .addItem("❌ 실시간 시트➔캘린더 연동 끄기", "disableRealtimeCalendarSync")
+      .addSeparator()
+      .addItem("📥 캘린더 수정사항 가져오기 (수동 즉시 반영)", "syncFromCalendarToSheet")
+      .addItem("⏰ 캘린더 ➔ 시트 5분 주기 자동 동기화 켜기", "enableCalendarToSheet5MinSync")
+      .addItem("⏹️ 캘린더 ➔ 시트 자동 동기화 끄기", "disableCalendarToSheetAutoSync")
+      .addSeparator()
+      .addItem("📦 전체 일정 순차 동기화 (과거 포함 25건씩 분할)", "syncAllSiteSchedulesToGoogleCalendar")
+    )
+
+    // [서브메뉴 3: 현장 데이터 편집 / 보기 편의 기능]
+    .addSubMenu(ui.createMenu("📑 현장 데이터 편집/보기")
+      .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
+      .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
+      .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
+      .addItem("🎯 오늘 날짜로 이동 (Today)", "goToToday")
+    )
     .addSeparator()
-    .addItem("🔧 진행상태 드롭다운 복구 ('진행 중' 빨간 삼각형 제거)", "fixStatusDropdownValidation")
-    .addSeparator()
-    .addItem("📥 캘린더 수정사항 가져오기 (수동 즉시 반영)", "syncFromCalendarToSheet")
-    .addItem("⚡ 캘린더 ➔ 시트 1분 주기 자동 동기화 켜기 (초고속)", "enableCalendarToSheet1MinSync")
-    .addItem("⏰ 캘린더 ➔ 시트 5분 주기 자동 동기화 켜기 (표준)", "enableCalendarToSheet5MinSync")
-    .addItem("⏹️ 캘린더 ➔ 시트 자동 동기화 끄기", "disableCalendarToSheetAutoSync")
-    .addSeparator()
-    .addItem("⚙️ 연동 캘린더 변경 / 확인", "configureTargetCalendar")
-    .addItem("📱 모바일 상태변경 웹앱 배포 URL 설정", "configureWebAppUrl")
-    .addSeparator()
-    .addItem("🔄 대시보드 갱신 (달력 새로고침)", "syncAllSiteSchedulesToDashboard")
-    .addItem("🎯 오늘 날짜로 이동 (Today)", "goToToday")
-    .addSeparator()
-    .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
-    .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
-    .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
-    .addSeparator()
-    .addItem("🧹 빈 행 유령 이력/ID 일괄 청소", "cleanupEmptyRowsMetadata")
-    .addSeparator()
-    .addItem("📖 사용 가이드 & 색상 범례 시트 생성/갱신", "createOrUpdateUsageGuideSheetMenu")
-    .addItem("✨ 새 스프레드시트 초기 환경 자동 구축 (대시보드 + 현장데이터 + 사용가이드)", "setupNewWorkspaceFromScratch")
+
+    // [서브메뉴 4: 고급 설정 & 시스템 관리 (1회성 / 유지보수 전용)]
+    .addSubMenu(ui.createMenu("⚙️ 고급 설정 & 시스템 관리")
+      .addItem("📖 사용 가이드 & 색상 범례 시트 생성/갱신", "createOrUpdateUsageGuideSheetMenu")
+      .addItem("🔧 진행상태 드롭다운 복구 ('진행 중' 빨간 삼각형 제거)", "fixStatusDropdownValidation")
+      .addItem("🧹 빈 행 유령 이력/ID 일괄 청소", "cleanupEmptyRowsMetadata")
+      .addItem("⚙️ 연동 캘린더 변경 / 확인", "configureTargetCalendar")
+      .addItem("📱 모바일 상태변경 웹앱 배포 URL 설정", "configureWebAppUrl")
+      .addSeparator()
+      .addItem("✨ 새 스프레드시트 초기 환경 자동 구축 (대시보드 + 현장데이터 + 사용가이드)", "setupNewWorkspaceFromScratch")
+    )
     .addToUi();
 }
 
@@ -646,7 +657,6 @@ function handleCalendarEditTrigger(e) {
 
   try {
     SpreadsheetApp.flush(); // 방금 입력된 셀 값 메모리 즉시 동기화
-    ensureCalendarSyncColumns(sheet);
 
     var now = new Date();
     var nowMs = now.getTime();
@@ -654,16 +664,12 @@ function handleCalendarEditTrigger(e) {
     var currentUser = getCurrentUserIdentifier();
 
     for (var r = Math.max(startRow, 2); r <= endRow; r++) {
-      // 최초작성일/작성자(K, L열)가 비어있으면 최초 작성 정보 기록
-      var cellCreatedDate = sheet.getRange(r, 11);
-      if (!cellCreatedDate.getValue()) {
-        cellCreatedDate.setValue(nowStr);
-        sheet.getRange(r, 12).setValue(currentUser);
-      }
-
-      // 최종수정일/수정자(M, N열) 갱신
-      sheet.getRange(r, 13).setValue(nowStr);
-      sheet.getRange(r, 14).setValue(currentUser);
+      // 최초/최종 작성 정보 일괄 읽기 및 쓰기 (개별 4회 호출 ➔ 1회 배치 쓰기로 4배 가속)
+      var metaRange = sheet.getRange(r, 11, 1, 4);
+      var metaVals = metaRange.getValues()[0];
+      var createdDate = metaVals[0] || nowStr;
+      var createdUser = metaVals[1] || currentUser;
+      metaRange.setValues([[createdDate, createdUser, nowStr, currentUser]]);
 
       // 비고를 제외한 변경(1~5열, 7~8열: 현장, 날짜, 공종, 협력업체, 공유 체크박스, 담당자, 진행상태) 시 즉시 캘린더 실시간 반영!
       if (!isOnlyMemo) {
@@ -1402,8 +1408,6 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal) {
   // 실시간 수정 즉시 대시보드 달력까지 연쇄 갱신
   var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
   refreshDashboardCalendar(ss);
-
-  ensureCalendarSyncColumns(sheet);
 }
 
 /**
