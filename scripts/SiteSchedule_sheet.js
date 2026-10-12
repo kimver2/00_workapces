@@ -2933,7 +2933,7 @@ function configureWebAppUrl() {
 
   if (input) {
     docProps.setProperty("WEB_APP_URL", input);
-    ui.alert("✅ 모바일 웹앱 URL이 성공적으로 등록되었습니다!\n\n이제 캘린더 동기화 시 일정 본문에 상태 변경 링크가 자동 삽입됩니다.");
+    ui.alert("✅ 모바일 웹앱 URL이 성공적으로 등록되었습니다!\n\n상단 메뉴 [🚀 현장 관리] > [구글 캘린더 전체 동기화]를 1회 실행해주시면 기존 캘린더 일정들의 링크도 새 URL로 일괄 갱신됩니다.");
   } else {
     docProps.deleteProperty("WEB_APP_URL");
     ui.alert("모바일 웹앱 URL 설정이 해제되었습니다.");
