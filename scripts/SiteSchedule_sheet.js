@@ -1229,15 +1229,14 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   // 구글 캘린더 자체 블록 색상 자동 지정 (Feature 1)
   var eventColor = getCalendarColorForStatus(statusClean, isDelayed, isShared);
 
-  // 제목 포맷: [지연경고] [상태아이콘] 🟦 또는 🟥 [현장명] 공종 (비고)
+  // 제목 포맷: [지연경고] [상태아이콘] 🟦 또는 🟥 [현장명] 공종 (비고 제외)
   var baseTitle = "";
-  var taskDisplay = taskName + (memo ? " (" + memo + ")" : "");
   if (siteName && taskName) {
-    baseTitle = "[" + siteName + "] " + taskDisplay;
+    baseTitle = "[" + siteName + "] " + taskName;
   } else if (siteName) {
-    baseTitle = "[" + siteName + "]" + (memo ? " (" + memo + ")" : "");
+    baseTitle = "[" + siteName + "]";
   } else {
-    baseTitle = taskDisplay;
+    baseTitle = taskName;
   }
   var title = delayPrefix + statusIcon + prefixIcon + baseTitle;
 

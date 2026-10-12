@@ -151,6 +151,8 @@ rowDone[7] = '완료';
 const resDone = buildDetailsFn(rowDone, 15);
 assertTest('buildEventDetails 런타임 실행 ("완료"): ReferenceError 없이 정상 실행', resDone !== null);
 assertTest('상태 "완료" 시 캘린더 제목에 "✅ " 아이콘 정상 부여', resDone && resDone.title.startsWith('✅ 🟦'));
+assertTest('캘린더 제목(Title) 내 비고(memo) 데이터 완전 배제 검증', resDone && resDone.title === '✅ 🟦 [래미안 101동] 목공');
+assertTest('캘린더 본문 Description 내 비고(memo) 정상 유지 검증', resDone && resDone.description.indexOf('📝 비고: 오전작업') !== -1);
 
 // 2. 상태 '진행중' 런타임 호출 테스트
 const rowProg = [...baseMockRow];
