@@ -1185,7 +1185,7 @@ function configureTargetCalendar() {
 /**
  * 행 데이터로부터 캘린더 이벤트 상세 정보 구성
  */
-function buildEventDetails(rowValues, rowNumber, refDate) {
+function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   var siteName = String(rowValues[0] || "").trim(); // A열: 현장
   var dateVal = rowValues[1];                      // B열: 날짜
   var taskName = String(rowValues[2] || "").trim(); // C열: 공종
@@ -1263,11 +1263,49 @@ function buildEventDetails(rowValues, rowNumber, refDate) {
     descLines.push("<a href=\"" + statusChangeUrl + "\">📱 [진행상태 변경]</a>");
   }
 
-  // 스프레드시트 바로가기 링크 ([우성아이디 현장 관리 시트])
+  // 스프레드시트 바로가기 링크 ([우성아이디 현장 관리 시트] - 해당 행 포커스 이동)
   var sheetUrl = "";
   try {
-    var activeSs = getAppSpreadsheet();
-    if (activeSs) sheetUrl = activeSs.getUrl();
+    var activeSs = null;
+    var targetGid = null;
+
+    if (targetSheet && typeof targetSheet.getSheetId === "function") {
+      targetGid = targetSheet.getSheetId();
+      try {
+        if (typeof targetSheet.getParent === "function") {
+          activeSs = targetSheet.getParent();
+        }
+      } catch(e) {}
+    }
+
+    if (!activeSs) {
+      activeSs = getAppSpreadsheet();
+    }
+
+    if ((targetGid === null || targetGid === undefined) && activeSs) {
+      try {
+        var foundSiteSheet = findSiteScheduleSheet(activeSs);
+        if (foundSiteSheet && typeof foundSiteSheet.getSheetId === "function") {
+          targetGid = foundSiteSheet.getSheetId();
+        }
+      } catch(e) {}
+    }
+
+    if (activeSs && typeof activeSs.getUrl === "function") {
+      var rawUrl = activeSs.getUrl();
+      if (rawUrl) {
+        var baseUrl = rawUrl.split("#")[0];
+        var params = [];
+        if (targetGid !== null && targetGid !== undefined) {
+          params.push("gid=" + targetGid);
+        }
+        var validRow = parseInt(rowNumber, 10);
+        if (!isNaN(validRow) && validRow > 0) {
+          params.push("range=A" + validRow + ":H" + validRow);
+        }
+        sheetUrl = baseUrl + (params.length > 0 ? "#" + params.join("&") : "");
+      }
+    }
   } catch(e) {}
 
   if (sheetUrl) {
@@ -1308,7 +1346,7 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
     sheetUpdated = parseInt(rawUpdated, 10) || 0;
   }
 
-  var details = buildEventDetails(rowValues, row);
+  var details = buildEventDetails(rowValues, row, null, sheet);
   var cal = getTargetCalendar();
   if (!cal) return;
 
@@ -1576,7 +1614,7 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       rowVals[13] = mUser;
     }
 
-    var details = buildEventDetails(rowVals, row);
+    var details = buildEventDetails(rowVals, row, null, sheet);
     if (!details) {
       if (existingId) {
         try {

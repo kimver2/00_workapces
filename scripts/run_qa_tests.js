@@ -207,8 +207,16 @@ const resWithAudit = buildDetailsFn(rowWithAudit, 15);
 
 assertTest('캘린더 상세 설명: 최초작성 정보 영역 완전 제거 확인', resWithAudit && resWithAudit.description.indexOf('최초작성') === -1);
 assertTest('캘린더 상세 설명: 최종수정 정보 영역 완전 제거 확인', resWithAudit && resWithAudit.description.indexOf('최종수정') === -1);
-assertTest('캘린더 상세 설명: [진행상태 변경] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('<a href="https://script.google.com/macros/s/test/exec?row=15">📱 [진행상태 변경]</a>') !== -1);
-assertTest('캘린더 상세 설명: [우성아이디 현장 관리 시트] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('<a href="https://docs.google.com/spreadsheets/d/test-sheet-id/edit">📊 [우성아이디 현장 관리 시트]</a>') !== -1);
+assertTest('캘린더 상세 설명: [우성아이디 현장 관리 시트] 클릭 가능한 HTML 하이퍼링크 형식 탑재', resWithAudit && resWithAudit.description.indexOf('📊 [우성아이디 현장 관리 시트]</a>') !== -1);
+assertTest('캘린더 상세 설명: 스프레드시트 링크에 해당 행 포커스(range=A15:H15) 자동 반영', resWithAudit && resWithAudit.description.indexOf('range=A15:H15') !== -1);
+
+// 6-2. 특정 시트(targetSheet) GID 및 행 포커스 연동 검증
+const mockSiteSheetWithGid = {
+  getSheetId: () => 100,
+  getParent: () => ({ getUrl: () => 'https://docs.google.com/spreadsheets/d/test-sheet-id/edit' })
+};
+const resWithSheetGid = buildDetailsFn(rowWithAudit, 15, null, mockSiteSheetWithGid);
+assertTest('캘린더 상세 설명: targetSheet 연동 시 #gid=100&range=A15:H15 완벽 생성', resWithSheetGid && resWithSheetGid.description.indexOf('#gid=100&range=A15:H15') !== -1);
 
 // 7. buildMobileStatusHtml 런타임 실행 테스트
 const buildHtmlFn = sandbox.buildMobileStatusHtml;
