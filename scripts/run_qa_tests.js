@@ -802,6 +802,130 @@ assertTest('이벤트 생성 즉시 설명(Description)에 Event ID 주입(fresh
   code.indexOf('rowVals[8] = newEventId;') !== -1
 );
 
+// ========================================================
+// 8. 캘린더 중복 생성 원천 차단 및 유령/중복 일정 자동 정리 QA 검증
+// ========================================================
+console.log('\n🧹 [Step 8: 캘린더 중복 생성 방지 및 고아/유령 일정 청소 QA]');
+
+// 8-1: buildEventDetails baseTitle 속성 포함 여부
+const sampleRow = ['날짜 체크 시간 체크', '26.10.13', '전기마감', '', false, '', '전예린', '진행 중'];
+const sampleDetails = sandbox.buildEventDetails(sampleRow, 19, null, null);
+assertTest('buildEventDetails baseTitle 반환 검증 ([현장명] 공종 표준 포맷)',
+  sampleDetails && sampleDetails.baseTitle === '[날짜 체크 시간 체크] 전기마감'
+);
+
+// 8-2: isSystemSiteScheduleEvent 검증
+const mockSysEventA = {
+  getTitle: () => '▶️ 🟥 [날짜 체크 시간 체크] 전기마감',
+  getDescription: () => '📌 현장명: 날짜 체크 시간 체크\n🔨 공종: 전기마감'
+};
+const mockSysEventB = {
+  getTitle: () => '🟥 [날짜 체크 시간 체크] 전기마감',
+  getDescription: () => ''
+};
+const mockPersonalEvent = {
+  getTitle: () => '치과 진료 예약',
+  getDescription: () => '강남구 신사동 치과 정기검진'
+};
+assertTest('isSystemSiteScheduleEvent: 우리 시스템 일정(설명 마커) 정확 탐지',
+  sandbox.isSystemSiteScheduleEvent(mockSysEventA) === true
+);
+assertTest('isSystemSiteScheduleEvent: 구형/설명 없는 시스템 일정(제목 패턴) 정확 탐지',
+  sandbox.isSystemSiteScheduleEvent(mockSysEventB) === true
+);
+assertTest('isSystemSiteScheduleEvent: 개인 일정(비시스템) 철저 보호(false 반환)',
+  sandbox.isSystemSiteScheduleEvent(mockPersonalEvent) === false
+);
+
+// 8-3: findMatchingCalendarEvent 탐색 알고리즘 시뮬레이션
+const mockCalEvents = [
+  {
+    getId: () => 'orphan-ev-999',
+    getTitle: () => '🟥 [날짜 체크 시간 체크] 전기마감',
+    getDescription: () => '📌 현장명: 날짜 체크 시간 체크\n🔨 공종: 전기마감',
+    getLocation: () => '날짜 체크 시간 체크',
+    isAllDayEvent: () => true,
+    getAllDayStartDate: () => new Date(2026, 9, 13, 0, 0, 0),
+    getStartTime: () => new Date(2026, 9, 13, 0, 0, 0)
+  },
+  {
+    getId: () => 'other-row-ev',
+    getTitle: () => '▶️ 🟥 [날짜 체크 시간 체크] 도배',
+    getDescription: () => '📌 현장명: 날짜 체크 시간 체크\n🔨 공종: 도배',
+    getLocation: () => '날짜 체크 시간 체크',
+    isAllDayEvent: () => true,
+    getAllDayStartDate: () => new Date(2026, 9, 13, 0, 0, 0),
+    getStartTime: () => new Date(2026, 9, 13, 0, 0, 0)
+  }
+];
+
+const mockCal = {
+  getEvents: (s, e) => mockCalEvents
+};
+
+const matchedEv = sandbox.findMatchingCalendarEvent(mockCal, sampleDetails, {});
+assertTest('findMatchingCalendarEvent: 동일 현장/공종/날짜의 기존 일정 정확 탐색',
+  matchedEv && matchedEv.getId() === 'orphan-ev-999'
+);
+
+const matchedWithOtherRow = sandbox.findMatchingCalendarEvent(mockCal, sampleDetails, { 'orphan-ev-999': true });
+assertTest('findMatchingCalendarEvent: 타 행에 연결된 이벤트는 매칭에서 안전하게 배제',
+  matchedWithOtherRow === null
+);
+
+// 8-4: cleanDuplicateCalendarEventsOnDate 시뮬레이션
+let deletedEvId = null;
+const mockDupeCal = {
+  getEvents: (s, e) => [
+    {
+      getId: () => 'active-ev-111',
+      getTitle: () => '▶️ 🟥 [날짜 체크 시간 체크] 전기마감',
+      getDescription: () => '📌 현장명: 날짜 체크 시간 체크',
+      getLocation: () => '날짜 체크 시간 체크',
+      isAllDayEvent: () => true,
+      getAllDayStartDate: () => new Date(2026, 9, 13, 0, 0, 0),
+      getStartTime: () => new Date(2026, 9, 13, 0, 0, 0),
+      deleteEvent: () => { deletedEvId = 'active-ev-111'; }
+    },
+    {
+      getId: () => 'orphan-ev-222',
+      getTitle: () => '🟥 [날짜 체크 시간 체크] 전기마감',
+      getDescription: () => '📌 현장명: 날짜 체크 시간 체크',
+      getLocation: () => '날짜 체크 시간 체크',
+      isAllDayEvent: () => true,
+      getAllDayStartDate: () => new Date(2026, 9, 13, 0, 0, 0),
+      getStartTime: () => new Date(2026, 9, 13, 0, 0, 0),
+      deleteEvent: () => { deletedEvId = 'orphan-ev-222'; }
+    }
+  ]
+};
+
+const dupeDeletedCount = sandbox.cleanDuplicateCalendarEventsOnDate(
+  mockDupeCal,
+  sampleDetails,
+  'active-ev-111',
+  { 'active-ev-111': true }
+);
+assertTest('cleanDuplicateCalendarEventsOnDate: 활성 ID 보존 및 잉여 중복/고아 일정만 선택 삭제',
+  dupeDeletedCount === 1 && deletedEvId === 'orphan-ev-222'
+);
+
+// 8-5: 상단 메뉴 등록 검증
+assertTest('상단 메뉴(⚡ 캘린더 연동 설정) 내 캘린더 중복/유령 일정 자동 정리 등록 여부',
+  code.indexOf('.addItem("🧹 캘린더 중복 및 유령 일정 자동 정리", "cleanupDuplicateAndOrphanCalendarEvents")') !== -1
+);
+
+// 8-6: syncSingleRowToCalendar 및 syncSiteSchedulesBatchSafe 내 방어 로직 탑재 검증
+assertTest('syncSingleRowToCalendar 내 중복 방지(findMatching) 및 정리(cleanDuplicate) 탑재 여부',
+  code.indexOf('event = findMatchingCalendarEvent(cal, details, allSheetIds);') !== -1 &&
+  code.indexOf('cleanDuplicateCalendarEventsOnDate(cal, details, event.getId(), allSheetIds);') !== -1
+);
+
+assertTest('syncSiteSchedulesBatchSafe 내 중복 방지(findMatching) 및 정리(cleanDuplicate) 탑재 여부',
+  code.indexOf('event = findMatchingCalendarEvent(cal, details, allSheetIds);') !== -1 &&
+  code.indexOf('cleanDuplicateCalendarEventsOnDate(cal, details, newEventId, allSheetIds);') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
