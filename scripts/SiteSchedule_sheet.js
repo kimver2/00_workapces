@@ -1185,6 +1185,17 @@ function runPeriodicAutoSync() {
     var nextCursor = (cursor + stepsTaken) % Math.max(values.length, 1);
     props.setProperty("CAL_INSPECT_CURSOR", String(nextCursor));
 
+    // 유령(고아) 일정 자동 무음 청소 (12시간에 1회 실행하여 Quota 보호)
+    var lastOrphanCleanup = parseInt(props.getProperty("LAST_ORPHAN_CLEANUP_MS") || "0", 10);
+    if (nowMs - lastOrphanCleanup > 12 * 60 * 60 * 1000) {
+      try {
+        cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, 14, 45);
+        props.setProperty("LAST_ORPHAN_CLEANUP_MS", String(nowMs));
+      } catch (eOrphan) {
+        Logger.log("주기적 유령 일정 청소 예외: " + eOrphan.toString());
+      }
+    }
+
     // 시트 또는 캘린더 변경이 있었던 경우에만 대시보드 달력 최신화
     if (didSyncToCal || calUpdatedCount > 0) {
       refreshDashboardCalendar(ss);
@@ -2953,6 +2964,106 @@ function cleanDuplicateCalendarEventsOnDate(cal, details, keepEventId, knownShee
   }
 
   return deleted;
+}
+
+/**
+ * [자동/무음용] 구글 캘린더 중복 및 시트에서 삭제된 유령(고아) 일정 자동 무음 청소
+ * 백그라운드 동기화(runPeriodicAutoSync) 및 매일 아침 모닝 브리핑(sendDailySiteMorningBriefing) 발송 전 실행
+ * UI 팝업(alert/confirm) 없이 무음(Silent)으로 실행되며 우성아이디 외의 개인 일정은 절대 건드리지 않음
+ * 
+ * @param {Sheet} [sheet] 현장데이터 시트 (생략 시 자동 검색)
+ * @param {Calendar} [cal] 대상 캘린더 객체 (생략 시 기본 캘린더 자동 로드)
+ * @param {number} [daysBefore=14] 오늘 기준 과거 며칠 전까지 검사할지 (기본 14일)
+ * @param {number} [daysAfter=60] 오늘 기준 미래 며칠 후까지 검사할지 (기본 60일)
+ * @return {number} 삭제된 유령 일정 개수
+ */
+function cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, daysBefore, daysAfter) {
+  try {
+    if (!sheet) {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      sheet = findSiteScheduleSheet(ss);
+    }
+    if (!sheet) return 0;
+
+    if (!cal) {
+      cal = getTargetCalendar();
+    }
+    if (!cal) return 0;
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 0;
+
+    ensureCalendarSyncColumns(sheet);
+
+    var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+    var validEventIds = {};
+    var unsyncedRows = [];
+
+    for (var i = 0; i < values.length; i++) {
+      var rowNum = i + 2;
+      var rowVal = values[i];
+      var eventId = String(rowVal[8] || "").trim();
+      if (eventId) {
+        validEventIds[eventId] = rowNum;
+      } else if (rowVal[0] || rowVal[2]) {
+        unsyncedRows.push(rowNum);
+      }
+    }
+
+    // 1단계: I열이 비어있는 행이 있다면, 캘린더의 기존 일정과 스마트 자동 재연결
+    for (var u = 0; u < unsyncedRows.length; u++) {
+      var uRow = unsyncedRows[u];
+      var uVals = values[uRow - 2];
+      var uDetails = buildEventDetails(uVals, uRow, null, sheet);
+      if (!uDetails) continue;
+
+      var matchedEv = findMatchingCalendarEvent(cal, uDetails, validEventIds);
+      if (matchedEv) {
+        var mId = matchedEv.getId();
+        sheet.getRange(uRow, 9).setValue(mId);
+        sheet.getRange(uRow, 10).setValue(Date.now());
+        validEventIds[mId] = uRow;
+        values[uRow - 2][8] = mId;
+      }
+    }
+
+    daysBefore = (typeof daysBefore === "number" && daysBefore >= 0) ? daysBefore : 14;
+    daysAfter = (typeof daysAfter === "number" && daysAfter >= 0) ? daysAfter : 60;
+
+    var nowMs = Date.now();
+    var searchStart = new Date(nowMs - daysBefore * 24 * 60 * 60 * 1000);
+    var searchEnd = new Date(nowMs + daysAfter * 24 * 60 * 60 * 1000);
+
+    var events = [];
+    try {
+      events = cal.getEvents(searchStart, searchEnd);
+    } catch(e) {
+      events = [];
+    }
+
+    var deletedCount = 0;
+    for (var k = 0; k < events.length; k++) {
+      var ev = events[k];
+      if (!isSystemSiteScheduleEvent(ev)) continue;
+
+      var calId = ev.getId();
+      if (validEventIds[calId]) continue;
+
+      try {
+        ev.deleteEvent();
+        deletedCount++;
+        Utilities.sleep(100);
+      } catch(errDel) {}
+    }
+
+    if (deletedCount > 0) {
+      Logger.log("🧹 유령 일정 무음 자동 정리 완료: " + deletedCount + "건 삭제 (-" + daysBefore + "일 ~ +" + daysAfter + "일)");
+    }
+    return deletedCount;
+  } catch(e) {
+    Logger.log("유령 일정 자동 무음 정리 예외: " + e.toString());
+    return 0;
+  }
 }
 
 /**
@@ -5102,6 +5213,16 @@ function sendDailySiteMorningBriefing(isManualTest) {
       SpreadsheetApp.getUi().alert("현장데이터 시트에 일정이 없습니다.");
     }
     return;
+  }
+
+  // 모닝 브리핑 발송 직전, 캘린더의 유령(고아) 일정 자동 무음 청소 (-14일 ~ +60일)
+  try {
+    var cal = getTargetCalendar();
+    if (cal) {
+      cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, 14, 60);
+    }
+  } catch (eClean) {
+    Logger.log("모닝 브리핑 사전 유령 일정 정리 예외: " + eClean.toString());
   }
 
   var recipient = getDailyBriefingRecipientEmail(ss);

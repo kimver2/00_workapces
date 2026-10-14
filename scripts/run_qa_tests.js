@@ -1320,6 +1320,87 @@ const briefingCode = code.slice(code.indexOf('function sendDailySiteMorningBrief
 const hasBriefingDateFormat = briefingCode.indexOf('formatScheduleDateDisplay(dateVal)') !== -1;
 assertTest('sendDailySiteMorningBriefing: 모닝 브리핑 이메일 발송 시 dateStr에 formatScheduleDateDisplay 적용 검증', hasBriefingDateFormat);
 
+// ========================================================
+// 17. [모닝 브리핑 및 백그라운드 유령(고아) 일정 무음 자동 청소 엔진 QA]
+// ========================================================
+console.log('\n🧹 [Step 17: 모닝 브리핑 및 백그라운드 유령(고아) 일정 무음 자동 청소 엔진 QA]');
+
+// 17-1: cleanupDuplicateAndOrphanCalendarEventsSilent 함수 탑재 여부
+assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent 무음 정리 엔진 함수 탑재 여부', typeof sandbox.cleanupDuplicateAndOrphanCalendarEventsSilent === 'function');
+
+// 17-2: sendDailySiteMorningBriefing 발송 전 cleanupDuplicateAndOrphanCalendarEventsSilent 호출 검증
+const hasMorningCleanup = briefingCode.indexOf('cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, 14, 60)') !== -1;
+assertTest('sendDailySiteMorningBriefing: 메일 발송 전 캘린더 유령 일정 자동 무음 청소(-14일~+60일) 호출 검증', hasMorningCleanup);
+
+// 17-3: runPeriodicAutoSync 12시간 주기 유령 일정 무음 청소 탑재 검증
+const periodicFullCode = code.slice(code.indexOf('function runPeriodicAutoSync()'), code.indexOf('function runPeriodic1MinSync()'));
+const hasPeriodicCleanup = periodicFullCode.indexOf('LAST_ORPHAN_CLEANUP_MS') !== -1 &&
+  periodicFullCode.indexOf('cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, 14, 45)') !== -1;
+assertTest('runPeriodicAutoSync: 12시간 스케줄 기반 백그라운드 유령 일정 무음 청소(Quota 방어) 탑재 검증', hasPeriodicCleanup);
+
+// 17-4: cleanupDuplicateAndOrphanCalendarEventsSilent 단위 테스트 시뮬레이션
+let deletedEvents = [];
+const mockCalendar = {
+  getEvents: (start, end) => [
+    {
+      getId: () => 'valid-event-id-101',
+      getTitle: () => '🟦 [보라매 101동] 도배',
+      getDescription: () => '📌 현장명: 보라매 101동\n🔨 공종: 도배',
+      deleteEvent: function() { deletedEvents.push(this.getId()); }
+    },
+    {
+      getId: () => 'orphan-event-id-999', // 시트에서 삭제된 유령 일정
+      getTitle: () => '🟦 [신대방 301동] 철거',
+      getDescription: () => '📌 현장명: 신대방 301동\n🔨 공종: 철거\n우성아이디 현장 일정',
+      deleteEvent: function() { deletedEvents.push(this.getId()); }
+    },
+    {
+      getId: () => 'personal-private-event', // 개인 일정
+      getTitle: () => '가족 저녁 식사',
+      getDescription: () => '가족 모임 식당 예약',
+      deleteEvent: function() { deletedEvents.push(this.getId()); }
+    }
+  ]
+};
+
+const makeRangeMock = (values) => ({
+  getValue: () => "진행상태",
+  setValue: function() { return this; },
+  setFontWeight: function() { return this; },
+  setFontColor: function() { return this; },
+  setBackground: function() { return this; },
+  setHorizontalAlignment: function() { return this; },
+  setVerticalAlignment: function() { return this; },
+  setDataValidation: function() { return this; },
+  setValues: function() { return this; },
+  getValues: () => values
+});
+
+const sheetDataForSilent = [
+  ['보라매 101동', '26.10.20', '도배', '', true, '', '', '예정', 'valid-event-id-101', Date.now(), '', '', '', ''],
+  ['망원동 빌라', '26.10.22', '타일', '', true, '', '', '예정', 'valid-event-id-102', Date.now(), '', '', '', '']
+];
+
+const mockSheetForSilent = {
+  getLastRow: () => sheetDataForSilent.length + 1,
+  getMaxColumns: () => 14,
+  setColumnWidth: () => {},
+  hideColumns: () => {},
+  getRange: (r, c, nr, nc) => makeRangeMock(sheetDataForSilent)
+};
+
+deletedEvents = [];
+const cleanedCount = sandbox.cleanupDuplicateAndOrphanCalendarEventsSilent(mockSheetForSilent, mockCalendar, 14, 60);
+assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent: 시트에서 삭제된 유령 일정(orphan-event-id-999) 정확 삭제 검증',
+  deletedEvents.indexOf('orphan-event-id-999') !== -1 && cleanedCount === 1
+);
+assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent: 시트에 존재하는 정상 일정(valid-event-id-101) 삭제 방어 검증',
+  deletedEvents.indexOf('valid-event-id-101') === -1
+);
+assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent: 개인 일정(personal-private-event) 절대 건드리지 않음 검증',
+  deletedEvents.indexOf('personal-private-event') === -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
