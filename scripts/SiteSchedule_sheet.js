@@ -191,16 +191,41 @@ function setupNewWorkspaceFromScratch() {
 }
 
 /**
- * 공종 기본 드롭다운 목록 반환
+ * 공종 기본 드롭다운 목록 반환 (기본 공종 + 시트 기존 공종 자동 병합)
  */
-function getAvailableTasks() {
-  return [
-    "상담", "신고", "철거", "마루철거", "설비", "누수보수", "미장",
+function getAvailableTasks(sheet) {
+  var baseTasks = [
+    "상담", "신고", "실측", "창호실측", "보양", "철거", "마루철거", "설비", "누수보수", "미장",
     "전기입선", "전기마감", "목공", "타일", "줄눈", "필름", "도장",
     "SMC", "도기", "도기세팅 천장", "퍼플렉스", "코킹", "도배", "바닥", "마루시공",
     "창호", "창호a/s", "도어설치", "중문", "터닝도어", "현관부속",
-    "주방", "가구", "수납가구", "마감", "잔마감", "청소", "입주", "현장촬영", "S/A"
+    "주방", "가구", "수납가구", "에어컨", "시스템에어컨", "마감", "잔마감", "청소", "입주", "현장촬영", "S/A"
   ];
+
+  var uniqueTasks = [];
+  for (var i = 0; i < baseTasks.length; i++) {
+    if (uniqueTasks.indexOf(baseTasks[i]) === -1) {
+      uniqueTasks.push(baseTasks[i]);
+    }
+  }
+
+  // 시트에 이미 입력된 커스텀 공종(예: 사용자가 직접 입력한 공종)이 있다면 자동 수집 및 병합하여 빨간 삼각형 에러 방지
+  if (sheet && typeof sheet.getLastRow === "function") {
+    try {
+      var lastR = sheet.getLastRow();
+      if (lastR >= 2) {
+        var existingVals = sheet.getRange(2, 3, lastR - 1, 1).getValues();
+        for (var j = 0; j < existingVals.length; j++) {
+          var t = String(existingVals[j][0] || "").trim();
+          if (t && uniqueTasks.indexOf(t) === -1) {
+            uniqueTasks.push(t);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  return uniqueTasks;
 }
 
 /**
@@ -264,8 +289,8 @@ function applySiteScheduleValidations(sheet, startRow, numRows) {
 
   var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. 공종(3열, C열) 드롭다운 (자유 입력 허용)
-  var tasks = getAvailableTasks();
+  // 1. 공종(3열, C열) 드롭다운 (자유 입력 허용 및 시트 내 공종 자동 포함)
+  var tasks = getAvailableTasks(sheet);
   var taskRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(tasks, true)
     .setAllowInvalid(true)
@@ -326,19 +351,19 @@ function setupSiteSheetConditionalFormatting(sheet) {
 
   // 3. 공종별 뱃지 색상 (C열)
   var taskColorMap = [
-    { keys: ["철거", "마루철거"], bg: "#f1f5f9", font: "#334155" },
+    { keys: ["철거", "마루철거", "보양"], bg: "#f1f5f9", font: "#334155" },
     { keys: ["설비", "누수보수", "미장"], bg: "#cffafe", font: "#0e7490" },
-    { keys: ["전기입선", "전기마감"], bg: "#fef3c7", font: "#b45309" },
+    { keys: ["전기입선", "전기마감", "에어컨", "시스템에어컨"], bg: "#fef3c7", font: "#b45309" },
     { keys: ["목공"], bg: "#ffedd5", font: "#9a3412" },
     { keys: ["타일", "줄눈", "퍼플렉스"], bg: "#ccfbf1", font: "#0f766e" },
     { keys: ["필름", "도장"], bg: "#f3e8ff", font: "#7e22ce" },
     { keys: ["도배"], bg: "#dcfce7", font: "#15803d" },
-    { keys: ["창호", "중문", "도어", "터닝도어", "현관부속"], bg: "#dbeafe", font: "#1d4ed8" },
+    { keys: ["창호", "창호실측", "중문", "도어", "터닝도어", "현관부속"], bg: "#dbeafe", font: "#1d4ed8" },
     { keys: ["바닥", "마루시공"], bg: "#fef9c3", font: "#854d0e" },
     { keys: ["주방", "가구", "수납가구"], bg: "#fce7f3", font: "#be185d" },
     { keys: ["SMC", "도기"], bg: "#e0f2fe", font: "#0284c7" },
     { keys: ["마감", "잔마감", "코킹", "청소"], bg: "#d1fae5", font: "#047857" },
-    { keys: ["상담", "신고", "입주", "현장촬영"], bg: "#e0e7ff", font: "#3730a3" }
+    { keys: ["상담", "신고", "실측", "입주", "현장촬영"], bg: "#e0e7ff", font: "#3730a3" }
   ];
   taskColorMap.forEach(function(item) {
     item.keys.forEach(function(k) {

@@ -732,7 +732,7 @@ const hasAllFormatsInNewSite = addNewSiteCode.indexOf('insertCheckboxes()') !== 
 assertTest('신규 현장 추가 시 체크박스/수직가운데/드롭다운/조건부서식/테두리 100% 자동 적용 검증', hasAllFormatsInNewSite);
 
 // [신규 QA] 공종 및 담당자 드롭다운 유효성 검사 및 노션 스타일 조건부 서식 탑재 검증
-assertTest('공종(C열) 기본 37개 공종 목록 탑재 여부', code.indexOf('function getAvailableTasks()') !== -1 && code.indexOf('마루시공') !== -1);
+assertTest('공종(C열) 기본 37개+ 공종 목록 탑재 여부', code.indexOf('function getAvailableTasks(') !== -1 && code.indexOf('마루시공') !== -1);
 assertTest('담당자(G열) 드롭다운 유효성 검사 엔진(getAvailableManagers) 탑재 여부', code.indexOf('function getAvailableManagers(') !== -1 && code.indexOf('조항만') !== -1);
 assertTest('공종/담당자/상태 드롭다운 통합 적용 함수(applySiteScheduleValidations) 탑재 여부', code.indexOf('function applySiteScheduleValidations(') !== -1);
 assertTest('공종(C열) 및 담당자(G열) 노션 스타일 조건부 서식 뱃지 탑재 여부',
