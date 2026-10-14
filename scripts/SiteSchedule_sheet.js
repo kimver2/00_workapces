@@ -635,7 +635,8 @@ function onOpen() {
 
     // [서브메뉴 2: 캘린더 연동 설정]
     .addSubMenu(ui.createMenu("⚡ 캘린더 연동 설정")
-      .addItem("⏰ 5분 주기 자동 동기화 켜기 (권장: 입력 렉 0% & 100% 무중단)", "enable5MinAutoSync")
+      .addItem("💡 스마트 디바운스 자동 동기화 켜기 (입력 완료 시 1회 자동 반영 - 최고 권장)", "enableDebouncedAutoSync")
+      .addItem("⏰ 5분 주기 자동 동기화 켜기 (정기 순환 동기화)", "enable5MinAutoSync")
       .addItem("⏰ 1분 주기 자동 동기화 켜기 (초고속 테스트용)", "enable1MinAutoSync")
       .addItem("⚡ 완전 실시간 연동 켜기 (수정 시 즉시 반영)", "enableRealtimeCalendarSync")
       .addItem("❌ 모든 자동 연동 끄기 (수동 버튼 전용)", "disableAllAutoCalendarSync")
@@ -710,7 +711,35 @@ function onEdit(e) {
 // ========================================================
 
 /**
- * 5분 주기 스마트 자동 동기화 켜기 (실무 표준 권장 모드)
+ * 스마트 디바운스 자동 동기화 켜기 (실무 최고 권장 모드)
+ * - 시트에서 공정을 마음껏 여러 행 추가하고 연속 입력해도 렉 0%! (실시간 API 호출 없음)
+ * - 입력을 마치고 약 1분간 유휴 상태가 되면 백그라운드에서 1회만 일괄 자동 반영
+ * - 평소 입력이 없을 때는 트리거 실행 횟수 0회 (일일 Quota 0% 소모)
+ */
+function enableDebouncedAutoSync() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty("SYNC_MODE", "DEBOUNCE");
+  props.deleteProperty("REALTIME_CALENDAR_SYNC_DISABLED");
+  props.setProperty("DEBOUNCE_SCHEDULED", "false");
+
+  // 기존 주기/디바운스 트리거 정리
+  cleanupAllPeriodicAndDebouncedTriggers();
+
+  ensureRealtimeTriggerInstalledSilent();
+
+  SpreadsheetApp.getUi().alert(
+    "💡 스마트 디바운스 자동 동기화 활성화 완료",
+    "스마트 디바운스 자동 동기화가 활성화되었습니다!\n\n" +
+    "1. [입력 렉 0%]: 시트에서 공정을 마음껏 여러 행 추가하고 자유롭게 타이핑하세요.\n" +
+    "2. [지능형 1회 동기화]: 입력을 마치고 약 1분 뒤 백그라운드에서 캘린더로 딱 1번 자동 전송됩니다.\n" +
+    "3. [일일 할당량 0% 소모]: 입력이 없을 때는 백그라운드 트리거가 전혀 돌지 않아 구글 일일 실행시간이 보존됩니다.\n\n" +
+    "(지금 즉시 캘린더에 올리고 싶을 때는 상단 [📅 구글 캘린더 동기화]를 1회 클릭하시면 됩니다)",
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+/**
+ * 5분 주기 스마트 자동 동기화 켜기 (정기 순환 모드)
  * - 시트에서 공정을 마음껏 연속 입력/수정/복사해도 입력 렉 0%!
  * - 5분마다 백그라운드에서 신규/수정된 공정을 캘린더에 일괄 자동 반영
  * - 일일 트리거 실행시간 10~15분 소요 (구글 무료 계정 90분 한도 100% 영구 안전)
@@ -727,6 +756,39 @@ function enable1MinAutoSync() {
 }
 
 /**
+ * 디바운스 1회성 트리거 정리 헬퍼
+ */
+function cleanupDebouncedTriggers() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "runDebouncedSync") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+  } catch (e) {
+    Logger.log("디바운스 트리거 정리 에러: " + e.toString());
+  }
+}
+
+/**
+ * 모든 주기 및 디바운스 트리거 일괄 정리 헬퍼
+ */
+function cleanupAllPeriodicAndDebouncedTriggers() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      var fn = triggers[i].getHandlerFunction();
+      if (fn === "runPeriodicAutoSync" || fn === "runPeriodic1MinSync" || fn === "runDebouncedSync") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+  } catch (e) {
+    Logger.log("트리거 정리 에러: " + e.toString());
+  }
+}
+
+/**
  * 주기적 자동 동기화 트리거 설정 공통 함수
  */
 function setupPeriodicAutoSyncTrigger(minutes) {
@@ -734,17 +796,12 @@ function setupPeriodicAutoSyncTrigger(minutes) {
   var modeStr = (minutes === 1) ? "1MIN" : "5MIN";
   props.setProperty("SYNC_MODE", modeStr);
   props.deleteProperty("REALTIME_CALENDAR_SYNC_DISABLED");
+  props.setProperty("DEBOUNCE_SCHEDULED", "false");
 
   var functionName = "runPeriodicAutoSync";
-  var triggers = ScriptApp.getProjectTriggers();
 
-  // 기존 주기 트리거 정리
-  for (var i = 0; i < triggers.length; i++) {
-    var fn = triggers[i].getHandlerFunction();
-    if (fn === functionName || fn === "runPeriodic1MinSync") {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
+  // 기존 주기 및 디바운스 트리거 정리
+  cleanupAllPeriodicAndDebouncedTriggers();
 
   // 신규 주기 트리거 등록 (1분 또는 5분)
   ScriptApp.newTrigger(functionName)
@@ -773,15 +830,10 @@ function enableRealtimeCalendarSync() {
   var props = PropertiesService.getScriptProperties();
   props.setProperty("SYNC_MODE", "REALTIME");
   props.deleteProperty("REALTIME_CALENDAR_SYNC_DISABLED");
+  props.setProperty("DEBOUNCE_SCHEDULED", "false");
 
-  // 주기 백그라운드 트리거 삭제
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    var fn = triggers[i].getHandlerFunction();
-    if (fn === "runPeriodicAutoSync" || fn === "runPeriodic1MinSync") {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
+  // 주기 및 디바운스 백그라운드 트리거 삭제
+  cleanupAllPeriodicAndDebouncedTriggers();
 
   ensureRealtimeTriggerInstalledSilent();
 
@@ -799,17 +851,9 @@ function disableAllAutoCalendarSync() {
   var props = PropertiesService.getScriptProperties();
   props.setProperty("SYNC_MODE", "MANUAL");
   props.setProperty("REALTIME_CALENDAR_SYNC_DISABLED", "true");
+  props.setProperty("DEBOUNCE_SCHEDULED", "false");
 
-  var triggers = ScriptApp.getProjectTriggers();
-  var removed = 0;
-
-  for (var i = 0; i < triggers.length; i++) {
-    var fn = triggers[i].getHandlerFunction();
-    if (fn === "runPeriodicAutoSync" || fn === "runPeriodic1MinSync" || fn === "syncFromCalendarToSheet") {
-      ScriptApp.deleteTrigger(triggers[i]);
-      removed++;
-    }
-  }
+  cleanupAllPeriodicAndDebouncedTriggers();
 
   SpreadsheetApp.getUi().alert(
     "❌ 모든 자동 연동 해제 완료",
@@ -829,7 +873,7 @@ function disableRealtimeCalendarSync() {
 
 /**
  * 캘린더 연동 트리거 백그라운드 무음 자동 설치 및 점검
- * - 기본 모드: 5분 주기 자동 동기화 ("5MIN")
+ * - 기본 모드: 스마트 디바운스 자동 동기화 ("DEBOUNCE")
  * - 사용자가 수동 모드("MANUAL")로 끈 경우 자동 재등록을 차단하여 사용자 의도 존중
  */
 function ensureRealtimeTriggerInstalledSilent() {
@@ -837,10 +881,10 @@ function ensureRealtimeTriggerInstalledSilent() {
     var props = PropertiesService.getScriptProperties();
     var syncMode = props.getProperty("SYNC_MODE");
 
-    // 기본값이 없으면 "5MIN" 모드를 표준 기본값으로 적용
+    // 기본값이 없으면 "DEBOUNCE" 모드를 표준 기본값으로 적용
     if (!syncMode) {
-      syncMode = "5MIN";
-      props.setProperty("SYNC_MODE", "5MIN");
+      syncMode = "DEBOUNCE";
+      props.setProperty("SYNC_MODE", "DEBOUNCE");
     }
 
     if (syncMode === "MANUAL") {
@@ -867,6 +911,16 @@ function ensureRealtimeTriggerInstalledSilent() {
         .onEdit()
         .create();
       Logger.log("⚡ 시트 편집 트리거 자동 설치 완료");
+    }
+
+    // 디바운스 모드 또는 실시간 모드일 때는 불필요한 주기 트리거를 자동 정리하여 0 Quota 보장
+    if ((syncMode === "DEBOUNCE" || syncMode === "REALTIME") && hasPeriodicTrigger) {
+      for (var j = 0; j < triggers.length; j++) {
+        var pFn = triggers[j].getHandlerFunction();
+        if (pFn === "runPeriodicAutoSync" || pFn === "runPeriodic1MinSync") {
+          ScriptApp.deleteTrigger(triggers[j]);
+        }
+      }
     }
 
     // 주기 자동 동기화 모드인 경우 시간 기반 트리거 설치
@@ -1046,8 +1100,47 @@ function runPeriodic1MinSync() {
 }
 
 /**
+ * 디바운스 1회성 백그라운드 동기화 엔진
+ * - 사용자가 입력을 마치고 약 1분이 경과했을 때 1회만 실행
+ * - 연속 입력 중에는 실행을 1분 뒤로 재연장(Debounce)
+ * - 동기화 완료 후 스스로 트리거를 삭제하여 무유휴(0 Quota) 유지
+ */
+function runDebouncedSync() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return;
+
+  var props = PropertiesService.getScriptProperties();
+  try {
+    var nowMs = Date.now();
+    var lastEditMs = parseInt(props.getProperty("LAST_EDIT_MS") || "0", 10);
+
+    // 사용자가 최근 40초 이내에 여전히 시트를 타이핑/수정 중인 경우:
+    // 입력을 마칠 때까지 1분 뒤로 1회성 트리거를 재연장
+    if (nowMs - lastEditMs < 40000) {
+      cleanupDebouncedTriggers();
+      ScriptApp.newTrigger("runDebouncedSync")
+        .timeBased()
+        .after(60 * 1000)
+        .create();
+      props.setProperty("DEBOUNCE_SCHEDULED", "true");
+      return;
+    }
+
+    // 사용자가 입력을 마치고 유휴 상태가 되었을 때: 일괄 동기화 실행!
+    runPeriodicAutoSync();
+
+  } catch (e) {
+    Logger.log("디바운스 동기화 에러: " + e.toString());
+  } finally {
+    cleanupDebouncedTriggers();
+    props.setProperty("DEBOUNCE_SCHEDULED", "false");
+    lock.releaseLock();
+  }
+}
+
+/**
  * 설치형 onEdit 트리거 핸들러
- * - 5분/1분 주기 모드: 메타데이터 및 타임스탬프(J열)만 고속 기록하고 캘린더 API 호출 생략 (입력 렉 0%)
+ * - 스마트 디바운스 모드: 메타데이터 및 타임스탬프만 고속 기록하고 1분 뒤 1회성 동기화 예약 (입력 렉 0%)
  * - 완전 실시간 모드("REALTIME"): 비고 제외 수정 시 캘린더에 즉시 실시간 전송
  * - 대시보드 달력 갱신을 단 1회 전담하여 단순 onEdit과의 이중 렌더링 완전 해소
  */
@@ -1077,7 +1170,7 @@ function handleCalendarEditTrigger(e) {
     var numRows = maxProcessRow - actualStartRow + 1;
 
     var props = PropertiesService.getScriptProperties();
-    var syncMode = props.getProperty("SYNC_MODE") || "5MIN"; // 기본 권장값: 5분 주기
+    var syncMode = props.getProperty("SYNC_MODE") || "DEBOUNCE"; // 기본 권장값: 스마트 디바운스
 
     // 메타데이터 및 타임스탬프 1회 배치 일괄 읽기 및 쓰기 (성능 10배 가속)
     var metaRange = sheet.getRange(actualStartRow, 11, numRows, 4);
@@ -1095,9 +1188,23 @@ function handleCalendarEditTrigger(e) {
     // 시트 최종 수정 시각 밀리초 타임스탬프 일괄 기록 (J열: 10열)
     sheet.getRange(actualStartRow, 10, numRows, 1).setValues(timeStampVals);
 
-    // 완전 실시간 모드일 때만 셀 수정 즉시 구글 캘린더 API 호출!
-    // 5분/1분 주기 모드나 수동 모드에서는 캘린더 API 호출을 건너뛰어 타이핑 렉 0을 유지!
-    if (syncMode === "REALTIME") {
+    // [스마트 디바운스 모드 (기본 권장)]:
+    // 사용자가 입력 중일 때는 즉시 API를 호출하지 않고 타이핑 완료 1분 뒤 1회만 자동 동기화되도록 예약!
+    if (syncMode === "DEBOUNCE" || !syncMode) {
+      props.setProperty("LAST_EDIT_MS", String(nowMs));
+      var isScheduled = props.getProperty("DEBOUNCE_SCHEDULED");
+      if (isScheduled !== "true") {
+        try {
+          ScriptApp.newTrigger("runDebouncedSync")
+            .timeBased()
+            .after(60 * 1000)
+            .create();
+          props.setProperty("DEBOUNCE_SCHEDULED", "true");
+        } catch (eTrig) {
+          Logger.log("디바운스 트리거 예약 경고: " + eTrig.toString());
+        }
+      }
+    } else if (syncMode === "REALTIME") {
       var isOnlyMemo = (startCol === 6 && endCol === 6);
       if (!isOnlyMemo) {
         for (var r = actualStartRow; r <= maxProcessRow; r++) {

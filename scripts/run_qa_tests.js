@@ -1101,6 +1101,36 @@ assertTest('삭제 유예 시뮬레이션: 핵심 정보가 전무한 행은 삭
 const cancelRow = ['보라매경남 102동 502호', '', '', '', false, '', '', '취소']; // 명시적 취소
 assertTest('삭제 유예 시뮬레이션: 상태가 명시적 "취소"인 행은 삭제 진행(true)', simulateDeletionDecision(cancelRow) === true);
 
+console.log('\n💡 [Step 13: 스마트 디바운스 동적 1회성 자동 동기화 엔진 QA]');
+
+// 13-1: 디바운스 활성화 함수 및 메뉴 탑재 검증
+assertTest('enableDebouncedAutoSync 함수 탑재 여부', typeof sandbox.enableDebouncedAutoSync === 'function');
+assertTest('runDebouncedSync 백그라운드 엔진 함수 탑재 여부', typeof sandbox.runDebouncedSync === 'function');
+assertTest('상단 메뉴 내 스마트 디바운스 자동 동기화(최고 권장) 등록 여부', menuCode.indexOf('enableDebouncedAutoSync') !== -1);
+
+// 13-2: 디바운스 트리거 정리 헬퍼 함수 탑재 검증
+assertTest('cleanupDebouncedTriggers 헬퍼 함수 탑재 여부', typeof sandbox.cleanupDebouncedTriggers === 'function');
+assertTest('cleanupAllPeriodicAndDebouncedTriggers 헬퍼 함수 탑재 여부', typeof sandbox.cleanupAllPeriodicAndDebouncedTriggers === 'function');
+
+// 13-3: handleCalendarEditTrigger 내 DEBOUNCE 모드 시 지연 트리거 예약 검증
+const triggerDebounceCode = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncFromCalendarToSheet('));
+const hasDebounceScheduling = triggerDebounceCode.indexOf('syncMode === "DEBOUNCE"') !== -1 &&
+  triggerDebounceCode.indexOf('ScriptApp.newTrigger("runDebouncedSync")') !== -1;
+assertTest('handleCalendarEditTrigger: DEBOUNCE 모드 시 1회성 지연 트리거(runDebouncedSync) 동적 예약 검증', hasDebounceScheduling);
+
+// 13-4: runDebouncedSync 내 연속 입력 시 트리거 재연장(Debounce) 분기 검증
+const debouncedCoreCode = code.slice(code.indexOf('function runDebouncedSync()'), code.indexOf('function handleCalendarEditTrigger('));
+const hasDebounceExtension = debouncedCoreCode.indexOf('nowMs - lastEditMs < 40000') !== -1 &&
+  debouncedCoreCode.indexOf('ScriptApp.newTrigger("runDebouncedSync")') !== -1;
+assertTest('runDebouncedSync: 연속 타이핑 중 유휴 미달 시 1분 뒤로 재연장(Debounce Extension) 검증', hasDebounceExtension);
+
+// 13-5: ensureRealtimeTriggerInstalledSilent 내 기본값 DEBOUNCE 적용 및 무유휴(0 Quota) 정리 검증
+const silentTriggerCode = code.slice(code.indexOf('function ensureRealtimeTriggerInstalledSilent()'), code.indexOf('function runPeriodicAutoSync()'));
+const hasDebounceDefault = silentTriggerCode.indexOf('props.setProperty("SYNC_MODE", "DEBOUNCE")') !== -1 &&
+  silentTriggerCode.indexOf('syncMode === "DEBOUNCE"') !== -1 &&
+  silentTriggerCode.indexOf('hasPeriodicTrigger') !== -1;
+assertTest('ensureRealtimeTriggerInstalledSilent: DEBOUNCE 기본 표준 채택 및 주기 트리거 자동 정리(0 Quota) 검증', hasDebounceDefault);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
