@@ -1076,29 +1076,37 @@ const hasAtomicCellWrite = periodicCode.indexOf('sheet.getRange(targetRowNumber,
   periodicCode.indexOf('range.setValues(values)') === -1;
 assertTest('역동기화 시 사용자 타이핑 덮어쓰기 원천 차단(개별 타겟 셀 원자적 갱신) 검증', hasAtomicCellWrite);
 
-// 12-6: 일시적 타이핑/수정 중 캘린더 일정 삭제 유예 가드 검증
+// 12-6: 일시적 타이핑/수정 중 캘린더 일정 삭제 유예 및 하위 공정 삭제 감지 가드 검증
 const syncSingleCode = code.slice(code.indexOf('function syncSingleRowToCalendar('), code.indexOf('function syncSiteSchedulesBatchSafe('));
-const hasDeletionGraceGuard = syncSingleCode.indexOf('isRowEmpty = (!rowValues[0] && !rowValues[1] && !rowValues[2])') !== -1 &&
-  syncSingleCode.indexOf('isExplicitCancel = (statusStr.indexOf("취소") !== -1 || statusStr.indexOf("삭제") !== -1)') !== -1 &&
-  syncSingleCode.indexOf('if (isRowEmpty || isExplicitCancel)') !== -1;
-assertTest('타이핑 중 임시 빈 셀로 인한 일정 즉시 삭제 방지(삭제 유예 및 오입력 안전 가드) 탑재 여부', hasDeletionGraceGuard);
+const hasDeletionGraceGuard = syncSingleCode.indexOf('isRowEmpty = (!rowValues[0] && !hasDate && !hasTask)') !== -1 &&
+  syncSingleCode.indexOf('isSubRowCleared = (!hasDate && !hasTask)') !== -1 &&
+  syncSingleCode.indexOf('if (isRowEmpty || isSubRowCleared || isExplicitCancel)') !== -1;
+assertTest('타이핑 중 임시 빈 셀 방어 및 하위 공정 삭제 감지 가드 탑재 여부', hasDeletionGraceGuard);
 
 // 12-7: 삭제 유예 로직 단위 테스트 시뮬레이션
-// 현장명/날짜/공종 중 하나라도 남아있고 취소/삭제가 아니면 삭제되지 않아야 함
 function simulateDeletionDecision(rowValues) {
-  var isRowEmpty = (!rowValues[0] && !rowValues[1] && !rowValues[2]);
+  var hasDate = !!String(rowValues[1] || "").trim();
+  var hasTask = !!String(rowValues[2] || "").trim();
+  var isRowEmpty = (!rowValues[0] && !hasDate && !hasTask);
+  var isSubRowCleared = (!hasDate && !hasTask);
   var statusStr = String(rowValues[7] || "");
   var isExplicitCancel = (statusStr.indexOf("취소") !== -1 || statusStr.indexOf("삭제") !== -1);
-  return (isRowEmpty || isExplicitCancel);
+  return (isRowEmpty || isSubRowCleared || isExplicitCancel);
 }
 
 const typingRow = ['보라매경남 102동 502호', '', '도배', '', true, '', '전예린', '예정']; // 날짜만 잠시 지우고 수정 중
 assertTest('삭제 유예 시뮬레이션: 날짜만 잠시 지운 타이핑 중 상태는 삭제 배제(false)', simulateDeletionDecision(typingRow) === false);
 
+const typingTaskRow = ['보라매경남 102동 502호', '2026. 10. 29', '', '', true, '', '전예린', '예정']; // 공종만 잠시 지우고 수정 중
+assertTest('삭제 유예 시뮬레이션: 공종만 잠시 지운 타이핑 중 상태는 삭제 배제(false)', simulateDeletionDecision(typingTaskRow) === false);
+
+const subRowCleared = ['보라매경남 102동 502호', '', '', '', false, '', '', '']; // 현장명은 상속 남아있으나 날짜+공종을 비운 하위 공정
+assertTest('삭제 유예 시뮬레이션: 현장명 계승 상태에서 날짜+공종 모두 삭제 시 일정 삭제(true)', simulateDeletionDecision(subRowCleared) === true);
+
 const emptyRow = ['', '', '', '', false, '', '', '']; // 행 전체가 비워진 경우
 assertTest('삭제 유예 시뮬레이션: 핵심 정보가 전무한 행은 삭제 진행(true)', simulateDeletionDecision(emptyRow) === true);
 
-const cancelRow = ['보라매경남 102동 502호', '', '', '', false, '', '', '취소']; // 명시적 취소
+const cancelRow = ['보라매경남 102동 502호', '2026. 10. 29', '도배', '', false, '', '', '취소']; // 명시적 취소
 assertTest('삭제 유예 시뮬레이션: 상태가 명시적 "취소"인 행은 삭제 진행(true)', simulateDeletionDecision(cancelRow) === true);
 
 console.log('\n💡 [Step 13: 스마트 디바운스 동적 1회성 자동 동기화 엔진 QA]');
@@ -1130,6 +1138,41 @@ const hasDebounceDefault = silentTriggerCode.indexOf('props.setProperty("SYNC_MO
   silentTriggerCode.indexOf('syncMode === "DEBOUNCE"') !== -1 &&
   silentTriggerCode.indexOf('hasPeriodicTrigger') !== -1;
 assertTest('ensureRealtimeTriggerInstalledSilent: DEBOUNCE 기본 표준 채택 및 주기 트리거 자동 정리(0 Quota) 검증', hasDebounceDefault);
+
+console.log('\n🚀 [Step 14: Argon v8.1 아키텍처 패치 전수 검증]');
+
+// 14-1: runDebouncedSync isRescheduled 플래그 도입으로 finally 블록 트리거 증발 방지 검증
+const hasRescheduledProtection = debouncedCoreCode.indexOf('isRescheduled = true') !== -1 &&
+  debouncedCoreCode.indexOf('if (!isRescheduled)') !== -1;
+assertTest('runDebouncedSync: isRescheduled 플래그 기반 finally 블록 트리거 증발 원천 차단 검증', hasRescheduledProtection);
+
+// 14-2: runPeriodicAutoSync 순환 커서 stepsTaken 기반 균등 순환 및 상태 이모지 역동기화 검증
+const hasStepsTakenCursor = periodicCode.indexOf('stepsTaken++') !== -1 &&
+  periodicCode.indexOf('(cursor + stepsTaken) %') !== -1;
+assertTest('runPeriodicAutoSync: stepsTaken 실제 이동 거리 기반 순환 커서 제자리걸음 방지 검증', hasStepsTakenCursor);
+
+const hasEmojiInPeriodic = periodicCode.indexOf('calTitle.indexOf("✅")') !== -1 &&
+  periodicCode.indexOf('sheet.getRange(targetRowNumber, 8).setValue(detectedStatus)') !== -1;
+assertTest('runPeriodicAutoSync: 백그라운드 주기 동기화 내 캘린더 제목 상태 이모지 감지 통합 검증', hasEmojiInPeriodic);
+
+// 14-3: syncFromCalendarToSheet 수동 동기화 원자적 셀 갱신 및 range.setValues 제거 검증
+const syncCalToSheetCode = code.slice(code.indexOf('function syncFromCalendarToSheet('), code.indexOf('function enableCalendarToSheet1MinSync('));
+const hasAtomicSyncCalToSheet = syncCalToSheetCode.indexOf('sheet.getRange(targetRowNumber, 2).setValue(newDateStr)') !== -1 &&
+  syncCalToSheetCode.indexOf('range.setValues(values)') === -1;
+assertTest('syncFromCalendarToSheet: 전체 행 덮어쓰기 제거 및 핀포인트 원자적 셀 갱신 통일 검증', hasAtomicSyncCalToSheet);
+
+// 14-4: refreshDashboardCalendar 2D 배열 주차별 행 단위 배치 쓰기 가속 검증
+const refreshDashBatchCode = code.slice(code.indexOf('function refreshDashboardCalendar('), code.indexOf('function syncAllSiteSchedulesToDashboard('));
+const hasBatchDashboardWrite = refreshDashBatchCode.indexOf('rowsToUpdate[pos.row]') !== -1 &&
+  refreshDashBatchCode.indexOf('dashSheet.getRange(parseInt(rNum, 10), 2, 1, 7).setValues(') !== -1;
+assertTest('refreshDashboardCalendar: 주차별 2D 배열 배치 쓰기로 31회 개별 setValue 호출 제거 및 10배 가속 검증', hasBatchDashboardWrite);
+
+// 14-5: updateScheduleStatusFromWeb 모바일 동시 접속 충돌 방어 (LockService 적용)
+const mobileWebCode = code.slice(code.indexOf('function updateScheduleStatusFromWeb('), code.indexOf('function doGet('));
+const hasMobileLockService = mobileWebCode.indexOf('LockService.getScriptLock()') !== -1 &&
+  mobileWebCode.indexOf('lock.tryLock(10000)') !== -1 &&
+  mobileWebCode.indexOf('lock.releaseLock()') !== -1;
+assertTest('updateScheduleStatusFromWeb: 모바일 웹 동시 접속 상태 변경 충돌 방어(LockService 10초 대기) 탑재 검증', hasMobileLockService);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);

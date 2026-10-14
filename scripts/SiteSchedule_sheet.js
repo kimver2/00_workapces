@@ -1026,8 +1026,10 @@ function runPeriodicAutoSync() {
 
     var inspectedThisRound = 0;
     var inspectLimit = 15;
+    var stepsTaken = 0;
 
     for (var k = 0; k < values.length && inspectedThisRound < inspectLimit; k++) {
+      stepsTaken++;
       var idx = (cursor + k) % values.length;
       var cVals = values[idx];
       var existingId = String(cVals[8] || "").trim();
@@ -1047,6 +1049,10 @@ function runPeriodicAutoSync() {
       var rawUp = cVals[9];
       var sUpdated = (rawUp instanceof Date) ? rawUp.getTime() : (typeof rawUp === "number" ? rawUp : (parseInt(rawUp, 10) || 0));
 
+      var targetRowNumber = idx + 2;
+      var rowChanged = false;
+
+      // 1) 날짜 변경 역방향 동기화
       if (calUpdated > sUpdated + 10000) {
         var isAllDay = ev.isAllDayEvent();
         var calStart = isAllDay ? ev.getAllDayStartDate() : ev.getStartTime();
@@ -1067,16 +1073,36 @@ function runPeriodicAutoSync() {
 
         // [핵심: 사용자 타이핑 덮어쓰기 원천 차단]
         // 시트 전체 범위를 덮어쓰지 않고, 실제 날짜가 변경된 특정 셀만 개별 타겟 원자적 갱신!
-        var targetRowNumber = idx + 2;
         sheet.getRange(targetRowNumber, 2).setValue(newDateStr);
         sheet.getRange(targetRowNumber, 10).setValue(calUpdated);
         sheet.getRange(targetRowNumber, 13, 1, 2).setValues([[formatDateTime(calUpdatedDate), "구글 캘린더"]]);
-        calUpdatedCount++;
+        rowChanged = true;
       }
+
+      // 2) 캘린더 제목 상태 이모지 변경 감지 (✅ 완료, ▶️ 진행 중, 🛠️ AS)
+      var calTitle = ev.getTitle() || "";
+      var currentStatus = String(cVals[7] || "").trim();
+      var detectedStatus = "";
+      if (calTitle.indexOf("✅") !== -1 || calTitle.indexOf("완료") !== -1) {
+        detectedStatus = "완료";
+      } else if (calTitle.indexOf("▶️") !== -1 || calTitle.indexOf("▶") !== -1 || calTitle.indexOf("진행") !== -1) {
+        detectedStatus = "진행 중";
+      } else if (calTitle.indexOf("🛠️") !== -1 || calTitle.indexOf("🛠") !== -1 || calTitle.indexOf("AS") !== -1 || calTitle.indexOf("A/S") !== -1) {
+        detectedStatus = "AS";
+      }
+
+      if (detectedStatus && detectedStatus.replace(/\s+/g, "") !== currentStatus.replace(/\s+/g, "") && calUpdated > sUpdated + 5000) {
+        sheet.getRange(targetRowNumber, 8).setValue(detectedStatus);
+        sheet.getRange(targetRowNumber, 10).setValue(calUpdated);
+        sheet.getRange(targetRowNumber, 13, 1, 2).setValues([[formatDateTime(calUpdatedDate), "구글 캘린더"]]);
+        rowChanged = true;
+      }
+
+      if (rowChanged) calUpdatedCount++;
     }
 
-    // 다음 실행 시 이어서 점검할 커서 저장
-    var nextCursor = (cursor + inspectedThisRound) % Math.max(values.length, 1);
+    // 다음 실행 시 이어서 점검할 커서 저장 (실제 탐색한 행 수 stepsTaken 기반으로 전 행 순환 보장)
+    var nextCursor = (cursor + stepsTaken) % Math.max(values.length, 1);
     props.setProperty("CAL_INSPECT_CURSOR", String(nextCursor));
 
     // 시트 또는 캘린더 변경이 있었던 경우에만 대시보드 달력 최신화
@@ -1110,6 +1136,7 @@ function runDebouncedSync() {
   if (!lock.tryLock(5000)) return;
 
   var props = PropertiesService.getScriptProperties();
+  var isRescheduled = false;
   try {
     var nowMs = Date.now();
     var lastEditMs = parseInt(props.getProperty("LAST_EDIT_MS") || "0", 10);
@@ -1123,6 +1150,7 @@ function runDebouncedSync() {
         .after(60 * 1000)
         .create();
       props.setProperty("DEBOUNCE_SCHEDULED", "true");
+      isRescheduled = true;
       return;
     }
 
@@ -1132,8 +1160,11 @@ function runDebouncedSync() {
   } catch (e) {
     Logger.log("디바운스 동기화 에러: " + e.toString());
   } finally {
-    cleanupDebouncedTriggers();
-    props.setProperty("DEBOUNCE_SCHEDULED", "false");
+    // 재연장된 트리거가 있는 경우에는 새로 생성된 트리거를 삭제하지 않음 (트리거 증발 방지)
+    if (!isRescheduled) {
+      cleanupDebouncedTriggers();
+      props.setProperty("DEBOUNCE_SCHEDULED", "false");
+    }
     lock.releaseLock();
   }
 }
@@ -1361,6 +1392,12 @@ function syncFromCalendarToSheet() {
           }
           newDateStr = realCalEnd2 ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd2)) : formatDateYYMMDD(calStart);
         }
+
+        // [원자적 셀 갱신] 변경된 특정 행의 날짜/타임스탬프만 핀포인트 쓰기 (타이핑 증발 원천 차단)
+        var targetRowNumber = i + 2;
+        sheet.getRange(targetRowNumber, 2).setValue(newDateStr);
+        sheet.getRange(targetRowNumber, 10).setValue(calUpdated);
+        sheet.getRange(targetRowNumber, 13, 1, 2).setValues([[formatDateTime(calUpdatedDate), "구글 캘린더"]]);
         rowVals[1] = newDateStr;
         rowVals[9] = calUpdated;
         rowVals[12] = formatDateTime(calUpdatedDate);
@@ -1378,6 +1415,8 @@ function syncFromCalendarToSheet() {
               event.setAllDayDate(currentRange.startDate);
             }
           }
+          var targetRowNumber2 = i + 2;
+          sheet.getRange(targetRowNumber2, 10).setValue(Date.now());
           rowVals[9] = Date.now();
           updatedCount++;
         }
@@ -1399,6 +1438,10 @@ function syncFromCalendarToSheet() {
     }
 
     if (detectedStatus && detectedStatus.replace(/\s+/g, "") !== currentSheetStatus.replace(/\s+/g, "") && calUpdated > sheetUpdated + 3000) {
+      var targetRowNumber3 = i + 2;
+      sheet.getRange(targetRowNumber3, 8).setValue(detectedStatus);
+      sheet.getRange(targetRowNumber3, 10).setValue(calUpdated);
+      sheet.getRange(targetRowNumber3, 13, 1, 2).setValues([[formatDateTime(calUpdatedDate), "구글 캘린더"]]);
       rowVals[7] = detectedStatus; // H열 진행상태 갱신
       rowVals[9] = calUpdated;
       rowVals[12] = formatDateTime(calUpdatedDate);
@@ -1407,9 +1450,9 @@ function syncFromCalendarToSheet() {
     }
   }
 
-  // 전체 변경사항을 1회 배치 일괄 쓰기로 반영 (개별 셀 쓰기 대비 100배 가속)
+  // [핵심: 사용자 타이핑 덮어쓰기 원천 차단]
+  // 시트 전체 범위 일괄 덮어쓰기를 제거하고, 변경된 셀만 개별 타겟 원자적 갱신 완료
   if (updatedCount > 0 || hasClearedGhosts) {
-    range.setValues(values);
     SpreadsheetApp.flush();
     refreshDashboardCalendar(ss);
     ss.toast("최종 수정 시간 기준으로 " + updatedCount + "건의 일정이 최신화되었습니다." + (timeLimitReached ? " (안전 시간 분할)" : ""), "동기화 완료", 3);
@@ -1904,14 +1947,17 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
 
   // 1) 날짜나 필수 정보가 없는 경우: 일시적 타이핑 중 삭제 방어
   // [삭제 유예 및 오입력 안전 가드]:
-  // 타이핑 중 일시적인 빈 셀로 인해 소중한 캘린더 일정이 즉시 영구 삭제되는 위험 방지.
-  // 행 전체 핵심 정보(현장명, 날짜, 공종)가 모두 비워졌거나 상태가 '취소'/'삭제'일 때만 실제 캘린더 일정 삭제.
+  // 타이핑 중 일시적인 빈 셀(날짜만 지우거나 공종만 지움)로 인해 소중한 캘린더 일정이 즉시 영구 삭제되는 위험 방지.
+  // 아코디언 하위 행에서 상위 현장명(A열)이 남아있더라도 날짜(B열)+공종(C열)이 모두 비워졌거나 상태가 '취소'/'삭제'일 때만 실제 캘린더 일정 삭제.
   if (!details) {
     if (existingEventId) {
-      var isRowEmpty = (!rowValues[0] && !rowValues[1] && !rowValues[2]);
+      var hasDate = !!String(rowValues[1] || "").trim();
+      var hasTask = !!String(rowValues[2] || "").trim();
+      var isRowEmpty = (!rowValues[0] && !hasDate && !hasTask);
+      var isSubRowCleared = (!hasDate && !hasTask); // 상위 현장명이 남아있더라도 날짜와 공종이 모두 지워진 경우
       var statusStr = String(rowValues[7] || "");
       var isExplicitCancel = (statusStr.indexOf("취소") !== -1 || statusStr.indexOf("삭제") !== -1);
-      if (isRowEmpty || isExplicitCancel) {
+      if (isRowEmpty || isSubRowCleared || isExplicitCancel) {
         try {
           var ev = cal.getEventById(existingEventId);
           if (ev) ev.deleteEvent();
@@ -3064,12 +3110,20 @@ function refreshDashboardCalendar(ss) {
     }
   }
 
-  // 8. 해당 월의 일정들을 달력의 해당 날짜 밑 칸에 쓰기
+  // 8. 해당 월의 일정들을 달력의 해당 날짜 밑 칸에 쓰기 (주차별 행 단위 배치 일괄 쓰기 가속)
+  var rowsToUpdate = {};
   for (var day in schedulesByDay) {
     var pos = cellPositions[day];
     if (pos) {
-      dashSheet.getRange(pos.row, pos.col).setValue(schedulesByDay[day].join("\n"));
+      if (!rowsToUpdate[pos.row]) {
+        rowsToUpdate[pos.row] = dashSheet.getRange(pos.row, 2, 1, 7).getValues()[0];
+      }
+      rowsToUpdate[pos.row][pos.col - 2] = schedulesByDay[day].join("\n");
     }
+  }
+
+  for (var rNum in rowsToUpdate) {
+    dashSheet.getRange(parseInt(rNum, 10), 2, 1, 7).setValues([rowsToUpdate[rNum]]);
   }
 
   SpreadsheetApp.flush();
@@ -4001,16 +4055,22 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
     return { success: false, error: "유효하지 않은 요청 데이터입니다." };
   }
 
-  var ss = getAppSpreadsheet();
-  if (!ss) {
-    return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
-  }
-  var sheet = findSiteScheduleSheet(ss);
-  if (!sheet) {
-    return { success: false, error: "현장데이터 시트를 찾을 수 없습니다." };
+  // 모바일 동시 접속 충돌 방지 락 (10초 대기)
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    return { success: false, error: "현재 다른 작업이 처리 중입니다. 잠시 후 다시 시도해 주세요." };
   }
 
   try {
+    var ss = getAppSpreadsheet();
+    if (!ss) {
+      return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    }
+    var sheet = findSiteScheduleSheet(ss);
+    if (!sheet) {
+      return { success: false, error: "현장데이터 시트를 찾을 수 없습니다." };
+    }
+
     sheet.getRange(rowNum, 8).setValue(newStatus); // H열 진행상태 업데이트
 
     // E열 공유 상태 업데이트 (파라미터가 명시적으로 전달된 경우)
@@ -4031,8 +4091,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
 
     var now = new Date();
     sheet.getRange(rowNum, 10).setValue(now.getTime()); // J열 타임스탬프
-    sheet.getRange(rowNum, 13).setValue(formatDateTime(now)); // M열 최종수정일
-    sheet.getRange(rowNum, 14).setValue("모바일 웹"); // N열 최종수정자
+    sheet.getRange(rowNum, 13, 1, 2).setValues([[formatDateTime(now), "모바일 웹"]]); // M열/N열 수정이력 일괄 쓰기
 
     // 캘린더 및 대시보드 즉시 동기화 (forceSheetToCal = true)
     syncSingleRowToCalendar(sheet, rowNum, true);
@@ -4046,6 +4105,8 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
     };
   } catch(err) {
     return { success: false, error: err.toString() };
+  } finally {
+    lock.releaseLock();
   }
 }
 
