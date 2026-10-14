@@ -720,6 +720,11 @@ function enableRealtimeCalendarSync() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var functionName = "handleCalendarEditTrigger";
 
+  // 사용자의 실시간 끄기 플래그 해제
+  try {
+    PropertiesService.getScriptProperties().deleteProperty("REALTIME_CALENDAR_SYNC_DISABLED");
+  } catch(e) {}
+
   // 이미 설치되어 있는지 확인
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
@@ -749,9 +754,14 @@ function enableRealtimeCalendarSync() {
 
 /**
  * 실시간 캘린더 연동 트리거가 미설치된 경우 백그라운드 자동 등록 (무음 모드)
+ * - 사용자가 명시적으로 실시간 연동을 끈 경우 자동 재등록을 차단하여 사용자 의도 존중
  */
 function ensureRealtimeTriggerInstalledSilent() {
   try {
+    var disabled = PropertiesService.getScriptProperties().getProperty("REALTIME_CALENDAR_SYNC_DISABLED");
+    if (disabled === "true") {
+      return; // 사용자가 수동 동기화 모드를 위해 끈 경우 재설치 차단
+    }
     var functionName = "handleCalendarEditTrigger";
     var triggers = ScriptApp.getProjectTriggers();
     for (var i = 0; i < triggers.length; i++) {
@@ -774,8 +784,13 @@ function ensureRealtimeTriggerInstalledSilent() {
 
 /**
  * 실시간 캘린더 자동 연동 끄기
+ * - 사용자의 실시간 비활성화 의사를 영구 보존하여 동기화 실행 시 재설치 방지
  */
 function disableRealtimeCalendarSync() {
+  try {
+    PropertiesService.getScriptProperties().setProperty("REALTIME_CALENDAR_SYNC_DISABLED", "true");
+  } catch(e) {}
+
   var functionName = "handleCalendarEditTrigger";
   var triggers = ScriptApp.getProjectTriggers();
   var removed = 0;
@@ -787,11 +802,13 @@ function disableRealtimeCalendarSync() {
     }
   }
 
-  if (removed > 0) {
-    SpreadsheetApp.getUi().alert("실시간 구글 캘린더 연동이 정상적으로 해제되었습니다.");
-  } else {
-    SpreadsheetApp.getUi().alert("현재 실시간 연동이 켜져 있지 않습니다.");
-  }
+  SpreadsheetApp.getUi().alert(
+    "❌ 실시간 구글 캘린더 연동 해제 완료",
+    "실시간 연동이 정상적으로 꺼졌습니다.\n\n" +
+    "이제 시트에서 일정을 자유롭게 입력/수정/삭제하시고, 작성이 완료된 후 상단 메뉴의\n" +
+    "[🚀 현장 관리] ➔ [📅 구글 캘린더 동기화]를 누르시면 한 번에 안전하게 캘린더에 반영됩니다.",
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 /**
@@ -800,6 +817,10 @@ function disableRealtimeCalendarSync() {
  */
 function handleCalendarEditTrigger(e) {
   if (!e || !e.range) return;
+  try {
+    var disabled = PropertiesService.getScriptProperties().getProperty("REALTIME_CALENDAR_SYNC_DISABLED");
+    if (disabled === "true") return;
+  } catch(err) {}
   var sheet = e.range.getSheet();
   if (!isSiteScheduleSheet(sheet)) return;
 
@@ -1391,8 +1412,11 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
     } catch(e) {}
   }
 
-  // [필수 방어]: 현장명이 전혀 없는 일정은 캘린더 등록 배제 (유령/미아 일정 원천 차단)
+  // [필수 방어 1]: 현장명이 전혀 없는 일정은 캘린더 등록 배제 (유령/미아 일정 원천 차단)
   if (!siteName) return null;
+
+  // [필수 방어 2]: 공종(작업명)이 없는 미완성 행은 캘린더 등록 완전 배제 (작성 중 조기 등록 방지)
+  if (!taskName) return null;
 
   var parsedDate = parseScheduleDateRange(dateVal);
   if (!parsedDate) return null;
@@ -3207,16 +3231,16 @@ function parseDateComponents(val) {
   var str = String(val).trim();
   if (!str) return null;
 
-  // YY.MM.DD 또는 YYYY.MM.DD (예: 26.10.09, 2026-10-09)
-  var mYmd = str.match(/^(\d{2,4})[-./](\d{1,2})[-./](\d{1,2})/);
+  // YY.MM.DD 또는 YYYY.MM.DD (예: 26.10.09, 2026-10-09, 2026. 10. 29)
+  var mYmd = str.match(/^(\d{2,4})[-./]\s*(\d{1,2})[-./]\s*(\d{1,2})/);
   if (mYmd) {
     var y = parseInt(mYmd[1], 10);
     if (y < 100) y += 2000;
     return { year: y, month: parseInt(mYmd[2], 10), day: parseInt(mYmd[3], 10) };
   }
 
-  // MM/DD 또는 MM.DD (예: 10/9)
-  var mMd = str.match(/^(\d{1,2})[-./](\d{1,2})$/);
+  // MM/DD 또는 MM.DD (예: 10/9, 10. 9)
+  var mMd = str.match(/^(\d{1,2})[-./]\s*(\d{1,2})$/);
   if (mMd) {
     return { year: currentYear, month: parseInt(mMd[1], 10), day: parseInt(mMd[2], 10) };
   }

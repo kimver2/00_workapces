@@ -981,6 +981,30 @@ assertTest('배치 동기화 effectiveSiteNames: 1~3행 보라매경남 702호, 
   effectiveTest[4] === '망원 경일빌라 201호'
 );
 
+console.log('\n🛡️ [Step 10: 작성 중 조기 등록 방지 가드 및 실시간 연동 영속성 QA]');
+
+// 10-1: 공종 누락 행은 buildEventDetails에서 null 반환
+const noTaskRow = ['보라매경남 102동 502호', '26.10.29', '', '', true, '', '전예린', '예정', '', 0, '', '', '', ''];
+const noTaskDetails = sandbox.buildEventDetails(noTaskRow, 2, null, null);
+assertTest('공종(taskName)이 없는 미완성 행은 buildEventDetails에서 null 반환 (조기 등록 원천 차단)', noTaskDetails === null);
+
+// 10-2: 날짜만 있고 공종 없는 행 검증
+const dateOnlyRow = ['보라매경남 102동 502호', '2026. 10. 29', '   ', '', false, '', '', '', '', 0, '', '', '', ''];
+const dateOnlyDetails = sandbox.buildEventDetails(dateOnlyRow, 206, null, null);
+assertTest('공종이 공백 문자열인 경우도 null 반환하여 작성 중 캘린더 등록 완전 방어', dateOnlyDetails === null);
+
+// 10-3: 필수 3요소(현장명 + 날짜 + 공종) 완성 시 정상 객체 반환 검증
+const completeRow = ['보라매경남 102동 502호', '2026. 10. 29', '도배', '', true, '', '전예린', '예정', '', 0, '', '', '', ''];
+const completeDetails = sandbox.buildEventDetails(completeRow, 206, null, null);
+assertTest('필수 3요소 완성 시 정상 세부정보 및 표준 제목 반환 ([현장명] 공종)',
+  completeDetails !== null &&
+  completeDetails.title.indexOf('[보라매경남 102동 502호] 도배') !== -1
+);
+
+// 10-4: 코드 내 REALTIME_CALENDAR_SYNC_DISABLED 영속성 체크 탑재 검증
+const hasDisableFlagCheckInTrigger = code.indexOf('PropertiesService.getScriptProperties().getProperty("REALTIME_CALENDAR_SYNC_DISABLED")') !== -1;
+assertTest('실시간 트리거 및 무음 등록 함수 내 REALTIME_CALENDAR_SYNC_DISABLED 영속 플래그 체크 탑재 검증', hasDisableFlagCheckInTrigger);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
