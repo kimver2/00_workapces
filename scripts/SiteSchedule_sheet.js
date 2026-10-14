@@ -191,15 +191,23 @@ function setupNewWorkspaceFromScratch() {
 }
 
 /**
- * 공종 기본 드롭다운 목록 반환 (기본 공종 + 시트 기존 공종 자동 병합)
+ * 공종 기본 드롭다운 목록 반환 (기본 50+ 공종 사전 + 시트 기존 공종 자동 병합)
  */
 function getAvailableTasks(sheet) {
   var baseTasks = [
-    "상담", "신고", "실측", "창호실측", "보양", "철거", "마루철거", "설비", "누수보수", "미장",
-    "전기입선", "전기마감", "목공", "타일", "줄눈", "필름", "도장",
-    "SMC", "도기", "도기세팅 천장", "퍼플렉스", "코킹", "도배", "바닥", "마루시공",
-    "창호", "창호a/s", "도어설치", "중문", "터닝도어", "현관부속",
-    "주방", "가구", "수납가구", "에어컨", "시스템에어컨", "마감", "잔마감", "청소", "입주", "현장촬영", "S/A"
+    "상담", "신고", "관리소신고", "동의서", "실측", "창호실측", "현장실측", "도면/설계",
+    "보양", "엘리베이터보양", "현관보양", "바닥보양",
+    "철거", "마루철거", "욕실철거", "확장철거", "폐기물",
+    "설비", "배관", "방수", "미장", "조적", "젠다이", "누수보수",
+    "전기", "전기입선", "전기마감", "조명", "스위치/콘센트",
+    "에어컨", "시스템에어컨", "냉매배관",
+    "목공", "목공마감", "단열", "가벽", "도어설치", "문틀", "중문", "터닝도어", "폴딩도어", "현관부속",
+    "창호", "샷시", "창호실측", "창호a/s", "유리", "난간대",
+    "타일", "줄눈", "퍼플렉스", "아덱스", "SMC", "돔천장", "도기", "도기세팅 천장", "도기세팅", "코킹", "실리콘",
+    "필름", "인테리어필름", "도장", "페인트", "탄성코트",
+    "도배", "실크도배", "바닥", "마루시공", "강마루", "장판", "데코타일",
+    "주방", "싱크대", "가구", "수납가구", "붙박이장", "신발장",
+    "마감", "잔마감", "청소", "준공청소", "입주청소", "입주", "현장촬영", "S/A", "AS", "점검"
   ];
 
   var uniqueTasks = [];
@@ -209,7 +217,7 @@ function getAvailableTasks(sheet) {
     }
   }
 
-  // 시트에 이미 입력된 커스텀 공종(예: 사용자가 직접 입력한 공종)이 있다면 자동 수집 및 병합하여 빨간 삼각형 에러 방지
+  // 시트에 이미 입력된 커스텀 공종(예: 사용자가 직접 입력한 모든 공종) 자동 수집 및 병합하여 빨간 삼각형 에러 방지
   if (sheet && typeof sheet.getLastRow === "function") {
     try {
       var lastR = sheet.getLastRow();
@@ -226,6 +234,50 @@ function getAvailableTasks(sheet) {
   }
 
   return uniqueTasks;
+}
+
+/**
+ * 신규 공종 실시간 자동 학습 엔진 (Auto-Learning Task Validation)
+ * 사용자가 사전에 정의되지 않은 새로운 공종을 C열에 직접 타이핑하면
+ * 즉시 드롭다운 유효성 목록에 자동 추가하여 빨간 삼각형 경고를 실시간 해제합니다.
+ */
+function ensureTasksInValidation(sheet, newTasks) {
+  if (!sheet || !newTasks || newTasks.length === 0) return;
+  try {
+    var maxRows = Math.max(sheet.getLastRow(), (typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100));
+    var currentRule = sheet.getRange(2, 3).getDataValidation();
+    var allowedList = [];
+
+    if (currentRule && currentRule.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+      var args = currentRule.getCriteriaValues();
+      if (args && args[0] && Array.isArray(args[0])) {
+        allowedList = args[0].slice();
+      }
+    }
+
+    if (allowedList.length === 0) {
+      allowedList = getAvailableTasks(sheet);
+    }
+
+    var added = false;
+    for (var i = 0; i < newTasks.length; i++) {
+      var t = String(newTasks[i] || "").trim();
+      if (t && allowedList.indexOf(t) === -1) {
+        allowedList.push(t);
+        added = true;
+      }
+    }
+
+    if (added) {
+      var newRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(allowedList, true)
+        .setAllowInvalid(true)
+        .build();
+      sheet.getRange(2, 3, maxRows - 1, 1).setDataValidation(newRule);
+    }
+  } catch (e) {
+    Logger.log("공종 실시간 자동 학습 예외: " + e.toString());
+  }
 }
 
 /**
@@ -284,7 +336,8 @@ function getAvailableManagers(ss) {
 function applySiteScheduleValidations(sheet, startRow, numRows) {
   if (!sheet) return;
   startRow = startRow || 2;
-  numRows = numRows || Math.max(sheet.getLastRow() - startRow + 1, 100);
+  var maxAvailableRows = Math.max(sheet.getLastRow(), (typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100));
+  numRows = numRows || Math.max(maxAvailableRows - startRow + 1, 100);
   if (numRows < 1) return;
 
   var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
@@ -351,19 +404,19 @@ function setupSiteSheetConditionalFormatting(sheet) {
 
   // 3. 공종별 뱃지 색상 (C열)
   var taskColorMap = [
-    { keys: ["철거", "마루철거", "보양"], bg: "#f1f5f9", font: "#334155" },
-    { keys: ["설비", "누수보수", "미장"], bg: "#cffafe", font: "#0e7490" },
-    { keys: ["전기입선", "전기마감", "에어컨", "시스템에어컨"], bg: "#fef3c7", font: "#b45309" },
-    { keys: ["목공"], bg: "#ffedd5", font: "#9a3412" },
-    { keys: ["타일", "줄눈", "퍼플렉스"], bg: "#ccfbf1", font: "#0f766e" },
-    { keys: ["필름", "도장"], bg: "#f3e8ff", font: "#7e22ce" },
-    { keys: ["도배"], bg: "#dcfce7", font: "#15803d" },
-    { keys: ["창호", "창호실측", "중문", "도어", "터닝도어", "현관부속"], bg: "#dbeafe", font: "#1d4ed8" },
-    { keys: ["바닥", "마루시공"], bg: "#fef9c3", font: "#854d0e" },
-    { keys: ["주방", "가구", "수납가구"], bg: "#fce7f3", font: "#be185d" },
-    { keys: ["SMC", "도기"], bg: "#e0f2fe", font: "#0284c7" },
-    { keys: ["마감", "잔마감", "코킹", "청소"], bg: "#d1fae5", font: "#047857" },
-    { keys: ["상담", "신고", "실측", "입주", "현장촬영"], bg: "#e0e7ff", font: "#3730a3" }
+    { keys: ["철거", "마루철거", "욕실철거", "확장철거", "폐기물", "보양", "엘리베이터보양", "현관보양"], bg: "#f1f5f9", font: "#334155" },
+    { keys: ["설비", "배관", "누수보수", "방수", "미장", "조적", "젠다이"], bg: "#cffafe", font: "#0e7490" },
+    { keys: ["전기", "전기입선", "전기마감", "조명", "에어컨", "시스템에어컨"], bg: "#fef3c7", font: "#b45309" },
+    { keys: ["목공", "가벽", "단열"], bg: "#ffedd5", font: "#9a3412" },
+    { keys: ["타일", "줄눈", "퍼플렉스", "아덱스"], bg: "#ccfbf1", font: "#0f766e" },
+    { keys: ["필름", "인테리어필름", "도장", "페인트", "탄성코트"], bg: "#f3e8ff", font: "#7e22ce" },
+    { keys: ["도배", "실크도배"], bg: "#dcfce7", font: "#15803d" },
+    { keys: ["창호", "샷시", "창호실측", "중문", "도어", "문틀", "터닝도어", "폴딩도어", "현관부속", "유리"], bg: "#dbeafe", font: "#1d4ed8" },
+    { keys: ["바닥", "마루시공", "강마루", "장판", "데코타일"], bg: "#fef9c3", font: "#854d0e" },
+    { keys: ["주방", "싱크대", "가구", "수납가구", "붙박이장", "신발장"], bg: "#fce7f3", font: "#be185d" },
+    { keys: ["SMC", "도기", "도기세팅", "욕실세팅", "돔천장"], bg: "#e0f2fe", font: "#0284c7" },
+    { keys: ["마감", "잔마감", "코킹", "실리콘", "청소", "준공청소", "입주청소"], bg: "#d1fae5", font: "#047857" },
+    { keys: ["상담", "신고", "실측", "도면", "입주", "현장촬영", "점검", "AS", "S/A"], bg: "#e0e7ff", font: "#3730a3" }
   ];
   taskColorMap.forEach(function(item) {
     item.keys.forEach(function(k) {
@@ -1243,6 +1296,25 @@ function handleCalendarEditTrigger(e) {
 
     // 시트 최종 수정 시각 밀리초 타임스탬프 일괄 기록 (J열: 10열)
     sheet.getRange(actualStartRow, 10, numRows, 1).setValues(timeStampVals);
+
+    // [신규 공종 실시간 자동 학습 엔진 (Auto-Learning Task Validation)]
+    // 사용자가 C열(공종)을 수정했을 때, 기존 드롭다운 목록에 없는 새로운 공종이면
+    // 즉시 유효성 목록에 자동 추가하여 빨간 삼각형 경고 표시를 실시간 해제!
+    if (startCol <= 3 && endCol >= 3) {
+      try {
+        var editedTaskVals = sheet.getRange(actualStartRow, 3, numRows, 1).getValues();
+        var editedTasks = [];
+        for (var ti = 0; ti < editedTaskVals.length; ti++) {
+          var tVal = String(editedTaskVals[ti][0] || "").trim();
+          if (tVal) editedTasks.push(tVal);
+        }
+        if (editedTasks.length > 0) {
+          ensureTasksInValidation(sheet, editedTasks);
+        }
+      } catch (eTask) {
+        Logger.log("공종 실시간 자동 학습 예외: " + eTask.toString());
+      }
+    }
 
     // [스마트 디바운스 모드 (기본 권장)]:
     // 사용자가 입력 중일 때는 즉시 API를 호출하지 않고 타이핑 완료 1분 뒤 1회만 자동 동기화되도록 예약!

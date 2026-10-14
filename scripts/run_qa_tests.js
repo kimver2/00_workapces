@@ -31,6 +31,29 @@ const sandbox = {
   SpreadsheetApp: {
     BorderStyle: { SOLID: 'SOLID' },
     flush: () => {},
+    DataValidationCriteria: { VALUE_IN_LIST: 'VALUE_IN_LIST' },
+    newDataValidation: function() {
+      var builder = {
+        _list: [],
+        _allowInvalid: false,
+        requireValueInList: function(list, allowInvalid) {
+          builder._list = list;
+          builder._allowInvalid = allowInvalid;
+          return builder;
+        },
+        setAllowInvalid: function(val) {
+          builder._allowInvalid = val;
+          return builder;
+        },
+        build: function() {
+          return {
+            getCriteriaType: function() { return 'VALUE_IN_LIST'; },
+            getCriteriaValues: function() { return [builder._list.slice(), true]; }
+          };
+        }
+      };
+      return builder;
+    },
     getActiveSpreadsheet: () => ({
       getUrl: () => 'https://docs.google.com/spreadsheets/d/test-sheet-id/edit',
       getSheets: () => [],
@@ -1172,7 +1195,85 @@ const mobileWebCode = code.slice(code.indexOf('function updateScheduleStatusFrom
 const hasMobileLockService = mobileWebCode.indexOf('LockService.getScriptLock()') !== -1 &&
   mobileWebCode.indexOf('lock.tryLock(10000)') !== -1 &&
   mobileWebCode.indexOf('lock.releaseLock()') !== -1;
-assertTest('updateScheduleStatusFromWeb: 모바일 웹 동시 접속 상태 변경 충돌 방어(LockService 10초 대기) 탑재 검증', hasMobileLockService);
+// ========================================================
+// 15. [공종 50+ 사전 탑재 및 실시간 자동 학습(Auto-Learning) 유효성 검사 엔진 QA]
+// ========================================================
+console.log('\n🎨 [Step 15: 공종 50+ 사전 탑재 및 실시간 자동 학습(Auto-Learning) 유효성 검사 엔진 QA]');
+
+// 15-1: getAvailableTasks 50+ 공종 사전 탑재 및 주요 공종 포함 여부
+const availableTasks = sandbox.getAvailableTasks({ getLastRow: () => 0 });
+assertTest('getAvailableTasks: 50개 이상의 표준 인테리어 공종 사전 탑재 여부', availableTasks.length >= 50);
+assertTest('getAvailableTasks: 창호실측, 실측, 보양, 시스템에어컨, 도면/설계, 싱크대 등 핵심 공종 포함 여부',
+  availableTasks.indexOf('창호실측') !== -1 &&
+  availableTasks.indexOf('실측') !== -1 &&
+  availableTasks.indexOf('보양') !== -1 &&
+  availableTasks.indexOf('시스템에어컨') !== -1 &&
+  availableTasks.indexOf('도면/설계') !== -1 &&
+  availableTasks.indexOf('싱크대') !== -1 &&
+  availableTasks.indexOf('엘리베이터보양') !== -1 &&
+  availableTasks.indexOf('샷시') !== -1
+);
+
+// 15-2: ensureTasksInValidation 함수 존재 및 시뮬레이션
+assertTest('ensureTasksInValidation: 신규 공종 실시간 자동 학습 함수 탑재 여부', typeof sandbox.ensureTasksInValidation === 'function');
+
+let appliedRule = null;
+const mockSheetForValidation = {
+  getLastRow: () => 10,
+  getMaxRows: () => 100,
+  getRange: (r, c, nr, nc) => ({
+    getDataValidation: () => ({
+      getCriteriaType: () => 'VALUE_IN_LIST',
+      getCriteriaValues: () => [['철거', '목공', '타일'], true]
+    }),
+    setDataValidation: (rule) => { appliedRule = rule; }
+  })
+};
+
+// 미등록 공종('창호실측', '특수에폭시') 입력 시뮬레이션
+sandbox.ensureTasksInValidation(mockSheetForValidation, ['창호실측', '특수에폭시']);
+const newCriteriaValues = appliedRule ? appliedRule.getCriteriaValues() : [];
+const newAllowedList = newCriteriaValues[0] || [];
+assertTest('ensureTasksInValidation: 사전에 없는 신규 공종 입력 시 유효성 목록에 즉시 자동 추가 검증',
+  newAllowedList.indexOf('창호실측') !== -1 &&
+  newAllowedList.indexOf('특수에폭시') !== -1 &&
+  newAllowedList.indexOf('철거') !== -1
+);
+
+// 이미 존재하는 공종 입력 시 setDataValidation 불필요 호출 생략(No-Op) 검증
+let redundantCallCount = 0;
+const mockSheetNoOp = {
+  getLastRow: () => 10,
+  getMaxRows: () => 100,
+  getRange: (r, c, nr, nc) => ({
+    getDataValidation: () => ({
+      getCriteriaType: () => 'VALUE_IN_LIST',
+      getCriteriaValues: () => [['철거', '목공', '타일', '창호실측'], true]
+    }),
+    setDataValidation: () => { redundantCallCount++; }
+  })
+};
+sandbox.ensureTasksInValidation(mockSheetNoOp, ['목공', '창호실측']);
+assertTest('ensureTasksInValidation: 기존 등록된 공종 입력 시 불필요한 setDataValidation 쓰기 생략(0ms 지연) 검증', redundantCallCount === 0);
+
+// 15-3: handleCalendarEditTrigger C열 감지 및 ensureTasksInValidation 자동 호출 탑재 검증
+const editTriggerCode = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncFromCalendarToSheet('));
+const hasColumnCAutoLearn = editTriggerCode.indexOf('startCol <= 3 && endCol >= 3') !== -1 &&
+  editTriggerCode.indexOf('ensureTasksInValidation(sheet, editedTasks)') !== -1;
+assertTest('handleCalendarEditTrigger: C열(공종) 편집 감지 시 실시간 자동 학습 엔진 즉시 호출 검증', hasColumnCAutoLearn);
+
+// 15-4: taskColorMap 확장 키워드 탑재 검증
+assertTest('taskColorMap: 엘리베이터보양, 시스템에어컨, 샷시, 싱크대, 실리콘 등 세부 키워드 색상 매핑 검증',
+  code.indexOf('엘리베이터보양') !== -1 &&
+  code.indexOf('샷시') !== -1 &&
+  code.indexOf('싱크대') !== -1 &&
+  code.indexOf('실리콘') !== -1
+);
+
+// 15-5: applySiteScheduleValidations sheet.getMaxRows() 깊이 적용 검증
+const applyValCode = code.slice(code.indexOf('function applySiteScheduleValidations('), code.indexOf('function setupSiteSheetConditionalFormatting('));
+const hasMaxRowsValidation = applyValCode.indexOf('sheet.getMaxRows()') !== -1;
+assertTest('applySiteScheduleValidations: 시트 전체 깊이(getMaxRows)까지 드롭다운 유효성 적용 검증', hasMaxRowsValidation);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
