@@ -950,16 +950,13 @@ function disableRealtimeCalendarSync() {
 }
 
 /**
- * 캘린더 연동 트리거 백그라운드 무음 자동 설치 및 점검
- * - 기본 모드: 스마트 디바운스 자동 동기화 ("DEBOUNCE")
- * - 사용자가 수동 모드("MANUAL")로 끈 경우 자동 재등록을 차단하여 사용자 의도 존중
+ * 캘린더 연동 트리거 백그라운드 무음 자동 설치 및 점검 (행 삭제 감지 onChange 트리거 추가)
  */
 function ensureRealtimeTriggerInstalledSilent() {
   try {
     var props = PropertiesService.getScriptProperties();
     var syncMode = props.getProperty("SYNC_MODE");
 
-    // 기본값이 없으면 "DEBOUNCE" 모드를 표준 기본값으로 적용
     if (!syncMode) {
       syncMode = "DEBOUNCE";
       props.setProperty("SYNC_MODE", "DEBOUNCE");
@@ -970,28 +967,42 @@ function ensureRealtimeTriggerInstalledSilent() {
     }
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
     if (!ss) return;
 
     var triggers = ScriptApp.getProjectTriggers();
     var hasEditTrigger = false;
+    var hasChangeTrigger = false;
     var hasPeriodicTrigger = false;
+    var hasBriefingTrigger = false;
 
     for (var i = 0; i < triggers.length; i++) {
       var fn = triggers[i].getHandlerFunction();
       if (fn === "handleCalendarEditTrigger") hasEditTrigger = true;
+      if (fn === "handleSheetChangeTrigger") hasChangeTrigger = true;
       if (fn === "runPeriodicAutoSync" || fn === "runPeriodic1MinSync") hasPeriodicTrigger = true;
+      if (fn === "sendDailySiteMorningBriefing") hasBriefingTrigger = true;
     }
 
-    // 시트 수정 시 메타데이터 및 타임스탬프 기록용 onEdit 트리거 설치
+    // 1. 시트 셀 수정 감지용 onEdit 트리거 설치
     if (!hasEditTrigger) {
       ScriptApp.newTrigger("handleCalendarEditTrigger")
         .forSpreadsheet(ss)
         .onEdit()
         .create();
-      Logger.log("⚡ 시트 편집 트리거 자동 설치 완료");
+      Logger.log("⚡ 시트 편집(onEdit) 트리거 자동 설치 완료");
     }
 
-    // 디바운스 모드 또는 실시간 모드일 때는 불필요한 주기 트리거를 자동 정리하여 0 Quota 보장
+    // 2. [신규] 시트 행 우클릭 삭제(REMOVE_ROW) 감지용 onChange 트리거 설치
+    if (!hasChangeTrigger) {
+      ScriptApp.newTrigger("handleSheetChangeTrigger")
+        .forSpreadsheet(ss)
+        .onChange()
+        .create();
+      Logger.log("🗑️ 행 삭제 감지(onChange) 트리거 자동 설치 완료");
+    }
+
+    // 3. 디바운스/실시간 모드 시 불필요한 주기 트리거 정리
     if ((syncMode === "DEBOUNCE" || syncMode === "REALTIME") && hasPeriodicTrigger) {
       for (var j = 0; j < triggers.length; j++) {
         var pFn = triggers[j].getHandlerFunction();
@@ -1001,7 +1012,7 @@ function ensureRealtimeTriggerInstalledSilent() {
       }
     }
 
-    // 주기 자동 동기화 모드인 경우 시간 기반 트리거 설치
+    // 4. 주기 자동 동기화 모드인 경우 시간 기반 트리거 설치
     if ((syncMode === "5MIN" || syncMode === "1MIN") && !hasPeriodicTrigger) {
       var minutes = (syncMode === "1MIN") ? 1 : 5;
       ScriptApp.newTrigger("runPeriodicAutoSync")
@@ -1010,9 +1021,164 @@ function ensureRealtimeTriggerInstalledSilent() {
         .create();
       Logger.log("⏰ " + minutes + "분 주기 자동 동기화 트리거 자동 설치 완료");
     }
+
+    // 5. [모닝 브리핑 트리거 자율 복구]: 활성화 설정되어 있으나 단발성 트리거가 소실된 경우 자동 재예약
+    var docProps = PropertiesService.getDocumentProperties();
+    if (docProps.getProperty("DAILY_BRIEFING_ENABLED") === "true" && !hasBriefingTrigger) {
+      scheduleNextDailyBriefingTrigger();
+      Logger.log("☀️ 모닝 브리핑 소실 트리거 자동 복구 완료");
+    }
   } catch(e) {
     Logger.log("트리거 자동 점검 건너뜀: " + e.toString());
   }
+}
+
+/**
+ * [신규] 시트 구조 변경(우클릭 행 삭제 등) 감지 트리거 핸들러
+ * - 작업자가 행 번호 우클릭 ➔ [행 삭제] 실행 시 대시보드 달력을 즉시 갱신하고 캘린더 유령 일정 삭제를 예약합니다.
+ */
+function handleSheetChangeTrigger(e) {
+  if (!e) return;
+  // 행 삭제(REMOVE_ROW) 또는 기타 구조 변경 시 동작
+  if (e.changeType === "REMOVE_ROW" || e.changeType === "OTHER") {
+    try {
+      var ss = e.source || getAppSpreadsheet();
+      if (!ss) return;
+
+      // 1) 삭제된 행이 대시보드 달력에서도 즉시 사라지도록 새로고침
+      refreshDashboardCalendar(ss);
+
+      var props = PropertiesService.getScriptProperties();
+      var syncMode = props.getProperty("SYNC_MODE") || "DEBOUNCE";
+      if (syncMode === "MANUAL") return;
+
+      // 2) 유령 일정 청소 필요 플래그 마킹
+      props.setProperty("NEEDS_ORPHAN_CLEANUP", "true");
+
+      if (syncMode === "REALTIME") {
+        // 실시간 모드면 즉시 캘린더 유령 일정 삭제 실행
+        var sheet = findSiteScheduleSheet(ss);
+        var cal = getTargetCalendar();
+        if (sheet && cal) {
+          cleanupOrphanCalendarEventsSilent(sheet, cal);
+          props.deleteProperty("NEEDS_ORPHAN_CLEANUP");
+        }
+      } else if (syncMode === "DEBOUNCE") {
+        // 디바운스 모드면 1분 뒤 백그라운드 동기화 시 일괄 삭제되도록 예약
+        props.setProperty("LAST_EDIT_MS", String(Date.now()));
+        if (props.getProperty("DEBOUNCE_SCHEDULED") !== "true") {
+          cleanupDebouncedTriggers();
+          ScriptApp.newTrigger("runDebouncedSync")
+            .timeBased()
+            .after(60 * 1000)
+            .create();
+          props.setProperty("DEBOUNCE_SCHEDULED", "true");
+        }
+      }
+    } catch (err) {
+      Logger.log("행 삭제 감지 트리거 에러: " + err.toString());
+    }
+  }
+}
+
+/**
+ * [신규] 백그라운드 무음 유령(고아) 캘린더 일정 자동 청소기
+ * - 우클릭 [행 삭제]로 인해 시트에서 사라진 일정을 찾아 구글 캘린더에서 조용히 삭제합니다.
+ * - 알림창(ui.alert)을 띄우지 않아 백그라운드 트리거 및 모닝 브리핑에서 100% 안전하게 동작합니다.
+ */
+function cleanupOrphanCalendarEventsSilent(sheet, cal) {
+  if (!sheet) {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    if (ss) sheet = findSiteScheduleSheet(ss);
+  }
+  if (!sheet) return 0;
+  if (!cal) cal = getTargetCalendar();
+  if (!cal) return 0;
+
+  try {
+    var lastRow = sheet.getLastRow();
+    var validEventIds = {};
+    var unsyncedRows = [];
+
+    if (lastRow >= 2) {
+      var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+      var lastKnownSite = "";
+
+      for (var i = 0; i < values.length; i++) {
+        var rowVal = values[i];
+        var rawSite = String(rowVal[0] || "").trim();
+        if (rawSite) lastKnownSite = rawSite;
+
+        var eventId = String(rowVal[8] || "").trim();
+        var hasDateOrTask = Boolean(String(rowVal[1] || "").trim() || String(rowVal[2] || "").trim());
+
+        if (eventId) {
+          validEventIds[eventId] = i + 2;
+        } else if (hasDateOrTask) {
+          if (!rowVal[0] && lastKnownSite) rowVal[0] = lastKnownSite;
+          unsyncedRows.push({ rowNum: i + 2, rowVals: rowVal });
+        }
+      }
+
+      // [안전 방어]: 아직 I열에 ID가 안 적힌 미동기화 행이 있다면 실수로 지우지 않도록 먼저 매칭 확인
+      for (var u = 0; u < unsyncedRows.length; u++) {
+        var item = unsyncedRows[u];
+        var details = buildEventDetails(item.rowVals, item.rowNum, null, sheet);
+        if (!details) continue;
+        var matchedEv = findMatchingCalendarEvent(cal, details, validEventIds);
+        if (matchedEv) {
+          var mId = matchedEv.getId();
+          sheet.getRange(item.rowNum, 9).setValue(mId);
+          sheet.getRange(item.rowNum, 10).setValue(Date.now());
+          validEventIds[mId] = item.rowNum;
+        }
+      }
+    }
+
+    // 최근 60일 전 ~ 향후 180일 구간 스캔 (1회 API 호출로 고속 조회)
+    var now = new Date();
+    var searchStart = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    var searchEnd = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
+    var allCalEvents = [];
+    try {
+      allCalEvents = cal.getEvents(searchStart, searchEnd);
+    } catch(eEv) {
+      allCalEvents = [];
+    }
+    var deletedCount = 0;
+
+    for (var k = 0; k < allCalEvents.length; k++) {
+      if (deletedCount >= 20) break; // 1회 최대 20건 삭제로 Rate Limit 완벽 보호
+      var ev = allCalEvents[k];
+      var evId = ev.getId();
+
+      if (!isSystemSiteScheduleEvent(ev)) continue; // 개인 일정 절대 보호
+      if (validEventIds[evId]) continue;            // 시트에 존재하는 정상 일정 통과
+
+      // 시트에서 행 삭제로 사라진 유령 일정 삭제!
+      try {
+        ev.deleteEvent();
+        deletedCount++;
+        Utilities.sleep(150);
+      } catch (eDel) {}
+    }
+
+    if (deletedCount > 0) {
+      Logger.log("🧹 유령 일정 무음 자동 정리 완료: " + deletedCount + "건 삭제");
+    }
+    return deletedCount;
+  } catch (e) {
+    Logger.log("무음 유령 일정 정리 에러: " + e.toString());
+    return 0;
+  }
+}
+
+/**
+ * 기존 코드 호환용 래퍼 함수
+ */
+function cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, daysBefore, daysAfter) {
+  return cleanupOrphanCalendarEventsSilent(sheet, cal);
 }
 
 /**
@@ -1185,14 +1351,17 @@ function runPeriodicAutoSync() {
     var nextCursor = (cursor + stepsTaken) % Math.max(values.length, 1);
     props.setProperty("CAL_INSPECT_CURSOR", String(nextCursor));
 
-    // 유령(고아) 일정 자동 무음 청소 (12시간에 1회 실행하여 Quota 보호)
-    var lastOrphanCleanup = parseInt(props.getProperty("LAST_ORPHAN_CLEANUP_MS") || "0", 10);
-    if (nowMs - lastOrphanCleanup > 12 * 60 * 60 * 1000) {
+    // 4단계: 행 삭제(REMOVE_ROW) 발생 시 또는 15분마다 유령 일정 자동 청소
+    var needsOrphanCleanup = (props.getProperty("NEEDS_ORPHAN_CLEANUP") === "true");
+    var lastCleanupMs = parseInt(props.getProperty("LAST_ORPHAN_CLEANUP_MS") || "0", 10);
+    if (needsOrphanCleanup || (!isNightTime && (nowMs - lastCleanupMs > 15 * 60 * 1000))) {
       try {
-        cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, 14, 45);
+        var orphanDeleted = cleanupOrphanCalendarEventsSilent(sheet, cal);
+        props.deleteProperty("NEEDS_ORPHAN_CLEANUP");
         props.setProperty("LAST_ORPHAN_CLEANUP_MS", String(nowMs));
+        if (orphanDeleted > 0) calUpdatedCount += orphanDeleted;
       } catch (eOrphan) {
-        Logger.log("주기적 유령 일정 청소 예외: " + eOrphan.toString());
+        Logger.log("유령 일정 자동 청소 예외: " + eOrphan.toString());
       }
     }
 
@@ -2964,106 +3133,6 @@ function cleanDuplicateCalendarEventsOnDate(cal, details, keepEventId, knownShee
   }
 
   return deleted;
-}
-
-/**
- * [자동/무음용] 구글 캘린더 중복 및 시트에서 삭제된 유령(고아) 일정 자동 무음 청소
- * 백그라운드 동기화(runPeriodicAutoSync) 및 매일 아침 모닝 브리핑(sendDailySiteMorningBriefing) 발송 전 실행
- * UI 팝업(alert/confirm) 없이 무음(Silent)으로 실행되며 우성아이디 외의 개인 일정은 절대 건드리지 않음
- * 
- * @param {Sheet} [sheet] 현장데이터 시트 (생략 시 자동 검색)
- * @param {Calendar} [cal] 대상 캘린더 객체 (생략 시 기본 캘린더 자동 로드)
- * @param {number} [daysBefore=14] 오늘 기준 과거 며칠 전까지 검사할지 (기본 14일)
- * @param {number} [daysAfter=60] 오늘 기준 미래 며칠 후까지 검사할지 (기본 60일)
- * @return {number} 삭제된 유령 일정 개수
- */
-function cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, daysBefore, daysAfter) {
-  try {
-    if (!sheet) {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      sheet = findSiteScheduleSheet(ss);
-    }
-    if (!sheet) return 0;
-
-    if (!cal) {
-      cal = getTargetCalendar();
-    }
-    if (!cal) return 0;
-
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return 0;
-
-    ensureCalendarSyncColumns(sheet);
-
-    var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
-    var validEventIds = {};
-    var unsyncedRows = [];
-
-    for (var i = 0; i < values.length; i++) {
-      var rowNum = i + 2;
-      var rowVal = values[i];
-      var eventId = String(rowVal[8] || "").trim();
-      if (eventId) {
-        validEventIds[eventId] = rowNum;
-      } else if (rowVal[0] || rowVal[2]) {
-        unsyncedRows.push(rowNum);
-      }
-    }
-
-    // 1단계: I열이 비어있는 행이 있다면, 캘린더의 기존 일정과 스마트 자동 재연결
-    for (var u = 0; u < unsyncedRows.length; u++) {
-      var uRow = unsyncedRows[u];
-      var uVals = values[uRow - 2];
-      var uDetails = buildEventDetails(uVals, uRow, null, sheet);
-      if (!uDetails) continue;
-
-      var matchedEv = findMatchingCalendarEvent(cal, uDetails, validEventIds);
-      if (matchedEv) {
-        var mId = matchedEv.getId();
-        sheet.getRange(uRow, 9).setValue(mId);
-        sheet.getRange(uRow, 10).setValue(Date.now());
-        validEventIds[mId] = uRow;
-        values[uRow - 2][8] = mId;
-      }
-    }
-
-    daysBefore = (typeof daysBefore === "number" && daysBefore >= 0) ? daysBefore : 14;
-    daysAfter = (typeof daysAfter === "number" && daysAfter >= 0) ? daysAfter : 60;
-
-    var nowMs = Date.now();
-    var searchStart = new Date(nowMs - daysBefore * 24 * 60 * 60 * 1000);
-    var searchEnd = new Date(nowMs + daysAfter * 24 * 60 * 60 * 1000);
-
-    var events = [];
-    try {
-      events = cal.getEvents(searchStart, searchEnd);
-    } catch(e) {
-      events = [];
-    }
-
-    var deletedCount = 0;
-    for (var k = 0; k < events.length; k++) {
-      var ev = events[k];
-      if (!isSystemSiteScheduleEvent(ev)) continue;
-
-      var calId = ev.getId();
-      if (validEventIds[calId]) continue;
-
-      try {
-        ev.deleteEvent();
-        deletedCount++;
-        Utilities.sleep(100);
-      } catch(errDel) {}
-    }
-
-    if (deletedCount > 0) {
-      Logger.log("🧹 유령 일정 무음 자동 정리 완료: " + deletedCount + "건 삭제 (-" + daysBefore + "일 ~ +" + daysAfter + "일)");
-    }
-    return deletedCount;
-  } catch(e) {
-    Logger.log("유령 일정 자동 무음 정리 예외: " + e.toString());
-    return 0;
-  }
 }
 
 /**
@@ -5017,6 +5086,17 @@ function getDailyBriefingRecipientEmail(ss) {
       userEmail = Session.getActiveUser().getEmail();
     } catch (e) {}
   }
+
+  // 4순위: 스프레드시트 소유자 계정 (백그라운드 트리거 실행 시 Session 공백 방어)
+  if (!userEmail && ss) {
+    try {
+      var owner = ss.getOwner();
+      if (owner && owner.getEmail()) {
+        userEmail = owner.getEmail();
+        docProps.setProperty("DAILY_BRIEFING_EMAIL", userEmail);
+      }
+    } catch (e) {}
+  }
   return userEmail;
 }
 
@@ -5202,24 +5282,26 @@ function sendDailyBriefingTestNow() {
  * @param {boolean} [isManualTest=false] 수동 테스트 발송 여부
  */
 function sendDailySiteMorningBriefing(isManualTest) {
+  var isManual = (isManualTest === true); // 수동 테스트 버튼 클릭 시에만 true, 트리거 실행 시 false (UI 팝업 방어)
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
   if (!ss) return;
   var sheet = findSiteScheduleSheet(ss);
   if (!sheet) return;
 
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
-    if (isManualTest) {
+    if (isManual) {
       SpreadsheetApp.getUi().alert("현장데이터 시트에 일정이 없습니다.");
     }
     return;
   }
 
-  // 모닝 브리핑 발송 직전, 캘린더의 유령(고아) 일정 자동 무음 청소 (-14일 ~ +60일)
+  // 매일 아침 브리핑 발송 전, 행 삭제로 남은 캘린더 유령 일정 자동 청소
   try {
     var cal = getTargetCalendar();
     if (cal) {
-      cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, 14, 60);
+      cleanupOrphanCalendarEventsSilent(sheet, cal);
     }
   } catch (eClean) {
     Logger.log("모닝 브리핑 사전 유령 일정 정리 예외: " + eClean.toString());
@@ -5227,92 +5309,98 @@ function sendDailySiteMorningBriefing(isManualTest) {
 
   var recipient = getDailyBriefingRecipientEmail(ss);
   if (!recipient) {
-    if (isManualTest) {
+    if (isManual) {
       SpreadsheetApp.getUi().alert("수신자 이메일 주소를 확인할 수 없습니다. [📧 모닝 브리핑 수신 이메일 변경] 메뉴에서 설정해주세요.");
     }
     return;
   }
 
-  var today = new Date();
-  var todayStr = formatDateYYMMDD(today);
-  var dayOfWeekNames = ["일", "월", "화", "수", "목", "금", "토"];
-  var dayOfWeekStr = dayOfWeekNames[today.getDay()] + "요일";
+  try {
+    var today = new Date();
+    var todayStr = formatDateYYMMDD(today);
+    var dayOfWeekNames = ["일", "월", "화", "수", "목", "금", "토"];
+    var dayOfWeekStr = dayOfWeekNames[today.getDay()] + "요일";
 
-  var data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
-  var todayTasks = [];
-  var delayedTasks = [];
+    var data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+    var todayTasks = [];
+    var delayedTasks = [];
 
-  for (var i = 0; i < data.length; i++) {
-    var siteName = String(data[i][0] || "").trim();
-    var dateVal = data[i][1];
-    var taskName = String(data[i][2] || "").trim();
-    var partner = String(data[i][3] || "").trim();
-    var isShared = (data[i][4] === true || String(data[i][4]).trim().toUpperCase() === "TRUE" || String(data[i][4]).trim() === "1");
-    var memo = String(data[i][5] || "").trim();
-    var manager = String(data[i][6] || "").trim();
-    var status = String(data[i][7] || "").trim();
-    var statusClean = status.replace(/\s+/g, "");
+    for (var i = 0; i < data.length; i++) {
+      var siteName = String(data[i][0] || "").trim();
+      var dateVal = data[i][1];
+      var taskName = String(data[i][2] || "").trim();
+      var partner = String(data[i][3] || "").trim();
+      var isShared = (data[i][4] === true || String(data[i][4]).trim().toUpperCase() === "TRUE" || String(data[i][4]).trim() === "1");
+      var memo = String(data[i][5] || "").trim();
+      var manager = String(data[i][6] || "").trim();
+      var status = String(data[i][7] || "").trim();
+      var statusClean = status.replace(/\s+/g, "");
 
-    if (!siteName && !taskName) continue;
-    var parsedDate = parseScheduleDateRange(dateVal);
-    if (!parsedDate) continue;
+      if (!siteName && !taskName) continue;
+      var parsedDate = parseScheduleDateRange(dateVal);
+      if (!parsedDate) continue;
 
-    var formattedDate = formatScheduleDateDisplay(dateVal);
+      var formattedDate = formatScheduleDateDisplay(dateVal);
 
-    var item = {
-      row: i + 2,
-      siteName: siteName,
-      dateStr: formattedDate || String(dateVal).trim(),
-      taskName: taskName,
-      partner: partner,
-      isShared: isShared,
-      memo: memo,
-      manager: manager,
-      status: status || "예정",
-      parsedDate: parsedDate
-    };
+      var item = {
+        row: i + 2,
+        siteName: siteName,
+        dateStr: formattedDate || String(dateVal).trim(),
+        taskName: taskName,
+        partner: partner,
+        isShared: isShared,
+        memo: memo,
+        manager: manager,
+        status: status || "예정",
+        parsedDate: parsedDate
+      };
 
-    if (isScheduleDelayed(parsedDate, statusClean, today)) {
-      delayedTasks.push(item);
-    } else if (isScheduleActiveToday(parsedDate, today)) {
-      todayTasks.push(item);
-    }
-  }
-
-  var subject = "[우성아이디] ☀️ 오늘의 현장 공정 모닝 브리핑 (" + todayStr + " " + dayOfWeekStr + ") - 오늘 " + todayTasks.length + "건" + (delayedTasks.length > 0 ? " / ⚠️ 지연 " + delayedTasks.length + "건" : "");
-
-  var sheetUrl = "";
-  try { sheetUrl = ss.getUrl(); } catch(e) {}
-  var webAppUrl = getWebAppUrl();
-
-  var emailPayload = buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, delayedTasks, sheetUrl, webAppUrl);
-
-  MailApp.sendEmail({
-    to: recipient,
-    subject: subject,
-    body: emailPayload.plainText,
-    htmlBody: emailPayload.htmlBody
-  });
-
-  if (isManualTest) {
-    SpreadsheetApp.getUi().alert(
-      "✉️ 모닝 브리핑 테스트 발송 완료",
-      "성공적으로 브리핑 이메일을 발송했습니다!\n\n" +
-      "• 수신자: " + recipient + "\n" +
-      "• 오늘 착공/진행 공정: " + todayTasks.length + "건\n" +
-      "• 공정 지연 경고: " + delayedTasks.length + "건\n\n" +
-      "이메일 수신함을 확인해보세요.",
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  } else {
-    // 자동 일일 실행인 경우, 다음 날 설정 시각 정각 트리거 자동 재스케줄링 (Self-Rescheduling)
-    try {
-      var isEnabled = PropertiesService.getDocumentProperties().getProperty("DAILY_BRIEFING_ENABLED");
-      if (isEnabled === "true") {
-        scheduleNextDailyBriefingTrigger();
+      if (isScheduleDelayed(parsedDate, statusClean, today)) {
+        delayedTasks.push(item);
+      } else if (isScheduleActiveToday(parsedDate, today)) {
+        todayTasks.push(item);
       }
-    } catch(e) {
-      Logger.log("모닝 브리핑 자동 재스케줄링 오류: " + e.message);
+    }
+
+    var subject = "[우성아이디] ☀️ 오늘의 현장 공정 모닝 브리핑 (" + todayStr + " " + dayOfWeekStr + ") - 오늘 " + todayTasks.length + "건" + (delayedTasks.length > 0 ? " / ⚠️ 지연 " + delayedTasks.length + "건" : "");
+
+    var sheetUrl = "";
+    try { sheetUrl = ss.getUrl(); } catch(e) {}
+    var webAppUrl = getWebAppUrl();
+
+    var emailPayload = buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, delayedTasks, sheetUrl, webAppUrl);
+
+    MailApp.sendEmail({
+      to: recipient,
+      subject: subject,
+      body: emailPayload.plainText,
+      htmlBody: emailPayload.htmlBody
+    });
+
+    if (isManual) {
+      SpreadsheetApp.getUi().alert(
+        "✉️ 모닝 브리핑 테스트 발송 완료",
+        "성공적으로 브리핑 이메일을 발송했습니다!\n\n" +
+        "• 수신자: " + recipient + "\n" +
+        "• 오늘 착공/진행 공정: " + todayTasks.length + "건\n" +
+        "• 공정 지연 경고: " + delayedTasks.length + "건\n\n" +
+        "이메일 수신함을 확인해보세요.",
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+    }
+  } catch (eSend) {
+    Logger.log("모닝 브리핑 발송 실행 오류: " + eSend.toString());
+  } finally {
+    // 자동 일일 실행인 경우, 다음 날 설정 시각 정각 트리거 자동 재스케줄링 (Self-Rescheduling)
+    if (!isManual) {
+      try {
+        var isEnabled = PropertiesService.getDocumentProperties().getProperty("DAILY_BRIEFING_ENABLED");
+        if (isEnabled === "true") {
+          scheduleNextDailyBriefingTrigger();
+        }
+      } catch(e) {
+        Logger.log("모닝 브리핑 자동 재스케줄링 오류: " + e.message);
+      }
     }
   }
 }

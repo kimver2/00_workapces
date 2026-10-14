@@ -1325,20 +1325,21 @@ assertTest('sendDailySiteMorningBriefing: 모닝 브리핑 이메일 발송 시 
 // ========================================================
 console.log('\n🧹 [Step 17: 모닝 브리핑 및 백그라운드 유령(고아) 일정 무음 자동 청소 엔진 QA]');
 
-// 17-1: cleanupDuplicateAndOrphanCalendarEventsSilent 함수 탑재 여부
-assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent 무음 정리 엔진 함수 탑재 여부', typeof sandbox.cleanupDuplicateAndOrphanCalendarEventsSilent === 'function');
+// 17-1: cleanupOrphanCalendarEventsSilent 함수 탑재 여부
+assertTest('cleanupOrphanCalendarEventsSilent 무음 정리 엔진 함수 탑재 여부', typeof sandbox.cleanupOrphanCalendarEventsSilent === 'function');
+assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent 기존 호환 래퍼 탑재 여부', typeof sandbox.cleanupDuplicateAndOrphanCalendarEventsSilent === 'function');
 
-// 17-2: sendDailySiteMorningBriefing 발송 전 cleanupDuplicateAndOrphanCalendarEventsSilent 호출 검증
-const hasMorningCleanup = briefingCode.indexOf('cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, 14, 60)') !== -1;
-assertTest('sendDailySiteMorningBriefing: 메일 발송 전 캘린더 유령 일정 자동 무음 청소(-14일~+60일) 호출 검증', hasMorningCleanup);
+// 17-2: sendDailySiteMorningBriefing 발송 전 cleanupOrphanCalendarEventsSilent 호출 검증
+const hasMorningCleanup = briefingCode.indexOf('cleanupOrphanCalendarEventsSilent(sheet, cal)') !== -1;
+assertTest('sendDailySiteMorningBriefing: 메일 발송 전 캘린더 유령 일정 자동 무음 청소 호출 검증', hasMorningCleanup);
 
-// 17-3: runPeriodicAutoSync 12시간 주기 유령 일정 무음 청소 탑재 검증
+// 17-3: runPeriodicAutoSync NEEDS_ORPHAN_CLEANUP 연동 탑재 검증
 const periodicFullCode = code.slice(code.indexOf('function runPeriodicAutoSync()'), code.indexOf('function runPeriodic1MinSync()'));
-const hasPeriodicCleanup = periodicFullCode.indexOf('LAST_ORPHAN_CLEANUP_MS') !== -1 &&
-  periodicFullCode.indexOf('cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, 14, 45)') !== -1;
-assertTest('runPeriodicAutoSync: 12시간 스케줄 기반 백그라운드 유령 일정 무음 청소(Quota 방어) 탑재 검증', hasPeriodicCleanup);
+const hasPeriodicCleanup = periodicFullCode.indexOf('NEEDS_ORPHAN_CLEANUP') !== -1 &&
+  periodicFullCode.indexOf('cleanupOrphanCalendarEventsSilent(sheet, cal)') !== -1;
+assertTest('runPeriodicAutoSync: 행 삭제(REMOVE_ROW) 감지 플래그 및 15분 주기 유령 일정 청소 탑재 검증', hasPeriodicCleanup);
 
-// 17-4: cleanupDuplicateAndOrphanCalendarEventsSilent 단위 테스트 시뮬레이션
+// 17-4: cleanupOrphanCalendarEventsSilent 단위 테스트 시뮬레이션
 let deletedEvents = [];
 const mockCalendar = {
   getEvents: (start, end) => [
@@ -1390,16 +1391,57 @@ const mockSheetForSilent = {
 };
 
 deletedEvents = [];
-const cleanedCount = sandbox.cleanupDuplicateAndOrphanCalendarEventsSilent(mockSheetForSilent, mockCalendar, 14, 60);
-assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent: 시트에서 삭제된 유령 일정(orphan-event-id-999) 정확 삭제 검증',
+const cleanedCount = sandbox.cleanupOrphanCalendarEventsSilent(mockSheetForSilent, mockCalendar);
+assertTest('cleanupOrphanCalendarEventsSilent: 시트에서 삭제된 유령 일정(orphan-event-id-999) 정확 삭제 검증',
   deletedEvents.indexOf('orphan-event-id-999') !== -1 && cleanedCount === 1
 );
-assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent: 시트에 존재하는 정상 일정(valid-event-id-101) 삭제 방어 검증',
+assertTest('cleanupOrphanCalendarEventsSilent: 시트에 존재하는 정상 일정(valid-event-id-101) 삭제 방어 검증',
   deletedEvents.indexOf('valid-event-id-101') === -1
 );
-assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent: 개인 일정(personal-private-event) 절대 건드리지 않음 검증',
+assertTest('cleanupOrphanCalendarEventsSilent: 개인 일정(personal-private-event) 절대 건드리지 않음 검증',
   deletedEvents.indexOf('personal-private-event') === -1
 );
+
+// ========================================================
+// 18. [우클릭 행 삭제(REMOVE_ROW) onChange 트리거 및 모닝 브리핑 자율 복구 QA]
+// ========================================================
+console.log('\n🗑️ [Step 18: 우클릭 행 삭제(REMOVE_ROW) onChange 트리거 및 모닝 브리핑 자율 복구 QA]');
+
+// 18-1: handleSheetChangeTrigger 함수 탑재 여부
+assertTest('handleSheetChangeTrigger 함수 탑재 여부', typeof sandbox.handleSheetChangeTrigger === 'function');
+
+// 18-2: ensureRealtimeTriggerInstalledSilent 내 onChange 트리거 자동 등록 검증
+const triggerInstallCode = code.slice(code.indexOf('function ensureRealtimeTriggerInstalledSilent('), code.indexOf('function handleSheetChangeTrigger('));
+const hasOnChangeTriggerInstall = triggerInstallCode.indexOf('.onChange()') !== -1 &&
+  triggerInstallCode.indexOf('handleSheetChangeTrigger') !== -1;
+assertTest('ensureRealtimeTriggerInstalledSilent: 행 삭제 감지 onChange 트리거 자동 설치 탑재 검증', hasOnChangeTriggerInstall);
+
+// 18-3: handleSheetChangeTrigger 내 REMOVE_ROW 및 NEEDS_ORPHAN_CLEANUP 검증
+const sheetChangeCode = code.slice(code.indexOf('function handleSheetChangeTrigger('), code.indexOf('function cleanupOrphanCalendarEventsSilent('));
+const hasRemoveRowLogic = sheetChangeCode.indexOf('e.changeType === "REMOVE_ROW"') !== -1 &&
+  sheetChangeCode.indexOf('NEEDS_ORPHAN_CLEANUP') !== -1 &&
+  sheetChangeCode.indexOf('refreshDashboardCalendar') !== -1;
+assertTest('handleSheetChangeTrigger: REMOVE_ROW 발생 시 대시보드 새로고침 및 청소 예약 검증', hasRemoveRowLogic);
+
+// 18-4: sendDailySiteMorningBriefing strict isManual 검증 (GAS 이벤트 객체 e 전달 시 UI 팝업 차단)
+const hasStrictIsManual = briefingCode.indexOf('var isManual = (isManualTest === true);') !== -1;
+assertTest('sendDailySiteMorningBriefing: isManualTest === true 엄격 판별(백그라운드 트리거 시 getUi 에러 원천 차단)', hasStrictIsManual);
+
+// 18-5: sendDailySiteMorningBriefing finally 블록 내 scheduleNextDailyBriefingTrigger 보장
+const hasFinallyReschedule = briefingCode.indexOf('finally') !== -1 &&
+  briefingCode.indexOf('scheduleNextDailyBriefingTrigger()') !== -1;
+assertTest('sendDailySiteMorningBriefing: finally 블록 내 다음날 트리거 무조건 재예약(Self-Rescheduling 보장)', hasFinallyReschedule);
+
+// 18-6: getDailyBriefingRecipientEmail 내 소유자 이메일 4순위 fallback 탑재 검증
+const recipientFuncCode = code.slice(code.indexOf('function getDailyBriefingRecipientEmail('), code.indexOf('function configureBriefingEmail('));
+const hasOwnerFallback = recipientFuncCode.indexOf('ss.getOwner()') !== -1 &&
+  recipientFuncCode.indexOf('DAILY_BRIEFING_EMAIL') !== -1;
+assertTest('getDailyBriefingRecipientEmail: 백그라운드 실행 시 소유자 이메일 4순위 fallback 및 영속 캐싱 검증', hasOwnerFallback);
+
+// 18-7: ensureRealtimeTriggerInstalledSilent 내 DAILY_BRIEFING_ENABLED 트리거 자율 복구 검증
+const hasBriefingAutoRecovery = triggerInstallCode.indexOf('DAILY_BRIEFING_ENABLED') !== -1 &&
+  triggerInstallCode.indexOf('scheduleNextDailyBriefingTrigger()') !== -1;
+assertTest('ensureRealtimeTriggerInstalledSilent: 모닝 브리핑 트리거 소실 시 자율 복구(Self-Healing) 검증', hasBriefingAutoRecovery);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
