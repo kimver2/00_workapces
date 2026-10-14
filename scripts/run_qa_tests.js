@@ -270,7 +270,7 @@ const htmlOutput = buildHtmlFn(15, '래미안 101동', '26.10.15', '목공', '�
 assertTest('buildMobileStatusHtml 런타임 실행: 유효한 HTML 문자열 반환', typeof htmlOutput === 'string' && htmlOutput.indexOf('<!DOCTYPE html>') !== -1);
 assertTest('모바일 HTML 내 4대 상태 버튼(예정, 진행중, 완료, AS) 정상 렌더링', htmlOutput.indexOf('btn-done') !== -1 && htmlOutput.indexOf('btn-progress') !== -1);
 assertTest('모바일 HTML 내 공유 상태 토글 버튼(공유 ON, 미공유 OFF) 정상 렌더링', htmlOutput.indexOf('btnShareOn') !== -1 && htmlOutput.indexOf('btnShareOff') !== -1);
-assertTest('모바일 HTML 내 [공유/진행상태/비고 저장하기] 버튼 정상 렌더링', htmlOutput.indexOf('공유/진행상태/비고 저장하기') !== -1 || htmlOutput.indexOf('공유/진행상태 저장하기') !== -1);
+assertTest('모바일 HTML 내 [저장하기] 버튼 정상 렌더링', htmlOutput.indexOf('저장하기') !== -1);
 assertTest('모바일 HTML 내 [현장 비고/특이사항 메모] textarea 정상 렌더링', htmlOutput.indexOf('id=\'memoInput\'') !== -1);
 
 // [신규 QA] 모바일 웹앱 내장 JavaScript 구문 무결성 정밀 검증 (SyntaxError 방지)
@@ -1279,6 +1279,46 @@ assertTest('taskColorMap: 엘리베이터보양, 시스템에어컨, 샷시, 싱
 const applyValCode = code.slice(code.indexOf('function applySiteScheduleValidations('), code.indexOf('function setupSiteSheetConditionalFormatting('));
 const hasMaxRowsValidation = applyValCode.indexOf('sheet.getMaxRows()') !== -1;
 assertTest('applySiteScheduleValidations: 시트 전체 깊이(getMaxRows)까지 드롭다운 유효성 적용 검증', hasMaxRowsValidation);
+
+// ========================================================
+// 16. [모바일 웹앱 및 모닝 브리핑 날짜 표준 표기(YY.MM.DD) 및 버튼명 간소화 QA]
+// ========================================================
+console.log('\n📱 [Step 16: 모바일 웹앱 및 모닝 브리핑 날짜 표준 표기(YY.MM.DD) 및 버튼명 간소화 QA]');
+
+// 16-1: formatScheduleDateDisplay 함수 탑재 및 단위 테스트
+assertTest('formatScheduleDateDisplay: 날짜 표준 포맷 변환 함수 탑재 여부', typeof sandbox.formatScheduleDateDisplay === 'function');
+assertTest('formatScheduleDateDisplay: Date 객체(시간 없음) -> 26.10.15 변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date(2026, 9, 15)) === '26.10.15'
+);
+assertTest('formatScheduleDateDisplay: Date 객체(시간 포함) -> 26.10.15 14:00 변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date(2026, 9, 15, 14, 0)) === '26.10.15 14:00'
+);
+assertTest('formatScheduleDateDisplay: 날짜 범위(종일) -> 26.10.15 ~ 26.10.18 변환 검증',
+  sandbox.formatScheduleDateDisplay('2026-10-15 ~ 2026-10-18') === '26.10.15 ~ 26.10.18'
+);
+assertTest('formatScheduleDateDisplay: 날짜 범위(시간 포함) -> 26.10.15 09:00 ~ 18:00 변환 검증',
+  sandbox.formatScheduleDateDisplay('26.10.15 09:00 ~ 18:00') === '26.10.15 09:00 ~ 18:00'
+);
+assertTest('formatScheduleDateDisplay: 원시 Date.toString() 문자열 -> 26.11.11 완벽 파싱/변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date('2026-11-11T00:00:00+09:00')) === '26.11.11'
+);
+
+// 16-2: buildMobileStatusHtml 일시 표기 시 formatScheduleDateDisplay 적용 및 GMT+0900 배제 검증
+const testHtml = sandbox.buildMobileStatusHtml(2, '신대방우성 5동 601호', new Date(2026, 10, 11), 'S/A', '예정');
+assertTest('buildMobileStatusHtml: 일시 출력 시 26.11.11 깔끔한 포맷 렌더링 검증', testHtml.indexOf("<span class='info-val'>26.11.11</span>") !== -1);
+assertTest('buildMobileStatusHtml: 일시 출력에서 raw Date (GMT+0900 / 한국 표준시) 완전 제거 검증', testHtml.indexOf('GMT+0900') === -1);
+
+// 16-3: buildMobileStatusHtml 하단 버튼명 "저장하기" 간소화 검증
+assertTest('buildMobileStatusHtml: 하단 저장 버튼 텍스트 [저장하기] 적용 검증', testHtml.indexOf('<span>저장하기</span>') !== -1);
+assertTest('buildMobileStatusHtml: 이전 장문 버튼텍스트(공유/진행상태/비고 저장하기) 완전 제거 검증', testHtml.indexOf('공유/진행상태/비고 저장하기') === -1);
+assertTest('buildMobileStatusHtml: JS saveStatus 핸들러 내 버튼 텍스트 [저장하기] 통일 검증',
+  testHtml.indexOf("btn.innerText = '저장하기';") !== -1
+);
+
+// 16-4: sendDailySiteMorningBriefing dateStr 포맷팅 적용 검증
+const briefingCode = code.slice(code.indexOf('function sendDailySiteMorningBriefing('), code.indexOf('function buildMorningBriefingEmailContent('));
+const hasBriefingDateFormat = briefingCode.indexOf('formatScheduleDateDisplay(dateVal)') !== -1;
+assertTest('sendDailySiteMorningBriefing: 모닝 브리핑 이메일 발송 시 dateStr에 formatScheduleDateDisplay 적용 검증', hasBriefingDateFormat);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);

@@ -1705,6 +1705,46 @@ function formatDateWithTime(start, end) {
 }
 
 /**
+ * 현장 일정 날짜를 YY.MM.DD (시간 포함 시 시간 표시) 표준 포맷으로 변환
+ * 예: 26.10.15 / 26.10.15 14:00 / 26.10.15 ~ 26.10.18 / 26.10.15 09:00 ~ 18:00
+ */
+function formatScheduleDateDisplay(val) {
+  if (!val) return "";
+  var parsed = null;
+  try {
+    parsed = parseScheduleDateRange(val);
+  } catch (e) {
+    parsed = null;
+  }
+  if (!parsed || !parsed.startDate) {
+    var isDateObj = (val instanceof Date || Object.prototype.toString.call(val) === "[object Date]" || (val && typeof val.getTime === "function"));
+    if (isDateObj && !isNaN(val.getTime())) {
+      return formatDateYYMMDD(val);
+    }
+    return String(val).trim();
+  }
+
+  // 1. 시간 정보가 포함된 일정 (단일 시간 또는 시간 범위)
+  if (parsed.hasTime) {
+    if (parsed.startTime && parsed.endTime) {
+      return formatDateWithTime(parsed.startTime, parsed.endTime);
+    } else if (parsed.startTime) {
+      return formatDateTime(parsed.startTime);
+    } else {
+      return formatDateYYMMDD(parsed.startDate) + (parsed.timeStr ? (" " + parsed.timeStr) : "");
+    }
+  }
+
+  // 2. 종일 기간(Range) 일정
+  if (parsed.isRange && parsed.displayEndDate) {
+    return formatDateYYMMDD(parsed.startDate) + " ~ " + formatDateYYMMDD(parsed.displayEndDate);
+  }
+
+  // 3. 단일 종일 일정
+  return formatDateYYMMDD(parsed.startDate);
+}
+
+/**
  * 현재 로그인 사용자 닉네임/아이디 추출
  */
 function getCurrentUserIdentifier() {
@@ -3479,8 +3519,9 @@ function getDashboardSelectedYearMonth(dashSheet, dowRow) {
 function parseScheduleDateRange(val) {
   if (!val) return null;
 
-  // 1. 셀 값이 Date 객체인 경우
-  if (val instanceof Date && !isNaN(val.getTime())) {
+  // 1. 셀 값이 Date 객체인 경우 (cross-realm 호환 지원)
+  var isDateObj = (val instanceof Date || Object.prototype.toString.call(val) === "[object Date]" || (val && typeof val.getTime === "function" && typeof val.getMonth === "function"));
+  if (isDateObj && !isNaN(val.getTime())) {
     var hasTime = (val.getHours() !== 0 || val.getMinutes() !== 0);
     var y = val.getFullYear();
     var m = val.getMonth() + 1;
@@ -3525,6 +3566,17 @@ function parseScheduleDateRange(val) {
 
   var str = String(val).trim();
   if (!str) return null;
+
+  // 1-1. 원시 Date.toString() 형식 감지 (예: "Wed Nov 11 2026 00:00:00 GMT+0900 (한국 표준시)")
+  if (/(?:GMT|UTC|[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+)/.test(str)) {
+    try {
+      var cleanDateStr = str.replace(/\s*\([^)]*\)\s*$/, "").trim();
+      var directDate = new Date(cleanDateStr);
+      if (!isNaN(directDate.getTime())) {
+        return parseScheduleDateRange(directDate);
+      }
+    } catch(e) {}
+  }
 
   // 2. 기간 구분자 감지: "Oct 21 → Oct 22", "10/21 ~ 10/22", "26.10.21 - 26.10.22", "26.10.11 15:00 ~ 17:00"
   var separatorRegex = /\s*(?:→|~|\s-\s|\s~|\.\.\.)\s*/;
@@ -4339,7 +4391,7 @@ function doGet(e) {
 
   var rowVals = sheet.getRange(row, 1, 1, 9).getValues()[0];
   var siteName = String(rowVals[0] || "-").trim();
-  var dateStr = String(rowVals[1] || "-").trim();
+  var dateStr = formatScheduleDateDisplay(rowVals[1]) || String(rowVals[1] || "-").trim();
   var taskName = String(rowVals[2] || "-").trim();
   var rawShare = rowVals[4];
   var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
@@ -4375,6 +4427,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
   if (isShared === undefined) isShared = true;
   if (memo === undefined || memo === null) memo = "";
   if (eventId === undefined || eventId === null) eventId = "";
+  var formattedDateStr = formatScheduleDateDisplay(dateStr) || dateStr || "-";
   var isSharedBool = (isShared === true || String(isShared).trim().toUpperCase() === "TRUE" || String(isShared).trim() === "1");
 
   var html = "<!DOCTYPE html>" +
@@ -4425,7 +4478,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "      <div class='subtitle'>" + taskName + "</div>" +
     "    </div>" +
     "    <div class='info-box'>" +
-    "      <div class='info-row'><span class='info-label'>일시:</span><span class='info-val'>" + dateStr + "</span></div>" +
+    "      <div class='info-row'><span class='info-label'>일시:</span><span class='info-val'>" + formattedDateStr + "</span></div>" +
     "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 공유:</span><span class='info-val' id='currShareDisplay'>" + (isSharedBool ? "🟦 공유 완료" : "🟥 미공유") + "</span></div>" +
     "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 상태:</span><span class='info-val' id='currStatusDisplay'>" + currentStatus + "</span></div>" +
     "    </div>" +
@@ -4444,7 +4497,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "    <div class='section-label'>📝 현장 비고 / 특이사항 메모</div>" +
     "    <textarea id='memoInput' class='memo-textarea' placeholder='현장 특이사항이나 전달사항을 입력하세요 (예: 자재 입고 완료, 오후 시공)'>" + escapeHtmlForInput(memo) + "</textarea>" +
     "    <button type='button' id='saveBtn' class='submit-btn' onclick='saveStatus()'>" +
-    "      <span>💾 공유/진행상태/비고 저장하기</span>" +
+    "      <span>저장하기</span>" +
     "    </button>" +
     "    <div id='toast' class='toast'></div>" +
     "    <div class='footer'>우성아이디 현장관리 시스템</div>" +
@@ -4491,7 +4544,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "        google.script.run" +
     "          .withSuccessHandler(function(res) {" +
     "            btn.disabled = false;" +
-    "            btn.innerText = '💾 공유/진행상태/비고 저장하기';" +
+    "            btn.innerText = '저장하기';" +
     "            if (res && res.success) {" +
     "              document.getElementById('currStatusDisplay').innerText = selected;" +
     "              document.getElementById('currShareDisplay').innerText = selectedShare ? '🟦 공유 완료' : '🟥 미공유';" +
@@ -4522,7 +4575,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "          window.location.href = targetUrl;" +
     "        } else {" +
     "          btn.disabled = false;" +
-    "          btn.innerText = '💾 공유/진행상태/비고 저장하기';" +
+    "          btn.innerText = '저장하기';" +
     "          toast.className = 'toast toast-error';" +
     "          toast.innerText = '⚠️ 웹앱 환경을 확인할 수 없습니다. 브라우저에서 다시 열어주세요.';" +
     "          toast.style.display = 'block';" +
@@ -5083,10 +5136,12 @@ function sendDailySiteMorningBriefing(isManualTest) {
     var parsedDate = parseScheduleDateRange(dateVal);
     if (!parsedDate) continue;
 
+    var formattedDate = formatScheduleDateDisplay(dateVal);
+
     var item = {
       row: i + 2,
       siteName: siteName,
-      dateStr: String(dateVal).trim(),
+      dateStr: formattedDate || String(dateVal).trim(),
       taskName: taskName,
       partner: partner,
       isShared: isShared,
