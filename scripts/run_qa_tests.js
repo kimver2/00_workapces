@@ -1001,9 +1001,30 @@ assertTest('필수 3요소 완성 시 정상 세부정보 및 표준 제목 반�
   completeDetails.title.indexOf('[보라매경남 102동 502호] 도배') !== -1
 );
 
-// 10-4: 코드 내 REALTIME_CALENDAR_SYNC_DISABLED 영속성 체크 탑재 검증
-const hasDisableFlagCheckInTrigger = code.indexOf('PropertiesService.getScriptProperties().getProperty("REALTIME_CALENDAR_SYNC_DISABLED")') !== -1;
-assertTest('실시간 트리거 및 무음 등록 함수 내 REALTIME_CALENDAR_SYNC_DISABLED 영속 플래그 체크 탑재 검증', hasDisableFlagCheckInTrigger);
+// 10-4: 코드 내 SYNC_MODE 영속성 제어 검증
+const hasSyncModeCheck = code.indexOf('props.getProperty("SYNC_MODE")') !== -1;
+assertTest('실시간 트리거 및 무음 등록 함수 내 SYNC_MODE 영속 플래그 제어 탑재 검증', hasSyncModeCheck);
+
+console.log('\n⏰ [Step 11: 1분 주기 스마트 자동 동기화 엔진 QA]');
+
+// 11-1: 1분 주기 켜기 함수 탑재 여부
+assertTest('enable1MinAutoSync 함수 탑재 여부', typeof sandbox.enable1MinAutoSync === 'function');
+
+// 11-2: 1분 주기 백그라운드 엔진 함수 탑재 여부
+assertTest('runPeriodic1MinSync 백그라운드 코어 엔진 함수 탑재 여부', typeof sandbox.runPeriodic1MinSync === 'function');
+
+// 11-3: 모든 자동 연동 끄기 함수 탑재 여부
+assertTest('disableAllAutoCalendarSync 함수 탑재 여부', typeof sandbox.disableAllAutoCalendarSync === 'function');
+
+// 11-4: handleCalendarEditTrigger 내 1MIN 모드 시 캘린더 API 미호출 분기 검증
+const triggerCode = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncFromCalendarToSheet('));
+const has1MinSkipLogic = triggerCode.indexOf('if (syncMode === "REALTIME")') !== -1;
+assertTest('handleCalendarEditTrigger: 1MIN 모드 시 캘린더 API 호출 생략 (타이핑 렉 0% 보장)', has1MinSkipLogic);
+
+// 11-5: 상단 메뉴(⚡ 캘린더 연동 설정) 내 1분 주기 자동 동기화 등록 검증
+const menuCode = code.slice(code.indexOf('ui.createMenu("⚡ 캘린더 연동 설정")'), code.indexOf('ui.createMenu("📑 현장 데이터 편집/보기")'));
+const has1MinInMenu = menuCode.indexOf('enable1MinAutoSync') !== -1;
+assertTest('상단 메뉴(⚡ 캘린더 연동 설정) 내 1분 주기 자동 동기화 등록 여부', has1MinInMenu);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);

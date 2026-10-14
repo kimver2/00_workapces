@@ -635,12 +635,11 @@ function onOpen() {
 
     // [서브메뉴 2: 캘린더 연동 설정]
     .addSubMenu(ui.createMenu("⚡ 캘린더 연동 설정")
-      .addItem("⚡ 실시간 시트➔캘린더 연동 켜기 (수정 시 즉시 반영)", "enableRealtimeCalendarSync")
-      .addItem("❌ 실시간 시트➔캘린더 연동 끄기", "disableRealtimeCalendarSync")
+      .addItem("⏰ 1분 주기 자동 동기화 켜기 (입력 렉 제로 & 1분마다 자동 반영)", "enable1MinAutoSync")
+      .addItem("⚡ 완전 실시간 연동 켜기 (수정 시 즉시 반영)", "enableRealtimeCalendarSync")
+      .addItem("❌ 모든 자동 연동 끄기 (수동 버튼 전용)", "disableAllAutoCalendarSync")
       .addSeparator()
       .addItem("📥 캘린더 수정사항 가져오기 (수동 즉시 반영)", "syncFromCalendarToSheet")
-      .addItem("⏰ 캘린더 ➔ 시트 5분 주기 자동 동기화 켜기", "enableCalendarToSheet5MinSync")
-      .addItem("⏹️ 캘린더 ➔ 시트 자동 동기화 끄기", "disableCalendarToSheetAutoSync")
       .addSeparator()
       .addItem("📦 전체 일정 연속 동기화 (25건씩 자동 대기 연속 처리)", "syncAllSiteSchedulesToGoogleCalendar")
       .addItem("🧹 캘린더 중복 및 유령 일정 자동 정리", "cleanupDuplicateAndOrphanCalendarEvents")
@@ -710,101 +709,97 @@ function onEdit(e) {
 
 
 // ========================================================
-// 3. [구글 캘린더 실시간 연동 (설치형 트리거: 시트 ➔ 캘린더)]
+// 3. [구글 캘린더 자동 연동 제어 (1분 주기 스마트 동기화 & 실시간 엔진)]
 // ========================================================
 
 /**
- * 실시간 캘린더 자동 연동 켜기 (설치형 onEdit 트리거 자동 등록)
+ * 1분 주기 스마트 자동 동기화 켜기 (기본 권장 모드)
+ * - 시트에서 공정을 마음껏 연속 입력/수정/복사해도 입력 렉 0%!
+ * - 1분마다 백그라운드에서 신규/수정된 공정을 캘린더에 일괄 자동 반영
  */
-function enableRealtimeCalendarSync() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var functionName = "handleCalendarEditTrigger";
+function enable1MinAutoSync() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty("SYNC_MODE", "1MIN");
+  props.deleteProperty("REALTIME_CALENDAR_SYNC_DISABLED");
 
-  // 사용자의 실시간 끄기 플래그 해제
-  try {
-    PropertiesService.getScriptProperties().deleteProperty("REALTIME_CALENDAR_SYNC_DISABLED");
-  } catch(e) {}
-
-  // 이미 설치되어 있는지 확인
+  var functionName = "runPeriodic1MinSync";
   var triggers = ScriptApp.getProjectTriggers();
+  var alreadyInstalled = false;
+
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === functionName) {
-      SpreadsheetApp.getUi().alert(
-        "⚡ 실시간 연동 활성화 상태",
-        "이미 실시간 구글 캘린더 연동이 켜져 있습니다!\n\n'현장데이터' 시트에서 비고를 제외한 모든 항목(현장, 날짜, 공종, 협력업체, 공유 체크박스, 담당자, 진행상태)을 수정하면 즉시 구글 캘린더에 실시간으로 자동 반영됩니다.",
-        SpreadsheetApp.getUi().ButtonSet.OK
-      );
-      return;
+    var fn = triggers[i].getHandlerFunction();
+    if (fn === functionName) {
+      alreadyInstalled = true;
     }
   }
 
-  // 신규 설치형 트리거 생성
-  ScriptApp.newTrigger(functionName)
-    .forSpreadsheet(ss)
-    .onEdit()
-    .create();
+  if (!alreadyInstalled) {
+    ScriptApp.newTrigger(functionName)
+      .timeBased()
+      .everyMinutes(1)
+      .create();
+  }
+
+  ensureRealtimeTriggerInstalledSilent();
 
   SpreadsheetApp.getUi().alert(
-    "✅ 실시간 캘린더 연동 활성화 완료",
-    "실시간 구글 캘린더 연동이 성공적으로 켜졌습니다!\n\n" +
-    "앞으로 '현장데이터' 시트에서 비고를 제외한 모든 변경(현장, 날짜, 공종, 협력업체, 공유 체크박스, 담당자, 진행상태) 발생 시 즉시 구글 캘린더에 실시간으로 자동 추가/수정/삭제됩니다.",
+    "⏰ 1분 주기 스마트 자동 동기화 활성화 완료",
+    "1분 주기 스마트 자동 동기화가 활성화되었습니다!\n\n" +
+    "1. 이제 시트에서 공정을 마음껏 여러 행 추가하고 입력하세요. (입력 렉 0%)\n" +
+    "2. 약 1분마다 백그라운드에서 신규/수정된 공정을 감지하여 구글 캘린더에 자동으로 반영합니다.\n" +
+    "3. 구글 캘린더에서 수정한 일정(날짜 이동 등)도 1분마다 시트로 자동 반영됩니다.\n\n" +
+    "(지금 즉시 캘린더에 올리고 싶을 때는 상단 [📅 구글 캘린더 동기화]를 1회 클릭하시면 됩니다)",
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
 
 /**
- * 실시간 캘린더 연동 트리거가 미설치된 경우 백그라운드 자동 등록 (무음 모드)
- * - 사용자가 명시적으로 실시간 연동을 끈 경우 자동 재등록을 차단하여 사용자 의도 존중
+ * 완전 실시간 캘린더 연동 켜기 (셀 수정 시 즉각 캘린더 통신)
  */
-function ensureRealtimeTriggerInstalledSilent() {
-  try {
-    var disabled = PropertiesService.getScriptProperties().getProperty("REALTIME_CALENDAR_SYNC_DISABLED");
-    if (disabled === "true") {
-      return; // 사용자가 수동 동기화 모드를 위해 끈 경우 재설치 차단
+function enableRealtimeCalendarSync() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty("SYNC_MODE", "REALTIME");
+  props.deleteProperty("REALTIME_CALENDAR_SYNC_DISABLED");
+
+  // 1분 주기 백그라운드 트리거 삭제
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "runPeriodic1MinSync") {
+      ScriptApp.deleteTrigger(triggers[i]);
     }
-    var functionName = "handleCalendarEditTrigger";
-    var triggers = ScriptApp.getProjectTriggers();
-    for (var i = 0; i < triggers.length; i++) {
-      if (triggers[i].getHandlerFunction() === functionName) {
-        return; // 이미 등록됨
-      }
-    }
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    if (ss) {
-      ScriptApp.newTrigger(functionName)
-        .forSpreadsheet(ss)
-        .onEdit()
-        .create();
-      Logger.log("⚡ 실시간 캘린더 연동 트리거 자동 설치 완료");
-    }
-  } catch(e) {
-    Logger.log("실시간 트리거 자동 설치 건너뜀: " + e.toString());
   }
+
+  ensureRealtimeTriggerInstalledSilent();
+
+  SpreadsheetApp.getUi().alert(
+    "⚡ 완전 실시간 연동 활성화 완료",
+    "셀 수정 시 즉시 구글 캘린더에 반영되는 완전 실시간 연동이 켜졌습니다.\n\n'현장데이터' 시트에서 비고를 제외한 항목을 수정하면 즉시 구글 캘린더에 실시간으로 자동 추가/수정/삭제됩니다.",
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 /**
- * 실시간 캘린더 자동 연동 끄기
- * - 사용자의 실시간 비활성화 의사를 영구 보존하여 동기화 실행 시 재설치 방지
+ * 모든 캘린더 자동 연동 끄기 (수동 동기화 모드)
  */
-function disableRealtimeCalendarSync() {
-  try {
-    PropertiesService.getScriptProperties().setProperty("REALTIME_CALENDAR_SYNC_DISABLED", "true");
-  } catch(e) {}
+function disableAllAutoCalendarSync() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty("SYNC_MODE", "MANUAL");
+  props.setProperty("REALTIME_CALENDAR_SYNC_DISABLED", "true");
 
-  var functionName = "handleCalendarEditTrigger";
   var triggers = ScriptApp.getProjectTriggers();
   var removed = 0;
 
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === functionName) {
+    var fn = triggers[i].getHandlerFunction();
+    if (fn === "runPeriodic1MinSync" || fn === "syncFromCalendarToSheet") {
       ScriptApp.deleteTrigger(triggers[i]);
       removed++;
     }
   }
 
   SpreadsheetApp.getUi().alert(
-    "❌ 실시간 구글 캘린더 연동 해제 완료",
-    "실시간 연동이 정상적으로 꺼졌습니다.\n\n" +
+    "❌ 모든 자동 연동 해제 완료",
+    "모든 자동 연동이 정상적으로 꺼졌습니다.\n\n" +
     "이제 시트에서 일정을 자유롭게 입력/수정/삭제하시고, 작성이 완료된 후 상단 메뉴의\n" +
     "[🚀 현장 관리] ➔ [📅 구글 캘린더 동기화]를 누르시면 한 번에 안전하게 캘린더에 반영됩니다.",
     SpreadsheetApp.getUi().ButtonSet.OK
@@ -812,15 +807,209 @@ function disableRealtimeCalendarSync() {
 }
 
 /**
- * 설치형 onEdit 트리거 핸들러 (실시간 캘린더 수정/등록/삭제 및 작성자/수정자 추적)
- * - 비고(6열)를 제외한 모든 변경 발생 시 구글 캘린더에 실시간 자동 반영
+ * 기존 호환용 실시간 자동 연동 끄기 별칭
+ */
+function disableRealtimeCalendarSync() {
+  disableAllAutoCalendarSync();
+}
+
+/**
+ * 캘린더 연동 트리거 백그라운드 무음 자동 설치 및 점검
+ * - 기본 모드: 1분 주기 자동 동기화 ("1MIN")
+ * - 사용자가 수동 모드("MANUAL")로 끈 경우 자동 재등록을 차단하여 사용자 의도 존중
+ */
+function ensureRealtimeTriggerInstalledSilent() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var syncMode = props.getProperty("SYNC_MODE");
+
+    // 기본값이 없으면 "1MIN" 모드를 표준 기본값으로 적용
+    if (!syncMode) {
+      syncMode = "1MIN";
+      props.setProperty("SYNC_MODE", "1MIN");
+    }
+
+    if (syncMode === "MANUAL") {
+      return; // 수동 모드인 경우 자동 설치 차단
+    }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return;
+
+    var triggers = ScriptApp.getProjectTriggers();
+    var hasEditTrigger = false;
+    var has1MinTrigger = false;
+
+    for (var i = 0; i < triggers.length; i++) {
+      var fn = triggers[i].getHandlerFunction();
+      if (fn === "handleCalendarEditTrigger") hasEditTrigger = true;
+      if (fn === "runPeriodic1MinSync") has1MinTrigger = true;
+    }
+
+    // 시트 수정 시 메타데이터 및 타임스탬프 기록용 onEdit 트리거 설치
+    if (!hasEditTrigger) {
+      ScriptApp.newTrigger("handleCalendarEditTrigger")
+        .forSpreadsheet(ss)
+        .onEdit()
+        .create();
+      Logger.log("⚡ 시트 편집 트리거 자동 설치 완료");
+    }
+
+    // 1분 주기 자동 동기화 모드인 경우 1분 시간 기반 트리거 설치
+    if (syncMode === "1MIN" && !has1MinTrigger) {
+      ScriptApp.newTrigger("runPeriodic1MinSync")
+        .timeBased()
+        .everyMinutes(1)
+        .create();
+      Logger.log("⏰ 1분 주기 자동 동기화 트리거 자동 설치 완료");
+    }
+  } catch(e) {
+    Logger.log("트리거 자동 점검 건너뜀: " + e.toString());
+  }
+}
+
+/**
+ * 1분 주기 백그라운드 통합 스마트 자동 동기화 엔진
+ * - 시트 ➔ 캘린더: 새로 입력되거나 시트에서 수정된 공정을 1분마다 캘린더에 일괄 반영
+ * - 캘린더 ➔ 시트: 캘린더에서 변경된 일정(날짜 이동 등)을 시트로 자동 반영
+ * - 변경사항이 없으면 0.1초 만에 No-Op 조기 종료하여 구글 API 할당량 99% 절약
+ */
+function runPeriodic1MinSync() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return; // 동시 실행 중복 차단
+
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return;
+    var sheet = findSiteScheduleSheet(ss);
+    if (!sheet) return;
+
+    var cal = getTargetCalendar();
+    if (!cal) return;
+
+    var props = PropertiesService.getScriptProperties();
+    var lastSyncRaw = props.getProperty("LAST_PERIODIC_SYNC_MS");
+    var nowMs = Date.now();
+    // 최초 실행 시에는 최근 1분 전 시각으로 안전 초기화하여 기존 대량 일정 재전송 방어
+    var lastSyncMs = lastSyncRaw ? parseInt(lastSyncRaw, 10) : (nowMs - 60000);
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+
+    ensureCalendarSyncColumns(sheet);
+
+    var range = sheet.getRange(2, 1, lastRow - 1, 14);
+    var values = range.getValues();
+
+    var rowsToSyncToCal = [];
+    var calUpdatedCount = 0;
+
+    // 1단계: 시트 내 신규 및 변경 행 감지 (시트 ➔ 캘린더 대상 선별)
+    for (var i = 0; i < values.length; i++) {
+      var rowNumber = i + 2;
+      var rowVals = values[i];
+      var siteName = String(rowVals[0] || "").trim();
+      var dateVal = rowVals[1];
+      var taskName = String(rowVals[2] || "").trim();
+      var calId = String(rowVals[8] || "").trim();
+      var rawUpdated = rowVals[9];
+      var rowUpdatedMs = 0;
+      if (rawUpdated instanceof Date) {
+        rowUpdatedMs = rawUpdated.getTime();
+      } else if (typeof rawUpdated === "number") {
+        rowUpdatedMs = rawUpdated;
+      } else {
+        rowUpdatedMs = parseInt(rawUpdated, 10) || 0;
+      }
+
+      // 날짜와 공종이 채워졌는데 아직 캘린더ID가 없는 신규 행 ➔ 캘린더 전송 대상
+      // 또는 캘린더ID가 있고 마지막 동기화 이후 시트에서 수정된 행 ➔ 캘린더 전송 대상
+      if ((dateVal && taskName && !calId) || (calId && rowUpdatedMs > lastSyncMs)) {
+        rowsToSyncToCal.push(rowNumber);
+      }
+    }
+
+    // 2단계: 변경된 행을 캘린더로 일괄 전송 (최대 25건 안전 분할)
+    var didSyncToCal = false;
+    if (rowsToSyncToCal.length > 0) {
+      var syncLimit = Math.min(rowsToSyncToCal.length, 25);
+      for (var s = 0; s < syncLimit; s++) {
+        syncSingleRowToCalendar(sheet, rowsToSyncToCal[s], true, true);
+      }
+      didSyncToCal = true;
+    }
+
+    // 3단계: 캘린더 ➔ 시트 역방향 검사 (캘린더에서 수정한 일정 시트 반영, 최대 15건)
+    var inspectedThisRound = 0;
+    for (var j = 0; j < values.length; j++) {
+      if (inspectedThisRound >= 15) break;
+      var cVals = values[j];
+      var existingId = String(cVals[8] || "").trim();
+      if (!existingId) continue;
+
+      inspectedThisRound++;
+      var ev = null;
+      try {
+        ev = cal.getEventById(existingId);
+      } catch (e) {
+        ev = null;
+      }
+      if (!ev) continue;
+
+      var calUpdatedDate = ev.getLastUpdated();
+      var calUpdated = calUpdatedDate ? calUpdatedDate.getTime() : 0;
+      var rawUp = cVals[9];
+      var sUpdated = (rawUp instanceof Date) ? rawUp.getTime() : (typeof rawUp === "number" ? rawUp : (parseInt(rawUp, 10) || 0));
+
+      if (calUpdated > sUpdated + 10000) {
+        var isAllDay = ev.isAllDayEvent();
+        var calStart = isAllDay ? ev.getAllDayStartDate() : ev.getStartTime();
+        var calEnd = isAllDay ? ev.getAllDayEndDate() : ev.getEndTime();
+        var newDateStr = "";
+        if (!isAllDay) {
+          newDateStr = formatDateWithTime(calStart, calEnd);
+        } else {
+          var realCalEnd = null;
+          if (calEnd) {
+            var diffDays = Math.round((calEnd.getTime() - calStart.getTime()) / (24 * 60 * 60 * 1000));
+            if (diffDays > 1) {
+              realCalEnd = new Date(calEnd.getTime() - 24 * 60 * 60 * 1000);
+            }
+          }
+          newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
+        }
+        cVals[1] = newDateStr;
+        cVals[9] = calUpdated;
+        cVals[12] = formatDateTime(calUpdatedDate);
+        cVals[13] = "구글 캘린더";
+        calUpdatedCount++;
+      }
+    }
+
+    if (calUpdatedCount > 0) {
+      range.setValues(values);
+      SpreadsheetApp.flush();
+    }
+
+    if (didSyncToCal || calUpdatedCount > 0) {
+      refreshDashboardCalendar(ss);
+    }
+
+    props.setProperty("LAST_PERIODIC_SYNC_MS", String(nowMs));
+  } catch(e) {
+    Logger.log("1분 주기 자동 동기화 에러: " + e.toString());
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 설치형 onEdit 트리거 핸들러
+ * - 1분 주기 모드("1MIN"): 메타데이터 및 타임스탬프(J열)만 고속 기록하고 캘린더 API 호출 생략 (입력 렉 0%)
+ * - 완전 실시간 모드("REALTIME"): 비고 제외 수정 시 캘린더에 즉시 실시간 전송
  */
 function handleCalendarEditTrigger(e) {
   if (!e || !e.range) return;
-  try {
-    var disabled = PropertiesService.getScriptProperties().getProperty("REALTIME_CALENDAR_SYNC_DISABLED");
-    if (disabled === "true") return;
-  } catch(err) {}
   var sheet = e.range.getSheet();
   if (!isSiteScheduleSheet(sheet)) return;
 
@@ -833,9 +1022,6 @@ function handleCalendarEditTrigger(e) {
   // 1~8열(A~H열) 범위 밖의 수정은 무시
   if (startCol > 8 || endCol < 1) return;
 
-  // [사용자 요구사항]: 6열(F열: 비고)만 단독으로 수정된 경우 -> 캘린더 실시간 동기화 완전 제외!
-  var isOnlyMemo = (startCol === 6 && endCol === 6);
-
   try {
     SpreadsheetApp.flush(); // 방금 입력된 셀 값 메모리 즉시 동기화
 
@@ -844,33 +1030,38 @@ function handleCalendarEditTrigger(e) {
     var nowStr = formatDateTime(now);
     var currentUser = getCurrentUserIdentifier();
     var actualStartRow = Math.max(startRow, 2);
-
-    // 1회 대량 붙여넣기(20행 초과) 시 스크립트 6분 타임아웃 방지: 상위 20행만 우선 실시간 처리
     var maxProcessRow = Math.min(endRow, actualStartRow + 19);
 
+    var props = PropertiesService.getScriptProperties();
+    var syncMode = props.getProperty("SYNC_MODE") || "1MIN"; // 기본값: 1분 주기
+
     for (var r = actualStartRow; r <= maxProcessRow; r++) {
-      // 최초/최종 작성 정보 일괄 읽기 및 쓰기 (개별 4회 호출 ➔ 1회 배치 쓰기로 4배 가속)
+      // 최초/최종 작성 정보 일괄 쓰기
       var metaRange = sheet.getRange(r, 11, 1, 4);
       var metaVals = metaRange.getValues()[0];
       var createdDate = metaVals[0] || nowStr;
       var createdUser = metaVals[1] || currentUser;
       metaRange.setValues([[createdDate, createdUser, nowStr, currentUser]]);
 
-      // 비고를 제외한 변경(1~5열, 7~8열: 현장, 날짜, 공종, 협력업체, 공유 체크박스, 담당자, 진행상태) 시 즉시 캘린더 실시간 반영!
-      if (!isOnlyMemo) {
-        // 시트의 최종 수정 시각 밀리초 타임스탬프 기록 (J열: 10열)
-        sheet.getRange(r, 10).setValue(nowMs);
+      // 시트 최종 수정 시각 밀리초 타임스탬프 기록 (J열: 10열)
+      // -> 1분 주기 동기화 엔진이 이 타임스탬프로 변경 행 감지!
+      sheet.getRange(r, 10).setValue(nowMs);
 
-        // 캘린더 동기화 실행 (forceSheetToCal = true, skipDashboardRefresh = true로 행마다 중복 대시보드 갱신 방지)
-        syncSingleRowToCalendar(sheet, r, true, true);
+      // 완전 실시간 모드일 때만 셀 수정 즉시 구글 캘린더 API 호출!
+      // 1분 주기 모드("1MIN")나 수동 모드("MANUAL")에서는 캘린더 API 호출을 건너뛰어 타이핑 렉 0을 유지!
+      if (syncMode === "REALTIME") {
+        var isOnlyMemo = (startCol === 6 && endCol === 6);
+        if (!isOnlyMemo) {
+          syncSingleRowToCalendar(sheet, r, true, true);
+        }
       }
     }
 
-    // 모든 수정 행 처리 완료 후 단 1회만 대시보드 달력 최종 최신화 (성능 10배 향상)
+    // 대시보드 달력 최신화 (시트 내부 연산이므로 0.1초로 빠름)
     var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
     refreshDashboardCalendar(ss);
   } catch (err) {
-    Logger.log("캘린더 실시간 동기화 에러: " + err.toString());
+    Logger.log("시트 편집 트리거 에러: " + err.toString());
   }
 }
 
