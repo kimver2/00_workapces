@@ -1418,7 +1418,7 @@ assertTest('ensureRealtimeTriggerInstalledSilent: 행 삭제 감지 onChange 트
 
 // 18-3: handleSheetChangeTrigger 내 REMOVE_ROW 및 NEEDS_ORPHAN_CLEANUP 검증
 const sheetChangeCode = code.slice(code.indexOf('function handleSheetChangeTrigger('), code.indexOf('function cleanupOrphanCalendarEventsSilent('));
-const hasRemoveRowLogic = sheetChangeCode.indexOf('e.changeType === "REMOVE_ROW"') !== -1 &&
+const hasRemoveRowLogic = (sheetChangeCode.indexOf('e.changeType === "REMOVE_ROW"') !== -1 || sheetChangeCode.indexOf('e.changeType !== "REMOVE_ROW"') !== -1) &&
   sheetChangeCode.indexOf('NEEDS_ORPHAN_CLEANUP') !== -1 &&
   sheetChangeCode.indexOf('refreshDashboardCalendar') !== -1;
 assertTest('handleSheetChangeTrigger: REMOVE_ROW 발생 시 대시보드 새로고침 및 청소 예약 검증', hasRemoveRowLogic);
@@ -1443,6 +1443,38 @@ const hasBriefingAutoRecovery = triggerInstallCode.indexOf('DAILY_BRIEFING_ENABL
   triggerInstallCode.indexOf('scheduleNextDailyBriefingTrigger()') !== -1;
 assertTest('ensureRealtimeTriggerInstalledSilent: 모닝 브리핑 트리거 소실 시 자율 복구(Self-Healing) 검증', hasBriefingAutoRecovery);
 
+// ========================================================
+// 19. [Argon 4대 숨은 실무 지뢰 전수 검증 QA]
+// ========================================================
+console.log('\n💣 [Step 19: Argon 4대 숨은 실무 지뢰 전수 검증 QA]');
+
+// 19-1: 지뢰 1 - handleSheetChangeTrigger에서 OTHER 이벤트 완전 배제 (오직 REMOVE_ROW만 처리)
+const hasNoOtherInChangeTrigger = sheetChangeCode.indexOf('OTHER') === -1 &&
+  (sheetChangeCode.indexOf('e.changeType !== "REMOVE_ROW"') !== -1 || sheetChangeCode.indexOf('e.changeType === "REMOVE_ROW"') !== -1);
+assertTest('지뢰 1 방어: handleSheetChangeTrigger에서 OTHER 완전 배제 및 REMOVE_ROW 엄격 제한', hasNoOtherInChangeTrigger);
+
+// 19-2: 지뢰 2 - runPeriodicAutoSync 25건 초과 잔여 행 존재 시 LAST_PERIODIC_SYNC_MS 최신화 지연 및 재예약
+const hasBatchSyncProtection = periodicCode.indexOf('hasRemainingRowsToSync') !== -1 &&
+  periodicCode.indexOf('if (!hasRemainingRowsToSync)') !== -1 &&
+  periodicCode.indexOf('runDebouncedSync') !== -1;
+assertTest('지뢰 2 방어: runPeriodicAutoSync 25건 초과 잔여 행 존재 시 타임스탬프 갱신 지연 및 디바운스 자동 재예약', hasBatchSyncProtection);
+
+// 19-3: 지뢰 3 - 아코디언 하위 행(A열 빈값) 상위 현장명 자동 계승 검증
+const refreshDashSiteCode = code.slice(code.indexOf('function refreshDashboardCalendar('), code.indexOf('function syncAllSiteSchedulesToDashboard('));
+const delayCheckCode = code.slice(code.indexOf('function checkAndHighlightDelayedSchedules('), code.indexOf('function clearScheduleHighlights('));
+const doGetCode = code.slice(code.indexOf('function doGet('), code.indexOf('function escapeHtmlForInput('));
+
+const hasAccordionSiteInheritance = refreshDashSiteCode.indexOf('lastKnownSite') !== -1 &&
+  delayCheckCode.indexOf('lastKnownSite') !== -1 &&
+  briefingCode.indexOf('lastKnownSite') !== -1 &&
+  doGetCode.indexOf('prevSites') !== -1;
+assertTest('지뢰 3 방어: 아코디언 하위 행 현장명(A열) 자동 계승 (대시보드/지연알림/모닝브리핑/웹앱)', hasAccordionSiteInheritance);
+
+// 19-4: 지뢰 4 - 백그라운드 트리거 getActiveSpreadsheet() null 시 getAppSpreadsheet() 안전 폴백
+const hasBgAppSpreadsheetFallback = periodicCode.indexOf('getAppSpreadsheet()') !== -1 &&
+  refreshDashSiteCode.indexOf('getAppSpreadsheet()') !== -1;
+assertTest('지뢰 4 방어: 백그라운드 실행 시 getActiveSpreadsheet() null 대비 getAppSpreadsheet() 안전 폴백', hasBgAppSpreadsheetFallback);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -1452,4 +1484,5 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
+
 

@@ -1038,12 +1038,10 @@ function ensureRealtimeTriggerInstalledSilent() {
  * - 작업자가 행 번호 우클릭 ➔ [행 삭제] 실행 시 대시보드 달력을 즉시 갱신하고 캘린더 유령 일정 삭제를 예약합니다.
  */
 function handleSheetChangeTrigger(e) {
-  if (!e) return;
-  // 행 삭제(REMOVE_ROW) 또는 기타 구조 변경 시 동작
-  if (e.changeType === "REMOVE_ROW" || e.changeType === "OTHER") {
-    try {
-      var ss = e.source || getAppSpreadsheet();
-      if (!ss) return;
+  if (!e || e.changeType !== "REMOVE_ROW") return; // 오직 실제 '행 삭제(REMOVE_ROW)' 시에만 정확히 동작!
+  try {
+    var ss = e.source || getAppSpreadsheet();
+    if (!ss) return;
 
       // 1) 삭제된 행이 대시보드 달력에서도 즉시 사라지도록 새로고침
       refreshDashboardCalendar(ss);
@@ -1079,7 +1077,6 @@ function handleSheetChangeTrigger(e) {
       Logger.log("행 삭제 감지 트리거 에러: " + err.toString());
     }
   }
-}
 
 /**
  * [신규] 백그라운드 무음 유령(고아) 캘린더 일정 자동 청소기
@@ -1189,10 +1186,11 @@ function cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, daysBefore, d
  */
 function runPeriodicAutoSync() {
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) return; // 동시 실행 중복 차단
+  if (!lock.tryLock(5000)) return;
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet(); // 백그라운드 트리거 null 방어!
     if (!ss) return;
     var sheet = findSiteScheduleSheet(ss);
     if (!sheet) return;
@@ -1206,7 +1204,6 @@ function runPeriodicAutoSync() {
     var nowMs = now.getTime();
     var hour = now.getHours();
 
-    // 최초 실행 시에는 최근 5분 전 시각으로 안전 초기화하여 기존 대량 일정 재전송 방어
     var lastSyncMs = lastSyncRaw ? parseInt(lastSyncRaw, 10) : (nowMs - 300000);
 
     var lastRow = sheet.getLastRow();
@@ -1219,44 +1216,45 @@ function runPeriodicAutoSync() {
 
     var rowsToSyncToCal = [];
     var calUpdatedCount = 0;
+    var lastKnownSite = "";
 
     // 1단계: 시트 내 신규 및 변경 행 감지 (시트 ➔ 캘린더 대상 선별)
     for (var i = 0; i < values.length; i++) {
       var rowNumber = i + 2;
       var rowVals = values[i];
-      var siteName = String(rowVals[0] || "").trim();
+      var rawSite = String(rowVals[0] || "").trim();
+      if (rawSite) lastKnownSite = rawSite;
+
       var dateVal = rowVals[1];
       var taskName = String(rowVals[2] || "").trim();
+      var effectiveSite = rawSite || ((dateVal || taskName) ? lastKnownSite : "");
       var calId = String(rowVals[8] || "").trim();
       var rawUpdated = rowVals[9];
-      var rowUpdatedMs = 0;
-      if (rawUpdated instanceof Date) {
-        rowUpdatedMs = rawUpdated.getTime();
-      } else if (typeof rawUpdated === "number") {
-        rowUpdatedMs = rawUpdated;
-      } else {
-        rowUpdatedMs = parseInt(rawUpdated, 10) || 0;
-      }
+      var rowUpdatedMs = (rawUpdated instanceof Date) ? rawUpdated.getTime() : (typeof rawUpdated === "number" ? rawUpdated : (parseInt(rawUpdated, 10) || 0));
 
-      // 날짜와 공종이 채워졌는데 아직 캘린더ID가 없는 신규 행 ➔ 캘린더 전송 대상
-      // 또는 캘린더ID가 있고 마지막 동기화 이후 시트에서 수정된 행 ➔ 캘린더 전송 대상
-      if ((dateVal && taskName && !calId) || (calId && rowUpdatedMs > lastSyncMs)) {
+      // 신규 행(현장명+날짜+공종 완비 & ID 없음) 또는 기존 행(ID 있음 & 수정시각 최신)
+      if ((effectiveSite && dateVal && taskName && !calId) || (calId && rowUpdatedMs > lastSyncMs)) {
         rowsToSyncToCal.push(rowNumber);
       }
     }
 
-    // [심야 시간(22:00 ~ 07:00) 스마트 유휴 가드]:
-    // 시트에 수정된 행이 없는 야간에는 캘린더 API 조회를 생략하여 일일 Quota를 100% 보존
+    var needsOrphanCleanup = (props.getProperty("NEEDS_ORPHAN_CLEANUP") === "true");
+
+    // [심야 시간(22:00 ~ 07:00) 스마트 유휴 가드]
     var isNightTime = (hour >= 22 || hour < 7);
-    if (isNightTime && rowsToSyncToCal.length === 0) {
+    if (isNightTime && rowsToSyncToCal.length === 0 && !needsOrphanCleanup) {
       props.setProperty("LAST_PERIODIC_SYNC_MS", String(nowMs));
       return;
     }
 
     // 2단계: 변경된 행을 캘린더로 일괄 전송 (최대 25건 안전 분할)
     var didSyncToCal = false;
+    var hasRemainingRowsToSync = false;
     if (rowsToSyncToCal.length > 0) {
       var syncLimit = Math.min(rowsToSyncToCal.length, 25);
+      if (rowsToSyncToCal.length > 25) {
+        hasRemainingRowsToSync = true; // 25건 초과 시 다음 주기에 이어서 처리하도록 표시
+      }
       for (var s = 0; s < syncLimit; s++) {
         syncSingleRowToCalendar(sheet, rowsToSyncToCal[s], true, true);
       }
@@ -1264,7 +1262,6 @@ function runPeriodicAutoSync() {
     }
 
     // 3단계: 캘린더 ➔ 시트 역방향 순환 검사 (Cursor Round-Robin)
-    // 매번 상위 15건만 보던 결함을 고치고, 전체 행을 순환 점검하여 전 행 동기화 보장
     var cursor = parseInt(props.getProperty("CAL_INSPECT_CURSOR") || "0", 10);
     if (cursor >= values.length) cursor = 0;
 
@@ -1296,7 +1293,6 @@ function runPeriodicAutoSync() {
       var targetRowNumber = idx + 2;
       var rowChanged = false;
 
-      // 1) 날짜 변경 역방향 동기화
       if (calUpdated > sUpdated + 10000) {
         var isAllDay = ev.isAllDayEvent();
         var calStart = isAllDay ? ev.getAllDayStartDate() : ev.getStartTime();
@@ -1315,15 +1311,14 @@ function runPeriodicAutoSync() {
           newDateStr = realCalEnd ? (formatDateYYMMDD(calStart) + " ~ " + formatDateYYMMDD(realCalEnd)) : formatDateYYMMDD(calStart);
         }
 
-        // [핵심: 사용자 타이핑 덮어쓰기 원천 차단]
-        // 시트 전체 범위를 덮어쓰지 않고, 실제 날짜가 변경된 특정 셀만 개별 타겟 원자적 갱신!
-        sheet.getRange(targetRowNumber, 2).setValue(newDateStr);
-        sheet.getRange(targetRowNumber, 10).setValue(calUpdated);
-        sheet.getRange(targetRowNumber, 13, 1, 2).setValues([[formatDateTime(calUpdatedDate), "구글 캘린더"]]);
-        rowChanged = true;
+        if (String(cVals[1] || "").trim() !== newDateStr) {
+          sheet.getRange(targetRowNumber, 2).setValue(newDateStr);
+          sheet.getRange(targetRowNumber, 10).setValue(calUpdated);
+          sheet.getRange(targetRowNumber, 13, 1, 2).setValues([[formatDateTime(calUpdatedDate), "구글 캘린더"]]);
+          rowChanged = true;
+        }
       }
 
-      // 2) 캘린더 제목 상태 이모지 변경 감지 (이모지 기준으로만 엄격 판별 - 한글 텍스트 오탐지 방지)
       var calTitle = ev.getTitle() || "";
       var currentStatus = String(cVals[7] || "").trim();
       var detectedStatus = "";
@@ -1347,15 +1342,13 @@ function runPeriodicAutoSync() {
       if (rowChanged) calUpdatedCount++;
     }
 
-    // 다음 실행 시 이어서 점검할 커서 저장 (실제 탐색한 행 수 stepsTaken 기반으로 전 행 순환 보장)
     var nextCursor = (cursor + stepsTaken) % Math.max(values.length, 1);
     props.setProperty("CAL_INSPECT_CURSOR", String(nextCursor));
 
-    // 4단계: 행 삭제(REMOVE_ROW) 발생 시 또는 15분마다 유령 일정 자동 청소
-    var needsOrphanCleanup = (props.getProperty("NEEDS_ORPHAN_CLEANUP") === "true");
-    var lastCleanupMs = parseInt(props.getProperty("LAST_ORPHAN_CLEANUP_MS") || "0", 10);
-    if (needsOrphanCleanup || (!isNightTime && (nowMs - lastCleanupMs > 15 * 60 * 1000))) {
+    // 4단계: 행 삭제(REMOVE_ROW) 발생 시 유령 일정 자동 청소 (모든 미등록 행이 2단계에서 등록 완료된 상태일 때만 안전 실행!)
+    if (!hasRemainingRowsToSync && needsOrphanCleanup) {
       try {
+        SpreadsheetApp.flush(); // 2단계에서 기록된 신규 캘린더ID를 시트에 확실히 반영 후 스캔
         var orphanDeleted = cleanupOrphanCalendarEventsSilent(sheet, cal);
         props.deleteProperty("NEEDS_ORPHAN_CLEANUP");
         props.setProperty("LAST_ORPHAN_CLEANUP_MS", String(nowMs));
@@ -1365,12 +1358,18 @@ function runPeriodicAutoSync() {
       }
     }
 
-    // 시트 또는 캘린더 변경이 있었던 경우에만 대시보드 달력 최신화
     if (didSyncToCal || calUpdatedCount > 0) {
       refreshDashboardCalendar(ss);
     }
 
-    props.setProperty("LAST_PERIODIC_SYNC_MS", String(nowMs));
+    // 아직 처리 못 한 행(25건 초과분)이 없을 때만 LAST_PERIODIC_SYNC_MS를 최신화하여 누락 원천 차단!
+    if (!hasRemainingRowsToSync) {
+      props.setProperty("LAST_PERIODIC_SYNC_MS", String(nowMs));
+    } else {
+      // 남은 행이 있다면 1분 뒤 다시 돌도록 디바운스 자동 예약
+      ScriptApp.newTrigger("runDebouncedSync").timeBased().after(60 * 1000).create();
+      props.setProperty("DEBOUNCE_SCHEDULED", "true");
+    }
   } catch(e) {
     Logger.log("주기적 자동 동기화 에러: " + e.toString());
   } finally {
@@ -3315,6 +3314,9 @@ function fixStatusDropdownValidation() {
  */
 function refreshDashboardCalendar(ss) {
   if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return;
+
   var dashSheet = findDashboardSheet(ss);
   var siteSheet = findSiteScheduleSheet(ss);
   if (!dashSheet || !siteSheet) return;
@@ -3360,11 +3362,15 @@ function refreshDashboardCalendar(ss) {
   // 7. 현장데이터 중 '선택된 연도 및 월'에 해당하는 일정만 수집
   var schedulesByDay = {};
   var matchedCount = 0;
+  var lastKnownSite = ""; // [핵심 보완] 아코디언 하위 행 현장명 자동 계승
 
   for (var i = 0; i < siteData.length; i++) {
-    var siteName = String(siteData[i][0] || "").trim();
+    var rawSite = String(siteData[i][0] || "").trim();
+    if (rawSite) lastKnownSite = rawSite;
+
     var dateVal = siteData[i][1];
     var taskName = String(siteData[i][2] || "").trim();
+    var siteName = rawSite || ((dateVal || taskName) ? lastKnownSite : "");
     var memo = String(siteData[i][5] || "").trim(); // F열: 비고 (인덱스 5)
     var status = String(siteData[i][7] || "").trim(); // H열: 진행상태 (인덱스 7)
 
@@ -4495,8 +4501,11 @@ function doGet(e) {
         }
         // 2순위: 현장명 + 공종명 일치 행 탐색
         if (resolvedRow === -1 && targetSite && targetTask) {
+          var lastKnown = "";
           for (var j = 0; j < allData.length; j++) {
-            var sVal = String(allData[j][0] || "").trim();
+            var rawS = String(allData[j][0] || "").trim();
+            if (rawS) lastKnown = rawS;
+            var sVal = rawS || lastKnown;
             var tVal = String(allData[j][2] || "").trim();
             if (sVal === targetSite && tVal === targetTask) {
               resolvedRow = j + 2;
@@ -4529,6 +4538,13 @@ function doGet(e) {
     var taskName = "";
     try {
       siteName = String(sheet.getRange(row, 1).getValue() || "").trim();
+      if (!siteName && row > 2) {
+        var prevSites = sheet.getRange(2, 1, row - 2, 1).getValues();
+        for (var ps = prevSites.length - 1; ps >= 0; ps--) {
+          var pSite = String(prevSites[ps][0] || "").trim();
+          if (pSite) { siteName = pSite; break; }
+        }
+      }
       taskName = String(sheet.getRange(row, 3).getValue() || "").trim();
     } catch(err) {}
 
@@ -4570,7 +4586,17 @@ function doGet(e) {
   }
 
   var rowVals = sheet.getRange(row, 1, 1, 9).getValues()[0];
-  var siteName = String(rowVals[0] || "-").trim();
+  var siteName = String(rowVals[0] || "").trim();
+  if (!siteName && row > 2) {
+    try {
+      var prevSites = sheet.getRange(2, 1, row - 2, 1).getValues();
+      for (var ps = prevSites.length - 1; ps >= 0; ps--) {
+        var pSite = String(prevSites[ps][0] || "").trim();
+        if (pSite) { siteName = pSite; break; }
+      }
+    } catch(ePs) {}
+  }
+  if (!siteName) siteName = "-";
   var dateStr = formatScheduleDateDisplay(rowVals[1]) || String(rowVals[1] || "-").trim();
   var taskName = String(rowVals[2] || "-").trim();
   var rawShare = rowVals[4];
@@ -4886,6 +4912,8 @@ function checkAndHighlightDelayedSchedules() {
   var bgChanged = false;
   var startTime = Date.now();
 
+  var lastKnownSite = "";
+
   for (var i = 0; i < values.length; i++) {
     // 6분 타임아웃 절대 방어: 60초 초과 시 안전 루프 탈출
     if (Date.now() - startTime > 60000) {
@@ -4893,9 +4921,11 @@ function checkAndHighlightDelayedSchedules() {
     }
 
     var row = i + 2;
-    var siteName = String(values[i][0] || "").trim();
+    var rawSite = String(values[i][0] || "").trim();
+    if (rawSite) lastKnownSite = rawSite;
     var dateVal = values[i][1];
     var taskName = String(values[i][2] || "").trim();
+    var siteName = rawSite || ((dateVal || taskName) ? lastKnownSite : "");
     var manager = String(values[i][6] || "").trim();
     var status = String(values[i][7] || "").trim();
     var statusClean = status.replace(/\s+/g, "");
@@ -5324,11 +5354,14 @@ function sendDailySiteMorningBriefing(isManualTest) {
     var data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
     var todayTasks = [];
     var delayedTasks = [];
+    var lastKnownSite = ""; // [핵심 보완] 아코디언 하위 행 현장명 자동 계승
 
     for (var i = 0; i < data.length; i++) {
-      var siteName = String(data[i][0] || "").trim();
+      var rawSite = String(data[i][0] || "").trim();
+      if (rawSite) lastKnownSite = rawSite;
       var dateVal = data[i][1];
       var taskName = String(data[i][2] || "").trim();
+      var siteName = rawSite || ((dateVal || taskName) ? lastKnownSite : "");
       var partner = String(data[i][3] || "").trim();
       var isShared = (data[i][4] === true || String(data[i][4]).trim().toUpperCase() === "TRUE" || String(data[i][4]).trim() === "1");
       var memo = String(data[i][5] || "").trim();
