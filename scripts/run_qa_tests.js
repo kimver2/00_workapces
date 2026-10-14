@@ -1174,15 +1174,19 @@ const hasStepsTakenCursor = periodicCode.indexOf('stepsTaken++') !== -1 &&
   periodicCode.indexOf('(cursor + stepsTaken) %') !== -1;
 assertTest('runPeriodicAutoSync: stepsTaken 실제 이동 거리 기반 순환 커서 제자리걸음 방지 검증', hasStepsTakenCursor);
 
-const hasEmojiInPeriodic = periodicCode.indexOf('calTitle.indexOf("✅")') !== -1 &&
-  periodicCode.indexOf('sheet.getRange(targetRowNumber, 8).setValue(detectedStatus)') !== -1;
-assertTest('runPeriodicAutoSync: 백그라운드 주기 동기화 내 캘린더 제목 상태 이모지 감지 통합 검증', hasEmojiInPeriodic);
+const hasStrictEmojiInPeriodic = periodicCode.indexOf('calTitle.indexOf("✅")') !== -1 &&
+  periodicCode.indexOf('calTitle.indexOf("완료")') === -1 &&
+  periodicCode.indexOf('calTitle.indexOf("진행")') === -1;
+assertTest('runPeriodicAutoSync: 캘린더 제목 상태 이모지 기준 엄격 판별(한글 텍스트 오탐지 방어) 검증', hasStrictEmojiInPeriodic);
 
-// 14-3: syncFromCalendarToSheet 수동 동기화 원자적 셀 갱신 및 range.setValues 제거 검증
+// 14-3: syncFromCalendarToSheet 수동 동기화 원자적 셀 갱신 및 빈 행 유령 ID 실제 청소 검증
 const syncCalToSheetCode = code.slice(code.indexOf('function syncFromCalendarToSheet('), code.indexOf('function enableCalendarToSheet1MinSync('));
 const hasAtomicSyncCalToSheet = syncCalToSheetCode.indexOf('sheet.getRange(targetRowNumber, 2).setValue(newDateStr)') !== -1 &&
   syncCalToSheetCode.indexOf('range.setValues(values)') === -1;
 assertTest('syncFromCalendarToSheet: 전체 행 덮어쓰기 제거 및 핀포인트 원자적 셀 갱신 통일 검증', hasAtomicSyncCalToSheet);
+
+const hasGhostCellClearing = syncCalToSheetCode.indexOf('sheet.getRange(i + 2, 9, 1, 6).clearContent()') !== -1;
+assertTest('syncFromCalendarToSheet: 빈 행 유령 ID 및 메타데이터 시트 셀 실제 청소(clearContent) 탑재 검증', hasGhostCellClearing);
 
 // 14-4: refreshDashboardCalendar 2D 배열 주차별 행 단위 배치 쓰기 가속 검증
 const refreshDashBatchCode = code.slice(code.indexOf('function refreshDashboardCalendar('), code.indexOf('function syncAllSiteSchedulesToDashboard('));
@@ -1195,6 +1199,7 @@ const mobileWebCode = code.slice(code.indexOf('function updateScheduleStatusFrom
 const hasMobileLockService = mobileWebCode.indexOf('LockService.getScriptLock()') !== -1 &&
   mobileWebCode.indexOf('lock.tryLock(10000)') !== -1 &&
   mobileWebCode.indexOf('lock.releaseLock()') !== -1;
+assertTest('updateScheduleStatusFromWeb: 모바일 웹 동시 접속 상태 변경 충돌 방어(LockService 10초 대기) 탑재 검증', hasMobileLockService);
 // ========================================================
 // 15. [공종 50+ 사전 탑재 및 실시간 자동 학습(Auto-Learning) 유효성 검사 엔진 QA]
 // ========================================================

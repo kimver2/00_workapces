@@ -1157,16 +1157,18 @@ function runPeriodicAutoSync() {
         rowChanged = true;
       }
 
-      // 2) 캘린더 제목 상태 이모지 변경 감지 (✅ 완료, ▶️ 진행 중, 🛠️ AS)
+      // 2) 캘린더 제목 상태 이모지 변경 감지 (이모지 기준으로만 엄격 판별 - 한글 텍스트 오탐지 방지)
       var calTitle = ev.getTitle() || "";
       var currentStatus = String(cVals[7] || "").trim();
       var detectedStatus = "";
-      if (calTitle.indexOf("✅") !== -1 || calTitle.indexOf("완료") !== -1) {
+      if (calTitle.indexOf("✅") !== -1) {
         detectedStatus = "완료";
-      } else if (calTitle.indexOf("▶️") !== -1 || calTitle.indexOf("▶") !== -1 || calTitle.indexOf("진행") !== -1) {
+      } else if (calTitle.indexOf("▶️") !== -1 || calTitle.indexOf("▶") !== -1) {
         detectedStatus = "진행 중";
-      } else if (calTitle.indexOf("🛠️") !== -1 || calTitle.indexOf("🛠") !== -1 || calTitle.indexOf("AS") !== -1 || calTitle.indexOf("A/S") !== -1) {
+      } else if (calTitle.indexOf("🛠️") !== -1 || calTitle.indexOf("🛠") !== -1) {
         detectedStatus = "AS";
+      } else if ((calTitle.indexOf("🟦") !== -1 || calTitle.indexOf("🟥") !== -1) && (currentStatus === "완료" || currentStatus.indexOf("진행") !== -1 || currentStatus === "AS")) {
+        detectedStatus = "예정";
       }
 
       if (detectedStatus && detectedStatus.replace(/\s+/g, "") !== currentStatus.replace(/\s+/g, "") && calUpdated > sUpdated + 5000) {
@@ -1416,8 +1418,9 @@ function syncFromCalendarToSheet() {
 
     // ① 현장명과 공종이 모두 없는 빈 행은 캘린더 동기화에서 완전 제외!
     if (!siteName && !taskName) {
-      // 빈 행에 유령 캘린더 ID나 이력 정보가 잘못 남아있다면 메모리에서 깨끗이 청소
+      // 빈 행에 유령 캘린더 ID나 이력 정보가 잘못 남아있다면 실제 시트 셀과 메모리에서 깨끗이 청소
       if (existingId || rowVals[10] || rowVals[12]) {
+        sheet.getRange(i + 2, 9, 1, 6).clearContent(); // 실제 시트 셀(I~N열) 물리적 청소
         rowVals[8] = "";
         rowVals[9] = "";
         rowVals[10] = "";
