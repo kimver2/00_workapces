@@ -65,10 +65,30 @@ const sandbox = {
       getProperty: () => '',
       setProperty: () => {},
       deleteProperty: () => {}
+    }),
+    getScriptProperties: () => ({
+      getProperty: (k) => (sandbox._props && sandbox._props[k]) || '',
+      setProperty: (k, v) => { sandbox._props = sandbox._props || {}; sandbox._props[k] = String(v); },
+      deleteProperty: (k) => { if (sandbox._props) delete sandbox._props[k]; }
+    })
+  },
+  LockService: {
+    getScriptLock: () => ({
+      tryLock: () => true,
+      releaseLock: () => {}
     })
   },
   ScriptApp: {
-    getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/test/exec' })
+    getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/test/exec' }),
+    getProjectTriggers: () => [],
+    deleteTrigger: () => {},
+    newTrigger: () => ({
+      timeBased: () => ({
+        everyMinutes: () => ({
+          create: () => {}
+        })
+      })
+    })
   }
 };
 vm.createContext(sandbox);
@@ -578,8 +598,12 @@ assertTest('비고(6열) 단독 수정 시 캘린더 실시간 동기화 제외 
 const hasSilentTriggerInstall = code.indexOf('function ensureRealtimeTriggerInstalledSilent()') !== -1 && code.indexOf('ensureRealtimeTriggerInstalledSilent()') !== -1;
 assertTest('실시간 트리거 백그라운드 무음 자동 설치(Silent Auto Install) 엔진 탑재 여부', hasSilentTriggerInstall);
 
-const hasOnEditExtendedRange = code.indexOf('col >= 1 && col <= 8') !== -1;
-assertTest('단순 onEdit 트리거 1~8열(진행상태/담당자 포함) 대시보드 연동 확장 여부', hasOnEditExtendedRange);
+// [신규 QA: 대시보드 이중 렌더링 방지 및 단일 책임 분리 검증]
+// 단순 onEdit에서는 대시보드 컨트롤(년/월, Today)만 전담하고, 현장데이터 변경에 의한 대시보드 새로고침은
+// 설치형 트리거(handleCalendarEditTrigger)에서 단 1회 전담하여 이중 렌더링을 완전 해소
+const onEditCode = code.slice(code.indexOf('function onEdit(e) {'), code.indexOf('function enable5MinAutoSync()'));
+const hasNoDoubleRenderingInOnEdit = onEditCode.indexOf('refreshDashboardCalendar(ss)') !== -1 && onEditCode.indexOf('isSiteScheduleSheet(sheet)') === -1;
+assertTest('대시보드 이중 렌더링 해소: 단순 onEdit 내 현장데이터 중복 렌더링 배제 검증', hasNoDoubleRenderingInOnEdit);
 
 // [신규 QA] 드롭다운 '진행 중'(공백 포함) 유효성 검사 및 빨간 삼각형 오류 복구 검증
 const hasSpacedValidation = code.indexOf('.requireValueInList(["예정", "진행 중", "완료", "AS"], true)') !== -1;
@@ -1025,6 +1049,57 @@ assertTest('handleCalendarEditTrigger: 1MIN 모드 시 캘린더 API 호출 생�
 const menuCode = code.slice(code.indexOf('ui.createMenu("⚡ 캘린더 연동 설정")'), code.indexOf('ui.createMenu("📑 현장 데이터 편집/보기")'));
 const has1MinInMenu = menuCode.indexOf('enable1MinAutoSync') !== -1;
 assertTest('상단 메뉴(⚡ 캘린더 연동 설정) 내 1분 주기 자동 동기화 등록 여부', has1MinInMenu);
+
+console.log('\n🛡️ [Step 12: 5분 주기 스마트 동기화, 이중 렌더링 방지, 원자적 쓰기 & 삭제 유예 QA]');
+
+// 12-1: 5분 주기 스마트 동기화 함수 및 메뉴 등록 검증
+assertTest('enable5MinAutoSync 함수 탑재 여부', typeof sandbox.enable5MinAutoSync === 'function');
+assertTest('runPeriodicAutoSync 코어 엔진 함수 탑재 여부', typeof sandbox.runPeriodicAutoSync === 'function');
+assertTest('상단 메뉴 내 5분 주기 자동 동기화(권장) 등록 여부', menuCode.indexOf('enable5MinAutoSync') !== -1);
+
+// 12-2: 대시보드 단일 렌더링 전담 검증 (handleCalendarEditTrigger에서 1회 갱신)
+const triggerFullCode = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncFromCalendarToSheet('));
+const hasSingleRenderInTrigger = triggerFullCode.indexOf('refreshDashboardCalendar(ss)') !== -1;
+assertTest('대시보드 단일 렌더링 전담: 설치형 트리거 내 대시보드 달력 갱신 보장', hasSingleRenderInTrigger);
+
+// 12-3: 심야/유휴 시간 Quota 스마트 가드 검증 (22:00 ~ 07:00 시트 변경 없을 시 캘린더 조회 스킵)
+const periodicCode = code.slice(code.indexOf('function runPeriodicAutoSync()'), code.indexOf('function runPeriodic1MinSync()'));
+const hasNightIdleGuard = periodicCode.indexOf('hour >= 22 || hour < 7') !== -1 && periodicCode.indexOf('rowsToSyncToCal.length === 0') !== -1;
+assertTest('심야/유휴 시간 Quota 절약 가드(22:00~07:00 무작업 시 API 생략) 탑재 여부', hasNightIdleGuard);
+
+// 12-4: 커서 라운드 로빈(Cursor Round-Robin) 전 행 균등 검사 검증
+const hasCursorRoundRobin = periodicCode.indexOf('CAL_INSPECT_CURSOR') !== -1 && periodicCode.indexOf('(cursor + k) % values.length') !== -1;
+assertTest('역방향 캘린더 검사 Cursor Round-Robin(전체 행 순환 점검) 탑재 여부', hasCursorRoundRobin);
+
+// 12-5: 사용자 타이핑 덮어쓰기 방지: 원자적 타겟 셀 갱신(Atomic Target Cell Write) 검증
+const hasAtomicCellWrite = periodicCode.indexOf('sheet.getRange(targetRowNumber, 2).setValue(newDateStr)') !== -1 &&
+  periodicCode.indexOf('range.setValues(values)') === -1;
+assertTest('역동기화 시 사용자 타이핑 덮어쓰기 원천 차단(개별 타겟 셀 원자적 갱신) 검증', hasAtomicCellWrite);
+
+// 12-6: 일시적 타이핑/수정 중 캘린더 일정 삭제 유예 가드 검증
+const syncSingleCode = code.slice(code.indexOf('function syncSingleRowToCalendar('), code.indexOf('function syncSiteSchedulesBatchSafe('));
+const hasDeletionGraceGuard = syncSingleCode.indexOf('isRowEmpty = (!rowValues[0] && !rowValues[1] && !rowValues[2])') !== -1 &&
+  syncSingleCode.indexOf('isExplicitCancel = (statusStr.indexOf("취소") !== -1 || statusStr.indexOf("삭제") !== -1)') !== -1 &&
+  syncSingleCode.indexOf('if (isRowEmpty || isExplicitCancel)') !== -1;
+assertTest('타이핑 중 임시 빈 셀로 인한 일정 즉시 삭제 방지(삭제 유예 및 오입력 안전 가드) 탑재 여부', hasDeletionGraceGuard);
+
+// 12-7: 삭제 유예 로직 단위 테스트 시뮬레이션
+// 현장명/날짜/공종 중 하나라도 남아있고 취소/삭제가 아니면 삭제되지 않아야 함
+function simulateDeletionDecision(rowValues) {
+  var isRowEmpty = (!rowValues[0] && !rowValues[1] && !rowValues[2]);
+  var statusStr = String(rowValues[7] || "");
+  var isExplicitCancel = (statusStr.indexOf("취소") !== -1 || statusStr.indexOf("삭제") !== -1);
+  return (isRowEmpty || isExplicitCancel);
+}
+
+const typingRow = ['보라매경남 102동 502호', '', '도배', '', true, '', '전예린', '예정']; // 날짜만 잠시 지우고 수정 중
+assertTest('삭제 유예 시뮬레이션: 날짜만 잠시 지운 타이핑 중 상태는 삭제 배제(false)', simulateDeletionDecision(typingRow) === false);
+
+const emptyRow = ['', '', '', '', false, '', '', '']; // 행 전체가 비워진 경우
+assertTest('삭제 유예 시뮬레이션: 핵심 정보가 전무한 행은 삭제 진행(true)', simulateDeletionDecision(emptyRow) === true);
+
+const cancelRow = ['보라매경남 102동 502호', '', '', '', false, '', '', '취소']; // 명시적 취소
+assertTest('삭제 유예 시뮬레이션: 상태가 명시적 "취소"인 행은 삭제 진행(true)', simulateDeletionDecision(cancelRow) === true);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
