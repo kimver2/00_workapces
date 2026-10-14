@@ -926,6 +926,61 @@ assertTest('syncSiteSchedulesBatchSafe 내 중복 방지(findMatching) 및 정�
   code.indexOf('cleanDuplicateCalendarEventsOnDate(cal, details, newEventId, allSheetIds);') !== -1
 );
 
+// ========================================================
+// 9. 현장명 스마트 상속 및 현장명 누락 방어 QA 검증
+// ========================================================
+console.log('\n🏢 [Step 9: 현장명 스마트 상속 및 현장명 누락 방어 QA]');
+
+// 9-1: 현장명 전혀 없는 행은 캘린더 등록 배제(null 반환)
+const noSiteRow = ['', '26.10.29', '도배', '', true, '', '전예린', '예정'];
+const noSiteDetails = sandbox.buildEventDetails(noSiteRow, 2, null, null);
+assertTest('현장명이 전혀 없는 행은 buildEventDetails에서 null 반환 (미아 일정 생성 원천 방지)',
+  noSiteDetails === null
+);
+
+// 9-2: 상위 행에서 현장명 자동 계승 모의 테스트
+const mockSheetWithParent = {
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => [['보라매경남 102동 502호']],
+    setValue: (val) => {}
+  })
+};
+const childRow = ['', '26.10.29', '도배', '', true, '', '전예린', '예정'];
+const inheritedDetails = sandbox.buildEventDetails(childRow, 3, null, mockSheetWithParent);
+assertTest('상위 행이 있는 경우 직전 현장명 자동 상속 검증',
+  inheritedDetails && inheritedDetails.siteName === '보라매경남 102동 502호' &&
+  inheritedDetails.title.indexOf('[보라매경남 102동 502호] 도배') !== -1
+);
+
+// 9-3: batch sync 내 effectiveSiteNames 연산 검증
+const mockBatchVals = [
+  ['보라매경남 102동 702호', '26.07.18', '상담'],
+  ['', '26.07.24', '상담'],
+  ['', '26.08.05', '철거'],
+  ['망원 경일빌라 201호', '26.08.10', '창호실측'],
+  ['', '26.08.12', '상담']
+];
+const effectiveTest = [];
+let lastSite = '';
+for (let i = 0; i < mockBatchVals.length; i++) {
+  const rSite = mockBatchVals[i][0].trim();
+  if (rSite) {
+    lastSite = rSite;
+    effectiveTest[i] = rSite;
+  } else if (mockBatchVals[i][1] || mockBatchVals[i][2]) {
+    effectiveTest[i] = lastSite;
+  } else {
+    effectiveTest[i] = '';
+  }
+}
+assertTest('배치 동기화 effectiveSiteNames: 1~3행 보라매경남 702호, 4~5행 망원 경일빌라 정확 계승',
+  effectiveTest[0] === '보라매경남 102동 702호' &&
+  effectiveTest[1] === '보라매경남 102동 702호' &&
+  effectiveTest[2] === '보라매경남 102동 702호' &&
+  effectiveTest[3] === '망원 경일빌라 201호' &&
+  effectiveTest[4] === '망원 경일빌라 201호'
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

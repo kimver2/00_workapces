@@ -1371,7 +1371,28 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   var updatedAt = String(rowValues[12] || "").trim(); // M열: 최종수정일
   var updatedBy = String(rowValues[13] || "").trim(); // N열: 최종수정자
 
-  if (!siteName && !taskName) return null;
+  // [스마트 상위 현장명 자동 계승]
+  // A열 현장명이 비어있는 경우, 시트 내 직전 상위 행에서 현장명을 자동 탐색하여 계승
+  if (!siteName && targetSheet && rowNumber > 2) {
+    try {
+      var scanCount = Math.min(rowNumber - 2, 50);
+      var prevRange = targetSheet.getRange(rowNumber - scanCount, 1, scanCount, 1).getValues();
+      for (var p = prevRange.length - 1; p >= 0; p--) {
+        var candidateSite = String(prevRange[p][0] || "").trim();
+        if (candidateSite) {
+          siteName = candidateSite;
+          rowValues[0] = siteName;
+          try {
+            targetSheet.getRange(rowNumber, 1).setValue(siteName);
+          } catch(e) {}
+          break;
+        }
+      }
+    } catch(e) {}
+  }
+
+  // [필수 방어]: 현장명이 전혀 없는 일정은 캘린더 등록 배제 (유령/미아 일정 원천 차단)
+  if (!siteName) return null;
 
   var parsedDate = parseScheduleDateRange(dateVal);
   if (!parsedDate) return null;
@@ -1752,8 +1773,20 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   // 대상 행 인덱스 필터링 및 우선순위 정렬 (신규 미등록 일정 ➔ 기존 일정 순)
   var pendingIndices = [];
   var existingIndices = [];
+  var effectiveSiteNames = [];
+  var lastKnownSite = "";
 
   for (var i = 0; i < values.length; i++) {
+    var rawSite = String(values[i][0] || "").trim();
+    if (rawSite) {
+      lastKnownSite = rawSite;
+      effectiveSiteNames[i] = rawSite;
+    } else if (values[i][1] || values[i][2]) {
+      effectiveSiteNames[i] = lastKnownSite;
+    } else {
+      effectiveSiteNames[i] = "";
+    }
+
     var dateVal = values[i][1];
     if (!dateVal) continue;
 
@@ -1809,6 +1842,14 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
     var row = i + 2;
     var rowVals = values[i];
     var existingId = String(rowVals[8] || "").trim();
+
+    // A열 현장명이 비어있는 경우 계승된 상위 현장명 자동 적용 및 시트 셀 보완
+    if (!rowVals[0] && effectiveSiteNames[i]) {
+      rowVals[0] = effectiveSiteNames[i];
+      try {
+        sheet.getRange(row, 1).setValue(effectiveSiteNames[i]);
+      } catch (e) {}
+    }
 
     // 작성일 보완 (4회 개별 호출 ➔ 1회 일괄 쓰기로 가속)
     if (!rowVals[10] || !rowVals[12]) {
