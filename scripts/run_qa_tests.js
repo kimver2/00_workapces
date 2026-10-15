@@ -1892,6 +1892,86 @@ assertTest('cleanDuplicateCalendarEventsOnDate: cal._preloadedEvents 메모리 �
   cleanDupCode.indexOf('cal._preloadedEvents') !== -1
 );
 
+// ========================================================
+// 27. [스마트 UI] 스프레드시트 우측 사이드바 & 팝업 실시간 대시보드 화면 엔진 QA
+// ========================================================
+console.log('\n🖥️ [Step 27: 스프레드시트 우측 사이드바 & 팝업 실시간 대시보드 화면 QA]');
+
+// 27-1: openSiteScheduleSidebar & openSiteScheduleModal 함수 탑재 여부
+assertTest('openSiteScheduleSidebar 함수 탑재 여부', typeof sandbox.openSiteScheduleSidebar === 'function');
+assertTest('openSiteScheduleModal 함수 탑재 여부', typeof sandbox.openSiteScheduleModal === 'function');
+
+// 27-2: 상단 메뉴 등록 검증
+const onOpenCode = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
+assertTest('onOpen: 사이드바 열기 메뉴 항목 등록 검증',
+  onOpenCode.indexOf('openSiteScheduleSidebar') !== -1
+);
+assertTest('onOpen: 종합 대시보드 팝업 열기 메뉴 항목 등록 검증',
+  onOpenCode.indexOf('openSiteScheduleModal') !== -1
+);
+
+// 27-3: getHexColorForCalendarCode 색상 변환 검증
+assertTest('getHexColorForCalendarCode: 9(Blueberry) -> #3F51B5 매핑 검증',
+  sandbox.getHexColorForCalendarCode('9') === '#3F51B5'
+);
+assertTest('getHexColorForCalendarCode: 10(Basil) -> #0B8043 매핑 검증',
+  sandbox.getHexColorForCalendarCode('10') === '#0B8043'
+);
+assertTest('getHexColorForCalendarCode: 미지정 시 기본 파랑(#2563EB) 반환 검증',
+  sandbox.getHexColorForCalendarCode('unknown') === '#2563EB'
+);
+
+// 27-4: getSidebarDashboardData 데이터 스키마 및 KPI 계산 검증
+const testSidebarSheetData = [
+  ['보라매 101동', '26.10.15', '도배', '한샘', true, '도배 풀칠', '홍길동', '진행', 'ev-1', Date.now(), '', '', '', ''],
+  ['보라매 101동', '26.10.10', '철거', '철거팀', true, '마루 철거', '김철수', '예정', 'ev-2', Date.now(), '', '', '', ''],
+  ['망원동 빌라', '26.10.25', '타일', '을지로', false, '화장실 타일', '이영희', '완료', 'ev-3', Date.now(), '', '', '', '']
+];
+const mockSidebarSheet = {
+  getLastRow: () => testSidebarSheetData.length + 1,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => testSidebarSheetData
+  })
+};
+sandbox.findSiteScheduleSheet = () => mockSidebarSheet;
+
+const dashData = sandbox.getSidebarDashboardData();
+assertTest('getSidebarDashboardData: KPI 지표 반환 검증 (전체 현장, 공정, 지연 집계)',
+  dashData && dashData.kpi &&
+  dashData.kpi.totalSites === 2 &&
+  dashData.kpi.totalTasks === 3 &&
+  dashData.kpi.delayedCount >= 1
+);
+
+assertTest('getSidebarDashboardData: 현장별 그룹화 및 tasks 목록 매핑 검증',
+  dashData.sites && dashData.sites.length === 2 &&
+  dashData.sites[0].siteName === '보라매 101동' &&
+  dashData.sites[0].tasks.length === 2 &&
+  dashData.sites[0].colorHex.indexOf('#') === 0
+);
+
+// 27-5: buildSidebarDashboardHtml 렌더링 검증
+const sidebarHtml = sandbox.buildSidebarDashboardHtml('sidebar');
+assertTest('buildSidebarDashboardHtml: 사이드바 HTML, CSS, JS 포함 및 실시간 검색/아코디언 탑재 검증',
+  typeof sidebarHtml === 'string' &&
+  sidebarHtml.indexOf('kpi-grid') !== -1 &&
+  sidebarHtml.indexOf('searchInput') !== -1 &&
+  sidebarHtml.indexOf('toggleSite') !== -1 &&
+  sidebarHtml.indexOf('onTaskClick') !== -1
+);
+
+// 27-6: focusSheetRow 안전 실행 검증
+let activatedRange = null;
+sandbox.SpreadsheetApp.getActiveSpreadsheet = () => ({
+  setActiveSheet: () => {},
+  getRange: () => ({ activate: () => {} })
+});
+mockSidebarSheet.setActiveRange = (rng) => { activatedRange = rng; };
+const focusRes = sandbox.focusSheetRow(2);
+assertTest('focusSheetRow: 정상 행 클릭 시 활성화 및 success 반환 검증',
+  focusRes && focusRes.success === true && activatedRange !== null
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

@@ -288,7 +288,9 @@ function onOpen() {
   } catch(e) {}
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🚀 현장 관리")
-    // [자주 쓰는 핵심 3대 기능]
+    // [자주 쓰는 핵심 기능]
+    .addItem("🖥️ 현장 공정 사이드바 열기 (우측 화면)", "openSiteScheduleSidebar")
+    .addItem("🔍 현장 공정 종합 대시보드 (대형 팝업 화면)", "openSiteScheduleModal")
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
     .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
     .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
@@ -5663,4 +5665,464 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
     plainText: plainLines.join('\n'),
     htmlBody: html
   };
+}
+
+// ========================================================
+// 15. [스마트 UI] 스프레드시트 우측 사이드바 & 팝업 실시간 대시보드 화면 엔진
+// ========================================================
+
+/**
+ * 스프레드시트 우측 고정 영역에 실시간 현장 대시보드 사이드바 열기
+ */
+function openSiteScheduleSidebar() {
+  var html = HtmlService.createHtmlOutput(buildSidebarDashboardHtml("sidebar"))
+    .setTitle("우성아이디 실시간 현장 대시보드")
+    .setWidth(360);
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * 스프레드시트 화면 중앙에 대형 팝업 모달 대시보드 열기
+ */
+function openSiteScheduleModal() {
+  var html = HtmlService.createHtmlOutput(buildSidebarDashboardHtml("modal"))
+    .setTitle("우성아이디 현장 공정 종합 대시보드")
+    .setWidth(920)
+    .setHeight(680);
+  SpreadsheetApp.getUi().showModalDialog(html, "우성아이디 현장 공정 종합 대시보드");
+}
+
+/**
+ * 캘린더 색상 코드('1'~'11')를 UI용 Hex 색상 코드로 변환
+ */
+function getHexColorForCalendarCode(code) {
+  var map = {
+    "1": "#039BE5", // Pale Blue
+    "2": "#33B679", // Sage
+    "3": "#8E24AA", // Grape
+    "5": "#F6BF26", // Banana
+    "8": "#616161", // Graphite
+    "9": "#3F51B5", // Blueberry
+    "10": "#0B8043", // Basil
+    "11": "#E53935"  // Tomato / Delayed
+  };
+  return map[String(code)] || "#2563EB";
+}
+
+/**
+ * 사이드바/모달 대시보드용 실시간 데이터 집계 API
+ */
+function getSidebarDashboardData() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) return { error: "현장데이터 시트를 찾을 수 없습니다." };
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return {
+      kpi: { totalSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
+      todayStr: formatDateYYMMDD(new Date()),
+      sites: []
+    };
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+  var today = new Date();
+  var todayYYMMDD = formatDateYYMMDD(today);
+  var nowMs = today.getTime();
+
+  var sitesMap = {};
+  var siteOrder = [];
+  var lastKnownSite = "";
+  var totalTasks = 0;
+  var todayCount = 0;
+  var delayedCount = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var row = i + 2;
+    var rowVals = values[i];
+    var rawSite = String(rowVals[0] || "").trim();
+    if (rawSite) lastKnownSite = rawSite;
+    var siteName = rawSite || lastKnownSite;
+    var dateVal = rowVals[1];
+    var taskName = String(rowVals[2] || "").trim();
+
+    if (!siteName || !dateVal || !taskName) continue;
+
+    var partner = String(rowVals[3] || "").trim();
+    var isShared = (rowVals[4] === true || String(rowVals[4]).toUpperCase() === "TRUE");
+    var memo = String(rowVals[5] || "").trim();
+    var manager = String(rowVals[6] || "").trim();
+    var status = String(rowVals[7] || "예정").trim();
+    var calId = String(rowVals[8] || "").trim();
+
+    var parsed = parseScheduleDateRange(dateVal);
+    var isToday = false;
+    var isDelayed = false;
+    var dateDisplay = formatScheduleDateDisplay(dateVal);
+
+    if (parsed && parsed.startDate) {
+      if (!parsed.isRange) {
+        if (isDateEqual(parsed.startDate, today)) isToday = true;
+        if (parsed.startDate.getTime() < nowMs && status !== "완료" && status !== "취소") {
+          isDelayed = true;
+        }
+      } else if (parsed.endDate) {
+        if (nowMs >= parsed.startDate.getTime() && nowMs <= parsed.endDate.getTime()) isToday = true;
+        if (parsed.endDate.getTime() < nowMs && status !== "완료" && status !== "취소") {
+          isDelayed = true;
+        }
+      }
+    }
+
+    if (isToday) todayCount++;
+    if (isDelayed) delayedCount++;
+    totalTasks++;
+
+    if (!sitesMap[siteName]) {
+      var colorCode = getCalendarColorForSite(siteName, sheet);
+      sitesMap[siteName] = {
+        siteName: siteName,
+        colorCode: colorCode,
+        colorHex: getHexColorForCalendarCode(colorCode),
+        tasks: []
+      };
+      siteOrder.push(siteName);
+    }
+
+    sitesMap[siteName].tasks.push({
+      row: row,
+      taskName: taskName,
+      dateDisplay: dateDisplay,
+      partner: partner,
+      manager: manager,
+      status: status,
+      isShared: isShared,
+      memo: memo,
+      isToday: isToday,
+      isDelayed: isDelayed,
+      hasCal: !!calId
+    });
+  }
+
+  var sitesList = [];
+  for (var s = 0; s < siteOrder.length; s++) {
+    sitesList.push(sitesMap[siteOrder[s]]);
+  }
+
+  return {
+    kpi: {
+      totalSites: siteOrder.length,
+      totalTasks: totalTasks,
+      todayCount: todayCount,
+      delayedCount: delayedCount
+    },
+    todayStr: todayYYMMDD,
+    sites: sitesList
+  };
+}
+
+/**
+ * 대시보드에서 클릭 시 스프레드시트의 해당 행으로 포커스 이동
+ */
+function focusSheetRow(rowNumber) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    var sheet = findSiteScheduleSheet(ss);
+    if (sheet && rowNumber >= 2) {
+      ss.setActiveSheet(sheet);
+      var range = sheet.getRange(rowNumber, 1, 1, 8);
+      sheet.setActiveRange(range);
+      return { success: true };
+    }
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+  return { success: false };
+}
+
+/**
+ * 실시간 대시보드 HTML/CSS/JS 생성기
+ */
+function buildSidebarDashboardHtml(mode) {
+  var isModal = (mode === "modal");
+  var html = "";
+  html += '<!DOCTYPE html><html><head><meta charset="utf-8">';
+  html += '<style>';
+  html += '* { box-sizing: border-box; margin: 0; padding: 0; }';
+  html += 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; padding-bottom: 70px; }';
+  html += '.header { background: #ffffff; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 20; }';
+  html += '.title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }';
+  html += '.title { font-size: 15px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px; }';
+  html += '.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }';
+  html += '.kpi-card { background: #f1f5f9; border-radius: 8px; padding: 8px 6px; text-align: center; cursor: pointer; transition: all 0.15s ease; border: 1px solid transparent; }';
+  html += '.kpi-card:hover { background: #e2e8f0; }';
+  html += '.kpi-card.active { border-color: #2563eb; background: #eff6ff; }';
+  html += '.kpi-card.delay.active { border-color: #ef4444; background: #fef2f2; }';
+  html += '.kpi-num { font-size: 16px; font-weight: 800; color: #0f172a; }';
+  html += '.kpi-num.delay { color: #dc2626; }';
+  html += '.kpi-label { font-size: 11px; color: #64748b; font-weight: 500; margin-top: 2px; }';
+  html += '.search-box { position: relative; margin-bottom: 8px; }';
+  html += '.search-input { width: 100%; padding: 7px 10px 7px 28px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; outline: none; background: #ffffff; }';
+  html += '.search-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }';
+  html += '.search-icon { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #94a3b8; }';
+  html += '.filter-tabs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; }';
+  html += '.filter-tab { padding: 4px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; cursor: pointer; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; white-space: nowrap; transition: all 0.15s; }';
+  html += '.filter-tab:hover { background: #e2e8f0; }';
+  html += '.filter-tab.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }';
+  html += '.content { padding: 12px; }';
+  html += '.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; }';
+  html += '.site-card:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.06); }';
+  html += '.site-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; cursor: pointer; user-select: none; background: #ffffff; border-left: 4px solid #2563eb; }';
+  html += '.site-header:hover { background: #f8fafc; }';
+  html += '.site-title-area { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; }';
+  html += '.site-name { font-weight: 700; font-size: 13px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }';
+  html += '.site-badge { font-size: 10.5px; padding: 2px 6px; border-radius: 10px; background: #f1f5f9; color: #475569; font-weight: 600; }';
+  html += '.site-toggle { font-size: 10px; color: #94a3b8; transition: transform 0.2s; }';
+  html += '.site-card.expanded .site-toggle { transform: rotate(180deg); }';
+  html += '.task-list { display: none; padding: 6px 10px 8px 10px; background: #f8fafc; border-top: 1px solid #f1f5f9; }';
+  html += '.site-card.expanded .task-list { display: block; }';
+  html += '.task-item { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-bottom: 5px; cursor: pointer; transition: all 0.15s; }';
+  html += '.task-item:hover { border-color: #2563eb; background: #f0f7ff; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(37,99,235,0.08); }';
+  html += '.task-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }';
+  html += '.task-name { font-weight: 700; color: #0f172a; font-size: 12.5px; }';
+  html += '.task-date { font-size: 11px; color: #64748b; font-weight: 600; }';
+  html += '.task-date.today { color: #2563eb; font-weight: 700; }';
+  html += '.task-date.delay { color: #dc2626; font-weight: 700; }';
+  html += '.task-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b; }';
+  html += '.task-memo { margin-top: 4px; font-size: 11px; color: #475569; background: #f8fafc; padding: 3px 6px; border-radius: 4px; line-height: 1.35; word-break: break-all; }';
+  html += '.status-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }';
+  html += '.status-예정 { background: #f1f5f9; color: #475569; }';
+  html += '.status-진행 { background: #dbeafe; color: #1e40af; }';
+  html += '.status-완료 { background: #dcfce7; color: #166534; }';
+  html += '.status-AS { background: #fef3c7; color: #92400e; }';
+  html += '.status-지연 { background: #fee2e2; color: #991b1b; }';
+  html += '.empty-state { text-align: center; padding: 40px 20px; color: #64748b; }';
+  html += '.spinner { border: 3px solid #f1f5f9; border-top: 3px solid #2563eb; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; margin: 30px auto 10px; }';
+  html += '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+  html += '.footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #ffffff; border-top: 1px solid #e2e8f0; padding: 8px 12px; display: flex; gap: 6px; box-shadow: 0 -2px 8px rgba(0,0,0,0.04); z-index: 30; }';
+  html += '.btn { flex: 1; padding: 8px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid transparent; text-align: center; transition: all 0.15s; }';
+  html += '.btn-primary { background: #2563eb; color: #ffffff; }';
+  html += '.btn-primary:hover { background: #1d4ed8; }';
+  html += '.btn-secondary { background: #ffffff; border-color: #cbd5e1; color: #334155; }';
+  html += '.btn-secondary:hover { background: #f8fafc; }';
+  html += '.toast { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #ffffff; padding: 7px 14px; border-radius: 20px; font-size: 11.5px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 100; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }';
+  html += '.toast.show { opacity: 1; }';
+  if (isModal) {
+    html += '.content { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }';
+  }
+  html += '</style></head><body>';
+
+  // Body HTML
+  html += '<div class="header">';
+  html += '  <div class="title-row">';
+  html += '    <div class="title">🏗️ 현장 실시간 대시보드</div>';
+  html += '    <button class="btn btn-secondary" style="flex:none;padding:3px 8px;font-size:11px;" onclick="loadData()">🔄 새로고침</button>';
+  html += '  </div>';
+
+  html += '  <div class="kpi-grid">';
+  html += '    <div class="kpi-card" data-filter="all" onclick="setFilter(\'all\')">';
+  html += '      <div class="kpi-num" id="kpiSites">-</div>';
+  html += '      <div class="kpi-label">전체 현장</div>';
+  html += '    </div>';
+  html += '    <div class="kpi-card" data-filter="today" onclick="setFilter(\'today\')">';
+  html += '      <div class="kpi-num" id="kpiToday" style="color:#2563eb;">-</div>';
+  html += '      <div class="kpi-label">🔥 오늘 공정</div>';
+  html += '    </div>';
+  html += '    <div class="kpi-card delay" data-filter="delay" onclick="setFilter(\'delay\')">';
+  html += '      <div class="kpi-num delay" id="kpiDelay">-</div>';
+  html += '      <div class="kpi-label">⚠️ 지연 공정</div>';
+  html += '    </div>';
+  html += '  </div>';
+
+  html += '  <div class="search-box">';
+  html += '    <span class="search-icon">🔍</span>';
+  html += '    <input type="text" id="searchInput" class="search-input" placeholder="현장명, 공종, 담당자 실시간 검색..." oninput="renderList()">';
+  html += '  </div>';
+
+  html += '  <div class="filter-tabs">';
+  html += '    <div class="filter-tab active" data-filter="all" onclick="setFilter(\'all\')">전체</div>';
+  html += '    <div class="filter-tab" data-filter="today" onclick="setFilter(\'today\')">🔥 오늘</div>';
+  html += '    <div class="filter-tab" data-filter="delay" onclick="setFilter(\'delay\')">⚠️ 지연</div>';
+  html += '    <div class="filter-tab" data-filter="prog" onclick="setFilter(\'prog\')">진행중</div>';
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<div class="content" id="contentArea">';
+  html += '  <div class="spinner"></div>';
+  html += '  <p style="text-align:center;color:#64748b;font-size:12px;">현장 데이터 불러오는 중...</p>';
+  html += '</div>';
+
+  html += '<div class="footer-bar">';
+  html += '  <button class="btn btn-secondary" onclick="loadData()">🔄 새로고침</button>';
+  html += '  <button class="btn btn-primary" onclick="syncCalendar()">📅 캘린더 동기화</button>';
+  html += '</div>';
+
+  html += '<div class="toast" id="toast"></div>';
+
+  // Script
+  html += '<script>';
+  html += 'let rawData = null;';
+  html += 'let currentFilter = "all";';
+
+  html += 'function showToast(msg) {';
+  html += '  const t = document.getElementById("toast");';
+  html += '  t.innerText = msg;';
+  html += '  t.classList.add("show");';
+  html += '  setTimeout(() => t.classList.remove("show"), 2200);';
+  html += '}';
+
+  html += 'function loadData() {';
+  html += '  document.getElementById("contentArea").innerHTML = \'<div class="spinner"></div><p style="text-align:center;color:#64748b;font-size:12px;">현장 데이터 불러오는 중...</p>\';';
+  html += '  google.script.run';
+  html += '    .withSuccessHandler(onDataLoaded)';
+  html += '    .withFailureHandler(onError)';
+  html += '    .getSidebarDashboardData();';
+  html += '}';
+
+  html += 'function onError(err) {';
+  html += '  document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.<br><small style="color:#ef4444;">\' + (err.message || err) + \'</small></div>\';';
+  html += '}';
+
+  html += 'function onDataLoaded(data) {';
+  html += '  rawData = data;';
+  html += '  if (data.error) {';
+  html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ \' + data.error + \'</div>\';';
+  html += '    return;';
+  html += '  }';
+  html += '  document.getElementById("kpiSites").innerText = data.kpi.totalSites;';
+  html += '  document.getElementById("kpiToday").innerText = data.kpi.todayCount;';
+  html += '  document.getElementById("kpiDelay").innerText = data.kpi.delayedCount;';
+  html += '  renderList();';
+  html += '}';
+
+  html += 'function setFilter(type) {';
+  html += '  currentFilter = type;';
+  html += '  document.querySelectorAll(".filter-tab").forEach(b => {';
+  html += '    b.classList.toggle("active", b.dataset.filter === type);';
+  html += '  });';
+  html += '  document.querySelectorAll(".kpi-card").forEach(c => {';
+  html += '    c.classList.toggle("active", c.dataset.filter === type);';
+  html += '  });';
+  html += '  renderList();';
+  html += '}';
+
+  html += 'function renderList() {';
+  html += '  if (!rawData || !rawData.sites) return;';
+  html += '  const query = document.getElementById("searchInput").value.trim().toLowerCase();';
+  html += '  const container = document.getElementById("contentArea");';
+  html += '  let html = "";';
+  html += '  let visibleSitesCount = 0;';
+
+  html += '  rawData.sites.forEach(site => {';
+  html += '    const filteredTasks = site.tasks.filter(t => {';
+  html += '      if (currentFilter === "today" && !t.isToday) return false;';
+  html += '      if (currentFilter === "delay" && !t.isDelayed) return false;';
+  html += '      if (currentFilter === "prog" && t.status.indexOf("진행") === -1) return false;';
+  html += '      if (query) {';
+  html += '        const matchSite = site.siteName.toLowerCase().indexOf(query) !== -1;';
+  html += '        const matchTask = t.taskName.toLowerCase().indexOf(query) !== -1;';
+  html += '        const matchMgr = (t.manager || "").toLowerCase().indexOf(query) !== -1;';
+  html += '        const matchPartner = (t.partner || "").toLowerCase().indexOf(query) !== -1;';
+  html += '        const matchMemo = (t.memo || "").toLowerCase().indexOf(query) !== -1;';
+  html += '        if (!matchSite && !matchTask && !matchMgr && !matchPartner && !matchMemo) return false;';
+  html += '      }';
+  html += '      return true;';
+  html += '    });';
+
+  html += '    if (filteredTasks.length === 0) return;';
+  html += '    visibleSitesCount++;';
+  html += '    const isExpanded = (query !== "" || currentFilter !== "all" || rawData.sites.length <= 5);';
+
+  html += '    html += \'<div class="site-card \' + (isExpanded ? "expanded" : "") + \'">\';';
+  html += '    html += \'  <div class="site-header" style="border-left-color: \' + site.colorHex + \';" onclick="toggleSite(this)">\';';
+  html += '    html += \'    <div class="site-title-area">\';';
+  html += '    html += \'      <span class="site-name">\' + escapeHtml(site.siteName) + \'</span>\';';
+  html += '    html += \'      <span class="site-badge">\' + filteredTasks.length + \'건</span>\';';
+  html += '    html += \'    </div>\';';
+  html += '    html += \'    <span class="site-toggle">▼</span>\';';
+  html += '    html += \'  </div>\';';
+
+  html += '    html += \'  <div class="task-list">\';';
+  html += '    filteredTasks.forEach(task => {';
+  html += '      let dateClass = "";';
+  html += '      if (task.isDelayed) dateClass = "delay";';
+  html += '      else if (task.isToday) dateClass = "today";';
+
+  html += '      let statusClass = "status-예정";';
+  html += '      if (task.isDelayed) statusClass = "status-지연";';
+  html += '      else if (task.status.indexOf("완료") !== -1) statusClass = "status-완료";';
+  html += '      else if (task.status.indexOf("진행") !== -1) statusClass = "status-진행";';
+  html += '      else if (task.status.indexOf("AS") !== -1) statusClass = "status-AS";';
+
+  html += '      html += \'    <div class="task-item" onclick="onTaskClick(\' + task.row + \', \\\'\' + escapeJs(site.siteName) + \'\\\', \\\'\' + escapeJs(task.taskName) + \'\\\')">\';';
+  html += '      html += \'      <div class="task-top">\';';
+  html += '      html += \'        <span class="task-name">[\' + escapeHtml(task.taskName) + \']</span>\';';
+  html += '      html += \'        <span class="task-date \' + dateClass + \'">\' + (task.isToday ? "🔥 오늘 " : (task.isDelayed ? "⚠️ 지연 " : "")) + escapeHtml(task.dateDisplay) + \'</span>\';';
+  html += '      html += \'      </div>\';';
+  html += '      html += \'      <div class="task-meta">\';';
+  html += '      html += \'        <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? " / " + escapeHtml(task.partner) : "") + \'</span>\';';
+  html += '      html += \'        <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : escapeHtml(task.status)) + \'</span>\';';
+  html += '      html += \'      </div>\';';
+  html += '      if (task.memo) {';
+  html += '        html += \'      <div class="task-memo">📝 \' + escapeHtml(task.memo) + \'</div>\';';
+  html += '      }';
+  html += '      html += \'    </div>\';';
+  html += '    });';
+  html += '    html += \'  </div>\';';
+  html += '    html += \'</div>\';';
+  html += '  });';
+
+  html += '  if (visibleSitesCount === 0) {';
+  html += '    container.innerHTML = \'<div class="empty-state">🔍 일치하는 현장 및 공정이 없습니다.</div>\';';
+  html += '  } else {';
+  html += '    container.innerHTML = html;';
+  html += '  }';
+  html += '}';
+
+  html += 'function toggleSite(el) {';
+  html += '  el.parentElement.classList.toggle("expanded");';
+  html += '}';
+
+  html += 'function onTaskClick(row, site, task) {';
+  html += '  showToast("📌 시트 " + row + "행으로 이동 중...");';
+  html += '  google.script.run';
+  html += '    .withSuccessHandler(() => showToast("✅ [" + site + " - " + task + "] 행으로 이동했습니다."))';
+  html += '    .focusSheetRow(row);';
+  html += '}';
+
+  html += 'function syncCalendar() {';
+  html += '  showToast("⏳ 캘린더 동기화 실행 중...");';
+  html += '  google.script.run';
+  html += '    .withSuccessHandler(() => {';
+  html += '      showToast("🎉 캘린더 동기화 완료!");';
+  html += '      loadData();';
+  html += '    })';
+  html += '    .withFailureHandler(err => showToast("⚠️ 에러: " + (err.message || err)))';
+  html += '    .syncRecentSiteSchedulesToGoogleCalendar();';
+  html += '}';
+
+  html += 'function escapeHtml(str) {';
+  html += '  return String(str || "")';
+  html += '    .replace(/&/g, "&amp;")';
+  html += '    .replace(/</g, "&lt;")';
+  html += '    .replace(/>/g, "&gt;")';
+  html += '    .replace(/"/g, "&quot;")';
+  html += '    .replace(/\'/g, "&#39;");';
+  html += '}';
+
+  html += 'function escapeJs(str) {';
+  html += '  return String(str || "")';
+  html += '    .replace(/\\\\/g, "\\\\\\\\")';
+  html += '    .replace(/\'/g, "\\\\\'")';
+  html += '    .replace(/"/g, "\\\\\\"");';
+  html += '}';
+
+  html += 'window.onload = loadData;';
+  html += '</script>';
+  html += '</body></html>';
+
+  return html;
 }
