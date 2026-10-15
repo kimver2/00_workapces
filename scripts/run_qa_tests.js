@@ -1511,6 +1511,47 @@ assertTest('removeAllSiteCalendarReminders: 캘린더 전날 알림 일괄 해�
 const onOpenMenuCode = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
 assertTest('onOpen: 상단 메뉴(⚡ 캘린더 연동 설정) 내 캘린더 전날 알림 전체 끄기 등록 검증', onOpenMenuCode.indexOf('removeAllSiteCalendarReminders') !== -1);
 
+// ========================================================
+// 21. [현장명 변경 캘린더 동기화 & 캘린더 중복 생성 원천 차단 & 무음 자동 정리 QA]
+// ========================================================
+console.log('\n🛡️ [Step 21: 현장명 변경 캘린더 동기화 & 캘린더 중복 생성 원천 차단 & 무음 자동 정리 QA]');
+
+// 21-1: cleanupDuplicateCalendarEventsSilent 함수 탑재 여부
+assertTest('cleanupDuplicateCalendarEventsSilent 함수 탑재 여부', typeof sandbox.cleanupDuplicateCalendarEventsSilent === 'function');
+
+// 21-2: syncSiteSchedulesBatchSafe 시작 시 무음 중복 사전 정리 호출 검증
+assertTest('syncSiteSchedulesBatchSafe: 시작 시 cleanupDuplicateCalendarEventsSilent 호출 검증',
+  batchSyncCode.indexOf('cleanupDuplicateCalendarEventsSilent(cal, sheet)') !== -1
+);
+
+// 21-3: syncSiteSchedulesBatchSafe 및 syncSingleRowToCalendar 내 CalendarApp.getEventById 폴백 검증
+assertTest('syncSiteSchedulesBatchSafe: CalendarApp.getEventById 폴백 탑재 검증',
+  batchSyncCode.indexOf('CalendarApp.getEventById(existingId)') !== -1
+);
+assertTest('syncSingleRowToCalendar: CalendarApp.getEventById 폴백 탑재 검증',
+  singleSyncCode.indexOf('CalendarApp.getEventById(existingEventId)') !== -1
+);
+
+// 21-4: 신규 생성 직전 최후 중복 탐색 가드(fallbackEv) 탑재 검증
+assertTest('syncSiteSchedulesBatchSafe: 신규 생성 전 fallbackEv 중복 재확인 가드 탑재 검증',
+  batchSyncCode.indexOf('fallbackEv = findMatchingCalendarEvent(cal, details, allSheetIds)') !== -1
+);
+assertTest('syncSingleRowToCalendar: 신규 생성 전 fallbackEv 중복 재확인 가드 탑재 검증',
+  singleSyncCode.indexOf('fallbackEv = findMatchingCalendarEvent(cal, details, allSheetIds)') !== -1
+);
+
+// 21-5: findMatchingCalendarEvent 현장명 변경(fallbackTaskMatches) 매칭 지원 검증
+const matchFuncCode = code.slice(code.indexOf('function findMatchingCalendarEvent('), code.indexOf('function cleanDuplicateCalendarEventsOnDate('));
+assertTest('findMatchingCalendarEvent: 현장명 변경 시 동일 날짜/공종 fallbackTaskMatches 매칭 검증',
+  matchFuncCode.indexOf('fallbackTaskMatches') !== -1
+);
+
+// 21-6: isDateEqual UTC/KST 시차(14시간 이내) 방어 검증
+const isDateEqualFunc = code.slice(code.indexOf('function isDateEqual('), code.indexOf('function formatDateYYMMDD('));
+assertTest('isDateEqual: 타임존(UTC vs KST 등 9시간 시차) 14시간 오프셋 방어 검증',
+  isDateEqualFunc.indexOf('diffHours <= 14') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -1520,6 +1561,7 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
+
 
 
 

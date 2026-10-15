@@ -1516,7 +1516,26 @@ function handleCalendarEditTrigger(e) {
           var subData = sheet.getRange(maxProcessRow + 1, 1, checkCount, 3).getValues();
           var subRowsToTouch = 0;
           var oldSiteVal = (e && e.oldValue) ? String(e.oldValue).trim() : "";
-          var newSiteVal = (e && e.value) ? String(e.value).trim() : "";
+          var newSiteVal = (e && e.value) ? String(e.value).trim() : String(sheet.getRange(actualStartRow, 1).getValue() || "").trim();
+
+          // e.oldValue가 전달되지 않은 경우(모바일 편집/서식 복사 등), 부모 행의 기존 캘린더 일정 위치 정보에서 이전 현장명 자동 복원
+          if (!oldSiteVal) {
+            try {
+              var parentRowVals = sheet.getRange(actualStartRow, 1, 1, 9).getValues()[0];
+              var parentCalId = String(parentRowVals[8] || "").trim();
+              if (parentCalId) {
+                var calObj = getTargetCalendar();
+                var parentEv = calObj ? (calObj.getEventById(parentCalId) || CalendarApp.getEventById(parentCalId)) : null;
+                if (parentEv) {
+                  oldSiteVal = parentEv.getLocation() || "";
+                  if (!oldSiteVal) {
+                    var tMatch = (parentEv.getTitle() || "").match(/\[(.+?)\]/);
+                    if (tMatch) oldSiteVal = tMatch[1].trim();
+                  }
+                }
+              }
+            } catch(eOld) {}
+          }
 
           for (var si = 0; si < subData.length; si++) {
             var subSite = String(subData[si][0] || "").trim();
@@ -1526,13 +1545,17 @@ function handleCalendarEditTrigger(e) {
               subRowsToTouch = si + 1;
               continue;
             }
-            // A열에 다른 새로운 현장명이 등장하면 이 현장의 하위 행이 끝난 것으로 판단
-            if (subSite) break;
-            var subDate = subData[si][1];
-            var subTask = String(subData[si][2] || "").trim();
-            if (subDate || subTask) {
-              subRowsToTouch = si + 1;
+            // A열이 비어있는 아코디언 하위 행인 경우: 계속 탐색하여 타임스탬프 갱신 대상에 포함
+            if (!subSite) {
+              var subDate = subData[si][1];
+              var subTask = String(subData[si][2] || "").trim();
+              if (subDate || subTask) {
+                subRowsToTouch = si + 1;
+              }
+              continue;
             }
+            // 다른 완전히 새로운 현장명이 등장하면 이 현장의 하위 행이 끝난 것으로 판단
+            break;
           }
           if (subRowsToTouch > 0) {
             subRowsCount = subRowsToTouch;
@@ -1875,9 +1898,15 @@ function disableCalendarToSheetAutoSync() {
 function isDateEqual(d1, d2) {
   if (!d1 && !d2) return true;
   if (!d1 || !d2) return false;
-  return d1.getFullYear() === d2.getFullYear() &&
-         d1.getMonth() === d2.getMonth() &&
-         d1.getDate() === d2.getDate();
+  if (d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate()) {
+    return true;
+  }
+  // 타임존(UTC vs KST 등 9시간 시차) 오프셋 방어: 14시간 이내 차이 허용
+  var diffHours = Math.abs(d1.getTime() - d2.getTime()) / (3600 * 1000);
+  if (diffHours <= 14) return true;
+  return false;
 }
 
 /**
@@ -2379,20 +2408,35 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
     } catch (err) {
       event = null;
     }
+    if (!event) {
+      try {
+        event = CalendarApp.getEventById(existingEventId);
+      } catch (err) {
+        event = null;
+      }
+    }
   }
 
   var allSheetIds = null;
   // [캘린더 중복 생성 원천 차단]
   // 기존 ID가 비어있거나 유효하지 않은 경우, 캘린더에 이미 생성된 동일 일정이 있는지 탐색하여 재연결
-  if (!event && !existingEventId) {
+  if (!event) {
     try {
       allSheetIds = getSheetCalendarIds(sheet);
+      if (allSheetIds && existingEventId) {
+        delete allSheetIds[existingEventId];
+      }
       event = findMatchingCalendarEvent(cal, details, allSheetIds);
       if (event) {
+        var prevEvId = existingEventId;
         existingEventId = event.getId();
         sheet.getRange(row, 9).setValue(existingEventId);
         sheet.getRange(row, 10).setValue(Date.now());
         rowValues[8] = existingEventId;
+        if (allSheetIds) {
+          allSheetIds[existingEventId] = true;
+          if (prevEvId && prevEvId !== existingEventId) delete allSheetIds[prevEvId];
+        }
       }
     } catch (e) {}
   }
@@ -2471,33 +2515,53 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
     }
     sheet.getRange(row, 10).setValue(Date.now());
   } else {
-    // 3) 신규 생성 (또는 종일<->시간 유형 전환으로 인한 재생성)
-    var opt = {
-      description: details.description,
-      location: details.siteName
-    };
-    if (details.parsedDate.hasTime) {
-      event = cal.createEvent(details.title, details.parsedDate.startTime, details.parsedDate.endTime, opt);
-    } else {
-      if (details.parsedDate.isRange) {
-        event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
-      } else {
-        event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
-      }
-    }
+    // 3) 신규 생성 전 최후 중복 방어
+    var fallbackEv = null;
+    try {
+      if (!allSheetIds) allSheetIds = getSheetCalendarIds(sheet);
+      fallbackEv = findMatchingCalendarEvent(cal, details, allSheetIds);
+    } catch(eFb) {}
 
-    if (event) {
-      try {
-        event.removeAllReminders(); // 🔕 신규 생성 일정 기본 알림(전날 알림 등) 자동 차단
-      } catch(eRem) {}
-      if (details.color) {
-        try {
-          event.setColor(details.color);
-        } catch (e) {}
-      }
-      var eventId = event.getId();
-      sheet.getRange(row, 9).setValue(eventId);
+    if (fallbackEv) {
+      event = fallbackEv;
+      var fbId = event.getId();
+      sheet.getRange(row, 9).setValue(fbId);
       sheet.getRange(row, 10).setValue(Date.now());
+      rowValues[8] = fbId;
+      try { event.removeAllReminders(); } catch(eRem) {}
+      event.setTitle(details.title);
+      event.setDescription(details.description);
+      event.setLocation(details.siteName);
+      if (details.color) {
+        try { event.setColor(details.color); } catch (e) {}
+      }
+    } else {
+      var opt = {
+        description: details.description,
+        location: details.siteName
+      };
+      if (details.parsedDate.hasTime) {
+        event = cal.createEvent(details.title, details.parsedDate.startTime, details.parsedDate.endTime, opt);
+      } else {
+        if (details.parsedDate.isRange) {
+          event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
+        } else {
+          event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
+        }
+      }
+
+      if (event) {
+        try {
+          event.removeAllReminders(); // 🔕 신규 생성 일정 기본 알림(전날 알림 등) 자동 차단
+        } catch(eRem) {}
+        if (details.color) {
+          try {
+            event.setColor(details.color);
+          } catch (e) {}
+        }
+        var eventId = event.getId();
+        sheet.getRange(row, 9).setValue(eventId);
+        sheet.getRange(row, 10).setValue(Date.now());
 
       // 신규 생성 직후 이벤트 링크에 고유 ID 즉시 주입 (행 밀림 방지 영구 보장)
       try {
@@ -2507,6 +2571,7 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
           event.setDescription(freshDetails.description);
         }
       } catch(e) {}
+      }
     }
   }
 
@@ -2596,6 +2661,11 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
   var nowStr = formatDateTime(now);
   var currentUser = getCurrentUserIdentifier();
   var thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // 캘린더 내 중복 일정 무음 사전 자동 정리
+  try {
+    cleanupDuplicateCalendarEventsSilent(cal, sheet);
+  } catch (eClean) {}
 
   var allSheetIds = {};
   for (var k = 0; k < values.length; k++) {
@@ -2717,12 +2787,23 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       } catch(e) {
         event = null;
       }
+      if (!event) {
+        try {
+          event = CalendarApp.getEventById(existingId);
+        } catch(e) {
+          event = null;
+        }
+      }
     }
 
     // [신규 핵심: 캘린더 중복 생성 원천 차단]
-    // I열에 ID가 없거나 유효하지 않은 경우, 캘린더에 이미 생성된 동일 일정이 있는지 탐색하여 재연결
-    if (!event && !existingId) {
+    // event를 ID로 찾지 못한 경우(기존 ID가 없었거나 ID가 유효하지 않은 경우 모두 포함),
+    // 캘린더에 이미 생성된 동일 날짜/동일 공종 일정이 있는지 탐색하여 재연결
+    if (!event) {
       try {
+        if (existingId && allSheetIds[existingId]) {
+          delete allSheetIds[existingId];
+        }
         event = findMatchingCalendarEvent(cal, details, allSheetIds);
         if (event) {
           var matchedId = event.getId();
@@ -2730,6 +2811,9 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
           sheet.getRange(row, 10).setValue(nowMs);
           rowVals[8] = matchedId;
           allSheetIds[matchedId] = true;
+          if (existingId && existingId !== matchedId) {
+            delete allSheetIds[existingId];
+          }
           existingId = matchedId;
         }
       } catch (e) {}
@@ -2823,41 +2907,71 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
 
     if (!event) {
       try {
-        var opt = { description: details.description, location: details.siteName };
-        if (details.parsedDate.hasTime) {
-          event = cal.createEvent(details.title, details.parsedDate.startTime, details.parsedDate.endTime, opt);
-        } else {
-          if (details.parsedDate.isRange) {
-            event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
-          } else {
-            event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
+        // [신규 생성 직전 최후 방어]: 캘린더에 동일 날짜/동일 공종 일정이 이미 있는지 최종 확인
+        var fallbackEv = findMatchingCalendarEvent(cal, details, allSheetIds);
+        if (fallbackEv) {
+          event = fallbackEv;
+          var fbId = event.getId();
+          sheet.getRange(row, 9).setValue(fbId);
+          sheet.getRange(row, 10).setValue(nowMs);
+          rowVals[8] = fbId;
+          allSheetIds[fbId] = true;
+          if (existingId && existingId !== fbId) {
+            delete allSheetIds[existingId];
           }
-        }
-        if (event) {
+          existingId = fbId;
+          // 기존 이벤트 재연결 및 제목/위치/설명 즉시 갱신
           try {
-            event.removeAllReminders(); // 🔕 신규 생성 일정 기본 알림(전날 알림 등) 자동 차단
+            event.removeAllReminders();
           } catch(eRem) {}
+          event.setTitle(details.title);
+          event.setDescription(details.description);
+          event.setLocation(details.siteName);
           if (details.color) {
             try { event.setColor(details.color); } catch (e) {}
           }
-          var newEventId = event.getId();
-          sheet.getRange(row, 9).setValue(newEventId);
-          sheet.getRange(row, 10).setValue(nowMs);
-          rowVals[8] = newEventId;
-          allSheetIds[newEventId] = true;
-          try {
-            var freshDetails = buildEventDetails(rowVals, row, null, sheet);
-            if (freshDetails && freshDetails.description) {
-              event.setDescription(freshDetails.description);
-            }
-          } catch (e) {}
-          syncedCount++;
+          updatedCount++;
           batchChangeCount++;
-          try {
-            cleanDuplicateCalendarEventsOnDate(cal, details, newEventId, allSheetIds);
-          } catch (e) {}
-          // 구글 Rate Limit 방지용 딜레이 (0.35초)
-          Utilities.sleep(350);
+        } else {
+          var opt = { description: details.description, location: details.siteName };
+          if (details.parsedDate.hasTime) {
+            event = cal.createEvent(details.title, details.parsedDate.startTime, details.parsedDate.endTime, opt);
+          } else {
+            if (details.parsedDate.isRange) {
+              event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, details.parsedDate.endDate, opt);
+            } else {
+              event = cal.createAllDayEvent(details.title, details.parsedDate.startDate, opt);
+            }
+          }
+          if (event) {
+            try {
+              event.removeAllReminders(); // 🔕 신규 생성 일정 기본 알림(전날 알림 등) 자동 차단
+            } catch(eRem) {}
+            if (details.color) {
+              try { event.setColor(details.color); } catch (e) {}
+            }
+            var newEventId = event.getId();
+            sheet.getRange(row, 9).setValue(newEventId);
+            sheet.getRange(row, 10).setValue(nowMs);
+            rowVals[8] = newEventId;
+            allSheetIds[newEventId] = true;
+            if (existingId && existingId !== newEventId) {
+              delete allSheetIds[existingId];
+            }
+            try {
+              var freshDetails = buildEventDetails(rowVals, row, null, sheet);
+              if (freshDetails && freshDetails.description) {
+                event.setDescription(freshDetails.description);
+              }
+            } catch (e) {}
+            syncedCount++;
+            batchChangeCount++;
+            try {
+              cleanDuplicateCalendarEventsOnDate(cal, details, newEventId, allSheetIds);
+            } catch (e) {}
+            // 구글 Rate Limit 방지용 딜레이 (0.35초)
+            Utilities.sleep(350);
+          }
         }
       } catch (err) {
         var errMsg = String(err);
@@ -3064,17 +3178,14 @@ function isSystemSiteScheduleEvent(ev) {
  * @param {Object} [knownSheetIds] 현재 시트 전체의 유효한 I열 ID 맵 (옵션)
  * @return {CalendarEvent|null}
  */
-function findMatchingCalendarEvent(cal, details, knownSheetIds) {
+function findMatchingCalendarEvent(cal, details, knownSheetIds, excludeId) {
   if (!cal || !details || !details.parsedDate || !details.parsedDate.startDate) return null;
 
   var startDate = details.parsedDate.startDate;
-  var searchStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0);
-  var searchEnd = null;
-  if (details.parsedDate.endDate) {
-    searchEnd = new Date(details.parsedDate.endDate.getFullYear(), details.parsedDate.endDate.getMonth(), details.parsedDate.endDate.getDate() + 1, 0, 0, 0);
-  } else {
-    searchEnd = new Date(searchStart.getTime() + 24 * 60 * 60 * 1000);
-  }
+  // 타임존(UTC vs KST 등 9시간 시차) 오프셋 방어: -14시간 ~ +38시간 넓은 탐색 윈도우
+  var searchStart = new Date(startDate.getTime() - 14 * 60 * 60 * 1000);
+  var endDate = details.parsedDate.endDate || startDate;
+  var searchEnd = new Date(endDate.getTime() + 38 * 60 * 60 * 1000);
 
   var events = [];
   try {
@@ -3088,13 +3199,14 @@ function findMatchingCalendarEvent(cal, details, knownSheetIds) {
   var siteName = details.siteName || "";
   var taskName = details.taskName || "";
   var matchedEvents = [];
+  var fallbackTaskMatches = [];
 
   for (var i = 0; i < events.length; i++) {
     var ev = events[i];
     var evId = ev.getId();
 
-    // 만약 이 이벤트가 이미 시트의 '다른 행'에 연결되어 있다면 건너뜀 (다른 행의 정당한 일정이므로 매칭 대상 아님)
-    if (knownSheetIds && knownSheetIds[evId]) {
+    // 만약 이 이벤트가 이미 시트의 '다른 행'에 연결되어 있다면 건너뜀 (단, 현재 행의 기존 ID는 매칭 허용)
+    if (knownSheetIds && knownSheetIds[evId] && evId !== excludeId) {
       continue;
     }
 
@@ -3104,13 +3216,23 @@ function findMatchingCalendarEvent(cal, details, knownSheetIds) {
     var desc = ev.getDescription() || "";
     var loc = ev.getLocation() || "";
 
-    // 현장명 일치 확인
-    var siteMatches = (
-      (siteName && title.indexOf("[" + siteName + "]") !== -1) ||
-      loc === siteName ||
-      desc.indexOf("📌 현장명: " + siteName) !== -1
-    );
-    if (!siteMatches) continue;
+    // 날짜 일치 확인
+    var dateMatches = false;
+    var isAllDay = ev.isAllDayEvent();
+    if (details.parsedDate.hasTime) {
+      if (!isAllDay) {
+        var evStart = ev.getStartTime();
+        if (evStart && Math.abs(evStart.getTime() - details.parsedDate.startTime.getTime()) < 10 * 60 * 1000) {
+          dateMatches = true;
+        }
+      }
+    } else {
+      var evStart = isAllDay ? ev.getAllDayStartDate() : ev.getStartTime();
+      if (evStart && isDateEqual(evStart, details.parsedDate.startDate)) {
+        dateMatches = true;
+      }
+    }
+    if (!dateMatches) continue;
 
     // 공종명 일치 확인
     var taskMatches = true;
@@ -3122,38 +3244,26 @@ function findMatchingCalendarEvent(cal, details, knownSheetIds) {
     }
     if (!taskMatches) continue;
 
-    // 날짜 일치 확인
-    var dateMatches = false;
-    var isAllDay = ev.isAllDayEvent();
-    if (details.parsedDate.hasTime) {
-      if (!isAllDay) {
-        var evStart = ev.getStartTime();
-        if (evStart && Math.abs(evStart.getTime() - details.parsedDate.startTime.getTime()) < 5 * 60 * 1000) {
-          dateMatches = true;
-        }
-      }
-    } else {
-      if (isAllDay) {
-        var evStart = ev.getAllDayStartDate();
-        if (evStart && isDateEqual(evStart, details.parsedDate.startDate)) {
-          dateMatches = true;
-        }
-      } else {
-        var evStart = ev.getStartTime();
-        if (evStart && isDateEqual(evStart, details.parsedDate.startDate)) {
-          dateMatches = true;
-        }
-      }
-    }
+    // 현장명 일치 확인
+    var siteMatches = (
+      (siteName && title.indexOf("[" + siteName + "]") !== -1) ||
+      loc === siteName ||
+      desc.indexOf("📌 현장명: " + siteName) !== -1
+    );
 
-    if (dateMatches) {
+    if (siteMatches) {
       matchedEvents.push(ev);
+    } else {
+      // 현장명이 변경된 경우(예: 보라매경남 -> 보경102동):
+      // 동일 날짜에 동일 공종을 가진 시스템 일정이 존재하면 후보로 보관
+      fallbackTaskMatches.push(ev);
     }
   }
 
-  if (matchedEvents.length === 0) return null;
+  if (matchedEvents.length > 0) return matchedEvents[0];
+  if (fallbackTaskMatches.length > 0) return fallbackTaskMatches[0];
 
-  return matchedEvents[0];
+  return null;
 }
 
 /**
@@ -3168,10 +3278,9 @@ function cleanDuplicateCalendarEventsOnDate(cal, details, keepEventId, knownShee
   if (!cal || !details || !details.parsedDate || !details.parsedDate.startDate) return 0;
 
   var startDate = details.parsedDate.startDate;
-  var searchStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0);
-  var searchEnd = details.parsedDate.endDate ?
-    new Date(details.parsedDate.endDate.getFullYear(), details.parsedDate.endDate.getMonth(), details.parsedDate.endDate.getDate() + 1, 0, 0, 0) :
-    new Date(searchStart.getTime() + 24 * 60 * 60 * 1000);
+  var searchStart = new Date(startDate.getTime() - 14 * 60 * 60 * 1000);
+  var endDate = details.parsedDate.endDate || startDate;
+  var searchEnd = new Date(endDate.getTime() + 38 * 60 * 60 * 1000);
 
   var events = [];
   try {
@@ -3190,9 +3299,8 @@ function cleanDuplicateCalendarEventsOnDate(cal, details, keepEventId, knownShee
     var ev = events[i];
     var evId = ev.getId();
 
-    // 보존 대상 이벤트이거나 시트의 다른 행에 등록된 정상 이벤트는 절대 삭제 금지
+    // 보존 대상 이벤트는 절대 삭제 금지
     if (evId === keepEventId) continue;
-    if (knownSheetIds && knownSheetIds[evId]) continue;
 
     if (!isSystemSiteScheduleEvent(ev)) continue;
 
@@ -3200,29 +3308,28 @@ function cleanDuplicateCalendarEventsOnDate(cal, details, keepEventId, knownShee
     var desc = ev.getDescription() || "";
     var loc = ev.getLocation() || "";
 
-    // 현장명 및 공종명 일치 확인
+    var isAllDay = ev.isAllDayEvent();
+    var evStart = isAllDay ? ev.getAllDayStartDate() : ev.getStartTime();
+    if (!evStart || !isDateEqual(evStart, details.parsedDate.startDate)) continue;
+
+    var taskMatches = true;
+    if (taskName) {
+      taskMatches = (title.indexOf(taskName) !== -1 || desc.indexOf("🔨 공종: " + taskName) !== -1);
+    }
+    if (!taskMatches) continue;
+
     var siteMatches = (
       (siteName && title.indexOf("[" + siteName + "]") !== -1) ||
       loc === siteName ||
       desc.indexOf("📌 현장명: " + siteName) !== -1
     );
-    var taskMatches = true;
-    if (taskName) {
-      taskMatches = (
-        title.indexOf(taskName) !== -1 ||
-        desc.indexOf("🔨 공종: " + taskName) !== -1
-      );
-    }
 
-    if (siteMatches && taskMatches) {
-      var isAllDay = ev.isAllDayEvent();
-      var evStart = isAllDay ? ev.getAllDayStartDate() : ev.getStartTime();
-      if (evStart && isDateEqual(evStart, details.parsedDate.startDate)) {
-        try {
-          ev.deleteEvent();
-          deleted++;
-        } catch (e) {}
-      }
+    // 동일 날짜, 동일 공종의 중복 시스템 일정은 안전 삭제!
+    if (siteMatches || (knownSheetIds && !knownSheetIds[evId])) {
+      try {
+        ev.deleteEvent();
+        deleted++;
+      } catch (e) {}
     }
   }
 
@@ -3357,6 +3464,95 @@ function cleanupDuplicateAndOrphanCalendarEvents() {
                   "• 현재 정상 연동 일정: " + Object.keys(validEventIds).length + "건";
 
   ui.alert("🧹 캘린더 정리 완료", resultMsg, ui.ButtonSet.OK);
+}
+
+/**
+ * 캘린더 내 중복 일정 무음 자동 정리 엔진
+ * - 동일 날짜, 동일 공종, 동일 현장에 대해 2개 이상 존재하는 시스템 일정 감지
+ * - 시트 I열에 매핑된 정규 일정을 보존하고 잉여 중복 일정을 즉시 무음 삭제
+ */
+function cleanupDuplicateCalendarEventsSilent(cal, sheet) {
+  try {
+    if (!cal || !sheet) return 0;
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 0;
+
+    var values = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+    var validEventIds = {};
+    for (var i = 0; i < values.length; i++) {
+      var eid = String(values[i][8] || "").trim();
+      if (eid) validEventIds[eid] = i + 2;
+    }
+
+    var now = new Date();
+    var searchStart = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
+    var searchEnd = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+    var allEvents = [];
+    try {
+      allEvents = cal.getEvents(searchStart, searchEnd);
+    } catch(eEv) {
+      return 0;
+    }
+    if (!allEvents || allEvents.length === 0) return 0;
+
+    var seenKeys = {}; // key: "dateKey_site_task" -> event
+    var deletedCount = 0;
+
+    for (var k = 0; k < allEvents.length; k++) {
+      var ev = allEvents[k];
+      var evId = ev.getId();
+      if (!isSystemSiteScheduleEvent(ev)) continue;
+
+      var isAllDay = ev.isAllDayEvent();
+      var evStart = isAllDay ? ev.getAllDayStartDate() : ev.getStartTime();
+      if (!evStart) continue;
+
+      var dateKey = formatDateYYMMDD(evStart);
+      var title = ev.getTitle() || "";
+      var desc = ev.getDescription() || "";
+
+      var taskMatch = title.match(/\]\s*([^(\n\r]+)/) || desc.match(/🔨\s*공종:\s*([^\n\r]+)/);
+      var taskClean = taskMatch ? taskMatch[1].trim() : "";
+      var siteMatch = title.match(/\[(.+?)\]/) || desc.match(/📌\s*현장명:\s*([^\n\r]+)/);
+      var siteClean = siteMatch ? siteMatch[1].trim() : "";
+
+      var dedupKey = dateKey + "_" + siteClean + "_" + taskClean;
+      if (!taskClean) dedupKey = dateKey + "_" + title;
+
+      if (!seenKeys[dedupKey]) {
+        seenKeys[dedupKey] = ev;
+      } else {
+        var prevEv = seenKeys[dedupKey];
+        var prevId = prevEv.getId();
+
+        var toKeep = null;
+        var toDelete = null;
+
+        if (validEventIds[evId] && !validEventIds[prevId]) {
+          toKeep = ev;
+          toDelete = prevEv;
+          seenKeys[dedupKey] = ev;
+        } else if (!validEventIds[evId] && validEventIds[prevId]) {
+          toKeep = prevEv;
+          toDelete = ev;
+        } else {
+          toKeep = prevEv;
+          toDelete = ev;
+        }
+
+        try {
+          toDelete.deleteEvent();
+          deletedCount++;
+          Utilities.sleep(100);
+        } catch (eDel) {}
+      }
+    }
+    return deletedCount;
+  } catch (e) {
+    Logger.log("중복 무음 정리 예외: " + e.toString());
+    return 0;
+  }
 }
 
 /**
