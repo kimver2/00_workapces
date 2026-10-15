@@ -2777,9 +2777,13 @@ function cleanDuplicateCalendarEventsOnDate(cal, details, keepEventId, knownShee
     var ev = events[i];
     var evId = ev.getId();
 
-    // 보존 대상 이벤트는 절대 삭제 금지
+    // 1) 보존 대상 현재 행의 이벤트는 절대 삭제 금지
     if (evId === keepEventId) continue;
 
+    // 2) [핵심 방어] 시트의 다른 행에 유효하게 등록된 캘린더 ID라면 절대 삭제 금지! (동일 날짜/공종 다건 일정 100% 보존)
+    if (knownSheetIds && knownSheetIds[evId]) continue;
+
+    // 3) 시스템 관리 일정이 아니면 절대 건드리지 않음 (개인 일정 철저 보호)
     if (!isSystemSiteScheduleEvent(ev)) continue;
 
     var title = ev.getTitle() || "";
@@ -2803,8 +2807,8 @@ function cleanDuplicateCalendarEventsOnDate(cal, details, keepEventId, knownShee
       desc.indexOf("📍 위치: " + siteName) !== -1
     );
 
-    // 동일 날짜, 동일 공종의 중복 시스템 일정은 안전 삭제!
-    if (siteMatches || (knownSheetIds && !knownSheetIds[evId])) {
+    // 시트 I열에 존재하지 않는 미등록/고아 일정이면서 동일 현장 및 공종과 일치하는 중복 일정 안전 삭제
+    if (siteMatches) {
       try {
         ev.deleteEvent();
         deleted++;
@@ -2975,7 +2979,7 @@ function cleanupDuplicateCalendarEventsSilent(cal, sheet) {
     }
     if (!allEvents || allEvents.length === 0) return 0;
 
-    var seenKeys = {}; // key: "dateKey_site_task" -> event
+    var eventsByKey = {};
     var deletedCount = 0;
 
     for (var k = 0; k < allEvents.length; k++) {
@@ -3007,34 +3011,44 @@ function cleanupDuplicateCalendarEventsSilent(cal, sheet) {
       var dedupKey = dateKey + "_" + siteClean + "_" + taskClean;
       if (!taskClean) dedupKey = dateKey + "_" + title;
 
-      if (!seenKeys[dedupKey]) {
-        seenKeys[dedupKey] = ev;
-      } else {
-        var prevEv = seenKeys[dedupKey];
-        var prevId = prevEv.getId();
+      if (!eventsByKey[dedupKey]) {
+        eventsByKey[dedupKey] = [];
+      }
+      eventsByKey[dedupKey].push(ev);
+    }
 
-        var toKeep = null;
-        var toDelete = null;
+    for (var dKey in eventsByKey) {
+      var evList = eventsByKey[dKey];
+      if (evList.length <= 1) continue;
 
-        if (validEventIds[evId] && !validEventIds[prevId]) {
-          toKeep = ev;
-          toDelete = prevEv;
-          seenKeys[dedupKey] = ev;
-        } else if (!validEventIds[evId] && validEventIds[prevId]) {
-          toKeep = prevEv;
-          toDelete = ev;
+      // 시트에 등록된 유효 이벤트와 미등록(고아/유령) 이벤트 분리
+      var validEvents = [];
+      var orphanEvents = [];
+
+      for (var e = 0; e < evList.length; e++) {
+        var itemEv = evList[e];
+        if (validEventIds[itemEv.getId()]) {
+          validEvents.push(itemEv);
         } else {
-          toKeep = prevEv;
-          toDelete = ev;
+          orphanEvents.push(itemEv);
         }
+      }
 
-        try {
-          toDelete.deleteEvent();
-          deletedCount++;
-          Utilities.sleep(100);
-        } catch (eDel) {}
+      // [핵심 원칙]: 시트 I열에 유효하게 등록된 일정(validEvents)은
+      // 동일 날짜/동일 공종/동일 현장에 몇 개가 있든 100% 절대 삭제하지 않고 보존!
+      //
+      // 오직 시트 어디에도 등록되어 있지 않은 잉여 고아/유령 일정(orphanEvents)만 정리
+      for (var o = 0; o < orphanEvents.length; o++) {
+        if (validEvents.length > 0 || o > 0) {
+          try {
+            orphanEvents[o].deleteEvent();
+            deletedCount++;
+            Utilities.sleep(100);
+          } catch (eDel) {}
+        }
       }
     }
+
     return deletedCount;
   } catch (e) {
     Logger.log("중복 무음 정리 예외: " + e.toString());

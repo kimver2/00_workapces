@@ -1638,6 +1638,121 @@ assertTest('buildEventDetails 반환 color가 현장 고유 색상과 100% 일�
   detailsA && detailsA.color === colorA1
 );
 
+// ========================================================
+// 24. 동일 날짜/동일 현장/동일 공종 복수 일정 100% 보존 QA (8월 25일 도배 2건 누락 버그 방어 검증)
+// ========================================================
+console.log('\n🛡️ [Step 24: 동일 날짜/현장/공종 복수 일정 100% 보존 QA (8/25 도배 2건 누락 방어)]');
+
+const dobeDate = new Date(2026, 7, 25, 0, 0, 0); // 2026-08-25
+const dobeDetails = {
+  title: '[도배] 보라매경남 102동 702호',
+  siteName: '보라매경남 102동 702호',
+  taskName: '도배',
+  description: '📌 현장명: 보라매경남 102동 702호\n🔨 공종: 도배',
+  parsedDate: {
+    startDate: dobeDate,
+    endDate: dobeDate,
+    hasTime: false,
+    isRange: false
+  }
+};
+
+let deletedEventsMap = {};
+function createMockEvent(id, title, site, task, date) {
+  return {
+    getId: () => id,
+    getTitle: () => title,
+    getDescription: () => `📌 현장명: ${site}\n🔨 공종: ${task}\n우성아이디`,
+    getLocation: () => site,
+    isAllDayEvent: () => true,
+    getAllDayStartDate: () => date,
+    getAllDayEndDate: () => date,
+    getStartTime: () => date,
+    getEndTime: () => date,
+    deleteEvent: () => { deletedEventsMap[id] = true; }
+  };
+}
+
+// 24-1: cleanDuplicateCalendarEventsOnDate - 시트의 유효한 2건 모두 보존 검증
+deletedEventsMap = {};
+const mockCal2Dobe = {
+  getEvents: () => [
+    createMockEvent('ev-dobe-1', '[도배] 보라매경남 102동 702호', '보라매경남 102동 702호', '도배', dobeDate),
+    createMockEvent('ev-dobe-2', '[도배] 보라매경남 102동 702호', '보라매경남 102동 702호', '도배', dobeDate)
+  ]
+};
+const cleanedCount1 = sandbox.cleanDuplicateCalendarEventsOnDate(
+  mockCal2Dobe,
+  dobeDetails,
+  'ev-dobe-1',
+  { 'ev-dobe-1': true, 'ev-dobe-2': true }
+);
+assertTest('cleanDuplicateCalendarEventsOnDate: 시트에 존재하는 동일 날짜/현장/공종 2건은 절대 상호 삭제하지 않고 보존',
+  cleanedCount1 === 0 && !deletedEventsMap['ev-dobe-2']
+);
+
+// 24-2: cleanDuplicateCalendarEventsOnDate - 잉여 유령 일정만 선택 삭제 검증
+deletedEventsMap = {};
+const mockCal3Dobe = {
+  getEvents: () => [
+    createMockEvent('ev-dobe-1', '[도배] 보라매경남 102동 702호', '보라매경남 102동 702호', '도배', dobeDate),
+    createMockEvent('ev-dobe-2', '[도배] 보라매경남 102동 702호', '보라매경남 102동 702호', '도배', dobeDate),
+    createMockEvent('ev-dobe-orphan', '[도배] 보라매경남 102동 702호', '보라매경남 102동 702호', '도배', dobeDate)
+  ]
+};
+const cleanedCount2 = sandbox.cleanDuplicateCalendarEventsOnDate(
+  mockCal3Dobe,
+  dobeDetails,
+  'ev-dobe-1',
+  { 'ev-dobe-1': true, 'ev-dobe-2': true }
+);
+assertTest('cleanDuplicateCalendarEventsOnDate: 시트에 없는 잉여 고아 일정(orphan)만 정확 삭제하고 정규 2건 보존',
+  cleanedCount2 === 1 && deletedEventsMap['ev-dobe-orphan'] && !deletedEventsMap['ev-dobe-2']
+);
+
+// 24-3: cleanupDuplicateCalendarEventsSilent - 동일 날짜/공종 2건 시트 등록 시 무음 삭제 방어 검증
+deletedEventsMap = {};
+const mockMultiRowSheet = {
+  getLastRow: () => 3,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => [
+      ['보라매경남 102동 702호', '26.08.25', '도배', '', true, '', '홍길동', '예정', 'ev-dobe-1', 123456],
+      ['보라매경남 102동 702호', '26.08.25', '도배', '', true, '', '홍길동', '예정', 'ev-dobe-2', 123457]
+    ]
+  })
+};
+const silentDeleted1 = sandbox.cleanupDuplicateCalendarEventsSilent(mockCal2Dobe, mockMultiRowSheet);
+assertTest('cleanupDuplicateCalendarEventsSilent: 시트에 등록된 동일 날짜/공종 2건 무음 삭제 방어 검증',
+  silentDeleted1 === 0 && !deletedEventsMap['ev-dobe-1'] && !deletedEventsMap['ev-dobe-2']
+);
+
+// 24-4: cleanupDuplicateCalendarEventsSilent - 시트 외 잉여 고아 일정만 무음 청소 검증
+deletedEventsMap = {};
+const silentDeleted2 = sandbox.cleanupDuplicateCalendarEventsSilent(mockCal3Dobe, mockMultiRowSheet);
+assertTest('cleanupDuplicateCalendarEventsSilent: 2건의 정상 일정 보존 및 3번째 미등록 잉여 일정만 선택 삭제 검증',
+  silentDeleted2 === 1 && deletedEventsMap['ev-dobe-orphan'] && !deletedEventsMap['ev-dobe-1'] && !deletedEventsMap['ev-dobe-2']
+);
+
+// 24-5: findMatchingCalendarEvent - 이미 1행에 배정된 일정(ev-dobe-1)은 2행 신규 동기화 시 가로채기(hijack) 방지 검증
+const matchedForSecondRow = sandbox.findMatchingCalendarEvent(
+  mockCal2Dobe,
+  dobeDetails,
+  { 'ev-dobe-1': true }
+);
+assertTest('findMatchingCalendarEvent: 1행에 매핑된 기존 일정은 2행에서 가로채지 않고 null 반환(독립 일정 생성 유도)',
+  matchedForSecondRow && matchedForSecondRow.getId() === 'ev-dobe-2' // ev-dobe-2가 미등록 상태면 2행과 연결
+);
+
+// 24-6: 만약 ev-dobe-1, ev-dobe-2 둘 다 이미 시트에 연결되어 있으면 null 반환 (신규 3번째 일정 생성을 위해 가로채기 방지)
+const matchedWhenBothAssigned = sandbox.findMatchingCalendarEvent(
+  mockCal2Dobe,
+  dobeDetails,
+  { 'ev-dobe-1': true, 'ev-dobe-2': true }
+);
+assertTest('findMatchingCalendarEvent: 모든 이벤트가 시트 행들에 이미 매핑되어 있으면 가로채기 차단(null 반환)',
+  matchedWhenBothAssigned === null
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
