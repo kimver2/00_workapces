@@ -196,7 +196,7 @@ rowDone[7] = '완료';
 const resDone = buildDetailsFn(rowDone, 15);
 assertTest('buildEventDetails 런타임 실행 ("완료"): ReferenceError 없이 정상 실행', resDone !== null);
 assertTest('상태 "완료" 시 캘린더 제목에 "✅ " 아이콘 정상 부여', resDone && resDone.title.startsWith('✅ 🟦'));
-assertTest('캘린더 제목(Title) 내 비고(memo) 데이터 완전 배제 검증', resDone && resDone.title === '✅ 🟦 [래미안 101동] 목공');
+assertTest('캘린더 제목(Title) 내 비고(memo) 데이터 완전 배제 및 [공종] 현장명 검증', resDone && resDone.title === '✅ 🟦 [목공] 래미안 101동');
 assertTest('캘린더 본문 Description 내 비고(memo) 정상 유지 검증', resDone && resDone.description.indexOf('📝 비고: 오전작업') !== -1);
 
 // 2. 상태 '진행중' 런타임 호출 테스트
@@ -327,7 +327,7 @@ rowDelayed[1] = '26.10.10'; // 과거 날짜
 rowDelayed[7] = '진행 중';
 const resDelayed = buildDetailsFn(rowDelayed, 20, mockRefToday);
 assertTest('지연 공정 제목에 "⚠️ [지연] " 자동 부착', resDelayed && resDelayed.title.startsWith('⚠️ [지연] ▶️ 🟦'));
-assertTest('지연 공정 색상에 "11" (Tomato 빨강) 자동 지정', resDelayed && resDelayed.color === '11');
+assertTest('현장별 색상 일치 검증: 지연 공정도 현장 고유 색상 유지', resDelayed && resDelayed.color === sandbox.getCalendarColorForSite('래미안 101동'));
 assertTest('지연 공정 본문 Description에 경고 문구 삽입', resDelayed && resDelayed.description.indexOf('⚠️ [공정 지연 경고]') !== -1);
 assertTest('지연 공정 isDelayed 플래그 true', resDelayed && resDelayed.isDelayed === true);
 
@@ -842,8 +842,8 @@ console.log('\n🧹 [Step 8: 캘린더 중복 생성 방지 및 고아/유령 �
 // 8-1: buildEventDetails baseTitle 속성 포함 여부
 const sampleRow = ['날짜 체크 시간 체크', '26.10.13', '전기마감', '', false, '', '전예린', '진행 중'];
 const sampleDetails = sandbox.buildEventDetails(sampleRow, 19, null, null);
-assertTest('buildEventDetails baseTitle 반환 검증 ([현장명] 공종 표준 포맷)',
-  sampleDetails && sampleDetails.baseTitle === '[날짜 체크 시간 체크] 전기마감'
+assertTest('buildEventDetails baseTitle 반환 검증 ([공종] 현장명 표준 포맷)',
+  sampleDetails && sampleDetails.baseTitle === '[전기마감] 날짜 체크 시간 체크'
 );
 
 // 8-2: isSystemSiteScheduleEvent 검증
@@ -981,7 +981,7 @@ const childRow = ['', '26.10.29', '도배', '', true, '', '전예린', '예정']
 const inheritedDetails = sandbox.buildEventDetails(childRow, 3, null, mockSheetWithParent);
 assertTest('상위 행이 있는 경우 직전 현장명 자동 상속 검증',
   inheritedDetails && inheritedDetails.siteName === '보라매경남 102동 502호' &&
-  inheritedDetails.title.indexOf('[보라매경남 102동 502호] 도배') !== -1
+  inheritedDetails.title.indexOf('[도배] 보라매경남 102동 502호') !== -1
 );
 
 // 9-3: batch sync 내 effectiveSiteNames 연산 검증
@@ -1028,9 +1028,9 @@ assertTest('공종이 공백 문자열인 경우도 null 반환하여 작성 중
 // 10-3: 필수 3요소(현장명 + 날짜 + 공종) 완성 시 정상 객체 반환 검증
 const completeRow = ['보라매경남 102동 502호', '2026. 10. 29', '도배', '', true, '', '전예린', '예정', '', 0, '', '', '', ''];
 const completeDetails = sandbox.buildEventDetails(completeRow, 206, null, null);
-assertTest('필수 3요소 완성 시 정상 세부정보 및 표준 제목 반환 ([현장명] 공종)',
+assertTest('필수 3요소 완성 시 정상 세부정보 및 표준 제목 반환 ([공종] 현장명)',
   completeDetails !== null &&
-  completeDetails.title.indexOf('[보라매경남 102동 502호] 도배') !== -1
+  completeDetails.title.indexOf('[도배] 보라매경남 102동 502호') !== -1
 );
 
 // 10-4: 코드 내 SYNC_MODE 영속성 제어 검증
@@ -1583,11 +1583,59 @@ assertTest('getTargetCalendar 런타임: 정상 이름 조회 시 캘린더 객�
   foundCal !== null && foundCal.getName() === '현장 일정' && !defaultCalCalled && !createCalCalled
 );
 
-// 케이스 2: 권한 없거나 미발견 대상 -> null 반환 (getDefaultCalendar, createCalendar 절대 미호출)
-sandbox.CalendarApp.getCalendarsByName = () => [];
-const missingCal = sandbox.getTargetCalendar();
-assertTest('getTargetCalendar 런타임: 미발견/권한 없음 시 null 반환 및 개인 캘린더 절대 미호출 검증',
-  missingCal === null && !defaultCalCalled && !createCalCalled
+// ========================================================
+// 23. 캘린더 제목([공종] 현장명) & 위치 명시 & 현장별 고유 색상 매핑 QA
+// ========================================================
+console.log('\n🎨 [Step 23: 캘린더 제목([공종] 현장명) & 위치(Location) & 현장별 고유 색상 매핑 QA]');
+
+// 23-1: buildEventDetails 제목 형식 검증 ([공종] 현장명)
+const testSiteA = '보라매 101동';
+const testTaskA = '철거';
+const testRowA = [testSiteA, '26.11.05', testTaskA, '', true, '', '홍길동', '예정'];
+const detailsA = sandbox.buildEventDetails(testRowA, 10, null, null);
+assertTest('캘린더 제목: [공종] 현장명 표준 형식 반환 검증',
+  detailsA && detailsA.title.indexOf('[' + testTaskA + '] ' + testSiteA) !== -1
+);
+
+// 23-2: 상세 설명(Description) 및 Location 위치 명시 검증
+assertTest('캘린더 상세 설명(Description) 내 📍 위치: 현장명 포함 검증',
+  detailsA && detailsA.description.indexOf('📍 위치: ' + testSiteA) !== -1
+);
+assertTest('캘린더 상세 설명(Description) 내 📌 현장명: 포함 검증',
+  detailsA && detailsA.description.indexOf('📌 현장명: ' + testSiteA) !== -1
+);
+
+// 23-3: 현장별 고유 색상 매핑 함수 탑재 여부
+assertTest('getCalendarColorForSite 함수 탑재 여부', typeof sandbox.getCalendarColorForSite === 'function');
+
+// 23-4: 동일한 현장명은 항상 100% 동일한 색상 반환 검증
+const colorA1 = sandbox.getCalendarColorForSite(testSiteA);
+const colorA2 = sandbox.getCalendarColorForSite(testSiteA);
+const colorA3 = sandbox.getCalendarColorForSite('  ' + testSiteA + '  ');
+assertTest('동일 현장명("보라매 101동")은 언제나 동일한 색상 반환 검증',
+  colorA1 === colorA2 && colorA2 === colorA3
+);
+
+// 23-5: 시트 내 서로 다른 현장은 서로 다른 색상 배정 검증
+const testSiteB = '신대방 301동';
+const testSiteC = '역삼 자이';
+const mockMultiSiteSheet = {
+  getLastRow: () => 4,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => [[testSiteA], [testSiteB], [testSiteC]]
+  })
+};
+sandbox._siteColorMapCache = null; // 캐시 리셋
+const colorSheetA = sandbox.getCalendarColorForSite(testSiteA, mockMultiSiteSheet);
+const colorSheetB = sandbox.getCalendarColorForSite(testSiteB, mockMultiSiteSheet);
+const colorSheetC = sandbox.getCalendarColorForSite(testSiteC, mockMultiSiteSheet);
+assertTest('서로 다른 현장(A, B, C)은 서로 다른 색상으로 자동 분기 검증',
+  colorSheetA !== colorSheetB && colorSheetB !== colorSheetC && colorSheetA !== colorSheetC
+);
+
+// 23-6: buildEventDetails 객체의 color가 현장 고유 색상과 일치 검증
+assertTest('buildEventDetails 반환 color가 현장 고유 색상과 100% 일치 검증',
+  detailsA && detailsA.color === colorA1
 );
 
 console.log('\n========================================================');

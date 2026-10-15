@@ -1097,8 +1097,12 @@ function handleCalendarEditTrigger(e) {
                 if (parentEv) {
                   oldSiteVal = parentEv.getLocation() || "";
                   if (!oldSiteVal) {
-                    var tMatch = (parentEv.getTitle() || "").match(/\[(.+?)\]/);
-                    if (tMatch) oldSiteVal = tMatch[1].trim();
+                    var dMatch = (parentEv.getDescription() || "").match(/(?:📌\s*현장명|📍\s*위치):\s*([^\n\r]+)/);
+                    if (dMatch) oldSiteVal = dMatch[1].trim();
+                    if (!oldSiteVal) {
+                      var tMatch = (parentEv.getTitle() || "").match(/\]\s*([^(\n\r]+)/) || (parentEv.getTitle() || "").match(/\[(.+?)\]/);
+                      if (tMatch) oldSiteVal = tMatch[1].trim();
+                    }
                   }
                 }
               }
@@ -1718,26 +1722,27 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   var isDelayed = isScheduleDelayed(parsedDate, statusClean, refDate);
   var delayPrefix = isDelayed ? "⚠️ [지연] " : "";
 
-  // 구글 캘린더 자체 블록 색상 자동 지정 (Feature 1)
-  var eventColor = getCalendarColorForStatus(statusClean, isDelayed, isShared);
+  // 구글 캘린더 자체 블록 색상 자동 지정 (현장별 고유 색상 매핑: 같은 현장 = 같은 색, 다른 현장 = 다른 색)
+  var eventColor = getCalendarColorForSite(siteName, targetSheet);
 
-  // 제목 포맷: [지연경고] [상태아이콘] 🟦 또는 🟥 [현장명] 공종 (비고 제외)
+  // 제목 포맷: [지연경고] [상태아이콘] 🟦 또는 🟥 [공종] 현장명 (공종+현장명 표준 포맷)
   var baseTitle = "";
-  if (siteName && taskName) {
-    baseTitle = "[" + siteName + "] " + taskName;
-  } else if (siteName) {
-    baseTitle = "[" + siteName + "]";
+  if (taskName && siteName) {
+    baseTitle = "[" + taskName + "] " + siteName;
+  } else if (taskName) {
+    baseTitle = "[" + taskName + "]";
   } else {
-    baseTitle = taskName;
+    baseTitle = siteName;
   }
   var title = delayPrefix + statusIcon + prefixIcon + baseTitle;
 
-  // 설명(Description) 포맷
+  // 설명(Description) 포맷: 상세 위치에 현장명 명시
   var descLines = [];
   if (isDelayed) {
     descLines.push("⚠️ [공정 지연 경고]: 마감 예정일이 경과하였으나 미완료 상태입니다. 빠른 확인이 필요합니다.");
     descLines.push("--------------------------------");
   }
+  descLines.push("📍 위치: " + (siteName || "-"));
   descLines.push("📌 현장명: " + (siteName || "-"));
   descLines.push("🔨 공종: " + (taskName || "-"));
   descLines.push("🚦 진행상태: " + (status || "예정") + (isDelayed ? " (⚠️ 지연)" : ""));
@@ -2716,11 +2721,12 @@ function findMatchingCalendarEvent(cal, details, knownSheetIds, excludeId) {
     }
     if (!taskMatches) continue;
 
-    // 현장명 일치 확인
+    // 현장명 일치 확인 ([공종] 현장명 및 기존 [현장명] 공종 양방향 지원)
     var siteMatches = (
-      (siteName && title.indexOf("[" + siteName + "]") !== -1) ||
+      (siteName && (title.indexOf("[" + siteName + "]") !== -1 || title.indexOf(siteName) !== -1)) ||
       loc === siteName ||
-      desc.indexOf("📌 현장명: " + siteName) !== -1
+      desc.indexOf("📌 현장명: " + siteName) !== -1 ||
+      desc.indexOf("📍 위치: " + siteName) !== -1
     );
 
     if (siteMatches) {
@@ -2791,9 +2797,10 @@ function cleanDuplicateCalendarEventsOnDate(cal, details, keepEventId, knownShee
     if (!taskMatches) continue;
 
     var siteMatches = (
-      (siteName && title.indexOf("[" + siteName + "]") !== -1) ||
+      (siteName && (title.indexOf("[" + siteName + "]") !== -1 || title.indexOf(siteName) !== -1)) ||
       loc === siteName ||
-      desc.indexOf("📌 현장명: " + siteName) !== -1
+      desc.indexOf("📌 현장명: " + siteName) !== -1 ||
+      desc.indexOf("📍 위치: " + siteName) !== -1
     );
 
     // 동일 날짜, 동일 공종의 중복 시스템 일정은 안전 삭제!
@@ -2984,10 +2991,18 @@ function cleanupDuplicateCalendarEventsSilent(cal, sheet) {
       var title = ev.getTitle() || "";
       var desc = ev.getDescription() || "";
 
-      var taskMatch = title.match(/\]\s*([^(\n\r]+)/) || desc.match(/🔨\s*공종:\s*([^\n\r]+)/);
-      var taskClean = taskMatch ? taskMatch[1].trim() : "";
-      var siteMatch = title.match(/\[(.+?)\]/) || desc.match(/📌\s*현장명:\s*([^\n\r]+)/);
-      var siteClean = siteMatch ? siteMatch[1].trim() : "";
+      var taskDescMatch = desc.match(/🔨\s*공종:\s*([^\n\r]+)/);
+      var siteDescMatch = desc.match(/(?:📌\s*현장명|📍\s*위치):\s*([^\n\r]+)/);
+      var siteClean = (ev.getLocation() || "").trim() || (siteDescMatch ? siteDescMatch[1].trim() : "");
+      var taskClean = taskDescMatch ? taskDescMatch[1].trim() : "";
+
+      if (!taskClean || !siteClean) {
+        var bMatch = title.match(/\[(.+?)\]\s*(.*)/);
+        if (bMatch) {
+          if (!taskClean) taskClean = bMatch[1].trim();
+          if (!siteClean) siteClean = bMatch[2].replace(/[🟦🟥▶️✅🛠️⚠️\[\]]/g, "").trim();
+        }
+      }
 
       var dedupKey = dateKey + "_" + siteClean + "_" + taskClean;
       if (!taskClean) dedupKey = dateKey + "_" + title;
@@ -4675,8 +4690,83 @@ function isScheduleActiveToday(parsedDate, refDate) {
   return (todayMidnight >= sMidnight && todayMidnight <= eMidnight);
 }
 
+// 현장별 캘린더 색상 캐시 (단일 실행 컨텍스트 내 중복 계산 방지)
+var _siteColorMapCache = null;
+
 /**
- * 진행상태 및 지연 여부에 따른 구글 캘린더 블록 색상 ID 산출 (Feature 1)
+ * 현장데이터 시트 내 고유 현장명 순서 맵 반환 (등장 순서대로 인덱스 부여)
+ */
+function getSiteColorOrderMap(sheet) {
+  if (_siteColorMapCache) return _siteColorMapCache;
+  if (!sheet || typeof sheet.getLastRow !== "function") return {};
+  try {
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return {};
+    var sites = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    var map = {};
+    var count = 0;
+    for (var i = 0; i < sites.length; i++) {
+      var s = String(sites[i][0] || "").trim();
+      if (s && map[s] === undefined) {
+        map[s] = count;
+        count++;
+      }
+    }
+    _siteColorMapCache = map;
+    return map;
+  } catch(e) {
+    return {};
+  }
+}
+
+/**
+ * 현장명별 구글 캘린더 블록 색상 자동 반환
+ * - 같은 현장명으로 묶인 일정: 캘린더에 항상 100% 동일한 색상으로 표시
+ * - 서로 다른 현장: 서로 다른 색상으로 자동 구분되어 한눈에 식별 가능
+ */
+function getCalendarColorForSite(siteName, sheet) {
+  if (!siteName) return "1"; // 기본 Pale Blue (연파랑)
+  siteName = String(siteName).trim();
+
+  // 구글 캘린더 11대 색상 팔레트 (시인성 및 구분이 가장 뚜렷한 순서로 배치)
+  // 7: Peacock(청록), 6: Tangerine(주황), 9: Blueberry(진파랑), 2: Sage(연초록),
+  // 3: Grape(보라), 5: Banana(노랑), 4: Flamingo(산호/핑크), 10: Basil(초록),
+  // 1: Pale Blue(연파랑), 8: Graphite(회색), 11: Tomato(빨강)
+  var palette = [
+    "7",  // Peacock (청록)
+    "6",  // Tangerine (주황)
+    "9",  // Blueberry (진파랑)
+    "2",  // Sage (연초록)
+    "3",  // Grape (보라)
+    "5",  // Banana (노랑)
+    "4",  // Flamingo (산호)
+    "10", // Basil (초록)
+    "1",  // Pale Blue (연파랑)
+    "8",  // Graphite (회색)
+    "11"  // Tomato (빨강)
+  ];
+
+  // 1순위: 시트 객체가 있는 경우: 시트 내 고유 현장명 등장 순서대로 1:1 매핑 (충돌 0%)
+  if (sheet) {
+    try {
+      var siteMap = getSiteColorOrderMap(sheet);
+      if (siteMap && siteMap[siteName] !== undefined) {
+        return palette[siteMap[siteName] % palette.length];
+      }
+    } catch(e) {}
+  }
+
+  // 2순위: 시트가 없거나 단독 호출 시: 현장명 고유 문자열 해시 기반 일관 매핑
+  var hash = 0;
+  for (var i = 0; i < siteName.length; i++) {
+    hash = ((hash << 5) - hash) + siteName.charCodeAt(i);
+    hash |= 0;
+  }
+  return palette[Math.abs(hash) % palette.length];
+}
+
+/**
+ * 진행상태 및 지연 여부에 따른 구글 캘린더 블록 색상 ID 산출 (기존 호환 유지)
  * 1: Pale Blue (예정)
  * 4: Flamingo (AS)
  * 7: Peacock (진행 중)
