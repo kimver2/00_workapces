@@ -723,6 +723,7 @@ function onOpen() {
       .addSeparator()
       .addItem("📦 전체 일정 연속 동기화 (25건씩 자동 대기 연속 처리)", "syncAllSiteSchedulesToGoogleCalendar")
       .addItem("🧹 캘린더 중복 및 유령 일정 자동 정리", "cleanupDuplicateAndOrphanCalendarEvents")
+      .addItem("🔕 캘린더 전날 알림 전체 끄기 (알림 폭탄 해제)", "removeAllSiteCalendarReminders")
     )
 
     // [서브메뉴 3: 현장 데이터 편집 / 보기 편의 기능]
@@ -1186,7 +1187,11 @@ function cleanupDuplicateAndOrphanCalendarEventsSilent(sheet, cal, daysBefore, d
  */
 function runPeriodicAutoSync() {
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) return;
+  var needRelease = false;
+  if (!lock.hasLock()) {
+    if (!lock.tryLock(5000)) return;
+    needRelease = true;
+  }
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1373,7 +1378,9 @@ function runPeriodicAutoSync() {
   } catch(e) {
     Logger.log("주기적 자동 동기화 에러: " + e.toString());
   } finally {
-    lock.releaseLock();
+    if (needRelease && lock.hasLock()) {
+      lock.releaseLock();
+    }
   }
 }
 
@@ -1497,6 +1504,55 @@ function handleCalendarEditTrigger(e) {
       }
     }
 
+    // [현장명(A열) 수정 시 하위 아코디언 행 타임스탬프 동반 갱신]
+    // A열(현장명)이 수정되면, 하위 공종 행들(A열이 비어있는 행들 또는 동일 구 현장명 행들)도
+    // 상위 현장명 변경의 영향을 받으므로 타임스탬프(J열)를 함께 최신화하여 캘린더 동기화 대상에 포함!
+    var subRowsCount = 0;
+    if (startCol <= 1 && endCol >= 1) {
+      try {
+        var lastR = sheet.getLastRow();
+        if (lastR > maxProcessRow) {
+          var checkCount = Math.min(lastR - maxProcessRow, 60); // 최대 60개 하위 행 탐색
+          var subData = sheet.getRange(maxProcessRow + 1, 1, checkCount, 3).getValues();
+          var subRowsToTouch = 0;
+          var oldSiteVal = (e && e.oldValue) ? String(e.oldValue).trim() : "";
+          var newSiteVal = (e && e.value) ? String(e.value).trim() : "";
+
+          for (var si = 0; si < subData.length; si++) {
+            var subSite = String(subData[si][0] || "").trim();
+            // A열에 이전 현장명이 남아있고 새 현장명이 있으면 일괄 변경
+            if (oldSiteVal && subSite === oldSiteVal && newSiteVal) {
+              sheet.getRange(maxProcessRow + 1 + si, 1).setValue(newSiteVal);
+              subRowsToTouch = si + 1;
+              continue;
+            }
+            // A열에 다른 새로운 현장명이 등장하면 이 현장의 하위 행이 끝난 것으로 판단
+            if (subSite) break;
+            var subDate = subData[si][1];
+            var subTask = String(subData[si][2] || "").trim();
+            if (subDate || subTask) {
+              subRowsToTouch = si + 1;
+            }
+          }
+          if (subRowsToTouch > 0) {
+            subRowsCount = subRowsToTouch;
+            var subTimeStamps = [];
+            var subMetaUpdates = [];
+            var subMetaRange = sheet.getRange(maxProcessRow + 1, 11, subRowsToTouch, 4);
+            var curSubMeta = subMetaRange.getValues();
+            for (var mi = 0; mi < subRowsToTouch; mi++) {
+              subTimeStamps.push([nowMs]);
+              subMetaUpdates.push([curSubMeta[mi][0] || nowStr, curSubMeta[mi][1] || currentUser, nowStr, currentUser]);
+            }
+            sheet.getRange(maxProcessRow + 1, 10, subRowsToTouch, 1).setValues(subTimeStamps);
+            subMetaRange.setValues(subMetaUpdates);
+          }
+        }
+      } catch (eSub) {
+        Logger.log("하위 행 타임스탬프 갱신 예외: " + eSub.toString());
+      }
+    }
+
     // [스마트 디바운스 모드 (기본 권장)]:
     // 사용자가 입력 중일 때는 즉시 API를 호출하지 않고 타이핑 완료 1분 뒤 1회만 자동 동기화되도록 예약!
     if (syncMode === "DEBOUNCE" || !syncMode) {
@@ -1516,7 +1572,8 @@ function handleCalendarEditTrigger(e) {
     } else if (syncMode === "REALTIME") {
       var isOnlyMemo = (startCol === 6 && endCol === 6);
       if (!isOnlyMemo) {
-        for (var r = actualStartRow; r <= maxProcessRow; r++) {
+        var totalProcessRow = maxProcessRow + subRowsCount;
+        for (var r = actualStartRow; r <= totalProcessRow; r++) {
           syncSingleRowToCalendar(sheet, r, true, true);
         }
       }
@@ -2389,6 +2446,9 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
   }
 
   if (event) {
+    try {
+      event.removeAllReminders(); // 🔕 구글 캘린더 기본 알림(전날 알림 등) 자동 차단
+    } catch(eRem) {}
     // 동일한 유형 내에서의 속성 업데이트
     event.setTitle(details.title);
     event.setDescription(details.description);
@@ -2427,6 +2487,9 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
     }
 
     if (event) {
+      try {
+        event.removeAllReminders(); // 🔕 신규 생성 일정 기본 알림(전날 알림 등) 자동 차단
+      } catch(eRem) {}
       if (details.color) {
         try {
           event.setColor(details.color);
@@ -2719,6 +2782,9 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
           }
 
           // [구글 한도 절약 2단계: 실제 변경된 속성만 최소 호출]
+          try {
+            event.removeAllReminders(); // 🔕 구글 캘린더 기본 알림(전날 알림 등) 자동 차단
+          } catch(eRem) {}
           if (curTitle !== details.title) event.setTitle(details.title);
           if (curDesc !== details.description) event.setDescription(details.description);
           if (curLoc !== details.siteName) event.setLocation(details.siteName);
@@ -2768,6 +2834,9 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
           }
         }
         if (event) {
+          try {
+            event.removeAllReminders(); // 🔕 신규 생성 일정 기본 알림(전날 알림 등) 자동 차단
+          } catch(eRem) {}
           if (details.color) {
             try { event.setColor(details.color); } catch (e) {}
           }
@@ -3288,6 +3357,66 @@ function cleanupDuplicateAndOrphanCalendarEvents() {
                   "• 현재 정상 연동 일정: " + Object.keys(validEventIds).length + "건";
 
   ui.alert("🧹 캘린더 정리 완료", resultMsg, ui.ButtonSet.OK);
+}
+
+/**
+ * [신규] 구글 캘린더에 이미 등록된 현장 일정들의 기본 알림(전날 알림 등) 일괄 해제
+ */
+function removeAllSiteCalendarReminders() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("현장데이터 시트를 찾을 수 없습니다.");
+    return;
+  }
+  var cal = getTargetCalendar();
+  if (!cal) {
+    SpreadsheetApp.getUi().alert("구글 캘린더에 접근할 수 없습니다. 캘린더 권한 설정을 확인하세요.");
+    return;
+  }
+
+  var ui = SpreadsheetApp.getUi();
+  var confirm = ui.alert(
+    "🔕 구글 캘린더 전날 알림 일괄 해제",
+    "구글 캘린더에 연동된 모든 현장 일정에서 구글 기본 알림(전날 알림 및 팝업/이메일 알림)을 일괄 삭제합니다.\n\n" +
+    "지금 진행하시겠습니까?",
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    ss.toast("등록된 현장 데이터가 없습니다.", "알림 해제", 3);
+    return;
+  }
+
+  ss.toast("캘린더 일정 알림을 일괄 해제하는 중입니다...", "알림 해제 진행 중", 5);
+
+  var idVals = sheet.getRange(2, 9, lastRow - 1, 1).getValues();
+  var clearedCount = 0;
+
+  for (var i = 0; i < idVals.length; i++) {
+    var eid = String(idVals[i][0] || "").trim();
+    if (!eid) continue;
+    try {
+      var ev = cal.getEventById(eid);
+      if (ev) {
+        ev.removeAllReminders();
+        clearedCount++;
+      }
+    } catch(e) {}
+
+    if (clearedCount > 0 && clearedCount % 25 === 0) {
+      Utilities.sleep(500); // 구글 Rate Limit 보호
+    }
+  }
+
+  ui.alert(
+    "✅ 캘린더 알림 전체 해제 완료",
+    "총 " + clearedCount + "건의 캘린더 일정에서 전날 알림이 깨끗하게 삭제되었습니다!\n\n" +
+    "이제 새로운 일정을 추가하거나 시트에서 수정할 때도 알림이 자동으로 발생하지 않습니다.",
+    ui.ButtonSet.OK
+  );
 }
 
 /**

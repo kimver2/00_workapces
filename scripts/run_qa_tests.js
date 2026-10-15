@@ -1478,6 +1478,39 @@ const hasBgAppSpreadsheetFallback = periodicCode.indexOf('getAppSpreadsheet()') 
   refreshDashSiteCode.indexOf('getAppSpreadsheet()') !== -1;
 assertTest('지뢰 4 방어: 백그라운드 실행 시 getActiveSpreadsheet() null 대비 getAppSpreadsheet() 안전 폴백', hasBgAppSpreadsheetFallback);
 
+// ========================================================
+// 20. [현장명 변경 캘린더 동기화 & 캘린더 기본 전날 알림 자동 차단 QA]
+// ========================================================
+console.log('\n🔔 [Step 20: 현장명 변경 캘린더 동기화 & 캘린더 기본 전날 알림 자동 차단 QA]');
+
+// 20-1: runPeriodicAutoSync re-entrant lock 안전 획득 및 해제 검증
+const hasReentrantLock = periodicCode.indexOf('lock.hasLock()') !== -1 &&
+  periodicCode.indexOf('var needRelease = false;') !== -1 &&
+  periodicCode.indexOf('needRelease = true;') !== -1;
+assertTest('runPeriodicAutoSync: re-entrant Lock 안전 획득(hasLock) 및 데드락 방지 검증', hasReentrantLock);
+
+// 20-2: handleCalendarEditTrigger A열 수정 시 하위 아코디언 행 타임스탬프 동반 갱신 검증
+const editTriggerSubCode = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncFromCalendarToSheet('));
+const hasSubRowPropagation = editTriggerSubCode.indexOf('startCol <= 1 && endCol >= 1') !== -1 &&
+  editTriggerSubCode.indexOf('subTimeStamps.push([nowMs])') !== -1 &&
+  editTriggerSubCode.indexOf('subMetaUpdates.push(') !== -1;
+assertTest('handleCalendarEditTrigger: A열(현장명) 수정 시 하위 아코디언 행 타임스탬프 동반 갱신 검증', hasSubRowPropagation);
+
+// 20-3: syncSingleRowToCalendar 생성 및 수정 시 event.removeAllReminders() 호출 검증
+const singleSyncCode = code.slice(code.indexOf('function syncSingleRowToCalendar('), code.indexOf('function syncRecentSiteSchedulesToGoogleCalendar('));
+const hasReminderRemovalSingle = singleSyncCode.indexOf('event.removeAllReminders()') !== -1;
+assertTest('syncSingleRowToCalendar: 캘린더 기본 전날 알림 자동 차단(removeAllReminders) 탑재 검증', hasReminderRemovalSingle);
+
+// 20-4: syncSiteSchedulesBatchSafe 생성 및 수정 시 event.removeAllReminders() 호출 검증
+const batchSyncCode = code.slice(code.indexOf('function syncSiteSchedulesBatchSafe('), code.indexOf('function findMatchingCalendarEvent('));
+const hasReminderRemovalBatch = batchSyncCode.indexOf('event.removeAllReminders()') !== -1;
+assertTest('syncSiteSchedulesBatchSafe: 배치 동기화 시 캘린더 기본 전날 알림 자동 차단 탑재 검증', hasReminderRemovalBatch);
+
+// 20-5: removeAllSiteCalendarReminders 함수 탑재 및 상단 메뉴 등록 검증
+assertTest('removeAllSiteCalendarReminders: 캘린더 전날 알림 일괄 해제 함수 탑재 여부', typeof sandbox.removeAllSiteCalendarReminders === 'function');
+const onOpenMenuCode = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
+assertTest('onOpen: 상단 메뉴(⚡ 캘린더 연동 설정) 내 캘린더 전날 알림 전체 끄기 등록 검증', onOpenMenuCode.indexOf('removeAllSiteCalendarReminders') !== -1);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -1487,5 +1520,6 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
+
 
 
