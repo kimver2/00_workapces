@@ -378,15 +378,10 @@ function createMockSheet(name) {
 }
 
 const mockGuideSheet = createMockSheet('사용가이드');
-const mockSs = {
-  getSheetByName: (n) => (n === '사용가이드' ? mockGuideSheet : null),
-  insertSheet: (n) => mockGuideSheet
-};
-const resGuide = sandbox.createOrUpdateUsageGuideSheet(mockSs);
-assertTest('createOrUpdateUsageGuideSheet 런타임 실행: 사용가이드 시트 정상 생성/반환', resGuide !== null && resGuide.getName() === '사용가이드');
-
+const mockDashSheet = createMockSheet('대시보드');
 const isSiteSheetFn = sandbox.isSiteScheduleSheet;
 assertTest('isSiteScheduleSheet 판별: 사용가이드 시트는 현장데이터 시트에서 완전 배제', isSiteSheetFn(mockGuideSheet) === false);
+assertTest('isSiteScheduleSheet 판별: 대시보드 시트는 현장데이터 시트에서 완전 배제', isSiteSheetFn(mockDashSheet) === false);
 
 console.log('\n🔍 [Step 3.7: 구성원 시트 연동 및 다중 수신자 모닝 브리핑 엔진 런타임 검증]');
 
@@ -635,13 +630,6 @@ assertTest('진행상태 드롭다운 목록 내 "진행 중"(공백 포함) 표
 const hasFixDropdownFn = code.indexOf('function fixStatusDropdownValidation()') !== -1;
 assertTest('진행상태 드롭다운 서식 복구 전용 함수(fixStatusDropdownValidation) 탑재 여부', hasFixDropdownFn);
 
-// [신규 QA] 완전 빈 새 스프레드시트 원클릭 자동 구축(Bootstrap) 엔진 검증
-const hasBootstrapWorkspace = code.indexOf('function setupNewWorkspaceFromScratch()') !== -1;
-assertTest('새 스프레드시트 원클릭 자동 구축 함수(setupNewWorkspaceFromScratch) 탑재 여부', hasBootstrapWorkspace);
-
-const hasCalendarGridBuilder = code.indexOf('function buildDashboardCalendarGrid(') !== -1;
-assertTest('대시보드 만년달력 그리드/수식 자동 생성 엔진(buildDashboardCalendarGrid) 탑재 여부', hasCalendarGridBuilder);
-
 const hasSiteConditionalFormatBuilder = code.indexOf('function setupSiteSheetConditionalFormatting(') !== -1;
 assertTest('현장데이터 상태별 조건부 서식 자동 생성 엔진(setupSiteSheetConditionalFormatting) 탑재 여부', hasSiteConditionalFormatBuilder);
 
@@ -661,15 +649,10 @@ assertTest('모닝 브리핑 8시 일일 타이머 등록/해제 관리 엔진 �
 const hasBriefingMenu = code.indexOf('"sendDailyBriefingTestNow"') !== -1 && code.indexOf('"enableDailyMorningBriefing"') !== -1 && code.indexOf('"checkAndHighlightDelayedSchedules"') !== -1;
 assertTest('현장 관리 상단 메뉴 내 색상검사/모닝브리핑/이메일설정 메뉴 등록 여부', hasBriefingMenu);
 
-// [신규 QA] 사용가이드 엔진 및 부트스트랩 연동 검증
-const hasGuideSheetBuilder = code.indexOf('function createOrUpdateUsageGuideSheet(') !== -1;
-assertTest('사용가이드 자동 생성 및 매뉴얼 작성 엔진(createOrUpdateUsageGuideSheet) 탑재 여부', hasGuideSheetBuilder);
-
-const hasGuideInBootstrap = code.indexOf('var guideSheet = createOrUpdateUsageGuideSheet(ss)') !== -1;
-assertTest('새 워크스페이스 구축(setupNewWorkspaceFromScratch) 시 사용가이드 자동 생성 연동 여부', hasGuideInBootstrap);
-
-const hasGuideMenu = code.indexOf('"createOrUpdateUsageGuideSheetMenu"') !== -1;
-assertTest('상단 메뉴([🚀 현장 관리]) 내 사용가이드 생성/갱신 메뉴 등록 여부', hasGuideMenu);
+// [신규 QA] 불필요한 초기 구축 및 가이드 생성 함수 정리 완료 검증
+assertTest('초기 구축(setupNewWorkspaceFromScratch) 및 사용가이드 생성기 코드 정리(경량화) 검증',
+  code.indexOf('function setupNewWorkspaceFromScratch()') === -1 && code.indexOf('function createOrUpdateUsageGuideSheet(') === -1
+);
 
 // [신규 QA] 구성원 시트 다중 수신자 모닝 브리핑 및 오염 방지 가드 검증
 const hasFindMembersFn = code.indexOf('function findMembersSheet(') !== -1;
@@ -1057,8 +1040,8 @@ console.log('\n⏰ [Step 11: 1분 주기 스마트 자동 동기화 엔진 QA]')
 // 11-1: 1분 주기 켜기 함수 탑재 여부
 assertTest('enable1MinAutoSync 함수 탑재 여부', typeof sandbox.enable1MinAutoSync === 'function');
 
-// 11-2: 1분 주기 백그라운드 엔진 함수 탑재 여부
-assertTest('runPeriodic1MinSync 백그라운드 코어 엔진 함수 탑재 여부', typeof sandbox.runPeriodic1MinSync === 'function');
+// 11-2: 1분/5분 주기 백그라운드 공통 코어 엔진 함수 탑재 여부
+assertTest('runPeriodicAutoSync 백그라운드 코어 엔진 함수 탑재 여부', typeof sandbox.runPeriodicAutoSync === 'function');
 
 // 11-3: 모든 자동 연동 끄기 함수 탑재 여부
 assertTest('disableAllAutoCalendarSync 함수 탑재 여부', typeof sandbox.disableAllAutoCalendarSync === 'function');
@@ -1086,7 +1069,7 @@ const hasSingleRenderInTrigger = triggerFullCode.indexOf('refreshDashboardCalend
 assertTest('대시보드 단일 렌더링 전담: 설치형 트리거 내 대시보드 달력 갱신 보장', hasSingleRenderInTrigger);
 
 // 12-3: 심야/유휴 시간 Quota 스마트 가드 검증 (22:00 ~ 07:00 시트 변경 없을 시 캘린더 조회 스킵)
-const periodicCode = code.slice(code.indexOf('function runPeriodicAutoSync()'), code.indexOf('function runPeriodic1MinSync()'));
+const periodicCode = code.slice(code.indexOf('function runPeriodicAutoSync()'), code.indexOf('function runDebouncedSync()'));
 const hasNightIdleGuard = periodicCode.indexOf('hour >= 22 || hour < 7') !== -1 && periodicCode.indexOf('rowsToSyncToCal.length === 0') !== -1;
 assertTest('심야/유휴 시간 Quota 절약 가드(22:00~07:00 무작업 시 API 생략) 탑재 여부', hasNightIdleGuard);
 
@@ -1180,7 +1163,7 @@ const hasStrictEmojiInPeriodic = periodicCode.indexOf('calTitle.indexOf("✅")')
 assertTest('runPeriodicAutoSync: 캘린더 제목 상태 이모지 기준 엄격 판별(한글 텍스트 오탐지 방어) 검증', hasStrictEmojiInPeriodic);
 
 // 14-3: syncFromCalendarToSheet 수동 동기화 원자적 셀 갱신 및 빈 행 유령 ID 실제 청소 검증
-const syncCalToSheetCode = code.slice(code.indexOf('function syncFromCalendarToSheet('), code.indexOf('function enableCalendarToSheet1MinSync('));
+const syncCalToSheetCode = code.slice(code.indexOf('function syncFromCalendarToSheet('), code.indexOf('function isDateEqual('));
 const hasAtomicSyncCalToSheet = syncCalToSheetCode.indexOf('sheet.getRange(targetRowNumber, 2).setValue(newDateStr)') !== -1 &&
   syncCalToSheetCode.indexOf('range.setValues(values)') === -1;
 assertTest('syncFromCalendarToSheet: 전체 행 덮어쓰기 제거 및 핀포인트 원자적 셀 갱신 통일 검증', hasAtomicSyncCalToSheet);
@@ -1330,14 +1313,14 @@ console.log('\n🧹 [Step 17: 모닝 브리핑 및 백그라운드 유령(고아
 
 // 17-1: cleanupOrphanCalendarEventsSilent 함수 탑재 여부
 assertTest('cleanupOrphanCalendarEventsSilent 무음 정리 엔진 함수 탑재 여부', typeof sandbox.cleanupOrphanCalendarEventsSilent === 'function');
-assertTest('cleanupDuplicateAndOrphanCalendarEventsSilent 기존 호환 래퍼 탑재 여부', typeof sandbox.cleanupDuplicateAndOrphanCalendarEventsSilent === 'function');
+assertTest('cleanupDuplicateCalendarEventsSilent 무음 중복 정리 엔진 함수 탑재 여부', typeof sandbox.cleanupDuplicateCalendarEventsSilent === 'function');
 
 // 17-2: sendDailySiteMorningBriefing 발송 전 cleanupOrphanCalendarEventsSilent 호출 검증
 const hasMorningCleanup = briefingCode.indexOf('cleanupOrphanCalendarEventsSilent(sheet, cal)') !== -1;
 assertTest('sendDailySiteMorningBriefing: 메일 발송 전 캘린더 유령 일정 자동 무음 청소 호출 검증', hasMorningCleanup);
 
 // 17-3: runPeriodicAutoSync NEEDS_ORPHAN_CLEANUP 연동 탑재 검증
-const periodicFullCode = code.slice(code.indexOf('function runPeriodicAutoSync()'), code.indexOf('function runPeriodic1MinSync()'));
+const periodicFullCode = code.slice(code.indexOf('function runPeriodicAutoSync()'), code.indexOf('function runDebouncedSync()'));
 const hasPeriodicCleanup = periodicFullCode.indexOf('NEEDS_ORPHAN_CLEANUP') !== -1 &&
   periodicFullCode.indexOf('cleanupOrphanCalendarEventsSilent(sheet, cal)') !== -1;
 assertTest('runPeriodicAutoSync: 행 삭제(REMOVE_ROW) 감지 플래그 및 15분 주기 유령 일정 청소 탑재 검증', hasPeriodicCleanup);
