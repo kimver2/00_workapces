@@ -14,11 +14,13 @@ console.log('🧪 [QA & 코드리뷰 검증 파이프라인] 테스트 시작');
 console.log('========================================================\n');
 
 // 1. 소스 파일 로드 및 구문 검증
-const scriptPath = path.join(__dirname, 'SiteSchedule_sheet.js');
+const scriptPath = fs.existsSync(path.join(__dirname, 'SiteSchedule_sheet.gs'))
+  ? path.join(__dirname, 'SiteSchedule_sheet.gs')
+  : path.join(__dirname, 'SiteSchedule_sheet.js');
 let code = '';
 try {
   code = fs.readFileSync(scriptPath, 'utf8');
-  console.log('✅ [Step 1: 정적 구문 검증] SiteSchedule_sheet.js 파일 로드 성공 (' + code.length + ' bytes)');
+  console.log('✅ [Step 1: 정적 구문 검증] ' + path.basename(scriptPath) + ' 파일 로드 성공 (' + code.length + ' bytes)');
 } catch (e) {
   console.error('❌ [Step 1: 오류] 소스 파일을 찾을 수 없습니다:', e.message);
   process.exit(1);
