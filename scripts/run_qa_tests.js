@@ -1808,6 +1808,89 @@ for (let i = 0; i < 50; i++) {
 assertTest('시트 없는 단독 해시 매핑 시에도 7/6/4/11 금지 색상 100% 배제 검증',
   !hashHasForbidden
 );
+// ========================================================
+// 26. 구글 API Rate Limit 방어 & 지수 백오프 & 8/25 미등록 일정 100% 보장 배치 엔진 QA
+// ========================================================
+console.log('\n⚡ [Step 26: Rate Limit 방어 & 지수 백오프 & 8/25 미등록 일정 100% 보장 QA]');
+
+// 26-1: executeWithRateLimitRetry 함수 탑재 여부
+assertTest('executeWithRateLimitRetry 함수 탑재 여부', typeof sandbox.executeWithRateLimitRetry === 'function');
+
+// 26-2: executeWithRateLimitRetry 정상 동작 시 즉각 반환 검증
+let callCount = 0;
+const normalResult = sandbox.executeWithRateLimitRetry(() => {
+  callCount++;
+  return 'SUCCESS';
+}, 2, 50);
+assertTest('executeWithRateLimitRetry: 오류 없을 때 1회 호출 즉각 성공 검증',
+  normalResult === 'SUCCESS' && callCount === 1
+);
+
+// 26-3: executeWithRateLimitRetry Rate Limit 일시 에러 발생 시 자동 지수 백오프 재시도 성공 검증
+let retryAttempts = 0;
+const recoveredResult = sandbox.executeWithRateLimitRetry(() => {
+  retryAttempts++;
+  if (retryAttempts === 1) {
+    throw new Error('짧은 시간에 너무 많은 작업을 수행했습니다. 작업을 잠시 중단한 후 다시 시도하세요.');
+  }
+  return 'RECOVERED';
+}, 2, 20); // 20ms 빠른 테스트
+assertTest('executeWithRateLimitRetry: Rate Limit 발생 시 백오프 대기 후 자동 복구 검증',
+  recoveredResult === 'RECOVERED' && retryAttempts === 2
+);
+
+// 26-4: executeWithRateLimitRetry 최대 재시도 초과 시 에러 정상 전파 검증
+let maxRetryAttempts = 0;
+let caughtError = null;
+try {
+  sandbox.executeWithRateLimitRetry(() => {
+    maxRetryAttempts++;
+    throw new Error('Rate limit exceeded quota');
+  }, 2, 10);
+} catch (e) {
+  caughtError = e;
+}
+assertTest('executeWithRateLimitRetry: 재시도 한도 초과 시 예외 안전 throw 검증',
+  caughtError !== null && maxRetryAttempts === 3 // 0, 1, 2 = 3회
+);
+
+// 26-5: syncSiteSchedulesBatchSafe 내 1회 일괄 조회(Pre-fetch) 캐시 탑재 검증
+assertTest('syncSiteSchedulesBatchSafe: 전체 캘린더 이벤트 1회 사전 조회(calEventsMap) 탑재 검증',
+  code.indexOf('calEventsMap') !== -1 &&
+  code.indexOf('cal._preloadedEvents = preloadedEvents;') !== -1
+);
+
+// 26-6: syncSiteSchedulesBatchSafe 내 I열 복제(중복 ID) 행 자동 감지 및 시트 청소 검증
+assertTest('syncSiteSchedulesBatchSafe: 복사-붙여넣기 행 중복 ID 감지 및 셀 청소 탑재 검증',
+  code.indexOf('duplicateRowsToClear') !== -1 &&
+  code.indexOf('seenSheetIds[eid]') !== -1
+);
+
+// 26-7: syncSiteSchedulesBatchSafe 90일 확장 및 미등록 일정 100% 보장 검증
+const batchCodeForStep26 = code.slice(code.indexOf('function syncSiteSchedulesBatchSafe('), code.indexOf('function ensureCalendarSyncColumns('));
+assertTest('syncSiteSchedulesBatchSafe: ninetyDaysAgo 90일 확장 탐색 탑재 검증',
+  batchCodeForStep26.indexOf('ninetyDaysAgo') !== -1 &&
+  batchCodeForStep26.indexOf('90 * 24 * 60 * 60 * 1000') !== -1
+);
+
+assertTest('syncSiteSchedulesBatchSafe: 과거 일정이라도 미등록 행(!existingId)은 100% 무조건 동기화 큐 포함 검증 (8/25 누락 방어)',
+  batchCodeForStep26.indexOf('if (onlyRecent && existingId && calEventsMap[existingId])') !== -1
+);
+
+// 26-8: syncSiteSchedulesBatchSafe 내 executeWithRateLimitRetry 이벤트 생성/수정 연동 검증
+assertTest('syncSiteSchedulesBatchSafe: 이벤트 생성 및 갱신 시 executeWithRateLimitRetry 보호 연동 검증',
+  batchCodeForStep26.indexOf('executeWithRateLimitRetry(function()') !== -1
+);
+
+// 26-9: findMatchingCalendarEvent 및 cleanDuplicateCalendarEventsOnDate 메모리 캐시 연동 검증
+const findMatchCode = code.slice(code.indexOf('function findMatchingCalendarEvent('), code.indexOf('function cleanDuplicateCalendarEventsOnDate('));
+const cleanDupCode = code.slice(code.indexOf('function cleanDuplicateCalendarEventsOnDate('), code.indexOf('function cleanupDuplicateAndOrphanCalendarEvents('));
+assertTest('findMatchingCalendarEvent: cal._preloadedEvents 메모리 캐시 활용(0 API Call) 검증',
+  findMatchCode.indexOf('cal._preloadedEvents') !== -1
+);
+assertTest('cleanDuplicateCalendarEventsOnDate: cal._preloadedEvents 메모리 캐시 활용(0 API Call) 검증',
+  cleanDupCode.indexOf('cal._preloadedEvents') !== -1
+);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
