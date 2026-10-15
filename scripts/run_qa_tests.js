@@ -1285,27 +1285,30 @@ assertTest('applySiteScheduleValidations: 시트 전체 깊이(getMaxRows)까지
 // ========================================================
 console.log('\n📱 [Step 16: 모바일 웹앱 및 모닝 브리핑 날짜 표준 표기(YY.MM.DD) 및 버튼명 간소화 QA]');
 
-// 16-1: formatScheduleDateDisplay 함수 탑재 및 단위 테스트
+// 16-1: formatScheduleDateDisplay 함수 탑재 및 단위 테스트 (요일 포함)
 assertTest('formatScheduleDateDisplay: 날짜 표준 포맷 변환 함수 탑재 여부', typeof sandbox.formatScheduleDateDisplay === 'function');
-assertTest('formatScheduleDateDisplay: Date 객체(시간 없음) -> 26.10.15 변환 검증',
-  sandbox.formatScheduleDateDisplay(new Date(2026, 9, 15)) === '26.10.15'
+assertTest('formatScheduleDateDisplay: 단일 종일 일정 -> 26.11.05 (목) 변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date(2026, 10, 5)) === '26.11.05 (목)'
 );
-assertTest('formatScheduleDateDisplay: Date 객체(시간 포함) -> 26.10.15 14:00 변환 검증',
-  sandbox.formatScheduleDateDisplay(new Date(2026, 9, 15, 14, 0)) === '26.10.15 14:00'
+assertTest('formatScheduleDateDisplay: 기간 종일 일정 -> 26.11.05 (목) ~ 26.11.07 (토) 변환 검증',
+  sandbox.formatScheduleDateDisplay('2026-11-05 ~ 2026-11-07') === '26.11.05 (목) ~ 26.11.07 (토)'
 );
-assertTest('formatScheduleDateDisplay: 날짜 범위(종일) -> 26.10.15 ~ 26.10.18 변환 검증',
-  sandbox.formatScheduleDateDisplay('2026-10-15 ~ 2026-10-18') === '26.10.15 ~ 26.10.18'
+assertTest('formatScheduleDateDisplay: 단일 시간 일정 -> 26.11.05 (목) 14:00 변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date(2026, 10, 5, 14, 0)) === '26.11.05 (목) 14:00'
 );
-assertTest('formatScheduleDateDisplay: 날짜 범위(시간 포함) -> 26.10.15 09:00 ~ 18:00 변환 검증',
-  sandbox.formatScheduleDateDisplay('26.10.15 09:00 ~ 18:00') === '26.10.15 09:00 ~ 18:00'
+assertTest('formatScheduleDateDisplay: 당일 시간 범위 -> 26.11.05 (목) 14:00 ~ 16:00 변환 검증',
+  sandbox.formatScheduleDateDisplay('26.11.05 14:00 ~ 16:00') === '26.11.05 (목) 14:00 ~ 16:00'
 );
-assertTest('formatScheduleDateDisplay: 원시 Date.toString() 문자열 -> 26.11.11 완벽 파싱/변환 검증',
-  sandbox.formatScheduleDateDisplay(new Date('2026-11-11T00:00:00+09:00')) === '26.11.11'
+assertTest('formatScheduleDateDisplay: 다일 시간 범위 -> 26.11.05 (목) 14:00 ~ 26.11.06 (금) 11:00 변환 검증',
+  sandbox.formatScheduleDateDisplay('26.11.05 14:00 ~ 26.11.06 11:00') === '26.11.05 (목) 14:00 ~ 26.11.06 (금) 11:00'
+);
+assertTest('formatScheduleDateDisplay: 원시 Date.toString() 문자열 -> 26.11.11 (수) 완벽 파싱/변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date('2026-11-11T00:00:00+09:00')) === '26.11.11 (수)'
 );
 
 // 16-2: buildMobileStatusHtml 일시 표기 시 formatScheduleDateDisplay 적용 및 GMT+0900 배제 검증
 const testHtml = sandbox.buildMobileStatusHtml(2, '신대방우성 5동 601호', new Date(2026, 10, 11), 'S/A', '예정');
-assertTest('buildMobileStatusHtml: 일시 출력 시 26.11.11 깔끔한 포맷 렌더링 검증', testHtml.indexOf("<span class='info-val'>26.11.11</span>") !== -1);
+assertTest('buildMobileStatusHtml: 일시 출력 시 26.11.11 (수) 깔끔한 포맷 렌더링 검증', testHtml.indexOf("<span class='info-val'>26.11.11 (수)</span>") !== -1);
 assertTest('buildMobileStatusHtml: 일시 출력에서 raw Date (GMT+0900 / 한국 표준시) 완전 제거 검증', testHtml.indexOf('GMT+0900') === -1);
 
 // 16-3: buildMobileStatusHtml 하단 버튼명 "저장하기" 간소화 검증

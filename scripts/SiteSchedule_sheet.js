@@ -1884,21 +1884,39 @@ function formatDateWithTime(start, end) {
 }
 
 /**
- * 현장 일정 날짜를 YY.MM.DD (시간 포함 시 시간 표시) 표준 포맷으로 변환
- * 예: 26.10.15 / 26.10.15 14:00 / 26.10.15 ~ 26.10.18 / 26.10.15 09:00 ~ 18:00
+ * 현장 일정 날짜를 요일이 포함된 YY.MM.DD (요일) 표준 포맷으로 변환
+ * 예: 26.11.05 (목) / 26.11.05 (목) 14:00 / 26.11.05 (목) ~ 26.11.07 (토) / 26.11.05 (목) 09:00 ~ 18:00
  */
 function formatScheduleDateDisplay(val) {
   if (!val) return "";
+  var dayNames = ["일", "월", "화", "수", "목", "금", "토"];
+
+  // 내부 헬퍼: 날짜+요일 문자열 생성 (예: 26.11.05 (목))
+  function withDow(d) {
+    if (!d) return "";
+    return formatDateYYMMDD(d) + " (" + dayNames[d.getDay()] + ")";
+  }
+
+  // 내부 헬퍼: 시간 문자열 생성 (예: 14:00)
+  function onlyTime(d) {
+    var hh = String(d.getHours());
+    if (hh.length < 2) hh = "0" + hh;
+    var mm = String(d.getMinutes());
+    if (mm.length < 2) mm = "0" + mm;
+    return hh + ":" + mm;
+  }
+
   var parsed = null;
   try {
     parsed = parseScheduleDateRange(val);
   } catch (e) {
     parsed = null;
   }
+
   if (!parsed || !parsed.startDate) {
     var isDateObj = (val instanceof Date || Object.prototype.toString.call(val) === "[object Date]" || (val && typeof val.getTime === "function"));
     if (isDateObj && !isNaN(val.getTime())) {
-      return formatDateYYMMDD(val);
+      return withDow(val);
     }
     return String(val).trim();
   }
@@ -1906,21 +1924,29 @@ function formatScheduleDateDisplay(val) {
   // 1. 시간 정보가 포함된 일정 (단일 시간 또는 시간 범위)
   if (parsed.hasTime) {
     if (parsed.startTime && parsed.endTime) {
-      return formatDateWithTime(parsed.startTime, parsed.endTime);
+      var startStr = withDow(parsed.startTime) + " " + onlyTime(parsed.startTime);
+      var diffMs = parsed.endTime.getTime() - parsed.startTime.getTime();
+      if (isDateEqual(parsed.startTime, parsed.endTime)) {
+        // 기본 1시간 차이면 시작 시간만 표시, 그 외에는 종료 시간까지 표시
+        if (diffMs === 3600000 || diffMs === 0) return startStr;
+        return startStr + " ~ " + onlyTime(parsed.endTime);
+      } else {
+        return startStr + " ~ " + withDow(parsed.endTime) + " " + onlyTime(parsed.endTime);
+      }
     } else if (parsed.startTime) {
-      return formatDateTime(parsed.startTime);
+      return withDow(parsed.startTime) + " " + onlyTime(parsed.startTime);
     } else {
-      return formatDateYYMMDD(parsed.startDate) + (parsed.timeStr ? (" " + parsed.timeStr) : "");
+      return withDow(parsed.startDate) + (parsed.timeStr ? (" " + parsed.timeStr) : "");
     }
   }
 
   // 2. 종일 기간(Range) 일정
   if (parsed.isRange && parsed.displayEndDate) {
-    return formatDateYYMMDD(parsed.startDate) + " ~ " + formatDateYYMMDD(parsed.displayEndDate);
+    return withDow(parsed.startDate) + " ~ " + withDow(parsed.displayEndDate);
   }
 
   // 3. 단일 종일 일정
-  return formatDateYYMMDD(parsed.startDate);
+  return withDow(parsed.startDate);
 }
 
 /**
