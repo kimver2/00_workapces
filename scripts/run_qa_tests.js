@@ -1552,6 +1552,59 @@ assertTest('isDateEqual: 타임존(UTC vs KST 등 9시간 시차) 14시간 오�
   isDateEqualFunc.indexOf('diffHours <= 14') !== -1
 );
 
+// ========================================================
+// 22. Argon 캘린더 영구 고정 & 개인 캘린더 폴백/자동생성 원천 차단 QA
+// ========================================================
+console.log('\n🔒 [Step 22: 공용 캘린더 영구 고정 및 개인 캘린더 폴백/자동생성 원천 차단 QA]');
+
+const getTargetCalCode = code.slice(code.indexOf('function getTargetCalendar()'), code.indexOf('function configureTargetCalendar()'));
+const configTargetCalCode = code.slice(code.indexOf('function configureTargetCalendar()'), code.indexOf('function buildEventDetails('));
+
+assertTest('getTargetCalendar: 개인 캘린더(getDefaultCalendar) 폴백 원천 차단 검증',
+  !/CalendarApp\s*\.\s*getDefaultCalendar/.test(getTargetCalCode)
+);
+
+assertTest('getTargetCalendar: 신규 캘린더(createCalendar) 자동 생성 원천 차단 검증',
+  !/CalendarApp\s*\.\s*createCalendar/.test(getTargetCalCode)
+);
+
+assertTest('getTargetCalendar: 캘린더 미발견 시 null 반환 및 경고 로깅 검증',
+  getTargetCalCode.indexOf('return null;') !== -1 && getTargetCalCode.indexOf('Logger.log') !== -1
+);
+
+assertTest('configureTargetCalendar: 임의의 신규 캘린더 자동 생성 제거 검증',
+  configTargetCalCode.indexOf('CalendarApp.createCalendar') === -1
+);
+
+assertTest('configureTargetCalendar: 빈 입력 시 공용 기본값 복원(deleteProperty) 검증',
+  configTargetCalCode.indexOf('deleteProperty("TARGET_CALENDAR_SETTING")') !== -1
+);
+
+assertTest('DEFAULT_CALENDAR_ID_OR_NAME: 전역 변수 설정 존재 검증',
+  typeof sandbox.DEFAULT_CALENDAR_ID_OR_NAME === 'string' && sandbox.DEFAULT_CALENDAR_ID_OR_NAME.length > 0
+);
+
+// 런타임 getTargetCalendar 동작 검증
+let defaultCalCalled = false;
+let createCalCalled = false;
+sandbox.CalendarApp.getDefaultCalendar = () => { defaultCalCalled = true; return { getName: () => '개인 캘린더' }; };
+sandbox.CalendarApp.createCalendar = () => { createCalCalled = true; return { getName: () => '신규 캘린더' }; };
+sandbox.CalendarApp.getCalendarById = (id) => (id === 'c_shared_cal@group.calendar.google.com' ? { getId: () => id, getName: () => '현장 일정' } : null);
+sandbox.CalendarApp.getCalendarsByName = (name) => (name === '현장 일정' ? [{ getId: () => 'c_shared_cal@group.calendar.google.com', getName: () => name }] : []);
+
+// 케이스 1: 정상 이름 조회 -> 공용 캘린더 반환
+const foundCal = sandbox.getTargetCalendar();
+assertTest('getTargetCalendar 런타임: 정상 이름 조회 시 캘린더 객체 반환 검증',
+  foundCal !== null && foundCal.getName() === '현장 일정' && !defaultCalCalled && !createCalCalled
+);
+
+// 케이스 2: 권한 없거나 미발견 대상 -> null 반환 (getDefaultCalendar, createCalendar 절대 미호출)
+sandbox.CalendarApp.getCalendarsByName = () => [];
+const missingCal = sandbox.getTargetCalendar();
+assertTest('getTargetCalendar 런타임: 미발견/권한 없음 시 null 반환 및 개인 캘린더 절대 미호출 검증',
+  missingCal === null && !defaultCalCalled && !createCalCalled
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

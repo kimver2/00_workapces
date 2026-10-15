@@ -20,11 +20,11 @@
 // ========================================================
 // [설정] 구글 캘린더 연동 기본값
 // ========================================================
-// 캘린더 이름 또는 캘린더 ID를 입력할 수 있습니다.
-// - 캘린더 이름: "현장 일정", "회사 공용 캘린더" 등 (없으면 자동 생성)
-// - 캘린더 ID: "c_xxxx@group.calendar.google.com" 또는 본인 구글 이메일 (공유받은 캘린더)
-// - 빈 문자열(""): 본인 기본 캘린더(Default Calendar)에 등록
-// ※ 스프레드시트 메뉴 [🚀 현장 관리] > [⚙️ 연동 캘린더 변경 / 확인] 에서도 언제든 변경 가능합니다!
+// 🔒 [영구 고정 권장] 주황색 공용 구글 캘린더의 고유 ID 또는 캘린더 이름을 지정합니다.
+// - 캘린더 ID(가장 확실): "여기에_c_로_시작하는_주황색_캘린더_ID를_붙여넣으세요@group.calendar.google.com"
+// - 캘린더 이름: "현장 일정"
+// ※ 기본값으로 "현장 일정" 공용 캘린더를 찾으며, 고유 ID로 지정하시면 팀원 간 공유 시에도 100% 안전하게 고정됩니다.
+// ※ [오염 원천 차단] 권한이 없거나 못 찾을 경우, 절대 개인(기본) 캘린더로 폴백되거나 새 캘린더를 임의로 만들지 않습니다!
 var DEFAULT_CALENDAR_ID_OR_NAME = "현장 일정";
 
 
@@ -2061,45 +2061,34 @@ function getCurrentUserIdentifier() {
 // ========================================================
 
 /**
- * 현재 설정된 타겟 구글 캘린더 객체 가져오기
- * (사용자 설정 DocumentProperties > DEFAULT_CALENDAR_ID_OR_NAME > 신규 생성 > 기본 캘린더 순)
+ * [영구 고정 패치] 오직 지정된 '현장 일정' 공용 캘린더만 반환
+ * - 개인(기본) 캘린더로 잘못 넘어가거나 새 캘린더를 중복 생성하는 로직을 100% 원천 차단!
  */
 function getTargetCalendar() {
   var docProps = PropertiesService.getDocumentProperties();
   var savedTarget = docProps.getProperty("TARGET_CALENDAR_SETTING");
-  var target = (savedTarget !== null && savedTarget !== undefined) ? savedTarget.trim() : DEFAULT_CALENDAR_ID_OR_NAME.trim();
+  var target = (savedTarget && savedTarget.trim()) ? savedTarget.trim() : DEFAULT_CALENDAR_ID_OR_NAME.trim();
 
-  // 1) 빈 문자열인 경우 -> 본인 기본 캘린더
-  if (!target) {
-    return CalendarApp.getDefaultCalendar();
-  }
-
-  // 2) 캘린더 ID로 조회 시도 (이메일 형태 또는 구글 그룹 캘린더 ID)
-  try {
-    var calById = CalendarApp.getCalendarById(target);
-    if (calById) return calById;
-  } catch (e) {}
-
-  // 3) 캘린더 이름으로 조회 시도
-  try {
-    var calsByName = CalendarApp.getCalendarsByName(target);
-    if (calsByName && calsByName.length > 0) {
-      return calsByName[0];
-    }
-  } catch (e) {}
-
-  // 4) 캘린더 ID 형식이 아니고 일반 이름인 경우, 해당 이름으로 신규 생성 시도
-  if (target.indexOf("@") === -1) {
+  // 1순위: 캘린더 고유 ID로 정확히 조회
+  if (target) {
     try {
-      return CalendarApp.createCalendar(target, {
-        summary: "우성아이디 현장 공정 일정 관리",
-        timeZone: "Asia/Seoul"
-      });
+      var calById = CalendarApp.getCalendarById(target);
+      if (calById) return calById;
+    } catch (e) {}
+
+    // 2순위: 혹시 이름으로 설정된 경우 '현장 일정' 이름으로 조회 (단, 새로 생성하지는 않음!)
+    try {
+      var calsByName = CalendarApp.getCalendarsByName(target);
+      if (calsByName && calsByName.length > 0) {
+        return calsByName[0];
+      }
     } catch (e) {}
   }
 
-  // 5) 모두 실패 시 기본 캘린더 폴백
-  return CalendarApp.getDefaultCalendar();
+  // [핵심 방어]: 만약 현재 접속한 작업자에게 '현장 일정' 캘린더 권한이 없거나 못 찾은 경우,
+  // 절대 개인 캘린더(getDefaultCalendar)에 대신 넣거나 새 캘린더(createCalendar)를 만들지 않고 null을 반환하여 오염을 막습니다!
+  Logger.log("⚠️ 지정된 '현장 일정' 캘린더에 접근할 수 없습니다. (캘린더 공유 권한을 확인하세요)");
+  return null;
 }
 
 /**
@@ -2108,14 +2097,14 @@ function getTargetCalendar() {
 function configureTargetCalendar() {
   var ui = SpreadsheetApp.getUi();
   var currentCal = getTargetCalendar();
-  var currentCalName = currentCal ? currentCal.getName() : "기본 캘린더";
+  var currentCalName = currentCal ? currentCal.getName() : "지정되지 않음 (접근 불가)";
   var currentCalId = currentCal ? currentCal.getId() : "";
 
   var promptText = "📌 현재 연동 중인 캘린더:\n" +
                    "• 이름: " + currentCalName + "\n" +
-                   "• ID: " + currentCalId + "\n\n" +
-                   "연동할 다른 캘린더의 [이름] 또는 [캘린더 ID(이메일 형식)]를 입력하세요:\n" +
-                   "(빈 칸으로 두고 확인을 누르면 본인 기본 캘린더로 연결됩니다)";
+                   "• ID: " + (currentCalId || "확인 불가") + "\n\n" +
+                   "연동할 공용 캘린더의 [고유 ID(c_xxx@group.calendar.google.com)] 또는 [이름]을 입력하세요:\n" +
+                   "(빈 칸으로 두고 확인을 누르면 기본 공용 설정[" + DEFAULT_CALENDAR_ID_OR_NAME + "]으로 복원됩니다)";
 
   var response = ui.prompt("⚙️ 연동 캘린더 변경 / 확인", promptText, ui.ButtonSet.OK_CANCEL);
   if (response.getSelectedButton() !== ui.Button.OK) return;
@@ -2124,8 +2113,10 @@ function configureTargetCalendar() {
   var docProps = PropertiesService.getDocumentProperties();
 
   if (!input) {
-    docProps.setProperty("TARGET_CALENDAR_SETTING", "");
-    ui.alert("✅ 본인 기본 캘린더(Default Calendar)로 설정되었습니다.");
+    docProps.deleteProperty("TARGET_CALENDAR_SETTING");
+    var resetCal = getTargetCalendar();
+    var rName = resetCal ? resetCal.getName() : DEFAULT_CALENDAR_ID_OR_NAME;
+    ui.alert("✅ 기본 공용 캘린더 설정[" + rName + "]으로 복원되었습니다.");
     return;
   }
 
@@ -2149,32 +2140,17 @@ function configureTargetCalendar() {
       "성공적으로 캘린더가 변경되었습니다!\n\n" +
       "• 캘린더명: [" + testCal.getName() + "]\n" +
       "• 캘린더 ID: " + testCal.getId() + "\n\n" +
-      "이제 동기화 실행 시 이 캘린더로 일정이 등록됩니다.",
+      "이제 동기화 실행 시 오직 이 공용 캘린더로만 일정이 등록됩니다.",
       ui.ButtonSet.OK
     );
   } else {
-    // 일반 이름인 경우 신규 생성 제안
-    if (input.indexOf("@") === -1) {
-      var confirmCreate = ui.alert(
-        "캘린더 신규 생성 안내",
-        "'" + input + "' 이름의 캘린더를 찾지 못했습니다.\n해당 이름으로 새 구글 캘린더를 생성하여 연동할까요?",
-        ui.ButtonSet.YES_NO
-      );
-      if (confirmCreate === ui.Button.YES) {
-        try {
-          var newCal = CalendarApp.createCalendar(input, {
-            summary: "우성아이디 현장 공정 일정 관리",
-            timeZone: "Asia/Seoul"
-          });
-          docProps.setProperty("TARGET_CALENDAR_SETTING", input);
-          ui.alert("✅ 새 캘린더 [" + newCal.getName() + "]가 생성되고 연동되었습니다!");
-        } catch (err) {
-          ui.alert("⚠️ 캘린더 생성 실패: " + err.message);
-        }
-      }
-    } else {
-      ui.alert("⚠️ 입력하신 캘린더 ID (" + input + ")를 찾을 수 없거나 접근 권한이 없습니다.\n구글 캘린더 웹의 [설정 및 공유]에서 접근 권한 및 ID를 확인해주세요.");
-    }
+    ui.alert(
+      "⚠️ 캘린더를 찾을 수 없음",
+      "입력하신 캘린더('" + input + "')를 구글 계정에서 찾을 수 없습니다.\n" +
+      "캘린더 공유 권한(일정 변경 및 공유 관리)이 부여되어 있는지 확인해주세요.\n\n" +
+      "(오염 방지를 위해 개인 캘린더로 변경되거나 새 캘린더를 임의로 만들지 않습니다)",
+      ui.ButtonSet.OK
+    );
   }
 }
 
