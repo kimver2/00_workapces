@@ -4739,25 +4739,22 @@ function getSiteColorOrderMap(sheet) {
  * - 서로 다른 현장: 서로 다른 색상으로 자동 구분되어 한눈에 식별 가능
  */
 function getCalendarColorForSite(siteName, sheet) {
-  if (!siteName) return "1"; // 기본 Pale Blue (연파랑)
+  if (!siteName) return "9"; // 기본 Blueberry (진파랑)
   siteName = String(siteName).trim();
 
-  // 구글 캘린더 11대 색상 팔레트 (시인성 및 구분이 가장 뚜렷한 순서로 배치)
-  // 7: Peacock(청록), 6: Tangerine(주황), 9: Blueberry(진파랑), 2: Sage(연초록),
-  // 3: Grape(보라), 5: Banana(노랑), 4: Flamingo(산호/핑크), 10: Basil(초록),
-  // 1: Pale Blue(연파랑), 8: Graphite(회색), 11: Tomato(빨강)
+  // 구글 캘린더 색상 팔레트 (공휴일 및 17일 기존 색상 중복 방지 최적화)
+  // - 공휴일(피치/주황) 및 기존 17일 일정 색상(7: Peacock 청록)과의 혼선 방지를 위해 7(청록), 6(주황), 4(산호) 배제
+  // - 시인성이 뛰어나고 상호 구분이 가장 명확한 프리미엄 색상 우선 배치:
+  // 9: Blueberry(진파랑), 3: Grape(보라), 10: Basil(초록), 5: Banana(노랑),
+  // 1: Pale Blue(연파랑), 2: Sage(연초록), 8: Graphite(회색)
   var palette = [
-    "7",  // Peacock (청록)
-    "6",  // Tangerine (주황)
-    "9",  // Blueberry (진파랑)
-    "2",  // Sage (연초록)
+    "9",  // Blueberry (진파랑 - 1순위 대표 현장 색상)
     "3",  // Grape (보라)
-    "5",  // Banana (노랑)
-    "4",  // Flamingo (산호)
     "10", // Basil (초록)
+    "5",  // Banana (노랑)
     "1",  // Pale Blue (연파랑)
-    "8",  // Graphite (회색)
-    "11"  // Tomato (빨강)
+    "2",  // Sage (연초록)
+    "8"   // Graphite (회색)
   ];
 
   // 1순위: 시트 객체가 있는 경우: 시트 내 고유 현장명 등장 순서대로 1:1 매핑 (충돌 0%)

@@ -1753,6 +1753,62 @@ assertTest('findMatchingCalendarEvent: 모든 이벤트가 시트 행들에 이�
   matchedWhenBothAssigned === null
 );
 
+// ========================================================
+// 25. 공휴일/공유 캘린더 색상 충돌 방지 & 17일 일정 색상(청록) 배제 QA
+// ========================================================
+console.log('\n🎨 [Step 25: 공휴일/공유 캘린더 색상 충돌 방지 & 17일 기존 색상 배제 QA]');
+
+const forbiddenColors = ['7', '6', '4', '11']; // 7: 17일 기존 청록, 6: 공휴일 주황, 4: 공휴일 산호, 11: 지연 경고 빨강
+const testSitesList = [
+  '신대방우성 5동 601호', // 17일에 등록된 1순위 대표 현장
+  '보라매경남 102동 702호',
+  '망원 경일빌라 201호',
+  '역삼 래미안',
+  '반포 자이',
+  '도곡 렉슬',
+  '잠실 엘스'
+];
+
+const mockPaletteSheet = {
+  getLastRow: () => testSitesList.length + 1,
+  getRange: () => ({
+    getValues: () => testSitesList.map(s => [s])
+  })
+};
+sandbox._siteColorMapCache = null; // 캐시 리셋
+
+// 25-1: 17일에 등록된 1순위 현장 색상이 기존 7(청록)이 아닌 9(Blueberry 진파랑)로 안전 변경되었는지 검증
+const firstSiteColor = sandbox.getCalendarColorForSite(testSitesList[0], mockPaletteSheet);
+assertTest('17일 등록 1순위 현장: 공휴일/공유 캘린더와 겹치던 7(청록) 배제 및 9(Blueberry 진파랑) 부여 검증',
+  firstSiteColor === '9'
+);
+
+// 25-2: 팔레트 전체에서 금지 색상(7, 6, 4, 11)이 단 하나도 반환되지 않는지 검증
+let hasForbiddenColor = false;
+for (let i = 0; i < testSitesList.length; i++) {
+  const c = sandbox.getCalendarColorForSite(testSitesList[i], mockPaletteSheet);
+  if (forbiddenColors.indexOf(c) !== -1) {
+    hasForbiddenColor = true;
+    break;
+  }
+}
+assertTest('시트 내 모든 현장 색상에서 7(기존 17일 청록), 6/4(공휴일 주황/산호), 11(지연 빨강) 완전 배제 검증',
+  !hasForbiddenColor
+);
+
+// 25-3: 해시 기반 단독 호출 시에도 금지 색상 배제 검증
+let hashHasForbidden = false;
+for (let i = 0; i < 50; i++) {
+  const c = sandbox.getCalendarColorForSite('임의현장_' + i, null);
+  if (forbiddenColors.indexOf(c) !== -1) {
+    hashHasForbidden = true;
+    break;
+  }
+}
+assertTest('시트 없는 단독 해시 매핑 시에도 7/6/4/11 금지 색상 100% 배제 검증',
+  !hashHasForbidden
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
