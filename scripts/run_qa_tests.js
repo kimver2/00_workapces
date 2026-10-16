@@ -2594,11 +2594,13 @@ if (scriptMatch34 && scriptMatch34[1]) {
 }
 assertTest('buildSidebarDashboardHtml: 달력 및 체크박스 로직 추가 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk34);
 
-// 34-8: 캘린더 이벤트 알약 전체 배경색 및 글자수 기반 동적 폰트 조절(cal-pill-text) 검증
-assertTest('buildSidebarDashboardHtml: 캘린더 이벤트 알약 전체 배경색 채움 및 글자수 기반 동적 폰트 조절(cal-pill-text) 렌더링 검증',
+// 34-8: 캘린더 이벤트 알약 전체 배경색, 800 엑스트라 볼드 및 텍스트 섀도우(cal-pill-text) 검증
+assertTest('buildSidebarDashboardHtml: 캘린더 이벤트 알약 전체 배경색 채움, 800 엑스트라 볼드 및 텍스트 섀도우(cal-pill-text) 렌더링 검증',
   dashHtml34.indexOf('cal-sh-box') !== -1 &&
   dashHtml34.indexOf('cal-pill-text') !== -1 &&
   dashHtml34.indexOf('background-color:\' + bgCol + \';color:\' + txtCol') !== -1 &&
+  dashHtml34.indexOf('font-weight:800;') !== -1 &&
+  dashHtml34.indexOf('text-shadow:') !== -1 &&
   dashHtml34.indexOf('font-size:9.5px;') !== -1 &&
   dashHtml34.indexOf('font-size:8.2px;letter-spacing:-0.2px;') !== -1 &&
   dashHtml34.indexOf('font-size:7.2px;letter-spacing:-0.5px;') !== -1 &&
