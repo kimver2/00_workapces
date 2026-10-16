@@ -1903,11 +1903,11 @@ assertTest('openSiteScheduleModal 함수 탑재 여부', typeof sandbox.openSite
 
 // 27-2: 상단 메뉴 등록 검증
 const onOpenCode = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
-assertTest('onOpen: 사이드바 열기 메뉴 항목 등록 검증',
-  onOpenCode.indexOf('openSiteScheduleSidebar') !== -1
+assertTest('onOpen: "대시보드 사이드바 열기" 메뉴 항목 등록 검증',
+  onOpenCode.indexOf('"대시보드 사이드바 열기"') !== -1 && onOpenCode.indexOf('openSiteScheduleSidebar') !== -1
 );
-assertTest('onOpen: 종합 대시보드 팝업 열기 메뉴 항목 등록 검증',
-  onOpenCode.indexOf('openSiteScheduleModal') !== -1
+assertTest('onOpen: "대시보드 팝업 열기" 메뉴 항목 등록 검증',
+  onOpenCode.indexOf('"대시보드 팝업 열기"') !== -1 && onOpenCode.indexOf('openSiteScheduleModal') !== -1
 );
 
 // 27-3: getHexColorForCalendarCode 색상 변환 검증
@@ -1992,7 +1992,7 @@ assertTest('buildSidebarDashboardHtml("mobile"): iOS 홈 화면 추가(apple-mob
   mobileHtml.indexOf('apple-mobile-web-app-capable') !== -1
 );
 assertTest('buildSidebarDashboardHtml("mobile"): 모바일 실시간 타이틀 표기 검증',
-  mobileHtml.indexOf('📱 현장 실시간 모바일 대시보드') !== -1
+  mobileHtml.indexOf('우성아이디 현장 대시보드') !== -1
 );
 assertTest('buildSidebarDashboardHtml("mobile"): 모바일 원터치 바텀시트(bottom-sheet) 컨테이너 탑재',
   mobileHtml.indexOf('sheet-overlay') !== -1 && mobileHtml.indexOf('bottom-sheet') !== -1
@@ -2023,8 +2023,8 @@ sandbox.HtmlService = {
 // A. row 파라미터 없을 때 -> 모바일 전체 대시보드 반환
 const doGetDash = sandbox.doGet({});
 assertTest('doGet: row 파라미터 생략 시 모바일 전체 대시보드 자동 서빙 검증',
-  doGetDash && doGetDash._title.indexOf('대시보드') !== -1 &&
-  doGetDash._content.indexOf('📱 현장 실시간 모바일 대시보드') !== -1
+  doGetDash && doGetDash._title.indexOf('우성아이디 현장 대시보드') !== -1 &&
+  doGetDash._content.indexOf('우성아이디 현장 대시보드') !== -1
 );
 assertTest('doGet: view="dashboard" 명시 시에도 모바일 전체 대시보드 서빙 검증',
   sandbox.doGet({ parameter: { view: 'dashboard' } })._content.indexOf('kpi-grid') !== -1

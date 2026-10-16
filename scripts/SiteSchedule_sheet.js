@@ -289,8 +289,8 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🚀 현장 관리")
     // [자주 쓰는 핵심 기능]
-    .addItem("🖥️ 현장 공정 사이드바 열기 (우측 화면)", "openSiteScheduleSidebar")
-    .addItem("🔍 현장 공정 종합 대시보드 (대형 팝업 화면)", "openSiteScheduleModal")
+    .addItem("대시보드 사이드바 열기", "openSiteScheduleSidebar")
+    .addItem("대시보드 팝업 열기", "openSiteScheduleModal")
     .addItem("📱 모바일 대시보드 URL 확인 및 안내", "showMobileDashboardUrl")
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
     .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
@@ -4667,7 +4667,7 @@ function doGet(e) {
   // 3) 전체 모바일 대시보드 화면 출력 (URL 직접 접속 또는 row 미지정 시)
   var dashHtml = buildSidebarDashboardHtml("mobile");
   return HtmlService.createHtmlOutput(dashHtml)
-    .setTitle("📱 현장 공정 실시간 대시보드")
+    .setTitle("우성아이디 현장 대시보드")
     .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -5770,7 +5770,7 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
  */
 function openSiteScheduleSidebar() {
   var html = HtmlService.createHtmlOutput(buildSidebarDashboardHtml("sidebar"))
-    .setTitle("우성아이디 실시간 현장 대시보드")
+    .setTitle("우성아이디 현장 대시보드")
     .setWidth(360);
   SpreadsheetApp.getUi().showSidebar(html);
 }
@@ -5780,10 +5780,10 @@ function openSiteScheduleSidebar() {
  */
 function openSiteScheduleModal() {
   var html = HtmlService.createHtmlOutput(buildSidebarDashboardHtml("modal"))
-    .setTitle("우성아이디 현장 공정 종합 대시보드")
+    .setTitle("우성아이디 현장 대시보드")
     .setWidth(920)
     .setHeight(680);
-  SpreadsheetApp.getUi().showModalDialog(html, "우성아이디 현장 공정 종합 대시보드");
+  SpreadsheetApp.getUi().showModalDialog(html, "우성아이디 현장 대시보드");
 }
 
 /**
@@ -6047,7 +6047,7 @@ function buildSidebarDashboardHtml(mode) {
   // Body HTML
   html += '<div class="header">';
   html += '  <div class="title-row">';
-  html += '    <div class="title">' + (isMobile ? '📱 현장 실시간 모바일 대시보드' : '🏗️ 현장 실시간 대시보드') + '</div>';
+  html += '    <div class="title">' + (isMobile ? '📱 우성아이디 현장 대시보드' : '🏗️ 우성아이디 현장 대시보드') + '</div>';
   html += '    <button class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
   html += '  </div>';
 
