@@ -2218,6 +2218,96 @@ assertTest('buildSidebarDashboardHtml: 전체/완료 탭에서는 기본 접힘(
   modalHtml.indexOf('(currentFilter !== "all" && currentFilter !== "done")') !== -1
 );
 
+// ========================================================
+// 🎯 Step 32: 검색 시 완료 항목 배제 & 모바일 접힌 상태 및 일정 날짜 뱃지 표기 QA
+// ========================================================
+console.log('\n🎯 [Step 32: 검색 시 완료 항목 배제 & 모바일 접힌 상태 및 일정 날짜 뱃지 표기 QA]');
+
+const step32MobileHtml = sandbox.buildSidebarDashboardHtml('mobile');
+const mobileScriptMatch = step32MobileHtml.match(/<script>([\s\S]*?)<\/script>/);
+
+// 32-1: 모바일 HTML 클라이언트 JS 구문 무결성(SyntaxError 0) 검증
+let mobileScriptValid = false;
+try {
+  new vm.Script(mobileScriptMatch[1]);
+  mobileScriptValid = true;
+} catch(e) {
+  mobileScriptValid = false;
+}
+assertTest('buildSidebarDashboardHtml("mobile"): 모바일 클라이언트 JS 구문 무결성(SyntaxError 0) 검증',
+  mobileScriptValid === true
+);
+
+// 32-2: 검색 시 완료/취소 공정 항목 배제 필터 탑재 검증
+assertTest('buildSidebarDashboardHtml: 검색 중일 때 완료/취소 공정 항목 제외(query && currentFilter !== "done") 탑재 검증',
+  step32MobileHtml.indexOf('query && currentFilter !== "done"') !== -1 &&
+  step32MobileHtml.indexOf('stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1') !== -1
+);
+
+// 32-3: 현장 카드 헤더 날짜 뱃지(site-date-badge) CSS 및 렌더링 로직 탑재 검증
+assertTest('buildSidebarDashboardHtml: 헤더 날짜 뱃지 스타일(.site-date-badge) 탑재 검증',
+  step32MobileHtml.indexOf('.site-date-badge {') !== -1 &&
+  step32MobileHtml.indexOf('.site-date-badge.today {') !== -1 &&
+  step32MobileHtml.indexOf('.site-date-badge.delay {') !== -1
+);
+
+assertTest('buildSidebarDashboardHtml: 헤더 날짜 뱃지(displayDate) 렌더링 로직 탑재 검증',
+  step32MobileHtml.indexOf('site-date-badge') !== -1 &&
+  step32MobileHtml.indexOf('escapeHtml(displayDate)') !== -1
+);
+
+// 32-4: getSidebarDashboardData: earliestDateDisplay 및 today/delayed 플래그 전달 검증
+const testStep32SheetData = [
+  ['역삼 자이', '26.10.16', '철거', '업체A', true, '', '홍길동', '완료', 'ev-32-1', Date.now(), '', '', '', ''],
+  ['역삼 자이', '26.10.17', '목공', '업체B', true, '', '홍길동', '진행', 'ev-32-2', Date.now(), '', '', '', ''],
+  ['역삼 자이', '26.10.20', '타일', '업체C', true, '', '홍길동', '예정', 'ev-32-3', Date.now(), '', '', '', ''],
+  ['서초 래미안', '26.10.18', '도배', '업체D', true, '', '이영희', '예정', 'ev-32-4', Date.now(), '', '', '', '']
+];
+sandbox.findSiteScheduleSheet = () => ({
+  getLastRow: () => testStep32SheetData.length + 1,
+  getRange: () => ({
+    getValues: () => testStep32SheetData
+  })
+});
+const step32Data = sandbox.getSidebarDashboardData();
+const yeoksamSite = step32Data.sites.find(s => s.siteName === '역삼 자이');
+const seochoSite = step32Data.sites.find(s => s.siteName === '서초 래미안');
+
+assertTest('getSidebarDashboardData: 진행 중인 가장 빠른 공정의 dateDisplay 전달 검증 (역삼 자이 -> 26.10.17)',
+  yeoksamSite && yeoksamSite.earliestDateDisplay && yeoksamSite.earliestDateDisplay.indexOf('26.10.17') !== -1
+);
+
+assertTest('getSidebarDashboardData: 현장 카드 날짜 오름차순 정렬 검증 (역삼 자이 10.17이 서초 래미안 10.18보다 앞섬)',
+  step32Data.sites[0].siteName === '역삼 자이' &&
+  step32Data.sites[1].siteName === '서초 래미안'
+);
+
+// 32-5: 클라이언트 검색 시 완료 항목 배제 로직 시뮬레이션
+const simTasks = yeoksamSite.tasks;
+const simQuery = '홍길동';
+const simFilter = 'all';
+const filtered = simTasks.filter(t => {
+  if (simFilter === 'done') {
+    if (t.status.indexOf('완료') === -1 && t.status.indexOf('취소') === -1) return false;
+  }
+  if (simQuery && simFilter !== 'done') {
+    const stClean = (t.status || '').replace(/\s+/g, '');
+    if (stClean.indexOf('완료') !== -1 || stClean.indexOf('취소') !== -1) return false;
+  }
+  if (simQuery) {
+    const matchMgr = (t.manager || '').toLowerCase().indexOf(simQuery) !== -1;
+    if (!matchMgr) return false;
+  }
+  return true;
+});
+
+assertTest('검색 시뮬레이션: "홍길동" 검색 시 완료된 공정(철거)은 제외되고 미완료 2건만 노출 검증',
+  filtered.length === 2 &&
+  filtered.some(t => t.taskName === '목공') &&
+  filtered.some(t => t.taskName === '타일') &&
+  !filtered.some(t => t.taskName === '철거')
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

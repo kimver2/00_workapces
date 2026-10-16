@@ -5955,6 +5955,9 @@ function getSidebarDashboardData() {
       // 3. 현장 카드 정렬 기준 날짜 계산: 진행 중인 공정의 가장 빠른 날짜 (없으면 전체 중 가장 빠른 날짜)
       var earliestTask = (activeTasks.length > 0) ? activeTasks[0] : siteObj.tasks[0];
       siteObj.earliestDateMs = (earliestTask && earliestTask.dateMs) ? earliestTask.dateMs : 0;
+      siteObj.earliestDateDisplay = (earliestTask && earliestTask.dateDisplay) ? earliestTask.dateDisplay : "";
+      siteObj.hasTodayTask = activeTasks.some(function(t) { return t.isToday; });
+      siteObj.hasDelayedTask = activeTasks.some(function(t) { return t.isDelayed; });
 
       sitesList.push(siteObj);
     }
@@ -6057,12 +6060,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '.content { padding: 12px; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; }';
   html += '.site-card:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.06); }';
-  html += '.site-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; cursor: pointer; user-select: none; background: #ffffff; border-left: 4px solid #2563eb; }';
+  html += '.site-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; cursor: pointer; user-select: none; background: #ffffff; border-left: 4px solid #2563eb; gap: 8px; }';
   html += '.site-header:hover { background: #f8fafc; }';
-  html += '.site-title-area { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; }';
-  html += '.site-name { font-weight: 700; font-size: 13.5px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }';
-  html += '.site-badge { font-size: 10.5px; padding: 2px 6px; border-radius: 10px; background: #f1f5f9; color: #475569; font-weight: 600; }';
-  html += '.site-toggle { font-size: 10px; color: #94a3b8; transition: transform 0.2s; }';
+  html += '.site-title-area { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; min-width: 0; }';
+  html += '.site-name { font-weight: 700; font-size: 13.5px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; min-width: 0; }';
+  html += '.site-date-badge { font-size: 10.5px; padding: 2px 6px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-weight: 700; white-space: nowrap; flex-shrink: 0; }';
+  html += '.site-date-badge.today { background: #dbeafe; color: #1e40af; font-weight: 800; }';
+  html += '.site-date-badge.delay { background: #fee2e2; color: #dc2626; font-weight: 800; }';
+  html += '.site-badge { font-size: 10.5px; padding: 2px 6px; border-radius: 10px; background: #f1f5f9; color: #475569; font-weight: 600; white-space: nowrap; flex-shrink: 0; }';
+  html += '.site-toggle { font-size: 10px; color: #94a3b8; transition: transform 0.2s; flex-shrink: 0; }';
   html += '.site-card.expanded .site-toggle { transform: rotate(180deg); }';
   html += '.task-list { display: none; padding: 6px 10px 8px 10px; background: #f8fafc; border-top: 1px solid #f1f5f9; }';
   html += '.site-card.expanded .task-list { display: block; }';
@@ -6293,6 +6299,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (currentFilter === "delay" && !t.isDelayed) return false;';
   html += '      if (currentFilter === "prog" && t.status.indexOf("진행") === -1) return false;';
   html += '      if (currentFilter === "done" && t.status.indexOf("완료") === -1 && t.status.indexOf("취소") === -1) return false;';
+  html += '      if (query && currentFilter !== "done") {';
+  html += '        const stClean = (t.status || "").replace(/\\s+/g, "");';
+  html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return false;';
+  html += '      }';
   html += '      if (query) {';
   html += '        const matchSite = site.siteName.toLowerCase().indexOf(query) !== -1;';
   html += '        const matchTask = t.taskName.toLowerCase().indexOf(query) !== -1;';
@@ -6307,11 +6317,26 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (filteredTasks.length === 0) return;';
   html += '    visibleSitesCount++;';
   html += '    const isExpanded = (query !== "") || (currentFilter !== "all" && currentFilter !== "done");';
-
+  html += '    const displayDate = (filteredTasks[0] && filteredTasks[0].dateDisplay) ? filteredTasks[0].dateDisplay : (site.earliestDateDisplay || "");';
+  html += '    const hasToday = filteredTasks.some(t => t.isToday);';
+  html += '    const hasDelay = filteredTasks.some(t => t.isDelayed);';
+ 
   html += '    html += \'<div class="site-card \' + (isExpanded ? "expanded" : "") + \'">\';';
   html += '    html += \'  <div class="site-header" style="border-left-color: \' + site.colorHex + \';" onclick="toggleSite(this)">\';';
   html += '    html += \'    <div class="site-title-area">\';';
   html += '    html += \'      <span class="site-name">\' + escapeHtml(site.siteName) + \'</span>\';';
+  html += '    if (displayDate) {';
+  html += '      let dateBadgeClass = "site-date-badge";';
+  html += '      let dateBadgeIcon = "📅 ";';
+  html += '      if (hasDelay) {';
+  html += '        dateBadgeClass += " delay";';
+  html += '        dateBadgeIcon = "⚠️ ";';
+  html += '      } else if (hasToday) {';
+  html += '        dateBadgeClass += " today";';
+  html += '        dateBadgeIcon = "🔥 ";';
+  html += '      }';
+  html += '      html += \'<span class="\' + dateBadgeClass + \'">\' + dateBadgeIcon + escapeHtml(displayDate) + \'</span>\';';
+  html += '    }';
   html += '    if (site.isAllCompleted) {';
   html += '      html += \'      <span class="site-badge" style="background:#dcfce7;color:#166534;">완료 \' + filteredTasks.length + \'건</span>\';';
   html += '    } else {';
