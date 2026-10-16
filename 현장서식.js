@@ -412,6 +412,8 @@ function onOpen() {
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
     .addItem("📅 현장별 날짜 오름차순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
     .addItem("📦 완료 현장 시트로 이동 (아카이브)", "archiveCompletedSitesMenu")
+    .addItem("📁 완료현장 시트 동일 현장별 접기", "groupCompletedSitesMenu")
+    .addItem("📂 완료현장 시트 전체 펼치기", "expandCompletedSitesMenu")
     .addSeparator()
 
     // [3개 제외 모든 설정 및 보조 기능은 '고급 설정 & 시스템 관리' 하위로 일원화 배치]
@@ -425,6 +427,8 @@ function onOpen() {
       // 2. 현장 데이터 편집 / 보기 편의 기능
       .addItem("📅 현장별 날짜 오름차순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
       .addItem("📦 완료 현장 시트로 이동 (블록 전체 완료 현장 아카이브)", "archiveCompletedSitesMenu")
+      .addItem("📁 완료현장 동일 현장별 접기 (아코디언)", "groupCompletedSitesMenu")
+      .addItem("📂 완료현장 전체 펼치기", "expandCompletedSitesMenu")
       .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
       .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
       .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
@@ -1428,7 +1432,7 @@ function runPeriodicAutoSync() {
         detectedStatus = "진행 중";
       } else if (calTitle.indexOf("🛠️") !== -1 || calTitle.indexOf("🛠") !== -1) {
         detectedStatus = "AS";
-      } else if ((calTitle.indexOf("🟦") !== -1 || calTitle.indexOf("🟥") !== -1) && (currentStatus === "완료" || currentStatus.indexOf("진행") !== -1 || currentStatus === "AS")) {
+      } else if (calTitle.indexOf("📅") !== -1 || calTitle.indexOf("🗓️") !== -1 || (((calTitle.indexOf("🟦") !== -1 || calTitle.indexOf("🟥") !== -1) && (currentStatus === "완료" || currentStatus.indexOf("진행") !== -1 || currentStatus === "AS")))) {
         detectedStatus = "예정";
       }
 
@@ -1936,7 +1940,7 @@ function syncFromCalendarToSheet() {
       detectedStatus = "진행 중";
     } else if (calTitle.indexOf("🛠️") !== -1 || calTitle.indexOf("🛠") !== -1) {
       detectedStatus = "AS";
-    } else if ((calTitle.indexOf("🟦") !== -1 || calTitle.indexOf("🟥") !== -1) && (currentSheetStatus === "완료" || currentSheetStatus.indexOf("진행") !== -1 || currentSheetStatus === "AS")) {
+    } else if (calTitle.indexOf("📅") !== -1 || calTitle.indexOf("🗓️") !== -1 || (((calTitle.indexOf("🟦") !== -1 || calTitle.indexOf("🟥") !== -1) && (currentSheetStatus === "완료" || currentSheetStatus.indexOf("진행") !== -1 || currentSheetStatus === "AS")))) {
       detectedStatus = "예정";
     }
 
@@ -2352,14 +2356,16 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   var status = String(rowValues[7] || "").trim();   // H열: 진행상태 (인덱스 7)
   var statusClean = status.replace(/\s+/g, "");
 
-  // 상태별 아이콘 (스타일 A: 예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
-  var statusIcon = "";
+  // 상태별 아이콘 (스타일 A: 예정='📅 ', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
+  var statusIcon = "📅 ";
   if (statusClean.indexOf("완료") !== -1 || statusClean.indexOf("✅") !== -1) {
     statusIcon = "✅ ";
   } else if (statusClean.indexOf("진행") !== -1 || statusClean.indexOf("▶") !== -1) {
     statusIcon = "▶️ ";
   } else if (statusClean.indexOf("AS") !== -1 || statusClean.indexOf("A/S") !== -1 || statusClean.indexOf("as") !== -1 || statusClean.indexOf("🛠") !== -1) {
     statusIcon = "🛠️ ";
+  } else if (statusClean.indexOf("예정") !== -1 || statusClean.indexOf("📅") !== -1 || statusClean === "") {
+    statusIcon = "📅 ";
   }
 
 
@@ -3421,12 +3427,13 @@ function isSystemSiteScheduleEvent(ev) {
   var title = "";
   try { title = ev.getTitle() || ""; } catch(e) {}
   if (/\[.+?\]/.test(title) && (
-      title.indexOf("🟥") !== -1 ||
-      title.indexOf("🟦") !== -1 ||
+      /[🟥🟦🟪🟩🟧🟨🟫⬛⬜]/.test(title) ||
       title.indexOf("▶️") !== -1 ||
       title.indexOf("✅") !== -1 ||
       title.indexOf("🛠️") !== -1 ||
-      title.indexOf("⚠️") !== -1
+      title.indexOf("⚠️") !== -1 ||
+      title.indexOf("📅") !== -1 ||
+      title.indexOf("⏳") !== -1
   )) {
     return true;
   }
@@ -3841,14 +3848,33 @@ function cleanupDuplicateCalendarEventsSilent(cal, sheet) {
 
     var values = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
     var validEventIds = {};
+    var minDate = null;
+    var maxDate = null;
     for (var i = 0; i < values.length; i++) {
       var eid = String(values[i][8] || "").trim();
       if (eid) validEventIds[eid] = i + 2;
+      var dVal = values[i][1];
+      if (dVal) {
+        var p = parseScheduleDateRange(dVal);
+        if (p && p.startDate) {
+          if (!minDate || p.startDate < minDate) minDate = p.startDate;
+          var ed = p.endDate || p.startDate;
+          if (!maxDate || ed > maxDate) maxDate = ed;
+        }
+      }
     }
 
     var now = new Date();
-    var searchStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-    var searchEnd = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    var defaultPast = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    var defaultFuture = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+    var searchStart = defaultPast;
+    if (minDate && minDate.getTime() - 60 * 24 * 60 * 60 * 1000 < searchStart.getTime()) {
+      searchStart = new Date(minDate.getTime() - 60 * 24 * 60 * 60 * 1000);
+    }
+    var searchEnd = defaultFuture;
+    if (maxDate && maxDate.getTime() + 90 * 24 * 60 * 60 * 1000 > searchEnd.getTime()) {
+      searchEnd = new Date(maxDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+    }
 
     var allEvents = [];
     try {
@@ -3883,9 +3909,13 @@ function cleanupDuplicateCalendarEventsSilent(cal, sheet) {
         var bMatch = title.match(/\[(.+?)\]\s*(.*)/);
         if (bMatch) {
           if (!taskClean) taskClean = bMatch[1].trim();
-          if (!siteClean) siteClean = bMatch[2].replace(/[🟦🟥▶️✅🛠️⚠️\[\]]/g, "").trim();
+          if (!siteClean) siteClean = bMatch[2].trim();
         }
       }
+
+      // 현장명과 공종명에서 모든 색상 사각형/이모지 제거하여 완벽 정규화 매칭
+      siteClean = siteClean.replace(/[🟥🟦🟪🟩🟧🟨🟫⬛⬜📅▶️✅🛠️⚠️\[\]]/g, "").trim();
+      taskClean = taskClean.replace(/[🟥🟦🟪🟩🟧🟨🟫⬛⬜📅▶️✅🛠️⚠️\[\]]/g, "").trim();
 
       var dedupKey = dateKey + "_" + siteClean + "_" + taskClean;
       if (!taskClean) dedupKey = dateKey + "_" + title;
@@ -5355,7 +5385,12 @@ function archiveCompletedSiteBlocks(isManual) {
 
     SpreadsheetApp.flush();
 
-    // 3-3. 대시보드 달력 즉시 새로고침
+    // 3-3. 완료현장 시트 동일 현장별 자동 접기(그룹화) 적용
+    try {
+      groupCompletedSitesBySite(destSheet);
+    } catch(eGrp) {}
+
+    // 3-4. 대시보드 달력 즉시 새로고침
     try {
       refreshDashboardCalendar(ss);
     } catch(eDash) {}
@@ -5369,6 +5404,7 @@ function archiveCompletedSiteBlocks(isManual) {
   if (isManual) {
     var msg = "총 " + movedSitesCount + "개 현장 (" + movedRowsCount + "개 공정)이 [완료현장] 시트로 안전하게 이동되었습니다!\n\n" +
               "• 이동된 현장: " + movedSiteNames.join(", ") + "\n\n" +
+              "📁 [동일 현장 접기]: 동일 현장의 세부 공종들은 자동으로 접혀서 깔끔하게 표시됩니다. ([+]를 누르면 펼쳐집니다)\n\n" +
               "🛡️ [구글 캘린더 100% 보존]: 완료현장으로 이동된 모든 일정은 구글 캘린더에서 삭제되지 않고 안전하게 보존됩니다.";
     SpreadsheetApp.getUi().alert("📦 완료 현장 시트 이동 완료", msg, SpreadsheetApp.getUi().ButtonSet.OK);
   }
@@ -5378,6 +5414,115 @@ function archiveCompletedSiteBlocks(isManual) {
     movedRowsCount: movedRowsCount,
     siteNames: movedSiteNames
   };
+}
+
+/**
+ * [신규] 완료현장 시트 동일 현장별 행 그룹화(접기/아코디언) 엔진
+ * - 동일 현장명으로 묶인 복수 행(2행 이상)을 감지하여 첫 행 아래의 하위 행들을 그룹화
+ * - collapseGroups()를 적용하여 동일 현장이면 자동으로 접어서 보여줌 (좌측 [+] 클릭 시 전체 공종 펼침)
+ */
+function groupCompletedSitesBySite(sheet) {
+  if (!sheet) {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    if (!ss) return;
+    sheet = findCompletedSitesSheet(ss, false);
+  }
+  if (!sheet) return;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 3) return; // 데이터가 1행 이하이면 접을 하위 행 없음
+
+  try {
+    // 1단계: 기존 행 그룹화 깊이 초기화 (중복 깊이 누적 방지)
+    try {
+      sheet.getRange(2, 1, lastRow - 1, 1).shiftRowGroupDepth(-8);
+    } catch(eReset) {}
+
+    // 2단계: 동일 현장명 연속 구간 판별
+    var siteVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    var blocks = [];
+    var curSite = "";
+    var curStartRow = -1;
+    var curCount = 0;
+
+    for (var i = 0; i < siteVals.length; i++) {
+      var rowNum = i + 2;
+      var rawS = String(siteVals[i][0] || "").trim();
+      if (rawS) {
+        if (curSite === "") {
+          curSite = rawS;
+          curStartRow = rowNum;
+          curCount = 1;
+        } else if (rawS === curSite) {
+          curCount++;
+        } else {
+          blocks.push({ site: curSite, startRow: curStartRow, count: curCount });
+          curSite = rawS;
+          curStartRow = rowNum;
+          curCount = 1;
+        }
+      } else {
+        if (curSite) {
+          curCount++;
+        }
+      }
+    }
+    if (curSite && curCount > 0) {
+      blocks.push({ site: curSite, startRow: curStartRow, count: curCount });
+    }
+
+    // 3단계: 2행 이상인 현장 블록에 대해 2번째 행부터 끝 행까지 그룹화 후 접기(collapse)
+    for (var b = 0; b < blocks.length; b++) {
+      var blk = blocks[b];
+      if (blk.count > 1) {
+        var subStart = blk.startRow + 1;
+        var subCount = blk.count - 1;
+        try {
+          var rng = sheet.getRange(subStart, 1, subCount, 1);
+          rng.shiftRowGroupDepth(1);
+          rng.collapseGroups();
+        } catch(eSubGrp) {}
+      }
+    }
+    SpreadsheetApp.flush();
+  } catch(e) {
+    Logger.log("groupCompletedSitesBySite 에러: " + e.toString());
+  }
+}
+
+/**
+ * 완료현장 시트 동일 현장별 접기 메뉴 함수
+ */
+function groupCompletedSitesMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = findCompletedSitesSheet(ss, false);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("완료현장 시트를 찾을 수 없습니다.");
+    return;
+  }
+  groupCompletedSitesBySite(sheet);
+  ss.toast("완료현장 시트의 동일 현장 목록이 깔끔하게 접혔습니다. (좌측 [+] 버튼을 눌러 공종을 펼칠 수 있습니다)", "📁 현장별 접기 완료", 4);
+}
+
+/**
+ * 완료현장 시트 전체 펼치기 메뉴 함수
+ */
+function expandCompletedSitesMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = findCompletedSitesSheet(ss, false);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("완료현장 시트를 찾을 수 없습니다.");
+    return;
+  }
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    try {
+      sheet.getRange(2, 1, lastRow - 1, 1).expandGroups();
+      SpreadsheetApp.flush();
+    } catch(eExp) {}
+  }
+  ss.toast("완료현장 시트의 모든 공종 행이 펼쳐졌습니다.", "📂 전체 펼치기 완료", 3);
 }
 
 
@@ -5513,7 +5658,7 @@ function showMobileDashboardUrl() {
  *   백그라운드 동기화나 타 작업의 락 점유 상태와 관계없이 시트 쓰기(H열 상태, E열 공유, F열 비고, J열 타임스탬프)를 100% 즉시 반영
  *   락 경합 타임아웃으로 인한 저장 실패(409/Lock timeout)를 원천 차단하고 0.1초 내 성공 응답 보장
  */
-function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
+function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager) {
   var rowNum = parseInt(row, 10);
   if (!rowNum || rowNum < 2) {
     return { success: false, error: "유효하지 않은 행 번호입니다. (" + row + ")" };
@@ -5524,6 +5669,8 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
 
   var updatedShared = null;
   var updatedMemo = null;
+  var updatedDate = null;
+  var updatedManager = null;
 
   try {
     var ss = getAppSpreadsheet();
@@ -5537,6 +5684,25 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
 
     // 1단계: 시트 셀 원자적 즉시 쓰기 (락 대기 없이 100% 즉시 저장 보장)
     sheet.getRange(rowNum, 8).setValue(newStatus); // H열 진행상태 업데이트
+
+    // B열 날짜 업데이트 (파라미터가 명시적으로 전달된 경우)
+    if (newDate !== undefined && newDate !== null && String(newDate).trim() !== "") {
+      var rawDateStr = String(newDate).trim();
+      var normalizedDate = "";
+      try {
+        normalizedDate = normalizeDateStringToYYYYMMDD(rawDateStr);
+      } catch(eNorm) {}
+      var finalDateToSave = normalizedDate || rawDateStr;
+      sheet.getRange(rowNum, 2).setValue(finalDateToSave); // B열(2열) 날짜 업데이트
+      updatedDate = finalDateToSave;
+    }
+
+    // G열 담당자 업데이트 (파라미터가 명시적으로 전달된 경우)
+    if (newManager !== undefined && newManager !== null) {
+      var cleanManager = String(newManager).trim();
+      sheet.getRange(rowNum, 7).setValue(cleanManager); // G열(7열) 담당자 업데이트
+      updatedManager = cleanManager;
+    }
 
     // E열 공유 상태 업데이트 (파라미터가 명시적으로 전달된 경우)
     if (newShared !== undefined && newShared !== null) {
@@ -5586,7 +5752,9 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
       success: true, 
       status: newStatus,
       shared: updatedShared,
-      memo: updatedMemo
+      memo: updatedMemo,
+      date: updatedDate,
+      manager: updatedManager
     };
   } catch(err) {
     Logger.log("updateScheduleStatusFromWeb 오류: " + err.toString());
@@ -5608,6 +5776,8 @@ function doGet(e) {
   var newStatus = p.status;
   var newShared = p.shared;
   var newMemo = p.memo;
+  var newDate = p.date;
+  var newManager = p.manager;
 
   var ss = getAppSpreadsheet();
   var sheet = findSiteScheduleSheet(ss);
@@ -5674,8 +5844,8 @@ function doGet(e) {
   }
 
   // 1) 상태 업데이트 요청 (URL 파라미터 직접 호출 또는 GET 이동 폴백)
-  if (action === "update" && row >= 2 && newStatus && sheet) {
-    var resObj = updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo);
+  if ((action === "update" || action === "updateScheduleStatus") && row >= 2 && newStatus && sheet) {
+    var resObj = updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager);
     if (p.format === "json") {
       return ContentService.createTextOutput(JSON.stringify(resObj))
         .setMimeType(ContentService.MimeType.JSON);
@@ -6934,7 +7104,7 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
 function openSiteScheduleSidebar() {
   var html = HtmlService.createHtmlOutput(buildSidebarDashboardHtml("sidebar"))
     .setTitle("우성아이디 현장 대시보드")
-    .setWidth(360);
+    .setWidth(450);
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
@@ -6943,10 +7113,10 @@ function openSiteScheduleSidebar() {
  */
 function openSiteScheduleModal() {
   var html = HtmlService.createHtmlOutput(buildSidebarDashboardHtml("modal"))
-    .setTitle("우성아이디 현장 대시보드")
-    .setWidth(920)
-    .setHeight(680);
-  SpreadsheetApp.getUi().showModalDialog(html, "우성아이디 현장 대시보드");
+    .setTitle("우성아이디 현장 대시보드 (확장 보기)")
+    .setWidth(1020)
+    .setHeight(750);
+  SpreadsheetApp.getUi().showModalDialog(html, "우성아이디 현장 대시보드 (확장 보기)");
 }
 
 /**
@@ -7363,12 +7533,19 @@ function focusSheetRow(rowNumber) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
     var sheet = findSiteScheduleSheet(ss);
     if (sheet && rowNumber >= 2) {
-      ss.setActiveSheet(sheet);
-      var range = sheet.getRange(rowNumber, 1, 1, 8);
-      sheet.setActiveRange(range);
-      return { success: true };
+      if (typeof ss.setActiveSheet === "function") ss.setActiveSheet(sheet);
+      var range = sheet.getRange(rowNumber, 1, 1, 10);
+      if (typeof sheet.setActiveRange === "function") sheet.setActiveRange(range);
+      var sheetUrl = "";
+      try {
+        var ssId = ss.getId();
+        var gid = sheet.getSheetId();
+        sheetUrl = "https://docs.google.com/spreadsheets/d/" + ssId + "/edit#gid=" + gid + "&range=" + rowNumber + ":" + rowNumber;
+      } catch(eUrl) {}
+      return { success: true, row: rowNumber, sheetUrl: sheetUrl };
     }
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -7559,19 +7736,36 @@ function buildSidebarDashboardHtml(mode) {
   html += '.sheet-site { font-size: 13px; color: #2563eb; font-weight: 700; }';
   html += '.sheet-task { font-size: 18px; color: #0f172a; font-weight: 800; margin-top: 2px; }';
   html += '.sheet-close { background: #f1f5f9; border: none; width: 28px; height: 28px; border-radius: 50%; font-size: 14px; font-weight: 700; color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; }';
-  html += '.sheet-info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 12.5px; line-height: 1.5; color: #475569; }';
+  html += '.sheet-edit-box { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 12px; margin-bottom: 14px; }';
+  html += '.sheet-field-row { display: flex; gap: 8px; margin-bottom: 2px; }';
+  html += '.sheet-field-col { display: flex; flex-direction: column; min-width: 0; }';
+  html += '.sheet-field-label { font-size: 11.5px; font-weight: 700; color: #475569; margin-bottom: 5px; display: flex; align-items: center; gap: 4px; }';
+  html += '.sheet-date-picker-wrap { position: relative; display: flex; align-items: center; width: 100%; }';
+  html += '.sheet-field-input { width: 100%; height: 38px; padding: 6px 32px 6px 10px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff; outline: none; transition: border-color 0.15s; }';
+  html += '.sheet-field-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }';
+  html += '.sheet-hidden-picker { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; left: 0; bottom: 0; }';
+  html += '.sheet-cal-pick-btn { position: absolute; right: 4px; width: 28px; height: 28px; border: none; background: #f1f5f9; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.15s; }';
+  html += '.sheet-cal-pick-btn:hover { background: #e2e8f0; }';
+  html += '.sheet-manager-wrap { width: 100%; }';
+  html += '.sheet-field-select { width: 100%; height: 38px; padding: 6px 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff; outline: none; cursor: pointer; }';
+  html += '.sheet-field-select:focus { border-color: #2563eb; }';
   html += '.sheet-sec-label { font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 7px; display: flex; align-items: center; gap: 5px; }';
-  html += '.sheet-status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }';
-  html += '.sheet-status-btn { padding: 9px 4px; border-radius: 8px; border: 2px solid #e2e8f0; font-size: 12.5px; font-weight: 700; cursor: pointer; background: #ffffff; color: #475569; text-align: center; }';
-  html += '.sheet-status-btn.active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 800; }';
+  html += '.sheet-status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }';
+  html += '.sheet-status-btn { padding: 10px 6px; border-radius: 10px; border: 2px solid #e2e8f0; font-size: 13px; font-weight: 700; cursor: pointer; background: #ffffff; color: #475569; text-align: center; transition: all 0.15s; }';
+  html += '.sheet-status-btn.active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 800; transform: scale(1.02); }';
   html += '.sheet-share-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }';
   html += '.sheet-share-btn { padding: 9px; border-radius: 8px; border: 2px solid #e2e8f0; font-size: 12.5px; font-weight: 700; cursor: pointer; background: #ffffff; color: #64748b; text-align: center; }';
   html += '.sheet-share-btn.active-on { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 800; }';
   html += '.sheet-share-btn.active-off { border-color: #ef4444; background: #fef2f2; color: #dc2626; font-weight: 800; }';
   html += '.sheet-memo-input { width: 100%; min-height: 60px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 12.5px; font-family: inherit; outline: none; margin-bottom: 14px; resize: vertical; }';
   html += '.sheet-memo-input:focus { border-color: #2563eb; }';
-  html += '.sheet-action-row { margin-top: 12px; }';
-  html += '.sheet-save-btn { width: 100%; height: 48px; border-radius: 12px; background: #2563eb; color: #fff; font-size: 15px; font-weight: 800; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25); transition: all 0.15s; }';
+  html += '.sheet-action-row { margin-top: 12px; display: flex; gap: 8px; }';
+  html += '.sheet-goto-btn { flex: 1; height: 48px; border-radius: 12px; background: #f1f5f9; color: #1e293b; border: 1.5px solid #cbd5e1; font-size: 13.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: all 0.15s; }';
+  html += '.sheet-goto-btn:hover { background: #e2e8f0; border-color: #94a3b8; }';
+  html += '.sheet-goto-btn:active { background: #cbd5e1; transform: scale(0.99); }';
+  html += '.btn-sheet-goto-mini { padding: 2px 7px; border-radius: 6px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: all 0.15s; }';
+  html += '.btn-sheet-goto-mini:hover { background: #dbeafe; border-color: #93c5fd; }';
+  html += '.sheet-save-btn { width: 100%; flex: 1.4; height: 48px; border-radius: 12px; background: #2563eb; color: #fff; font-size: 15px; font-weight: 800; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25); transition: all 0.15s; }';
   html += '.sheet-save-btn:active { background: #1d4ed8; transform: scale(0.99); }';
   html += '.sheet-save-btn:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }';
   html += '.sheet-day-nav { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: #f1f5f9; border-radius: 8px; margin-bottom: 12px; border: 1px solid #e2e8f0; }';
@@ -7591,7 +7785,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '<div class="header">';
   html += '  <div class="title-row">';
   html += '    <div class="title" id="pageTitle">' + (isMobile ? '📱 우성아이디 현장 대시보드' : '🏗️ 우성아이디 현장 대시보드') + '</div>';
-  html += '    <button class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
+  html += '    <div style="display:flex;align-items:center;gap:5px;">';
+  if (!isModal && !isMobile) {
+    html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 8px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:3px;" onclick="openWideModalView()" title="대시보드를 넓은 대형 팝업 창(1020px)으로 엽니다">⛶ 크게 보기</button>';
+  }
+  html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
+  html += '    </div>';
   html += '  </div>';
 
   html += '  <div class="kpi-grid">';
@@ -7704,7 +7903,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="sheet-handle"></div>';
   html += '    <div class="sheet-title-row">';
   html += '      <div>';
-  html += '        <div class="sheet-site" id="sheetSiteName">-</div>';
+  html += '        <div style="display:flex;align-items:center;gap:6px;">';
+  html += '          <div class="sheet-site" id="sheetSiteName">-</div>';
+  html += '          <button type="button" class="btn-sheet-goto-mini" onclick="goToCurrentTaskSheetRow()" title="현장데이터 시트에서 해당 행으로 이동">📍 시트 행 이동</button>';
+  html += '        </div>';
   html += '        <div class="sheet-task" id="sheetTaskName">-</div>';
   html += '      </div>';
   html += '      <button type="button" class="sheet-close" onclick="closeBottomSheet()">✕</button>';
@@ -7716,9 +7918,26 @@ function buildSidebarDashboardHtml(mode) {
   html += '        <button type="button" class="btn-sheet-nav" id="btnSheetNextDayTask" onclick="navSameDayTask(1)" title="다음 일정">▶</button>';
   html += '      </div>';
   html += '    </div>';
-  html += '    <div class="sheet-info-box" id="sheetInfoBox">';
-  html += '      <div>📅 <b>일정:</b> <span id="sheetDateDisplay">-</span></div>';
-  html += '      <div style="margin-top:3px;">👤 <b>담당자/업체:</b> <span id="sheetMetaDisplay">-</span></div>';
+  html += '    <div class="sheet-edit-box">';
+  html += '      <div class="sheet-field-row">';
+  html += '        <div class="sheet-field-col" style="flex:1.15;">';
+  html += '          <label class="sheet-field-label">📅 일정 (날짜)</label>';
+  html += '          <div class="sheet-date-picker-wrap">';
+  html += '            <input type="text" id="sheetDateInput" class="sheet-field-input" placeholder="2026.00.00">';
+  html += '            <input type="date" id="sheetNativeDatePicker" class="sheet-hidden-picker" onchange="onNativeDatePicked(this.value)">';
+  html += '            <button type="button" class="sheet-cal-pick-btn" onclick="openNativeDatePicker()" title="달력에서 날짜 선택">📅</button>';
+  html += '          </div>';
+  html += '        </div>';
+  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '          <label class="sheet-field-label">👤 담당자</label>';
+  html += '          <div class="sheet-manager-wrap">';
+  html += '            <select id="sheetManagerSelect" class="sheet-field-select" onchange="onSheetManagerSelect(this.value)">';
+  html += '              <option value="">(선택 안함)</option>';
+  html += '            </select>';
+  html += '            <input type="text" id="sheetManagerCustomInput" class="sheet-field-input" placeholder="직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
+  html += '          </div>';
+  html += '        </div>';
+  html += '      </div>';
   html += '    </div>';
   html += '    <div class="sheet-sec-label">⚡ 진행 상태 변경</div>';
   html += '    <div class="sheet-status-grid">';
@@ -7726,7 +7945,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <button type="button" class="sheet-status-btn" data-status="진행 중" onclick="selectSheetStatus(\'진행 중\')">▶️ 진행 중</button>';
   html += '      <button type="button" class="sheet-status-btn" data-status="완료" onclick="selectSheetStatus(\'완료\')">✅ 완료</button>';
   html += '      <button type="button" class="sheet-status-btn" data-status="AS" onclick="selectSheetStatus(\'AS\')">🛠️ AS</button>';
-  html += '      <button type="button" class="sheet-status-btn" data-status="지연" onclick="selectSheetStatus(\'지연\')">⚠️ 지연</button>';
   html += '    </div>';
   html += '    <div class="sheet-sec-label">🔗 캘린더 공정 공유</div>';
   html += '    <div class="sheet-share-grid">';
@@ -7736,6 +7954,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="sheet-sec-label">📝 현장 비고 / 특이사항</div>';
   html += '    <textarea id="sheetMemoInput" class="sheet-memo-input" placeholder="현장 특이사항이나 전달사항을 입력하세요..."></textarea>';
   html += '    <div class="sheet-action-row">';
+  html += '      <button type="button" id="sheetGoToRowBtn" class="sheet-goto-btn" onclick="goToCurrentTaskSheetRow()">📍 시트 행 이동</button>';
   html += '      <button type="button" id="sheetSaveBtn" class="sheet-save-btn" onclick="saveSheetTask()">💾 저장하기</button>';
   html += '    </div>';
   html += '  </div>';
@@ -8759,12 +8978,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  if (isMobileMode) {';
   html += '    openBottomSheet(site, task);';
-  html += '  } else {';
-  html += '    var targetRow = (task && task.row) ? task.row : parseInt(arg1, 10);';
-  html += '    showToast("📌 시트 " + targetRow + "행으로 이동 중...");';
-  html += '    google.script.run';
-  html += '      .withSuccessHandler(() => showToast("✅ [" + (site || "현장") + " - " + ((task && task.taskName) || "공정") + "] 행으로 이동했습니다."))';
-  html += '      .focusSheetRow(targetRow);';
+  html += '  } else if (task && task.row) {';
+  html += '    google.script.run.focusSheetRow(task.row);';
   html += '  }';
   html += '}';
 
@@ -8814,15 +9029,137 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
   html += '';
+  html += 'function openNativeDatePicker() {';
+  html += '  const p = document.getElementById("sheetNativeDatePicker");';
+  html += '  if (!p) return;';
+  html += '  if (typeof p.showPicker === "function") {';
+  html += '    try { p.showPicker(); return; } catch(e) {}';
+  html += '  }';
+  html += '  p.focus();';
+  html += '}';
+  html += '';
+  html += 'function onNativeDatePicked(val) {';
+  html += '  if (!val) return;';
+  html += '  const parts = val.split("-");';
+  html += '  if (parts.length === 3) {';
+  html += '    const y = parts[0], m = parts[1], d = parts[2];';
+  html += '    const dt = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));';
+  html += '    const dayNames = ["일", "월", "화", "수", "목", "금", "토"];';
+  html += '    const dow = dayNames[dt.getDay()];';
+  html += '    const dateInput = document.getElementById("sheetDateInput");';
+  html += '    if (dateInput) {';
+  html += '      dateInput.value = y + "." + m + "." + d + " (" + dow + ")";';
+  html += '    }';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function populateManagerSelectOptions(members) {';
+  html += '  const sel = document.getElementById("sheetManagerSelect");';
+  html += '  if (!sel || sel._populated) return;';
+  html += '  sel._populated = true;';
+  html += '  sel.innerHTML = \'<option value="">(선택 안함)</option>\';';
+  html += '  const defaultList = ["조항만", "송지은", "전예린", "한송이", "인경호", "영하"];';
+  html += '  const allList = [];';
+  html += '  const seen = {};';
+  html += '  (members || []).concat(defaultList).forEach(m => {';
+  html += '    const name = String(m || "").trim();';
+  html += '    if (name && name !== "김종혁" && !seen[name]) {';
+  html += '      seen[name] = true;';
+  html += '      allList.push(name);';
+  html += '    }';
+  html += '  });';
+  html += '  allList.forEach(m => {';
+  html += '    const opt = document.createElement("option");';
+  html += '    opt.value = m;';
+  html += '    opt.innerText = m;';
+  html += '    sel.appendChild(opt);';
+  html += '  });';
+  html += '  const customOpt = document.createElement("option");';
+  html += '  customOpt.value = "__CUSTOM__";';
+  html += '  customOpt.innerText = "✏️ 직접 입력...";';
+  html += '  sel.appendChild(customOpt);';
+  html += '}';
+  html += '';
+  html += 'function onSheetManagerSelect(val) {';
+  html += '  const custom = document.getElementById("sheetManagerCustomInput");';
+  html += '  if (!custom) return;';
+  html += '  if (val === "__CUSTOM__") {';
+  html += '    custom.style.display = "block";';
+  html += '    custom.focus();';
+  html += '  } else {';
+  html += '    custom.style.display = "none";';
+  html += '    custom.value = "";';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function openWideModalView() {';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {';
+  html += '    google.script.run.openSiteScheduleModal();';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function goToCurrentTaskSheetRow() {';
+  html += '  if (!curTaskObj || !curTaskObj.row) {';
+  html += '    showToast("⚠️ 이동할 시트 행 정보가 없습니다.");';
+  html += '    return;';
+  html += '  }';
+  html += '  const targetRow = curTaskObj.row;';
+  html += '  showToast("📍 시트 " + targetRow + "행으로 이동 중...");';
+  html += '  google.script.run';
+  html += '    .withSuccessHandler(res => {';
+  html += '      showToast("✅ [" + (curSiteName || "현장") + " - " + ((curTaskObj && curTaskObj.taskName) || "공정") + "] " + targetRow + "행으로 이동했습니다!");';
+  html += '      if (res && res.sheetUrl && isMobileMode) {';
+  html += '        window.open(res.sheetUrl, "_blank");';
+  html += '      }';
+  html += '    })';
+  html += '    .withFailureHandler(err => {';
+  html += '      showToast("⚠️ 이동 실패: " + ((err && err.message) || err));';
+  html += '    })';
+  html += '    .focusSheetRow(targetRow);';
+  html += '}';
+  html += '';
   html += 'function openBottomSheet(site, task, explicitList, explicitIndex) {';
   html += '  curSiteName = site;';
   html += '  curTaskObj = task;';
   html += '  selectedStatus = task.status || "예정";';
+  html += '  if (selectedStatus === "지연") selectedStatus = "진행 중";';
   html += '  selectedShare = (task.isShared === true);';
   html += '  document.getElementById("sheetSiteName").innerText = site;';
   html += '  document.getElementById("sheetTaskName").innerText = task.taskName;';
-  html += '  document.getElementById("sheetDateDisplay").innerText = task.dateDisplay || "-";';
-  html += '  document.getElementById("sheetMetaDisplay").innerText = (task.manager || "-") + (task.partner ? " / " + task.partner : "");';
+  html += '  const dateInput = document.getElementById("sheetDateInput");';
+  html += '  const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
+  html += '  if (dateInput) {';
+  html += '    dateInput.value = task.dateDisplay || task.startDateStr || "";';
+  html += '  }';
+  html += '  if (hiddenPicker) {';
+  html += '    hiddenPicker.value = task.startDateStr || "";';
+  html += '  }';
+  html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
+  html += '  const mgrCustom = document.getElementById("sheetManagerCustomInput");';
+  html += '  if (mgrSelect) {';
+  html += '    populateManagerSelectOptions(rawData ? rawData.members : []);';
+  html += '    const curMgr = (task.manager || "").trim();';
+  html += '    let found = false;';
+  html += '    for (let i = 0; i < mgrSelect.options.length; i++) {';
+  html += '      if (mgrSelect.options[i].value === curMgr) {';
+  html += '        found = true;';
+  html += '        break;';
+  html += '      }';
+  html += '    }';
+  html += '    if (curMgr && !found) {';
+  html += '      mgrSelect.value = "__CUSTOM__";';
+  html += '      if (mgrCustom) {';
+  html += '        mgrCustom.value = curMgr;';
+  html += '        mgrCustom.style.display = "block";';
+  html += '      }';
+  html += '    } else {';
+  html += '      mgrSelect.value = curMgr;';
+  html += '      if (mgrCustom) {';
+  html += '        mgrCustom.value = "";';
+  html += '        mgrCustom.style.display = "none";';
+  html += '      }';
+  html += '    }';
+  html += '  }';
   html += '  document.getElementById("sheetMemoInput").value = task.memo || "";';
   html += '  updateSheetStatusBtns();';
   html += '  updateSheetShareBtns();';
@@ -8837,17 +9174,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '  updateSameDayNavUI();';
   html += '  document.getElementById("sheetOverlay").classList.add("show");';
   html += '}';
-
+  html += '';
   html += 'function closeBottomSheet(e) {';
   html += '  if (e && e.target !== document.getElementById("sheetOverlay") && !e.target.classList.contains("sheet-close")) return;';
   html += '  document.getElementById("sheetOverlay").classList.remove("show");';
   html += '}';
-
+  html += '';
   html += 'function selectSheetStatus(s) {';
   html += '  selectedStatus = s;';
   html += '  updateSheetStatusBtns();';
   html += '}';
-
+  html += '';
   html += 'function updateSheetStatusBtns() {';
   html += '  const cleanSel = selectedStatus.replace(/\\s+/g, "");';
   html += '  document.querySelectorAll(".sheet-status-btn").forEach(b => {';
@@ -8855,21 +9192,29 @@ function buildSidebarDashboardHtml(mode) {
   html += '    b.classList.toggle("active", cleanSel.indexOf(st) !== -1 || st.indexOf(cleanSel) !== -1);';
   html += '  });';
   html += '}';
-
+  html += '';
   html += 'function selectSheetShare(val) {';
   html += '  selectedShare = val;';
   html += '  updateSheetShareBtns();';
   html += '}';
-
+  html += '';
   html += 'function updateSheetShareBtns() {';
   html += '  document.getElementById("sheetShareOn").classList.toggle("active-on", selectedShare);';
   html += '  document.getElementById("sheetShareOff").classList.toggle("active-off", !selectedShare);';
   html += '}';
-
+  html += '';
   html += 'function saveSheetTask() {';
   html += '  if (!curTaskObj) return;';
   html += '  const saveBtn = document.getElementById("sheetSaveBtn");';
   html += '  const memoVal = document.getElementById("sheetMemoInput").value.trim();';
+  html += '  const dateInput = document.getElementById("sheetDateInput");';
+  html += '  const dateVal = dateInput ? dateInput.value.trim() : "";';
+  html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
+  html += '  const mgrCustom = document.getElementById("sheetManagerCustomInput");';
+  html += '  let mgrVal = "";';
+  html += '  if (mgrSelect) {';
+  html += '    mgrVal = (mgrSelect.value === "__CUSTOM__") ? (mgrCustom ? mgrCustom.value.trim() : "") : mgrSelect.value.trim();';
+  html += '  }';
   html += '  saveBtn.disabled = true;';
   html += '  saveBtn.innerText = "저장 중...";';
   html += '  google.script.run';
@@ -8878,7 +9223,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      saveBtn.innerText = "💾 저장하기";';
   html += '      if (res && res.success) {';
   html += '        document.getElementById("sheetOverlay").classList.remove("show");';
-  html += '        showToast("✅ [" + curTaskObj.taskName + "] 상태가 저장되었습니다!");';
+  html += '        showToast("✅ [" + curTaskObj.taskName + "] 일정/담당자/상태가 저장되었습니다!");';
   html += '        loadData();';
   html += '      } else {';
   html += '        showToast("⚠️ 저장 실패: " + ((res && res.error) || "알 수 없는 오류"));';
@@ -8889,7 +9234,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      saveBtn.innerText = "💾 저장하기";';
   html += '      showToast("⚠️ 에러: " + (err.message || err));';
   html += '    })';
-  html += '    .updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal);';
+  html += '    .updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
   html += '}';
   html += '';
 

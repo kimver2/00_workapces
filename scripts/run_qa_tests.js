@@ -233,13 +233,13 @@ assertTest('상태 "A/S"(슬래시 포함) 시 캘린더 제목에 "🛠️ " �
 const rowPlan = [...baseMockRow];
 rowPlan[7] = '예정';
 const resPlan = buildDetailsFn(rowPlan, 18);
-assertTest('상태 "예정" 시 캘린더 제목에 상태 아이콘 없이 기본 "🟦 " 표시', resPlan && resPlan.title.startsWith('🟦'));
+assertTest('상태 "예정" 시 캘린더 제목 맨 앞에 한눈에 알아볼 수 있는 "📅 " 아이콘 정상 부여', resPlan && resPlan.title.startsWith('📅 🟦'));
 
 // 5. 상태 미입력(빈문자열, null, undefined) 런타임 안전성 테스트
 const rowEmpty = [...baseMockRow];
 rowEmpty[7] = '';
 const resEmpty = buildDetailsFn(rowEmpty, 19);
-assertTest('진행상태가 빈 문자열일 때 ReferenceError 없이 안전 처리', resEmpty !== null && resEmpty.title.startsWith('🟦'));
+assertTest('진행상태가 빈 문자열일 때 ReferenceError 없이 기본 "📅 🟦" 안전 처리', resEmpty !== null && resEmpty.title.startsWith('📅 🟦'));
 
 // 6. 모바일 웹앱 링크 Description 포함 여부 테스트
 assertTest('일정 설명(Description)에 모바일 웹앱 링크(?row=15) 정상 삽입', resDone && resDone.description.indexOf('?row=15') !== -1);
@@ -4478,6 +4478,300 @@ assertTest('🛡️ 구글 캘린더 100% 보존 검증: 완료현장으로 이�
 );
 assertTest('🛡️ 구글 캘린더 정상 청소 검증: 진짜 유령 일정(cal-real-orphan-999)은 정상 삭제됨',
   deletedCalEvents53.indexOf('cal-real-orphan-999') !== -1
+);
+
+// ========================================================
+// 📱 Step 54: 일정 상세 날짜/담당자 수정, 지연 상태 제거, 시트 행 이동 버튼 탑재 QA
+// ========================================================
+console.log('\n📱 [Step 54: 일정 상세 날짜/담당자 수정, 지연 상태 제거, 시트 행 이동 버튼 탑재 QA]');
+
+const dashHtml54 = sandbox.buildSidebarDashboardHtml('mobile');
+
+// 1. UI 컴포넌트 탑재 검증
+assertTest('buildSidebarDashboardHtml: 일정(날짜) 텍스트 입력 필드(sheetDateInput) 탑재 검증',
+  dashHtml54.indexOf('id="sheetDateInput"') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 네이티브 달력 선택기(sheetNativeDatePicker) 탑재 검증',
+  dashHtml54.indexOf('id="sheetNativeDatePicker"') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 달력 팝업 오픈 버튼(sheet-cal-pick-btn) 탑재 검증',
+  dashHtml54.indexOf('class="sheet-cal-pick-btn"') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 담당자 선택 드롭다운(sheetManagerSelect) 탑재 검증',
+  dashHtml54.indexOf('id="sheetManagerSelect"') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 담당자 직접 입력 필드(sheetManagerCustomInput) 탑재 검증',
+  dashHtml54.indexOf('id="sheetManagerCustomInput"') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 하단 액션바 시트 행 이동 버튼(sheetGoToRowBtn) 탑재 검증',
+  dashHtml54.indexOf('id="sheetGoToRowBtn"') !== -1 && dashHtml54.indexOf('📍 시트 행 이동') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 상단 타이틀바 미니 시트 행 이동 버튼(btn-sheet-goto-mini) 탑재 검증',
+  dashHtml54.indexOf('class="btn-sheet-goto-mini"') !== -1
+);
+
+// 2. 상태 선택 그리드에서 '지연' 상태 제거 및 4개 상태(예정, 진행 중, 완료, AS) 정돈 검증
+assertTest('buildSidebarDashboardHtml: 상세 모달 상태 버튼에서 "지연" 완전 제거 검증',
+  dashHtml54.indexOf('selectSheetStatus(\'지연\')') === -1 && dashHtml54.indexOf('data-status="지연"') === -1
+);
+assertTest('buildSidebarDashboardHtml: 4대 핵심 상태(예정, 진행 중, 완료, AS) 유지 검증',
+  dashHtml54.indexOf('selectSheetStatus(\'예정\')') !== -1 &&
+  dashHtml54.indexOf('selectSheetStatus(\'진행 중\')') !== -1 &&
+  dashHtml54.indexOf('selectSheetStatus(\'완료\')') !== -1 &&
+  dashHtml54.indexOf('selectSheetStatus(\'AS\')') !== -1
+);
+
+// 3. 클라이언트 제어 함수 탑재 검증
+assertTest('buildSidebarDashboardHtml: 시트 행 이동 함수(goToCurrentTaskSheetRow) 탑재 검증',
+  dashHtml54.indexOf('function goToCurrentTaskSheetRow()') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 달력 팝업 오픈 및 선택 핸들러(openNativeDatePicker, onNativeDatePicked) 탑재 검증',
+  dashHtml54.indexOf('function openNativeDatePicker()') !== -1 && dashHtml54.indexOf('function onNativeDatePicked(') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 담당자 셀렉트 변경 핸들러(onSheetManagerSelect) 탑재 검증',
+  dashHtml54.indexOf('function onSheetManagerSelect(') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 담당자 목록 옵션 구성기(populateManagerSelectOptions) 탑재 검증',
+  dashHtml54.indexOf('function populateManagerSelectOptions(') !== -1
+);
+assertTest('buildSidebarDashboardHtml: saveSheetTask에서 dateVal 및 mgrVal 서버 전달 검증',
+  dashHtml54.indexOf('updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal)') !== -1
+);
+
+// 4. ContentService 모킹 및 시트 환경 구성
+sandbox.ContentService = {
+  MimeType: { JSON: 'JSON', TEXT: 'TEXT' },
+  createTextOutput: function(text) {
+    return {
+      _content: text,
+      _mime: '',
+      setMimeType: function(m) { this._mime = m; return this; },
+      getContent: function() { return this._content; }
+    };
+  }
+};
+
+const mockSheetData54 = [
+  ['자이 101동', '2026.09.20', '철거', '철거팀', false, '', '이순신', '예정', 'ev-54', 1000]
+];
+let focusedRange54 = null;
+const mockSheet54 = {
+  getName: () => '현장데이터',
+  getSheetId: () => 12345678,
+  getLastRow: () => 10,
+  getLastColumn: () => 10,
+  getRange: (r, c, nr, nc) => {
+    focusedRange54 = { r, c, nr, nc };
+    if (nr && nc) {
+      return {
+        getValues: () => mockSheetData54
+      };
+    }
+    return {
+      setValue: (val) => {
+        mockSheetData54[r - 2][c - 1] = val;
+      },
+      getValue: () => mockSheetData54[r - 2][c - 1]
+    };
+  },
+  setActiveRange: (rng) => { focusedRange54 = rng; },
+  getParent: () => mockSs54
+};
+const mockSs54 = {
+  getId: () => 'test-sheet-id-54',
+  setActiveSheet: () => {},
+  getSheetByName: (n) => (n === '현장데이터' ? mockSheet54 : null),
+  getSheets: () => [mockSheet54]
+};
+
+sandbox.SpreadsheetApp.getActiveSpreadsheet = () => mockSs54;
+sandbox.getAppSpreadsheet = () => mockSs54;
+sandbox.findSiteScheduleSheet = () => mockSheet54;
+sandbox.syncSingleRowToCalendar = () => {};
+
+// 5. focusSheetRow 런타임 검증
+const focusRes54 = sandbox.focusSheetRow(5);
+assertTest('focusSheetRow: 성공(success: true) 반환 검증', focusRes54.success === true);
+assertTest('focusSheetRow: 행 번호(row: 5) 일치 검증', focusRes54.row === 5);
+assertTest('focusSheetRow: 웹앱/모바일용 직접 링크 URL(sheetUrl) 생성 검증',
+  focusRes54.sheetUrl && focusRes54.sheetUrl.indexOf('range=5:5') !== -1 && focusRes54.sheetUrl.indexOf('gid=12345678') !== -1
+);
+
+// 6. updateScheduleStatusFromWeb 날짜 및 담당자 업데이트 런타임 검증
+const updateRes54 = sandbox.updateScheduleStatusFromWeb(
+  2,
+  '진행 중',
+  true,
+  '현장 진입 완료 및 보양 작업',
+  '2026.09.29 (화)',
+  '전예린'
+);
+
+assertTest('updateScheduleStatusFromWeb: 반환 결과 성공(success: true) 검증', updateRes54.success === true);
+assertTest('updateScheduleStatusFromWeb: H열(8열: 상태) "진행 중" 업데이트 검증', mockSheetData54[0][7] === '진행 중');
+assertTest('updateScheduleStatusFromWeb: B열(2열: 날짜) 요일 제거 및 YYYY.MM.DD 정규화("2026.09.29") 기록 검증',
+  mockSheetData54[0][1] === '2026.09.29'
+);
+assertTest('updateScheduleStatusFromWeb: G열(7열: 담당자) "전예린" 정확 기록 검증', mockSheetData54[0][6] === '전예린');
+assertTest('updateScheduleStatusFromWeb: E열(5열: 공유) true 기록 검증', mockSheetData54[0][4] === true);
+assertTest('updateScheduleStatusFromWeb: F열(6열: 비고) "현장 진입 완료 및 보양 작업" 기록 검증',
+  mockSheetData54[0][5] === '현장 진입 완료 및 보양 작업'
+);
+assertTest('updateScheduleStatusFromWeb: J열(10열: 타임스탬프) 최신 시각 갱신 검증', mockSheetData54[0][9] > 1000);
+
+// 7. doGet 파라미터 연동 검증
+const fakeDoGetEvent54 = {
+  parameter: {
+    action: 'updateScheduleStatus',
+    row: '2',
+    status: '완료',
+    date: '2026.10.05',
+    manager: '인경호',
+    format: 'json'
+  }
+};
+const doGetOutput54 = sandbox.doGet(fakeDoGetEvent54);
+const doGetJson54 = JSON.parse(doGetOutput54.getContent());
+assertTest('doGet: action=updateScheduleStatus 호출 성공 반환 검증', doGetJson54.success === true);
+assertTest('doGet: 날짜 2026.10.05 시트 B열 반영 검증', mockSheetData54[0][1] === '2026.10.05');
+assertTest('doGet: 담당자 "인경호" 시트 G열 반영 검증', mockSheetData54[0][6] === '인경호');
+// ========================================================
+// 🎯 Step 55: 상태 아이콘(📅 예정), 🟪 중복 일정 치유, 완료현장 접기, 대시보드 가로 확장 QA
+// ========================================================
+console.log('\n🎯 [Step 55: 상태 아이콘(📅 예정), 🟪 중복 일정 치유, 완료현장 접기, 대시보드 가로 확장 QA]');
+
+// 1. 상태별 제목 맨 앞 아이콘 검증
+const testRowPlan55 = ['신대방우성 16동 902호', '2026.11.26', '가구', '우성', true, '', '전예린', '예정', 'ev-55-1', Date.now()];
+const detailsPlan55 = sandbox.buildEventDetails(testRowPlan55, 2, null, mockSheet54);
+assertTest('buildEventDetails: 예정 상태 시 제목 맨 앞에 "📅 🟦" 아이콘 부여 검증',
+  detailsPlan55 && detailsPlan55.title.startsWith('📅 🟦 [가구] 신대방우성 16동 902호')
+);
+
+const testRowProg55 = ['신대방우성 16동 902호', '2026.11.26', '가구', '우성', true, '', '전예린', '진행 중', 'ev-55-2', Date.now()];
+const detailsProg55 = sandbox.buildEventDetails(testRowProg55, 2, null, mockSheet54);
+assertTest('buildEventDetails: 진행중 상태 시 제목 맨 앞에 "▶️ 🟦" 아이콘 부여 검증',
+  detailsProg55 && detailsProg55.title.startsWith('▶️ 🟦 [가구] 신대방우성 16동 902호')
+);
+
+const testRowDone55 = ['신대방우성 16동 902호', '2026.11.26', '가구', '우성', false, '', '전예린', '완료', 'ev-55-3', Date.now()];
+const detailsDone55 = sandbox.buildEventDetails(testRowDone55, 2, null, mockSheet54);
+assertTest('buildEventDetails: 완료 상태 시 제목 맨 앞에 "✅ 🟥" 아이콘 부여 검증',
+  detailsDone55 && detailsDone55.title.startsWith('✅ 🟥 [가구] 신대방우성 16동 902호')
+);
+
+// 2. isSystemSiteScheduleEvent 🟪 및 📅 인식 검증
+const mockPurpleEvent55 = {
+  getTitle: () => '🟪 [가구] 신대방우성 16동 902호',
+  getDescription: () => '가구 공종 일정'
+};
+assertTest('isSystemSiteScheduleEvent: 과거 🟪(보라색 네모) 일정 정상 시스템 일정으로 인식 (삭제/치유 허용)',
+  sandbox.isSystemSiteScheduleEvent(mockPurpleEvent55) === true
+);
+
+const mockScheduledCalEv55 = {
+  getTitle: () => '📅 🟦 [가구] 신대방우성 16동 902호',
+  getDescription: () => '가구 일정'
+};
+assertTest('isSystemSiteScheduleEvent: 신규 📅 🟦 일정 정상 시스템 일정으로 인식',
+  sandbox.isSystemSiteScheduleEvent(mockScheduledCalEv55) === true
+);
+
+// 3. 중복 🟪 일정 치유 런타임 시뮬레이션
+let deletedEvIds55 = [];
+const mockOldPurpleEv = {
+  getId: () => 'old-purple-nov26-001',
+  getTitle: () => '🟪 [가구] 신대방우성 16동 902호',
+  getDescription: () => '📌 현장명: 🟪 신대방우성 16동 902호\n🔨 공종: 가구',
+  getLocation: () => '신대방우성 16동 902호',
+  isAllDayEvent: () => true,
+  getAllDayStartDate: () => new Date(2026, 10, 26),
+  getStartTime: () => new Date(2026, 10, 26),
+  deleteEvent: function() { deletedEvIds55.push(this.getId()); }
+};
+
+const mockNewRedEv = {
+  getId: () => 'new-red-nov26-valid',
+  getTitle: () => '📅 🟥 [가구] 신대방우성 16동 902호',
+  getDescription: () => '📌 현장명: 신대방우성 16동 902호\n🔨 공종: 가구',
+  getLocation: () => '신대방우성 16동 902호',
+  isAllDayEvent: () => true,
+  getAllDayStartDate: () => new Date(2026, 10, 26),
+  getStartTime: () => new Date(2026, 10, 26),
+  deleteEvent: () => {}
+};
+
+const mockSheetDedup55 = {
+  getLastRow: () => 2,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => [['신대방우성 16동 902호', '2026.11.26', '가구', '', false, '', '전예린', '예정', 'new-red-nov26-valid', Date.now()]]
+  })
+};
+
+const mockCalDedup55 = {
+  getEvents: () => [mockOldPurpleEv, mockNewRedEv]
+};
+
+sandbox.cleanupDuplicateCalendarEventsSilent(mockCalDedup55, mockSheetDedup55);
+
+assertTest('cleanupDuplicateCalendarEventsSilent: 과거 중복 🟪 일정(old-purple-nov26-001) 안전 삭제 검증',
+  deletedEvIds55.indexOf('old-purple-nov26-001') !== -1
+);
+assertTest('cleanupDuplicateCalendarEventsSilent: 신규 정상 일정(new-red-nov26-valid) 보존 검증',
+  deletedEvIds55.indexOf('new-red-nov26-valid') === -1
+);
+
+// 4. 완료현장 시트 동일 현장별 접기(groupCompletedSitesBySite) 검증
+let shiftedRanges55 = [];
+let collapsedRanges55 = [];
+const mockCompletedSheetData55 = [
+  ['보라매경남 102동 1104호', '2026.06.17', '신고'],
+  ['보라매경남 102동 1104호', '2026.06.19', '철거'],
+  ['보라매경남 102동 1104호', '2026.06.25', '목공'],
+  ['롯데낙천대 101동 505호', '2026.06.19', '신고'],
+  ['롯데낙천대 101동 505호', '2026.06.20', '상담']
+];
+
+const mockCompletedSheet55 = {
+  getLastRow: () => mockCompletedSheetData55.length + 1,
+  getRange: (r, c, nr, nc) => {
+    return {
+      getValues: () => mockCompletedSheetData55.map(row => [row[0]]),
+      shiftRowGroupDepth: (delta) => {
+        shiftedRanges55.push({ r, c, nr, nc, delta });
+      },
+      collapseGroups: () => {
+        collapsedRanges55.push({ r, c, nr, nc });
+      },
+      expandGroups: () => {}
+    };
+  }
+};
+
+sandbox.groupCompletedSitesBySite(mockCompletedSheet55);
+
+assertTest('groupCompletedSitesBySite: 보라매경남 하위 행(3~4행, 2개 행) 그룹화(depth=1) 검증',
+  shiftedRanges55.some(s => s.r === 3 && s.nr === 2 && s.delta === 1)
+);
+assertTest('groupCompletedSitesBySite: 보라매경남 하위 행 collapseGroups 접기 실행 검증',
+  collapsedRanges55.some(c => c.r === 3 && c.nr === 2)
+);
+assertTest('groupCompletedSitesBySite: 롯데낙천대 하위 행(6행, 1개 행) 그룹화(depth=1) 검증',
+  shiftedRanges55.some(s => s.r === 6 && s.nr === 1 && s.delta === 1)
+);
+assertTest('groupCompletedSitesBySite: 롯데낙천대 하위 행 collapseGroups 접기 실행 검증',
+  collapsedRanges55.some(c => c.r === 6 && c.nr === 1)
+);
+
+// 5. 대시보드 가로 사이즈 확장 및 팝업 버튼 검증
+const sidebarHtml55 = sandbox.buildSidebarDashboardHtml('sidebar');
+assertTest('buildSidebarDashboardHtml: 상단 타이틀바 "⛶ 크게 보기" 팝업 버튼 탑재 검증',
+  sidebarHtml55.indexOf('openWideModalView()') !== -1 && sidebarHtml55.indexOf('⛶ 크게 보기') !== -1
+);
+assertTest('openSiteScheduleSidebar: 가로 너비 450px 이상 지정 검증',
+  code.indexOf('.setWidth(450)') !== -1
+);
+assertTest('openSiteScheduleModal: 대형 모달 너비 1020px 이상 지정 검증',
+  code.indexOf('.setWidth(1020)') !== -1
 );
 
 console.log('\n========================================================');
