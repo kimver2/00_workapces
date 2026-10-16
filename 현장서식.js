@@ -6557,8 +6557,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '      const bgCol = site.colorHex || "#2563eb";';
   html += '      const txtCol = (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26") ? "#0f172a" : "#ffffff";';
   html += '      const fullTitle = escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + ")";';
+  html += '      const tLen = (task.taskName || "").length;';
+  html += '      let fontStyle = "";';
+  html += '      if (tLen <= 2) {';
+  html += '        fontStyle = "font-size:9.5px;";';
+  html += '      } else if (tLen === 3) {';
+  html += '        fontStyle = "font-size:8.2px;letter-spacing:-0.2px;";';
+  html += '      } else {';
+  html += '        fontStyle = "font-size:7.2px;letter-spacing:-0.5px;";';
+  html += '      }';
   html += '      gridHtml += \'<div class="cal-event-pill \' + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
-  html += '      gridHtml += \'<span class="cal-sh-box \' + shClass + \'"></span><span class="cal-pill-text">\' + escapeHtml(task.taskName) + \'</span>\';';
+  html += '      gridHtml += \'<span class="cal-sh-box \' + shClass + \'"></span><span class="cal-pill-text" style="\' + fontStyle + \'">\' + escapeHtml(task.taskName) + \'</span>\';';
   html += '      gridHtml += \'</div>\';';
   html += '    });';
   html += '    gridHtml += \'  </div></div>\';';
