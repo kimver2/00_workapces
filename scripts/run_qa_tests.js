@@ -2563,7 +2563,7 @@ assertTest('buildSidebarDashboardHtml: 선택 현장 액션 바(#checkedActionBa
 // 34-5: 클라이언트 스크립트에 달력 및 체크박스 제어 함수 탑재 검증
 assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 달력 및 체크박스 제어 함수 탑재 검증',
   dashHtml34.indexOf('function toggleCalendarView()') !== -1 &&
-  dashHtml34.indexOf('function renderCalendar()') !== -1 &&
+  dashHtml34.indexOf('function renderCalendar(') !== -1 &&
   dashHtml34.indexOf('function onSiteCheckboxClick(e, cb)') !== -1 &&
   dashHtml34.indexOf('function updateCheckedStatusUI()') !== -1 &&
   dashHtml34.indexOf('function clearAllChecked()') !== -1 &&
@@ -3080,6 +3080,76 @@ assertTest('시뮬레이션: 2개 현장 선택 시 "☑️ 보경102동 외 1�
 const sim4 = formatCalendarNotice(new Set(["보경102동", "신대방우성", "래미안옥수", "자이서초"]));
 assertTest('시뮬레이션: 4개 현장 선택 시 "☑️ 보경102동 외 3건" 축약 표기 검증',
   sim4 === "☑️ 보경102동 외 3건"
+);
+
+// 🎯 Step 41: 캘린더 좌우 스와이프 제스처 & 슬라이드 전환 애니메이션 QA
+// ========================================================
+console.log('\n👆 [Step 41: 캘린더 좌우 스와이프 제스처 & 슬라이드 전환 애니메이션 QA]');
+
+const step41Html = sandbox.buildSidebarDashboardHtml('mobile');
+const s41Start = step41Html.indexOf('<script>');
+const s41End = step41Html.lastIndexOf('</script>');
+const step41Script = step41Html.slice(s41Start + 8, s41End);
+
+// 41-1: CSS 내 .calendar-view 및 .cal-grid에 touch-action: pan-y 탑재 검증
+assertTest('buildSidebarDashboardHtml: .calendar-view 및 .cal-grid touch-action: pan-y CSS 탑재 검증',
+  step41Html.indexOf('.calendar-view { touch-action: pan-y;') !== -1 &&
+  step41Html.indexOf('.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); width: 100%; background: #e2e8f0; gap: 1px; touch-action: pan-y; }') !== -1
+);
+
+// 41-2: CSS 내 @keyframes 슬라이드 애니메이션 및 클래스 탑재 검증
+assertTest('buildSidebarDashboardHtml: 캘린더 슬라이드 애니메이션(@keyframes calSlideFromRight/Left, .cal-slide-next/prev) CSS 탑재 검증',
+  step41Html.indexOf('@keyframes calSlideFromRight') !== -1 &&
+  step41Html.indexOf('@keyframes calSlideFromLeft') !== -1 &&
+  step41Html.indexOf('.cal-slide-next') !== -1 &&
+  step41Html.indexOf('.cal-slide-prev') !== -1
+);
+
+// 41-3: 클라이언트 스크립트에 setupCalendarSwipe 함수 탑재 검증
+assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 setupCalendarSwipe 터치/마우스 제스처 리스너 함수 탑재 검증',
+  step41Script.indexOf('function setupCalendarSwipe()') !== -1 &&
+  step41Script.indexOf('calArea.addEventListener("touchstart"') !== -1 &&
+  step41Script.indexOf('calArea.addEventListener("touchend"') !== -1 &&
+  step41Script.indexOf('calArea.addEventListener("mousedown"') !== -1 &&
+  step41Script.indexOf('window.addEventListener("mouseup"') !== -1
+);
+
+// 41-4: prevMonth / nextMonth 및 renderCalendar 슬라이드 방향 연동 검증
+assertTest('buildSidebarDashboardHtml: prevMonth("prev") / nextMonth("next") 방향 전달 및 renderCalendar 애니메이션 클래스 연동 검증',
+  step41Script.indexOf('renderCalendar("prev")') !== -1 &&
+  step41Script.indexOf('renderCalendar("next")') !== -1 &&
+  step41Script.indexOf('function renderCalendar(direction)') !== -1 &&
+  step41Script.indexOf('grid.classList.add("cal-slide-next")') !== -1 &&
+  step41Script.indexOf('grid.classList.add("cal-slide-prev")') !== -1
+);
+
+// 41-5: 스와이프 제스처 판정 알고리즘 시뮬레이션 함수
+function evaluateSwipeGesture(deltaX, deltaY, elapsed) {
+  if (elapsed > 750) return null; // 롱프레스는 무시
+  if (Math.abs(deltaX) >= 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25) {
+    return (deltaX < 0) ? "next" : "prev";
+  }
+  return null;
+}
+
+assertTest('제스처 시뮬레이션: 오른쪽에서 왼쪽 스와이프(deltaX: -60, deltaY: 10, 300ms) -> "next" (다음 달) 정상 판정 검증',
+  evaluateSwipeGesture(-60, 10, 300) === "next"
+);
+
+assertTest('제스처 시뮬레이션: 왼쪽에서 오른쪽 스와이프(deltaX: 60, deltaY: 10, 300ms) -> "prev" (이전 달) 정상 판정 검증',
+  evaluateSwipeGesture(60, 10, 300) === "prev"
+);
+
+assertTest('제스처 시뮬레이션: 세로 스크롤 제스처(deltaX: 15, deltaY: 80, 250ms) -> 오동작 방지(null 반환) 검증',
+  evaluateSwipeGesture(15, 80, 250) === null
+);
+
+assertTest('제스처 시뮬레이션: 미세 탭/터치 떨림(deltaX: 15, deltaY: 5, 80ms) -> 오동작 방지(null 반환) 검증',
+  evaluateSwipeGesture(15, 5, 80) === null
+);
+
+assertTest('제스처 시뮬레이션: 0.75초 초과 롱 터치 드래그(deltaX: 70, deltaY: 5, 900ms) -> 오동작 방지(null 반환) 검증',
+  evaluateSwipeGesture(70, 5, 900) === null
 );
 
 console.log('\n========================================================');
