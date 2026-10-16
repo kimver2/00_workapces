@@ -6064,9 +6064,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '.site-header:hover { background: #f8fafc; }';
   html += '.site-title-area { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; min-width: 0; }';
   html += '.site-name { font-weight: 700; font-size: 13.5px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; min-width: 0; }';
-  html += '.site-date-badge { font-size: 10.5px; padding: 2px 6px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-weight: 700; white-space: nowrap; flex-shrink: 0; }';
-  html += '.site-date-badge.today { background: #dbeafe; color: #1e40af; font-weight: 800; }';
-  html += '.site-date-badge.delay { background: #fee2e2; color: #dc2626; font-weight: 800; }';
+  html += '.share-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 4px; line-height: 1.2; white-space: nowrap; }';
+  html += '.share-tag.share-on { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }';
+  html += '.share-tag.share-off { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }';
   html += '.site-badge { font-size: 10.5px; padding: 2px 6px; border-radius: 10px; background: #f1f5f9; color: #475569; font-weight: 600; white-space: nowrap; flex-shrink: 0; }';
   html += '.site-toggle { font-size: 10px; color: #94a3b8; transition: transform 0.2s; flex-shrink: 0; }';
   html += '.site-card.expanded .site-toggle { transform: rotate(180deg); }';
@@ -6287,7 +6287,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  let html = "";';
   html += '  let visibleSitesCount = 0;';
 
-  html += '  rawData.sites.forEach((site, sIdx) => {';
+  html += '  const matchedSites = [];';
+  html += '  rawData.sites.forEach(site => {';
   html += '    if (currentFilter === "done") {';
   html += '      if (!site.isAllCompleted) return;';
   html += '    } else {';
@@ -6315,28 +6316,46 @@ function buildSidebarDashboardHtml(mode) {
   html += '    });';
 
   html += '    if (filteredTasks.length === 0) return;';
+
+  html += '    let earliestFilteredMs = 0;';
+  html += '    for (let i = 0; i < filteredTasks.length; i++) {';
+  html += '      if (filteredTasks[i].dateMs) {';
+  html += '        if (!earliestFilteredMs || filteredTasks[i].dateMs < earliestFilteredMs) {';
+  html += '          earliestFilteredMs = filteredTasks[i].dateMs;';
+  html += '        }';
+  html += '      }';
+  html += '    }';
+
+  html += '    matchedSites.push({';
+  html += '      site: site,';
+  html += '      filteredTasks: filteredTasks,';
+  html += '      earliestFilteredMs: earliestFilteredMs';
+  html += '    });';
+  html += '  });';
+
+  html += '  matchedSites.sort((a, b) => {';
+  html += '    const aMs = a.earliestFilteredMs || 0;';
+  html += '    const bMs = b.earliestFilteredMs || 0;';
+  html += '    if (aMs && bMs) {';
+  html += '      if (aMs !== bMs) return aMs - bMs;';
+  html += '    } else if (aMs) {';
+  html += '      return -1;';
+  html += '    } else if (bMs) {';
+  html += '      return 1;';
+  html += '    }';
+  html += '    return 0;';
+  html += '  });';
+
+  html += '  matchedSites.forEach(item => {';
   html += '    visibleSitesCount++;';
-  html += '    const isExpanded = (query !== "") || (currentFilter !== "all" && currentFilter !== "done");';
-  html += '    const displayDate = (filteredTasks[0] && filteredTasks[0].dateDisplay) ? filteredTasks[0].dateDisplay : (site.earliestDateDisplay || "");';
-  html += '    const hasToday = filteredTasks.some(t => t.isToday);';
-  html += '    const hasDelay = filteredTasks.some(t => t.isDelayed);';
- 
+  html += '    const site = item.site;';
+  html += '    const filteredTasks = item.filteredTasks;';
+  html += '    const isExpanded = (currentFilter === "today" || currentFilter === "delay");';
+
   html += '    html += \'<div class="site-card \' + (isExpanded ? "expanded" : "") + \'">\';';
   html += '    html += \'  <div class="site-header" style="border-left-color: \' + site.colorHex + \';" onclick="toggleSite(this)">\';';
   html += '    html += \'    <div class="site-title-area">\';';
   html += '    html += \'      <span class="site-name">\' + escapeHtml(site.siteName) + \'</span>\';';
-  html += '    if (displayDate) {';
-  html += '      let dateBadgeClass = "site-date-badge";';
-  html += '      let dateBadgeIcon = "📅 ";';
-  html += '      if (hasDelay) {';
-  html += '        dateBadgeClass += " delay";';
-  html += '        dateBadgeIcon = "⚠️ ";';
-  html += '      } else if (hasToday) {';
-  html += '        dateBadgeClass += " today";';
-  html += '        dateBadgeIcon = "🔥 ";';
-  html += '      }';
-  html += '      html += \'<span class="\' + dateBadgeClass + \'">\' + dateBadgeIcon + escapeHtml(displayDate) + \'</span>\';';
-  html += '    }';
   html += '    if (site.isAllCompleted) {';
   html += '      html += \'      <span class="site-badge" style="background:#dcfce7;color:#166534;">완료 \' + filteredTasks.length + \'건</span>\';';
   html += '    } else {';
@@ -6358,6 +6377,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      else if (task.status.indexOf("진행") !== -1) statusClass = "status-진행";';
   html += '      else if (task.status.indexOf("AS") !== -1) statusClass = "status-AS";';
 
+  html += '      const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1");';
+  html += '      const shareTagClass = isSh ? "share-tag share-on" : "share-tag share-off";';
+  html += '      const shareTagText = isSh ? "🟦 공유" : "🟥 미공유";';
+
   html += '      const taskJson = encodeURIComponent(JSON.stringify(task));';
   html += '      const siteEnc = encodeURIComponent(site.siteName);';
   html += '      html += \'<div class="task-item" onclick="onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')">\';';
@@ -6367,7 +6390,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'  </div>\';';
   html += '      html += \'  <div class="task-meta">\';';
   html += '      html += \'    <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? " / " + escapeHtml(task.partner) : "") + \'</span>\';';
-  html += '      html += \'    <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : escapeHtml(task.status)) + \'</span>\';';
+  html += '      html += \'    <div style="display:flex;align-items:center;gap:4px;">\';';
+  html += '      html += \'      <span class="\' + shareTagClass + \'">\' + shareTagText + \'</span>\';';
+  html += '      html += \'      <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : escapeHtml(task.status)) + \'</span>\';';
+  html += '      html += \'    </div>\';';
   html += '      html += \'  </div>\';';
   html += '      if (task.memo) {';
   html += '        html += \'  <div class="task-memo">📝 \' + escapeHtml(task.memo) + \'</div>\';';

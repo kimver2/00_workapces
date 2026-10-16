@@ -2213,15 +2213,15 @@ assertTest('getSidebarDashboardData: 시트 예외 발생 시 에러 객체 반�
   safeDashData.sites.length === 0
 );
 
-// 31-5: 전체 및 완료 탭에서는 카드를 기본으로 펼치지 않고 접힌 상태 유지 검증
-assertTest('buildSidebarDashboardHtml: 전체/완료 탭에서는 기본 접힘(isExpanded = false) 적용 검증',
-  modalHtml.indexOf('(currentFilter !== "all" && currentFilter !== "done")') !== -1
+// 31-5: 전체 및 완료 탭, 검색 시 카드를 기본 접힌 상태 유지 검증
+assertTest('buildSidebarDashboardHtml: 기본 접힘(isExpanded = false) 적용 검증 (today/delay 제외 기본 접힘)',
+  modalHtml.indexOf('(currentFilter === "today" || currentFilter === "delay")') !== -1
 );
 
 // ========================================================
-// 🎯 Step 32: 검색 시 완료 항목 배제 & 모바일 접힌 상태 및 일정 날짜 뱃지 표기 QA
+// 🎯 Step 32: 검색 시 완료 항목 배제 & 모바일 접힌 상태 & 공유 뱃지 & 동적 일정 정렬 QA
 // ========================================================
-console.log('\n🎯 [Step 32: 검색 시 완료 항목 배제 & 모바일 접힌 상태 및 일정 날짜 뱃지 표기 QA]');
+console.log('\n🎯 [Step 32: 검색 시 완료 항목 배제 & 모바일 접힌 상태 & 공유 뱃지 & 동적 일정 정렬 QA]');
 
 const step32MobileHtml = sandbox.buildSidebarDashboardHtml('mobile');
 const mobileScriptMatch = step32MobileHtml.match(/<script>([\s\S]*?)<\/script>/);
@@ -2244,16 +2244,25 @@ assertTest('buildSidebarDashboardHtml: 검색 중일 때 완료/취소 공정 �
   step32MobileHtml.indexOf('stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1') !== -1
 );
 
-// 32-3: 현장 카드 헤더 날짜 뱃지(site-date-badge) CSS 및 렌더링 로직 탑재 검증
-assertTest('buildSidebarDashboardHtml: 헤더 날짜 뱃지 스타일(.site-date-badge) 탑재 검증',
-  step32MobileHtml.indexOf('.site-date-badge {') !== -1 &&
-  step32MobileHtml.indexOf('.site-date-badge.today {') !== -1 &&
-  step32MobileHtml.indexOf('.site-date-badge.delay {') !== -1
+// 32-3: 접힌 상태에서 헤더 날짜 뱃지 배제 & 세부 카드 공유 뱃지(share-tag) & 동적 정렬 로직 검증
+assertTest('buildSidebarDashboardHtml: 헤더 날짜 뱃지 배제(사용자 요청: 접힌상태 날짜 제외) 검증',
+  step32MobileHtml.indexOf('site-date-badge') === -1
 );
 
-assertTest('buildSidebarDashboardHtml: 헤더 날짜 뱃지(displayDate) 렌더링 로직 탑재 검증',
-  step32MobileHtml.indexOf('site-date-badge') !== -1 &&
-  step32MobileHtml.indexOf('escapeHtml(displayDate)') !== -1
+assertTest('buildSidebarDashboardHtml: 세부 카드 내 공유 상태 뱃지 스타일(.share-tag) 탑재 검증',
+  step32MobileHtml.indexOf('.share-tag {') !== -1 &&
+  step32MobileHtml.indexOf('.share-tag.share-on {') !== -1 &&
+  step32MobileHtml.indexOf('.share-tag.share-off {') !== -1
+);
+
+assertTest('buildSidebarDashboardHtml: 세부 카드 내 네모박스 파랑/빨강 공유 뱃지(🟦 공유 / 🟥 미공유) 렌더링 검증',
+  step32MobileHtml.indexOf('🟦 공유') !== -1 &&
+  step32MobileHtml.indexOf('🟥 미공유') !== -1
+);
+
+assertTest('buildSidebarDashboardHtml: 검색/필터 시 매칭된 공정의 가장 빠른 일정 기준 동적 정렬(matchedSites.sort) 탑재 검증',
+  step32MobileHtml.indexOf('earliestFilteredMs') !== -1 &&
+  step32MobileHtml.indexOf('matchedSites.sort') !== -1
 );
 
 // 32-4: getSidebarDashboardData: earliestDateDisplay 및 today/delayed 플래그 전달 검증
@@ -2306,6 +2315,40 @@ assertTest('검색 시뮬레이션: "홍길동" 검색 시 완료된 공정(철�
   filtered.some(t => t.taskName === '목공') &&
   filtered.some(t => t.taskName === '타일') &&
   !filtered.some(t => t.taskName === '철거')
+);
+
+// 32-6: 검색 시 현장별 빠른 일정 순 동적 정렬 시뮬레이션 검증 (사용자 스크린샷 실사례)
+const testSearchSortData = [
+  {
+    siteName: '신대방우성 5동 601호',
+    tasks: [
+      { taskName: '철거', dateDisplay: '26.10.15', dateMs: 1760486400000, status: '완료' },
+      { taskName: '도배', dateDisplay: '26.11.05', dateMs: 1762300800000, status: '예정' }
+    ]
+  },
+  {
+    siteName: '신대방우성 1동 805호',
+    tasks: [
+      { taskName: '도배', dateDisplay: '26.10.21', dateMs: 1761004800000, status: '예정' }
+    ]
+  }
+];
+
+const simMatched = [];
+testSearchSortData.forEach(s => {
+  const fTasks = s.tasks.filter(t => t.taskName.indexOf('도배') !== -1 && t.status.indexOf('완료') === -1);
+  if (fTasks.length === 0) return;
+  let eMs = 0;
+  for (let i = 0; i < fTasks.length; i++) {
+    if (fTasks[i].dateMs && (!eMs || fTasks[i].dateMs < eMs)) eMs = fTasks[i].dateMs;
+  }
+  simMatched.push({ site: s, filteredTasks: fTasks, earliestFilteredMs: eMs });
+});
+simMatched.sort((a, b) => a.earliestFilteredMs - b.earliestFilteredMs);
+
+assertTest('동적 정렬 시뮬레이션: "도배" 검색 시 10.21 일정을 가진 신대방우성 1동 805호가 11.05 일정의 5동 601호보다 상위에 정렬',
+  simMatched[0].site.siteName === '신대방우성 1동 805호' &&
+  simMatched[1].site.siteName === '신대방우성 5동 601호'
 );
 
 console.log('\n========================================================');
