@@ -1083,7 +1083,7 @@ function handleCalendarEditTrigger(e) {
     var now = new Date();
     var nowMs = now.getTime();
     var nowStr = formatDateTime(now);
-    var currentUser = getCurrentUserIdentifier();
+    var currentUser = getCurrentUserIdentifier(e);
     var actualStartRow = Math.max(startRow, 2);
     var maxProcessRow = Math.min(endRow, actualStartRow + 49); // 최대 50행 대량 붙여넣기까지 안전 배치 지원
     var numRows = maxProcessRow - actualStartRow + 1;
@@ -1752,17 +1752,36 @@ function formatScheduleDateDisplay(val) {
 
 /**
  * 현재 로그인 사용자 닉네임/아이디 추출
+ * @param {Object} [e] onEdit / onChange 등 이벤트 객체 (옵션)
  */
-function getCurrentUserIdentifier() {
+function getCurrentUserIdentifier(e) {
   var email = "";
-  try {
-    email = Session.getActiveUser().getEmail();
-  } catch (e) {}
+  // 1순위: onEdit 이벤트 객체 내 user 객체 직접 확인
+  if (e && e.user) {
+    try {
+      if (typeof e.user.getEmail === "function") {
+        email = e.user.getEmail();
+      }
+    } catch (err) {}
+    if (!email && typeof e.user === "string") {
+      email = e.user;
+    }
+  }
+
+  // 2순위: Session.getActiveUser() (대화형 실행 및 Workspace 도메인 사용자)
+  if (!email) {
+    try {
+      email = Session.getActiveUser().getEmail();
+    } catch (eActive) {}
+  }
+
+  // 3순위: Session.getEffectiveUser() (트리거 설치 계정)
   if (!email) {
     try {
       email = Session.getEffectiveUser().getEmail();
-    } catch (e) {}
+    } catch (eEff) {}
   }
+
   if (email) {
     var id = email.split("@")[0];
     return id || email;

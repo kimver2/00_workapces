@@ -3895,6 +3895,41 @@ assertTest('isSystemSiteScheduleEvent: 🟥 [목공] 테스트 일정 정상 시
 assertTest('isSystemSiteScheduleEvent: 🟥 [마감] 테스트 일정 정상 시스템 일정으로 인식', isSysEventFn(mockTestEventFinish47) === true);
 assertTest('isSystemSiteScheduleEvent: 개인 일정(결혼기념일) 안전 보호(false 판정)', isSysEventFn(mockPersonalEvent47) === false);
 
+// ========================================================
+// 48. [최종수정자 식별 엔진(getCurrentUserIdentifier) QA]
+// ========================================================
+console.log('\n👤 [Step 48: 최종수정자 식별 엔진(getCurrentUserIdentifier) QA]');
+
+// 48-1: handleCalendarEditTrigger 내 e 전달 검증
+const editTriggerCode48 = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncCalendarToSiteSchedule('));
+const hasPassEToUserFn = editTriggerCode48.indexOf('getCurrentUserIdentifier(e)') !== -1;
+assertTest('handleCalendarEditTrigger: getCurrentUserIdentifier(e)로 이벤트 객체 전달 검증', hasPassEToUserFn);
+
+// 48-2: getCurrentUserIdentifier 함수 로드 검증
+const getUserFn = sandbox.getCurrentUserIdentifier;
+assertTest('getCurrentUserIdentifier: 함수 로드 검증', typeof getUserFn === 'function');
+
+// 48-3: e.user가 객체(getEmail 메서드 보유)로 전달된 경우 최우선 추출 검증
+const mockEWithUserObj = {
+  user: {
+    getEmail: () => 'joehm037@gmail.com'
+  }
+};
+assertTest('getCurrentUserIdentifier: e.user.getEmail() 존재 시 joehm037 최우선 추출 검증', getUserFn(mockEWithUserObj) === 'joehm037');
+
+// 48-4: e.user가 문자열로 전달된 경우 추출 검증
+const mockEWithUserStr = {
+  user: 'joehm037@gmail.com'
+};
+assertTest('getCurrentUserIdentifier: e.user 문자열일 때 joehm037 추출 검증', getUserFn(mockEWithUserStr) === 'joehm037');
+
+// 48-5: e가 없거나 빈 객체일 때 Session 기반 fallback 검증 (sandbox Session Mock)
+sandbox.Session = {
+  getActiveUser: () => ({ getEmail: () => '' }),
+  getEffectiveUser: () => ({ getEmail: () => 'ijhousing9696@gmail.com' })
+};
+assertTest('getCurrentUserIdentifier: getActiveUser 비어있을 시 getEffectiveUser(ijhousing9696) 정상 폴백 검증', getUserFn({}) === 'ijhousing9696');
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
