@@ -718,7 +718,6 @@ function onEdit(e) {
   if (!e || !e.range) return;
   var sheet = e.range.getSheet();
   var row = e.range.getRow();
-  var col = e.range.getColumn();
   var ss = e.source || SpreadsheetApp.getActiveSpreadsheet();
 
   // ① [대시보드 시트]
@@ -1551,7 +1550,6 @@ function handleCalendarEditTrigger(e) {
 
     var now = new Date();
     var nowMs = now.getTime();
-    var nowStr = formatDateTime(now);
     var currentUser = getCurrentUserIdentifier(e);
     var actualStartRow = Math.max(startRow, 2);
     var maxProcessRow = Math.min(endRow, actualStartRow + 49); // 최대 50행 대량 붙여넣기까지 안전 배치 지원
@@ -2030,6 +2028,9 @@ function normalizeDateStringToYYYYMMDD(val) {
   } catch (e) {}
 
   if (parsed && parsed.startDate) {
+    if (parsed.hasTime && parsed.startTime) {
+      return formatDateWithTime(parsed.startTime, parsed.endTime);
+    }
     var sy = parsed.startDate.getFullYear();
     var sm = parsed.startDate.getMonth() + 1;
     var sd = parsed.startDate.getDate();
@@ -2851,8 +2852,6 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
 
   var now = new Date();
   var nowMs = now.getTime();
-  var nowStr = formatDateTime(now);
-  var currentUser = getCurrentUserIdentifier();
   // 최근 범위: 기본 90일(3개월)로 대폭 확장하여 8월 하순 등 최근 2~3개월 일정 완전 포함
   var ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
@@ -3889,7 +3888,6 @@ function cleanupDuplicateCalendarEventsSilent(cal, sheet) {
 
     for (var k = 0; k < allEvents.length; k++) {
       var ev = allEvents[k];
-      var evId = ev.getId();
       if (!isSystemSiteScheduleEvent(ev)) continue;
 
       var isAllDay = ev.isAllDayEvent();
@@ -4132,7 +4130,6 @@ function refreshDashboardCalendar(ss) {
     var dateVal = siteData[i][1];
     var taskName = String(siteData[i][2] || "").trim();
     var siteName = rawSite || ((dateVal || taskName) ? lastKnownSite : "");
-    var memo = String(siteData[i][5] || "").trim(); // F열: 비고 (인덱스 5)
     var status = String(siteData[i][7] || "").trim(); // H열: 진행상태 (인덱스 7)
 
     if (!siteName || !dateVal || !taskName) continue;
@@ -5030,8 +5027,6 @@ function addNewSiteAtTop() {
   var newRows = [];
   var now = new Date();
   var nowMs = now.getTime();
-  var nowStr = formatDateTime(now);
-  var currentUser = getCurrentUserIdentifier();
 
   // 10개 열 채우기
   // 1:현장, 2:날짜, 3:공종, 4:협력업체, 5:공유, 6:비고, 7:담당자, 8:진행상태, 9:캘린더ID, 10:타임스탬프
@@ -5658,7 +5653,7 @@ function showMobileDashboardUrl() {
  *   백그라운드 동기화나 타 작업의 락 점유 상태와 관계없이 시트 쓰기(H열 상태, E열 공유, F열 비고, J열 타임스탬프)를 100% 즉시 반영
  *   락 경합 타임아웃으로 인한 저장 실패(409/Lock timeout)를 원천 차단하고 0.1초 내 성공 응답 보장
  */
-function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager) {
+function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchived) {
   var rowNum = parseInt(row, 10);
   if (!rowNum || rowNum < 2) {
     return { success: false, error: "유효하지 않은 행 번호입니다. (" + row + ")" };
@@ -5677,9 +5672,9 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     if (!ss) {
       return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
     }
-    var sheet = findSiteScheduleSheet(ss);
+    var sheet = (isArchived === true) ? findCompletedSitesSheet(ss, false) : findSiteScheduleSheet(ss);
     if (!sheet) {
-      return { success: false, error: "현장데이터 시트를 찾을 수 없습니다." };
+      return { success: false, error: (isArchived === true ? "완료현장" : "현장데이터") + " 시트를 찾을 수 없습니다." };
     }
 
     // 1단계: 시트 셀 원자적 즉시 쓰기 (락 대기 없이 100% 즉시 저장 보장)
@@ -5734,6 +5729,9 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     try {
       // 캘린더 및 대시보드 동기화 (forceSheetToCal = true, skipDashboardRefresh = true 모바일 반응속도 극대화)
       syncSingleRowToCalendar(sheet, rowNum, true, true);
+      if (!isArchived) {
+        try { cleanNonDelayedRowBackgroundsSilent(sheet); } catch(eBg) {}
+      }
       SpreadsheetApp.flush();
     } catch(errCal) {
       Logger.log("캘린더 즉시 반영 지연 (타임스탬프 기반 백그라운드 동기화로 자동 처리): " + errCal.toString());
@@ -7231,7 +7229,6 @@ function getSidebarDashboardData() {
     var values = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
     var today = new Date();
     var todayYYMMDD = formatDateYYMMDD(today);
-    var nowMs = today.getTime();
 
     var sitesMap = {};
     var siteOrder = [];
@@ -7367,6 +7364,19 @@ function getSidebarDashboardData() {
           var cDateDisplay = "";
           try { cDateDisplay = formatScheduleDateDisplay(cDateVal); } catch(eD) { cDateDisplay = String(cDateVal || ""); }
           var cDateMs = (cParsed && cParsed.startDate) ? cParsed.startDate.getTime() : 0;
+          var cStartDateStr = "";
+          var cEndDateStr = "";
+          if (cParsed && cParsed.startDate) {
+            var csy = cParsed.startDate.getFullYear();
+            var csm = cParsed.startDate.getMonth() + 1;
+            var csd = cParsed.startDate.getDate();
+            cStartDateStr = csy + "-" + (csm < 10 ? "0" + csm : csm) + "-" + (csd < 10 ? "0" + csd : csd);
+            var cedObj = cParsed.displayEndDate || cParsed.endDate || cParsed.startDate;
+            var cey = cedObj.getFullYear();
+            var cem = cedObj.getMonth() + 1;
+            var ced = cedObj.getDate();
+            cEndDateStr = cey + "-" + (cem < 10 ? "0" + cem : cem) + "-" + (ced < 10 ? "0" + ced : ced);
+          }
 
           if (!sitesMap[cSiteName]) {
             var cColorCode = "9";
@@ -7387,6 +7397,8 @@ function getSidebarDashboardData() {
             taskName: cTaskName,
             dateDisplay: cDateDisplay,
             dateMs: cDateMs,
+            startDateStr: cStartDateStr,
+            endDateStr: cEndDateStr,
             partner: cPartner,
             manager: cManager,
             status: cStatus,
@@ -7529,12 +7541,12 @@ function getSidebarDashboardData() {
 /**
  * 대시보드에서 클릭 시 스프레드시트의 해당 행으로 포커스 이동
  */
-function focusSheetRow(rowNumber) {
+function focusSheetRow(rowNumber, isArchived) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) ss = getAppSpreadsheet();
     if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
-    var sheet = findSiteScheduleSheet(ss);
+    var sheet = (isArchived === true) ? findCompletedSitesSheet(ss, false) : findSiteScheduleSheet(ss);
     if (sheet && rowNumber >= 2) {
       if (typeof ss.setActiveSheet === "function") ss.setActiveSheet(sheet);
       var range = sheet.getRange(rowNumber, 1, 1, 10);
@@ -7747,8 +7759,38 @@ function buildSidebarDashboardHtml(mode) {
   html += '.sheet-field-input { width: 100%; height: 38px; padding: 6px 32px 6px 10px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff; outline: none; transition: border-color 0.15s; }';
   html += '.sheet-field-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }';
   html += '.sheet-hidden-picker { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; left: 0; bottom: 0; }';
-  html += '.sheet-cal-pick-btn { position: absolute; right: 4px; width: 28px; height: 28px; border: none; background: #f1f5f9; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.15s; }';
+  html += '.sheet-cal-pick-btn { position: absolute; right: 4px; width: 28px; height: 28px; border: none; background: #f1f5f9; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.15s; }';
   html += '.sheet-cal-pick-btn:hover { background: #e2e8f0; }';
+  html += '.sheet-cal-pick-btn.active { background: #dbeafe; color: #1d4ed8; box-shadow: inset 0 0 0 1.5px #2563eb; }';
+  html += '.sheet-custom-cal-popover { display: none; margin-top: 10px; background: #ffffff; border: 1.5px solid #93c5fd; border-radius: 12px; padding: 10px; box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12); animation: fadeInCal 0.15s ease-out; }';
+  html += '.sheet-custom-cal-popover.show { display: block; }';
+  html += '@keyframes fadeInCal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }';
+  html += '.pcal-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 6px; flex-wrap: wrap; }';
+  html += '.pcal-nav-group { display: flex; align-items: center; gap: 6px; }';
+  html += '.pcal-nav-btn { width: 26px; height: 26px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; font-size: 11px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }';
+  html += '.pcal-nav-btn:hover { background: #e2e8f0; }';
+  html += '.pcal-month-label { font-size: 13px; font-weight: 800; color: #0f172a; min-width: 82px; text-align: center; }';
+  html += '.pcal-mode-switch { display: inline-flex; background: #f1f5f9; padding: 2px; border-radius: 7px; border: 1px solid #e2e8f0; }';
+  html += '.pcal-mode-btn { padding: 3px 8px; font-size: 11px; font-weight: 700; border: none; background: transparent; color: #64748b; border-radius: 5px; cursor: pointer; }';
+  html += '.pcal-mode-btn.active { background: #2563eb; color: #ffffff; }';
+  html += '.pcal-guide-msg { font-size: 11px; font-weight: 700; color: #1d4ed8; background: #eff6ff; padding: 5px 8px; border-radius: 6px; margin-bottom: 7px; text-align: center; display: none; }';
+  html += '.pcal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 10.5px; font-weight: 700; color: #64748b; margin-bottom: 4px; }';
+  html += '.pcal-weekdays span.sun { color: #dc2626; }';
+  html += '.pcal-weekdays span.sat { color: #2563eb; }';
+  html += '.pcal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }';
+  html += '.pcal-day { height: 32px; border-radius: 7px; border: 1px solid transparent; background: #ffffff; font-size: 12px; font-weight: 700; color: #1e293b; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; transition: all 0.1s; padding: 0; }';
+  html += '.pcal-day:hover:not(.empty) { background: #eff6ff; border-color: #93c5fd; }';
+  html += '.pcal-day.empty { cursor: default; background: transparent; }';
+  html += '.pcal-day.sun, .pcal-day.holiday { color: #dc2626; }';
+  html += '.pcal-day.sat { color: #2563eb; }';
+  html += '.pcal-day.today { border-color: #2563eb; background: #f8fafc; font-weight: 800; }';
+  html += '.pcal-day.in-range { background: #dbeafe; color: #1e40af; border-radius: 4px; }';
+  html += '.pcal-day.selected { background: #2563eb !important; color: #ffffff !important; font-weight: 800; box-shadow: 0 2px 5px rgba(37,99,235,0.3); }';
+  html += '.pcal-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 7px; border-top: 1px solid #f1f5f9; gap: 6px; }';
+  html += '.pcal-quick-btns { display: flex; gap: 5px; }';
+  html += '.pcal-quick-btn { padding: 4px 9px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; font-size: 11px; font-weight: 700; cursor: pointer; }';
+  html += '.pcal-quick-btn:hover { background: #e2e8f0; }';
+  html += '.pcal-close-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #64748b; font-size: 11px; font-weight: 700; cursor: pointer; }';
   html += '.sheet-manager-wrap { width: 100%; }';
   html += '.sheet-field-select { width: 100%; height: 38px; padding: 6px 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff; outline: none; cursor: pointer; }';
   html += '.sheet-field-select:focus { border-color: #2563eb; }';
@@ -7928,7 +7970,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '          <div class="sheet-date-picker-wrap">';
   html += '            <input type="text" id="sheetDateInput" class="sheet-field-input" placeholder="2026.00.00">';
   html += '            <input type="date" id="sheetNativeDatePicker" class="sheet-hidden-picker" onchange="onNativeDatePicked(this.value)">';
-  html += '            <button type="button" class="sheet-cal-pick-btn" onclick="openNativeDatePicker()" title="달력에서 날짜 선택">📅</button>';
+  html += '            <button type="button" id="sheetCalPickBtn" class="sheet-cal-pick-btn" onclick="openNativeDatePicker()" title="달력에서 날짜 선택">📅</button>';
   html += '          </div>';
   html += '        </div>';
   html += '        <div class="sheet-field-col" style="flex:1;">';
@@ -7939,6 +7981,29 @@ function buildSidebarDashboardHtml(mode) {
   html += '            </select>';
   html += '            <input type="text" id="sheetManagerCustomInput" class="sheet-field-input" placeholder="직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
   html += '          </div>';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div id="sheetCustomCalPopover" class="sheet-custom-cal-popover">';
+  html += '        <div class="pcal-top-bar">';
+  html += '          <div class="pcal-nav-group">';
+  html += '            <button type="button" class="pcal-nav-btn" onclick="navPickerMonth(-1)">◀</button>';
+  html += '            <span id="pcalMonthTitle" class="pcal-month-label">2026년 10월</span>';
+  html += '            <button type="button" class="pcal-nav-btn" onclick="navPickerMonth(1)">▶</button>';
+  html += '          </div>';
+  html += '          <div class="pcal-mode-switch">';
+  html += '            <button type="button" id="pcalModeSingle" class="pcal-mode-btn active" onclick="setPickerSelectMode(\'single\')">단일 날짜</button>';
+  html += '            <button type="button" id="pcalModeRange" class="pcal-mode-btn" onclick="setPickerSelectMode(\'range\')">기간(시작~종료)</button>';
+  html += '          </div>';
+  html += '        </div>';
+  html += '        <div id="pcalGuideMsg" class="pcal-guide-msg">시작일을 선택하세요</div>';
+  html += '        <div class="pcal-weekdays"><span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span></div>';
+  html += '        <div id="pcalGrid" class="pcal-grid"></div>';
+  html += '        <div class="pcal-footer">';
+  html += '          <div class="pcal-quick-btns">';
+  html += '            <button type="button" class="pcal-quick-btn" onclick="pickQuickOffsetDate(0)">오늘</button>';
+  html += '            <button type="button" class="pcal-quick-btn" onclick="pickQuickOffsetDate(1)">내일</button>';
+  html += '          </div>';
+  html += '          <button type="button" class="pcal-close-btn" onclick="closeCustomDatePicker()">닫기</button>';
   html += '        </div>';
   html += '      </div>';
   html += '    </div>';
@@ -7992,25 +8057,13 @@ function buildSidebarDashboardHtml(mode) {
   html += 'let selectedShare = true;';
   html += 'let sameDayTaskList = [];';
   html += 'let curSameDayIndex = 0;';
-  html += 'const DEFAULT_KOREAN_HOLIDAYS = {';
-  html += '  "2024-01-01":"신정","2024-02-09":"설날연휴","2024-02-10":"설날","2024-02-11":"설날연휴","2024-02-12":"대체공휴일",';
-  html += '  "2024-03-01":"삼일절","2024-04-10":"총선","2024-05-05":"어린이날","2024-05-06":"대체공휴일","2024-05-15":"부처님오신날",';
-  html += '  "2024-06-06":"현충일","2024-08-15":"광복절","2024-09-16":"추석연휴","2024-09-17":"추석","2024-09-18":"추석연휴",';
-  html += '  "2024-10-03":"개천절","2024-10-09":"한글날","2024-12-25":"성탄절",';
-  html += '  "2025-01-01":"신정","2025-01-28":"설날연휴","2025-01-29":"설날","2025-01-30":"설날연휴",';
-  html += '  "2025-03-01":"삼일절","2025-03-03":"대체공휴일","2025-05-05":"어린이날","2025-05-06":"대체공휴일",';
-  html += '  "2025-06-06":"현충일","2025-08-15":"광복절","2025-10-03":"개천절","2025-10-05":"추석연휴",';
-  html += '  "2025-10-06":"추석","2025-10-07":"추석연휴","2025-10-08":"대체공휴일","2025-10-09":"한글날","2025-12-25":"성탄절",';
-  html += '  "2026-01-01":"신정","2026-02-16":"설날연휴","2026-02-17":"설날","2026-02-18":"설날연휴",';
-  html += '  "2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-05":"어린이날","2026-05-24":"부처님오신날",';
-  html += '  "2026-05-25":"대체공휴일","2026-06-03":"지방선거","2026-06-06":"현충일","2026-08-15":"광복절",';
-  html += '  "2026-08-17":"대체공휴일","2026-09-24":"추석연휴","2026-09-25":"추석","2026-09-26":"추석연휴",';
-  html += '  "2026-09-28":"대체공휴일","2026-10-03":"개천절","2026-10-05":"대체공휴일","2026-10-09":"한글날","2026-12-25":"성탄절",';
-  html += '  "2027-01-01":"신정","2027-02-06":"설날연휴","2027-02-07":"설날","2027-02-08":"설날연휴","2027-02-09":"대체공휴일",';
-  html += '  "2027-03-01":"삼일절","2027-05-05":"어린이날","2027-05-13":"부처님오신날","2027-06-06":"현충일","2027-06-07":"대체공휴일",';
-  html += '  "2027-08-15":"광복절","2027-08-16":"대체공휴일","2027-09-14":"추석연휴","2027-09-15":"추석","2027-09-16":"추석연휴",';
-  html += '  "2027-10-03":"개천절","2027-10-04":"대체공휴일","2027-10-09":"한글날","2027-10-11":"대체공휴일","2027-12-25":"성탄절"';
-  html += '};';
+  html += 'let pickerYear = new Date().getFullYear();';
+  html += 'let pickerMonth = new Date().getMonth() + 1;';
+  html += 'let pickerSelectMode = "single";';
+  html += 'let pickerStartStr = "";';
+  html += 'let pickerEndStr = "";';
+  html += 'let pickerRangePendingStart = "";';
+  html += 'const DEFAULT_KOREAN_HOLIDAYS = ' + JSON.stringify(getKoreanHolidaysMap(null)) + ';';
   html += 'let activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS);';
 
   html += 'function showToast(msg) {';
@@ -8074,7 +8127,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      btn.innerText = "📋 목록 보기";';
   html += '    }';
   html += '    if (pageTitle) {';
-  html += '      pageTitle.innerText = isMobileMode ? "📅 우성아이디 현장 캘린더" : "📅 우성아이디 현장 캘린더";';
+  html += '      pageTitle.innerText = "📅 우성아이디 현장 캘린더";';
   html += '    }';
   html += '    if (contentArea) contentArea.style.display = "none";';
   html += '    if (calArea) calArea.style.display = "block";';
@@ -8086,7 +8139,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (pageTitle) {';
   html += '      pageTitle.innerText = isMobileMode ? "📱 우성아이디 현장 대시보드" : "🏗️ 우성아이디 현장 대시보드";';
   html += '    }';
-  html += '    if (contentArea) contentArea.style.display = "block";';
+  html += '    if (contentArea) contentArea.style.display = "";';
   html += '    if (calArea) calArea.style.display = "none";';
   html += '    renderList();';
   html += '  }';
@@ -8646,11 +8699,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    showToast(datePrefix + ": 등록된 일정이 없습니다.");';
   html += '    return;';
   html += '  }';
-  html += '  if (isMobileMode) {';
-  html += '    const mList = dayTasks.map(item => ({ site: item.site.siteName, task: item.task }));';
-  html += '    openBottomSheet(mList[0].site, mList[0].task, mList, 0);';
-  html += '  } else {';
-  html += '    onTaskClick(encodeURIComponent(dayTasks[0].site.siteName), encodeURIComponent(JSON.stringify(dayTasks[0].task)));';
+  html += '  const mList = dayTasks.map(item => ({ site: item.site.siteName, task: item.task }));';
+  html += '  openBottomSheet(mList[0].site, mList[0].task, mList, 0);';
+  html += '  if (!isMobileMode && mList[0].task && mList[0].task.row) {';
+  html += '    google.script.run.focusSheetRow(mList[0].task.row, !!mList[0].task.isArchived);';
   html += '  }';
   html += '  if (dayTasks.length > 1) {';
   html += '    showToast(datePrefix + " 일정 " + dayTasks.length + "건 (상세에서 ◀/▶ 이동 가능)");';
@@ -8927,7 +8979,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '      const shareTagText = isSh ? "🟦 공유" : "🟥 미공유";';
 
   html += '      const taskJson = encodeURIComponent(JSON.stringify(task));';
-  html += '      const siteEnc = encodeURIComponent(site.siteName);';
   html += '      html += \'<div class="task-item" onclick="onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')">\';';
   html += '      html += \'  <div class="task-top">\';';
   html += '      html += \'    <span class="task-name">[\' + escapeHtml(task.taskName) + \']</span>\';';
@@ -8981,10 +9032,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      task = { row: 2, taskName: "" };';
   html += '    }';
   html += '  }';
-  html += '  if (isMobileMode) {';
-  html += '    openBottomSheet(site, task);';
-  html += '  } else if (task && task.row) {';
-  html += '    google.script.run.focusSheetRow(task.row);';
+  html += '  openBottomSheet(site, task);';
+  html += '  if (!isMobileMode && task && task.row) {';
+  html += '    google.script.run.focusSheetRow(task.row, !!task.isArchived);';
   html += '  }';
   html += '}';
 
@@ -9034,13 +9084,190 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
   html += '';
+  html += 'function formatYmdToDisplayWithDow(ymd) {';
+  html += '  if (!ymd) return "";';
+  html += '  const parts = String(ymd).split("-");';
+  html += '  if (parts.length !== 3) return ymd;';
+  html += '  const y = parts[0], m = parts[1], d = parts[2];';
+  html += '  const dt = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));';
+  html += '  const dayNames = ["일", "월", "화", "수", "목", "금", "토"];';
+  html += '  return y + "." + m + "." + d + " (" + dayNames[dt.getDay()] + ")";';
+  html += '}';
+  html += '';
+  html += 'function extractYmdListFromText(text) {';
+  html += '  const list = [];';
+  html += '  const re = /(\\d{2,4})[.\\-/]\\s*(\\d{1,2})[.\\-/]\\s*(\\d{1,2})/g;';
+  html += '  let m;';
+  html += '  while ((m = re.exec(String(text || ""))) !== null) {';
+  html += '    let yr = parseInt(m[1], 10);';
+  html += '    if (yr < 100) yr += 2000;';
+  html += '    const mo = parseInt(m[2], 10);';
+  html += '    const da = parseInt(m[3], 10);';
+  html += '    if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) {';
+  html += '      list.push(yr + "-" + (mo < 10 ? "0" + mo : mo) + "-" + (da < 10 ? "0" + da : da));';
+  html += '    }';
+  html += '  }';
+  html += '  return list;';
+  html += '}';
+  html += '';
   html += 'function openNativeDatePicker() {';
+  html += '  const pop = document.getElementById("sheetCustomCalPopover");';
+  html += '  const btn = document.getElementById("sheetCalPickBtn");';
+  html += '  if (pop) {';
+  html += '    if (pop.classList.contains("show")) {';
+  html += '      closeCustomDatePicker();';
+  html += '      return;';
+  html += '    }';
+  html += '    const dateInput = document.getElementById("sheetDateInput");';
+  html += '    const curVal = dateInput ? dateInput.value : "";';
+  html += '    const ymds = extractYmdListFromText(curVal);';
+  html += '    if (ymds.length >= 2 && ymds[0] !== ymds[1]) {';
+  html += '      pickerStartStr = ymds[0];';
+  html += '      pickerEndStr = ymds[1];';
+  html += '      pickerSelectMode = "range";';
+  html += '    } else if (ymds.length >= 1) {';
+  html += '      pickerStartStr = ymds[0];';
+  html += '      pickerEndStr = ymds[0];';
+  html += '      pickerSelectMode = "single";';
+  html += '    } else if (curTaskObj && curTaskObj.startDateStr) {';
+  html += '      pickerStartStr = curTaskObj.startDateStr;';
+  html += '      pickerEndStr = curTaskObj.endDateStr || curTaskObj.startDateStr;';
+  html += '      pickerSelectMode = (pickerStartStr !== pickerEndStr) ? "range" : "single";';
+  html += '    } else {';
+  html += '      const now = new Date();';
+  html += '      const ny = now.getFullYear(), nm = now.getMonth() + 1, nd = now.getDate();';
+  html += '      pickerStartStr = ny + "-" + (nm < 10 ? "0" + nm : nm) + "-" + (nd < 10 ? "0" + nd : nd);';
+  html += '      pickerEndStr = pickerStartStr;';
+  html += '      pickerSelectMode = "single";';
+  html += '    }';
+  html += '    pickerRangePendingStart = "";';
+  html += '    const baseParts = pickerStartStr.split("-");';
+  html += '    if (baseParts.length === 3) {';
+  html += '      pickerYear = parseInt(baseParts[0], 10);';
+  html += '      pickerMonth = parseInt(baseParts[1], 10);';
+  html += '    }';
+  html += '    renderCustomDatePicker();';
+  html += '    pop.classList.add("show");';
+  html += '    if (btn) btn.classList.add("active");';
+  html += '    return;';
+  html += '  }';
   html += '  const p = document.getElementById("sheetNativeDatePicker");';
   html += '  if (!p) return;';
   html += '  if (typeof p.showPicker === "function") {';
   html += '    try { p.showPicker(); return; } catch(e) {}';
   html += '  }';
   html += '  p.focus();';
+  html += '}';
+  html += '';
+  html += 'function closeCustomDatePicker() {';
+  html += '  const pop = document.getElementById("sheetCustomCalPopover");';
+  html += '  const btn = document.getElementById("sheetCalPickBtn");';
+  html += '  if (pop) pop.classList.remove("show");';
+  html += '  if (btn) btn.classList.remove("active");';
+  html += '  pickerRangePendingStart = "";';
+  html += '}';
+  html += '';
+  html += 'function setPickerSelectMode(mode) {';
+  html += '  pickerSelectMode = (mode === "range") ? "range" : "single";';
+  html += '  pickerRangePendingStart = "";';
+  html += '  renderCustomDatePicker();';
+  html += '}';
+  html += '';
+  html += 'function navPickerMonth(delta) {';
+  html += '  pickerMonth += delta;';
+  html += '  if (pickerMonth < 1) { pickerMonth = 12; pickerYear--; }';
+  html += '  else if (pickerMonth > 12) { pickerMonth = 1; pickerYear++; }';
+  html += '  renderCustomDatePicker();';
+  html += '}';
+  html += '';
+  html += 'function renderCustomDatePicker() {';
+  html += '  const grid = document.getElementById("pcalGrid");';
+  html += '  const title = document.getElementById("pcalMonthTitle");';
+  html += '  const btnSingle = document.getElementById("pcalModeSingle");';
+  html += '  const btnRange = document.getElementById("pcalModeRange");';
+  html += '  const guide = document.getElementById("pcalGuideMsg");';
+  html += '  if (!grid || !title) return;';
+  html += '  title.innerText = pickerYear + "년 " + pickerMonth + "월";';
+  html += '  if (btnSingle) btnSingle.classList.toggle("active", pickerSelectMode === "single");';
+  html += '  if (btnRange) btnRange.classList.toggle("active", pickerSelectMode === "range");';
+  html += '  if (guide) {';
+  html += '    if (pickerSelectMode === "range") {';
+  html += '      guide.style.display = "block";';
+  html += '      guide.innerText = pickerRangePendingStart ? ("종료일을 선택하세요 (시작: " + formatYmdToDisplayWithDow(pickerRangePendingStart) + ")") : "기간의 시작일을 먼저 선택하세요";';
+  html += '    } else {';
+  html += '      guide.style.display = "none";';
+  html += '    }';
+  html += '  }';
+  html += '  const firstDay = new Date(pickerYear, pickerMonth - 1, 1).getDay();';
+  html += '  const totalDays = new Date(pickerYear, pickerMonth, 0).getDate();';
+  html += '  const now = new Date();';
+  html += '  const todayStr = now.getFullYear() + "-" + ((now.getMonth() + 1) < 10 ? "0" + (now.getMonth() + 1) : (now.getMonth() + 1)) + "-" + (now.getDate() < 10 ? "0" + now.getDate() : now.getDate());';
+  html += '  let gHtml = "";';
+  html += '  for (let e = 0; e < firstDay; e++) {';
+  html += '    gHtml += \'<div class="pcal-day empty"></div>\';';
+  html += '  }';
+  html += '  for (let d = 1; d <= totalDays; d++) {';
+  html += '    const dStr = pickerYear + "-" + (pickerMonth < 10 ? "0" + pickerMonth : pickerMonth) + "-" + (d < 10 ? "0" + d : d);';
+  html += '    const dow = (firstDay + d - 1) % 7;';
+  html += '    const hName = (typeof activeHolidays !== "undefined" && activeHolidays[dStr]) ? activeHolidays[dStr] : "";';
+  html += '    let cls = "pcal-day";';
+  html += '    if (dow === 0 || hName) cls += " sun holiday";';
+  html += '    else if (dow === 6) cls += " sat";';
+  html += '    if (dStr === todayStr) cls += " today";';
+  html += '    if (dStr === pickerStartStr || dStr === pickerEndStr) {';
+  html += '      cls += " selected";';
+  html += '    } else if (pickerStartStr && pickerEndStr && pickerStartStr < dStr && dStr < pickerEndStr) {';
+  html += '      cls += " in-range";';
+  html += '    }';
+  html += '    gHtml += \'<button type="button" class="\' + cls + \'" onclick="onCustomCalDayClick(\\\'\' + dStr + \'\\\')" title="\' + escapeHtml(dStr + (hName ? " " + hName : "")) + \'">\' + d + \'</button>\';';
+  html += '  }';
+  html += '  grid.innerHTML = gHtml;';
+  html += '}';
+  html += '';
+  html += 'function onCustomCalDayClick(ymdStr) {';
+  html += '  if (!ymdStr) return;';
+  html += '  if (pickerSelectMode === "range") {';
+  html += '    if (!pickerRangePendingStart) {';
+  html += '      pickerRangePendingStart = ymdStr;';
+  html += '      pickerStartStr = ymdStr;';
+  html += '      pickerEndStr = ymdStr;';
+  html += '      const dateInput = document.getElementById("sheetDateInput");';
+  html += '      if (dateInput) dateInput.value = formatYmdToDisplayWithDow(ymdStr) + " ~ ";';
+  html += '      renderCustomDatePicker();';
+  html += '      return;';
+  html += '    }';
+  html += '    let s = pickerRangePendingStart;';
+  html += '    let e = ymdStr;';
+  html += '    if (s > e) { const tmp = s; s = e; e = tmp; }';
+  html += '    pickerRangePendingStart = "";';
+  html += '    pickerStartStr = s;';
+  html += '    pickerEndStr = e;';
+  html += '    if (s === e) {';
+  html += '      onNativeDatePicked(s);';
+  html += '    } else {';
+  html += '      const dateInput = document.getElementById("sheetDateInput");';
+  html += '      if (dateInput) dateInput.value = formatYmdToDisplayWithDow(s) + " ~ " + formatYmdToDisplayWithDow(e);';
+  html += '      const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
+  html += '      if (hiddenPicker) hiddenPicker.value = s;';
+  html += '    }';
+  html += '    closeCustomDatePicker();';
+  html += '    return;';
+  html += '  }';
+  html += '  pickerStartStr = ymdStr;';
+  html += '  pickerEndStr = ymdStr;';
+  html += '  const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
+  html += '  if (hiddenPicker) hiddenPicker.value = ymdStr;';
+  html += '  onNativeDatePicked(ymdStr);';
+  html += '  closeCustomDatePicker();';
+  html += '}';
+  html += '';
+  html += 'function pickQuickOffsetDate(offsetDays) {';
+  html += '  const dt = new Date();';
+  html += '  dt.setDate(dt.getDate() + (offsetDays || 0));';
+  html += '  const y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();';
+  html += '  const ymd = y + "-" + (m < 10 ? "0" + m : m) + "-" + (d < 10 ? "0" + d : d);';
+  html += '  pickerSelectMode = "single";';
+  html += '  onCustomCalDayClick(ymd);';
   html += '}';
   html += '';
   html += 'function onNativeDatePicked(val) {';
@@ -9053,7 +9280,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const dow = dayNames[dt.getDay()];';
   html += '    const dateInput = document.getElementById("sheetDateInput");';
   html += '    if (dateInput) {';
-  html += '      dateInput.value = y + "." + m + "." + d + " (" + dow + ")";';
+  html += '      const prevVal = String(dateInput.value || "");';
+  html += '      const timeMatch = prevVal.match(/(\\s+\\d{1,2}:\\d{2}(?:\\s*~\\s*\\d{1,2}:\\d{2})?)$/);';
+  html += '      dateInput.value = y + "." + m + "." + d + " (" + dow + ")" + (timeMatch ? timeMatch[1] : "");';
   html += '    }';
   html += '  }';
   html += '}';
@@ -9109,6 +9338,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    return;';
   html += '  }';
   html += '  const targetRow = curTaskObj.row;';
+  html += '  const isArch = !!curTaskObj.isArchived;';
   html += '  showToast("📍 시트 " + targetRow + "행으로 이동 중...");';
   html += '  google.script.run';
   html += '    .withSuccessHandler(res => {';
@@ -9120,10 +9350,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '    .withFailureHandler(err => {';
   html += '      showToast("⚠️ 이동 실패: " + ((err && err.message) || err));';
   html += '    })';
-  html += '    .focusSheetRow(targetRow);';
+  html += '    .focusSheetRow(targetRow, isArch);';
   html += '}';
   html += '';
   html += 'function openBottomSheet(site, task, explicitList, explicitIndex) {';
+  html += '  closeCustomDatePicker();';
   html += '  curSiteName = site;';
   html += '  curTaskObj = task;';
   html += '  selectedStatus = task.status || "예정";';
@@ -9182,6 +9413,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function closeBottomSheet(e) {';
   html += '  if (e && e.target !== document.getElementById("sheetOverlay") && !e.target.classList.contains("sheet-close")) return;';
+  html += '  closeCustomDatePicker();';
   html += '  document.getElementById("sheetOverlay").classList.remove("show");';
   html += '}';
   html += '';
@@ -9222,11 +9454,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  saveBtn.disabled = true;';
   html += '  saveBtn.innerText = "저장 중...";';
-  html += '  google.script.run';
+  html += '  const runner = google.script.run';
   html += '    .withSuccessHandler(res => {';
   html += '      saveBtn.disabled = false;';
   html += '      saveBtn.innerText = "💾 저장하기";';
   html += '      if (res && res.success) {';
+  html += '        closeCustomDatePicker();';
   html += '        document.getElementById("sheetOverlay").classList.remove("show");';
   html += '        showToast("✅ [" + curTaskObj.taskName + "] 일정/담당자/상태가 저장되었습니다!");';
   html += '        loadData();';
@@ -9238,8 +9471,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '      saveBtn.disabled = false;';
   html += '      saveBtn.innerText = "💾 저장하기";';
   html += '      showToast("⚠️ 에러: " + (err.message || err));';
-  html += '    })';
-  html += '    .updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
+  html += '    });';
+  html += '  if (curTaskObj.isArchived) {';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true);';
+  html += '  } else {';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
+  html += '  }';
   html += '}';
   html += '';
 

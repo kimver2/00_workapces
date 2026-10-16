@@ -4774,6 +4774,132 @@ assertTest('openSiteScheduleModal: 대형 모달 너비 1020px 이상 지정 검
   code.indexOf('.setWidth(1020)') !== -1
 );
 
+// ========================================================
+// 56. [상세모달 내장형 커스텀 달력 팝오버 & 시간 보존 & 완료현장 시트 분기 QA]
+// ========================================================
+console.log('\n🗓️ [Step 56: 상세모달 내장형 커스텀 달력 팝오버 & 시간 보존 & 완료현장 무결성 QA]');
+
+const dashHtml56 = sandbox.buildSidebarDashboardHtml('mobile');
+assertTest('buildSidebarDashboardHtml: 내장형 커스텀 달력 팝오버(sheetCustomCalPopover) 컨테이너 탑재 검증',
+  dashHtml56.indexOf('id="sheetCustomCalPopover"') !== -1 &&
+  dashHtml56.indexOf('id="pcalGrid"') !== -1 &&
+  dashHtml56.indexOf('function renderCustomDatePicker()') !== -1 &&
+  dashHtml56.indexOf('function onCustomCalDayClick(') !== -1
+);
+
+// 클라이언트 스크립트 문법 및 커스텀 달력 인터랙션 시뮬레이션
+const scriptMatch56 = dashHtml56.match(/<script>([\s\S]*?)<\/script>/);
+const clientScript56 = scriptMatch56 ? scriptMatch56[1] : '';
+let clientSyntaxOk56 = false;
+try {
+  new vm.Script(clientScript56);
+  clientSyntaxOk56 = true;
+} catch (eSyn) {
+  console.error('클라이언트 스크립트 문법 오류:', eSyn);
+}
+assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트 정적 구문(Syntax) 무결성 검증', clientSyntaxOk56);
+
+// DOM 모킹 후 openNativeDatePicker -> onCustomCalDayClick(단일/기간) 동작 검증
+const mockElems56 = {
+  sheetCustomCalPopover: {
+    _classes: new Set(),
+    classList: {
+      contains: function(c) { return mockElems56.sheetCustomCalPopover._classes.has(c); },
+      add: function(c) { mockElems56.sheetCustomCalPopover._classes.add(c); },
+      remove: function(c) { mockElems56.sheetCustomCalPopover._classes.delete(c); },
+      toggle: function(c, force) {
+        if (force === undefined) {
+          if (mockElems56.sheetCustomCalPopover._classes.has(c)) mockElems56.sheetCustomCalPopover._classes.delete(c);
+          else mockElems56.sheetCustomCalPopover._classes.add(c);
+        } else if (force) mockElems56.sheetCustomCalPopover._classes.add(c);
+        else mockElems56.sheetCustomCalPopover._classes.delete(c);
+      }
+    }
+  },
+  sheetCalPickBtn: {
+    _classes: new Set(),
+    classList: {
+      add: function(c) { mockElems56.sheetCalPickBtn._classes.add(c); },
+      remove: function(c) { mockElems56.sheetCalPickBtn._classes.delete(c); }
+    }
+  },
+  sheetDateInput: { value: '2026.10.17 (토)' },
+  sheetNativeDatePicker: { value: '2026-10-17' },
+  pcalGrid: { innerHTML: '' },
+  pcalMonthTitle: { innerText: '' },
+  pcalModeSingle: { classList: { toggle: function() {} } },
+  pcalModeRange: { classList: { toggle: function() {} } },
+  pcalGuideMsg: { style: { display: 'none' }, innerText: '' }
+};
+
+const clientSandbox56 = {
+  document: {
+    readyState: 'loading',
+    getElementById: (id) => mockElems56[id] || null,
+    querySelectorAll: () => []
+  },
+  window: { addEventListener: () => {} },
+  setTimeout: () => {},
+  Date: Date,
+  Math: Math,
+  Object: Object,
+  Array: Array,
+  Set: Set,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String
+};
+vm.createContext(clientSandbox56);
+vm.runInContext(clientScript56, clientSandbox56);
+
+// 1) 달력 버튼 클릭 시 팝오버 즉시 오픈 검증
+clientSandbox56.openNativeDatePicker();
+assertTest('openNativeDatePicker: 크로스 오리진 iframe 환경에서도 커스텀 달력 팝오버(.show) 즉시 오픈 검증',
+  mockElems56.sheetCustomCalPopover.classList.contains('show') === true &&
+  mockElems56.pcalMonthTitle.innerText === '2026년 10월' &&
+  mockElems56.pcalGrid.innerHTML.indexOf('onCustomCalDayClick(\'2026-10-17\')') !== -1
+);
+
+// 2) 단일 날짜 클릭 시 요일 포함 포맷 반영 및 팝오버 자동 닫힘 검증
+clientSandbox56.onCustomCalDayClick('2026-10-20');
+assertTest('onCustomCalDayClick(단일): 날짜 선택 시 "2026.10.20 (화)" 즉시 입력 및 팝오버 닫힘 검증',
+  mockElems56.sheetDateInput.value === '2026.10.20 (화)' &&
+  mockElems56.sheetCustomCalPopover.classList.contains('show') === false
+);
+
+// 3) 기존 시간 정보가 있는 일정에서 단일 날짜 변경 시 시간(14:00) 보존 검증
+mockElems56.sheetDateInput.value = '2026.10.20 (화) 14:00';
+clientSandbox56.openNativeDatePicker();
+clientSandbox56.onCustomCalDayClick('2026-10-22');
+assertTest('onNativeDatePicked: 시간 포함 일정 날짜 변경 시 기존 시간("14:00") 자동 보존 검증',
+  mockElems56.sheetDateInput.value === '2026.10.22 (목) 14:00'
+);
+
+// 4) 기간(시작~종료) 모드에서 시작일 -> 종료일 클릭 시 범위 포맷 완성 검증
+clientSandbox56.openNativeDatePicker();
+clientSandbox56.setPickerSelectMode('range');
+clientSandbox56.onCustomCalDayClick('2026-10-25');
+const rangeStep1Open = mockElems56.sheetCustomCalPopover.classList.contains('show') === true;
+clientSandbox56.onCustomCalDayClick('2026-10-27');
+assertTest('onCustomCalDayClick(기간): 시작일~종료일 2회 클릭 시 "2026.10.25 (일) ~ 2026.10.27 (화)" 범위 완성 검증',
+  rangeStep1Open &&
+  mockElems56.sheetDateInput.value === '2026.10.25 (일) ~ 2026.10.27 (화)' &&
+  mockElems56.sheetCustomCalPopover.classList.contains('show') === false
+);
+
+// 5) normalizeDateStringToYYYYMMDD 시간 포함 일정 보존 검증
+assertTest('normalizeDateStringToYYYYMMDD: 시간 포함 일정("2026.10.17 (토) 14:00") 정규화 시 시간 증발 방지 검증',
+  sandbox.normalizeDateStringToYYYYMMDD('2026.10.17 (토) 14:00') === '2026.10.17 14:00' &&
+  sandbox.normalizeDateStringToYYYYMMDD('2026.10.17 (토) 09:00 ~ 18:00') === '2026.10.17 09:00 ~ 18:00'
+);
+
+// 6) toggleCalendarView에서 목록 복귀 시 모달 2열 그리드 보호(style.display = "") 검증
+assertTest('toggleCalendarView: 목록 보기 복귀 시 모달 그리드 레이아웃 보존(contentArea.style.display = "") 검증',
+  dashHtml56.indexOf('if (contentArea) contentArea.style.display = "";') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -4783,7 +4909,3 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
-
-
-
-
