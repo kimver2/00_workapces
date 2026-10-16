@@ -2525,10 +2525,12 @@ console.log('\n📅 [Step 34: 우측 상단 calendar 버튼 & 00_Calendar 스타
 
 const dashHtml34 = sandbox.buildSidebarDashboardHtml('mobile');
 
-// 34-1: 우측 상단 달력 토글 버튼(#calendarToggleBtn) 마크업 검증
-assertTest('buildSidebarDashboardHtml: 우측 상단 달력 토글 버튼(#calendarToggleBtn) 탑재 검증',
+// 34-1: 하단 푸터 바 달력 토글 버튼(#calendarToggleBtn) 및 캘린더 동기화 제거 검증
+assertTest('buildSidebarDashboardHtml: 하단 푸터 바에 [📅 캘린더 보기] 토글 버튼(#calendarToggleBtn) 탑재 및 [캘린더 동기화] 제거 검증',
   dashHtml34.indexOf('id="calendarToggleBtn"') !== -1 &&
-  dashHtml34.indexOf('toggleCalendarView()') !== -1
+  dashHtml34.indexOf('📅 캘린더 보기') !== -1 &&
+  dashHtml34.indexOf('toggleCalendarView()') !== -1 &&
+  dashHtml34.indexOf('syncCalendar') === -1
 );
 
 // 34-2: 모바일 월간 달력 페이지(#calendarArea 및 그리드) 마크업 & CSS 검증

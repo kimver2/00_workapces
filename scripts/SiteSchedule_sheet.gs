@@ -6212,10 +6212,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '<div class="header">';
   html += '  <div class="title-row">';
   html += '    <div class="title" id="pageTitle">' + (isMobile ? '📱 우성아이디 현장 대시보드' : '🏗️ 우성아이디 현장 대시보드') + '</div>';
-  html += '    <div style="display:flex;align-items:center;gap:6px;">';
-  html += '      <button type="button" id="calendarToggleBtn" class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;font-weight:700;" onclick="toggleCalendarView()">📅 달력</button>';
-  html += '      <button class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
-  html += '    </div>';
+  html += '    <button class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
   html += '  </div>';
 
   html += '  <div class="kpi-grid">';
@@ -6290,7 +6287,7 @@ function buildSidebarDashboardHtml(mode) {
 
   html += '<div class="footer-bar">';
   html += '  <button class="btn btn-secondary" onclick="loadData()">🔄 새로고침</button>';
-  html += '  <button class="btn btn-primary" onclick="syncCalendar()">📅 캘린더 동기화</button>';
+  html += '  <button type="button" id="calendarToggleBtn" class="btn btn-primary" onclick="toggleCalendarView()">📅 캘린더 보기</button>';
   html += '</div>';
 
   // 모바일 바텀시트 모달 컨테이너
@@ -6417,10 +6414,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const pageTitle = document.getElementById("pageTitle");';
   html += '  if (isCalendarMode) {';
   html += '    if (btn) {';
-  html += '      btn.innerText = "📋 목록";';
-  html += '      btn.style.background = "#2563eb";';
-  html += '      btn.style.color = "#ffffff";';
-  html += '      btn.style.borderColor = "#2563eb";';
+  html += '      btn.innerText = "📋 목록 보기";';
   html += '    }';
   html += '    if (pageTitle) {';
   html += '      pageTitle.innerText = isMobileMode ? "📅 우성아이디 월간 달력" : "📅 우성아이디 월간 달력";';
@@ -6430,10 +6424,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    renderCalendar();';
   html += '  } else {';
   html += '    if (btn) {';
-  html += '      btn.innerText = "📅 달력";';
-  html += '      btn.style.background = "#ffffff";';
-  html += '      btn.style.color = "#334155";';
-  html += '      btn.style.borderColor = "#cbd5e1";';
+  html += '      btn.innerText = "📅 캘린더 보기";';
   html += '    }';
   html += '    if (pageTitle) {';
   html += '      pageTitle.innerText = isMobileMode ? "📱 우성아이디 현장 대시보드" : "🏗️ 우성아이디 현장 대시보드";';
@@ -6957,17 +6948,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    })';
   html += '    .updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal);';
   html += '}';
-
-  html += 'function syncCalendar() {';
-  html += '  showToast("⏳ 캘린더 동기화 실행 중...");';
-  html += '  google.script.run';
-  html += '    .withSuccessHandler(() => {';
-  html += '      showToast("🎉 캘린더 동기화 완료!");';
-  html += '      loadData();';
-  html += '    })';
-  html += '    .withFailureHandler(err => showToast("⚠️ 에러: " + (err.message || err)))';
-  html += '    .syncRecentSiteSchedulesToGoogleCalendar();';
-  html += '}';
+  html += '';
 
   html += 'function escapeHtml(str) {';
   html += '  return String(str || "")';
