@@ -707,7 +707,8 @@ assertTest('실시간 수정 트리거: 개별 행마다 대시보드 중복 렌
 const hasRangeWhileLoopGuard = code.indexOf('maxRangeLoop') !== -1 && code.indexOf('--maxRangeLoop >= 0') !== -1;
 assertTest('대시보드 달력 기간 일정 전개: 366일 무한루프 방지 안전 카운터 탑재 여부', hasRangeWhileLoopGuard);
 
-const hasBatchEmptyRowCleanup = code.indexOf('function cleanupEmptyRowsMetadata()') !== -1 && code.indexOf('sheet.getRange(2, 1, lastRow - 1, 14).setValues(values)') !== -1;
+const hasBatchEmptyRowCleanup = code.indexOf('function cleanupEmptyRowsMetadata()') !== -1 &&
+  (code.indexOf('sheet.getRange(2, 1, lastRow - 1, 10).setValues(values)') !== -1 || code.indexOf('sheet.getRange(2, 1, lastRow - 1, 14).setValues(values)') !== -1);
 assertTest('빈 행 메타데이터 청소: 1회 setValues 배치 쓰기 최적화 탑재 여부', hasBatchEmptyRowCleanup);
 
 // [신규 QA] 캘린더 상세 설명 간소화 및 하이퍼링크 탑재 검증
@@ -1479,7 +1480,7 @@ assertTest('runPeriodicAutoSync: re-entrant Lock 안전 획득(hasLock) 및 데�
 const editTriggerSubCode = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncFromCalendarToSheet('));
 const hasSubRowPropagation = editTriggerSubCode.indexOf('startCol <= 1 && endCol >= 1') !== -1 &&
   editTriggerSubCode.indexOf('subTimeStamps.push([nowMs])') !== -1 &&
-  editTriggerSubCode.indexOf('subMetaUpdates.push(') !== -1;
+  editTriggerSubCode.indexOf('sheet.getRange(maxProcessRow + 1, 10, subRowsToTouch, 1).setValues(subTimeStamps)') !== -1;
 assertTest('handleCalendarEditTrigger: A열(현장명) 수정 시 하위 아코디언 행 타임스탬프 동반 갱신 검증', hasSubRowPropagation);
 
 // 20-3: syncSingleRowToCalendar 생성 및 수정 시 event.removeAllReminders() 호출 검증
@@ -3929,6 +3930,49 @@ sandbox.Session = {
   getEffectiveUser: () => ({ getEmail: () => 'ijhousing9696@gmail.com' })
 };
 assertTest('getCurrentUserIdentifier: getActiveUser 비어있을 시 getEffectiveUser(ijhousing9696) 정상 폴백 검증', getUserFn({}) === 'ijhousing9696');
+
+// ========================================================
+// 49. [K, L, M, N열 영구 삭제 및 10열(A~J열) 체제 정돈 QA]
+// ========================================================
+console.log('\n🧹 [Step 49: K, L, M, N열 영구 삭제 및 10열(A~J열) 체제 정돈 QA]');
+
+// 49-1: removeAuditColumnsKtoN 함수 정의 및 로드 검증
+const removeAuditFn = sandbox.removeAuditColumnsKtoN;
+assertTest('removeAuditColumnsKtoN: 함수 로드 검증', typeof removeAuditFn === 'function');
+
+// 49-2: onOpen 메뉴 내 removeAuditColumnsKtoN 등록 검증
+const onOpenCode49 = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
+const hasRemoveMenuInOnOpen = onOpenCode49.indexOf('removeAuditColumnsKtoN') !== -1 &&
+  onOpenCode49.indexOf('K~N열') !== -1;
+assertTest('onOpen: 상단 관리 메뉴 내 K~N열 영구 삭제 항목 탑재 검증', hasRemoveMenuInOnOpen);
+
+// 49-3: ensureCalendarSyncColumns 내 11열 이상 자동 삭제 로직 탑재 검증
+const ensureColCode49 = code.slice(code.indexOf('function ensureCalendarSyncColumns('), code.indexOf('function getSheetCalendarIds('));
+const hasAutoDeleteCols11Plus = ensureColCode49.indexOf('sheet.deleteColumns(11') !== -1 &&
+  ensureColCode49.indexOf('maxCols >= 11') !== -1;
+assertTest('ensureCalendarSyncColumns: 11열 이상 존재 시 자동 deleteColumns 실행 검증', hasAutoDeleteCols11Plus);
+
+// 49-4: ensureCalendarSyncColumns 헤더에 11~14열 제거 및 9, 10열만 유지 검증
+const hasNo11To14Headers = ensureColCode49.indexOf('col: 11') === -1 &&
+  ensureColCode49.indexOf('col: 12') === -1 &&
+  ensureColCode49.indexOf('col: 13') === -1 &&
+  ensureColCode49.indexOf('col: 14') === -1 &&
+  ensureColCode49.indexOf('col: 9') !== -1 &&
+  ensureColCode49.indexOf('col: 10') !== -1;
+assertTest('ensureCalendarSyncColumns: 헤더 설정에서 11~14열 완전 배제 및 9, 10열만 유지 검증', hasNo11To14Headers);
+
+// 49-5: handleCalendarEditTrigger 내 11~14열 쓰기 제거 및 10열 타임스탬프 단독 쓰기 검증
+const editTriggerCode49 = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncCalendarToSiteSchedule('));
+const hasNoMetaRangeWrite = editTriggerCode49.indexOf('metaRange.setValues') === -1 &&
+  editTriggerCode49.indexOf('sheet.getRange(actualStartRow, 11') === -1 &&
+  editTriggerCode49.indexOf('sheet.getRange(actualStartRow, 10, numRows, 1).setValues(timeStampVals)') !== -1;
+assertTest('handleCalendarEditTrigger: 11~14열 쓰기 완전 제거 및 10열 타임스탬프 단독 쓰기 검증', hasNoMetaRangeWrite);
+
+// 49-6: addNewSiteAtTop 내 10개 열 채우기(14열 배제) 검증
+const addNewSiteCode49 = code.slice(code.indexOf('function addNewSiteAtTop('), code.indexOf('function cleanupEmptyRowsMetadata('));
+const has10ColumnsInNewSite = addNewSiteCode49.indexOf('sheet.getRange(2, 1, 4, 10).setValues(newRows)') !== -1 &&
+  addNewSiteCode49.indexOf('sheet.getRange(2, 1, 4, 14)') === -1;
+assertTest('addNewSiteAtTop: 신규 현장 추가 시 10개 열(A~J열) 채우기 적용 검증', has10ColumnsInNewSite);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
