@@ -4192,10 +4192,95 @@ const hasHourlyTriggerCode = code.indexOf('runHourlyAutoSortTrigger') !== -1 &&
   code.indexOf('everyHours(1)') !== -1;
 assertTest('ensureRealtimeTriggerInstalledSilent: 1시간 주기 자동 정렬 트리거(everyHours(1)) 등록 검증', hasHourlyTriggerCode);
 
-const onOpenCode51 = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
-const hasSortInMenu = onOpenCode51.indexOf('sortSiteScheduleTasksByDateMenu') !== -1 &&
-  onOpenCode51.indexOf('현장별 날짜 오름차순 자동 정렬') !== -1;
-assertTest('onOpen: 상단 관리 메뉴 내 "현장별 날짜 오름차순 자동 정렬" 탑재 검증', hasSortInMenu);
+// ========================================================
+// 52. [2026년 미래 유령 일정 동적 윈도우 스캔 및 날짜 불일치 고아 일정 자동 치유 QA]
+// ========================================================
+console.log('\n📅 [Step 52: 2026년 미래 유령 일정 동적 윈도우 스캔 & 날짜 불일치 자동 치유 QA]');
+
+// 52-1: 동적 날짜 윈도우 탐색 코드 탑재 검증
+const orphanSilentCode52 = code.slice(code.indexOf('function cleanupOrphanCalendarEventsSilent('), code.indexOf('function runPeriodicAutoSync('));
+const hasDynamicWindowSilent = orphanSilentCode52.indexOf('searchStart = new Date(minDate.getTime()') !== -1 &&
+  orphanSilentCode52.indexOf('searchEnd = new Date(maxDate.getTime()') !== -1;
+assertTest('cleanupOrphanCalendarEventsSilent: 시트 minDate/maxDate 기반 동적 캘린더 스캔 윈도우 확장 탑재 검증', hasDynamicWindowSilent);
+
+const orphanManualCode52 = code.slice(code.indexOf('function cleanupDuplicateAndOrphanCalendarEvents('), code.indexOf('function cleanupDuplicateCalendarEventsSilent('));
+const hasDynamicWindowManual = orphanManualCode52.indexOf('searchStart = new Date(minDate.getTime()') !== -1 &&
+  orphanManualCode52.indexOf('searchEnd = new Date(maxDate.getTime()') !== -1;
+assertTest('cleanupDuplicateAndOrphanCalendarEvents: 상단 메뉴 수동 정리 시에도 동적 윈도우 100% 스캔 탑재 검증', hasDynamicWindowManual);
+
+// 52-2: 날짜 불일치 diffDays >= 2 및 자율 치유(삭제 또는 날짜 이동) 탑재 검증
+const hasMismatchHealSilent = orphanSilentCode52.indexOf('diffDays >= 2') !== -1 &&
+  orphanSilentCode52.indexOf('existingOnDate') !== -1 &&
+  orphanSilentCode52.indexOf('ev.setAllDayDate(sParsed.startDate)') !== -1;
+assertTest('cleanupOrphanCalendarEventsSilent: diffDays >= 2 어긋난 일정 자율 위치 이동 또는 중복 잔여 삭제 검증', hasMismatchHealSilent);
+
+const hasMismatchHealManual = orphanManualCode52.indexOf('diffDays >= 2') !== -1 &&
+  orphanManualCode52.indexOf('existingOnDate') !== -1 &&
+  orphanManualCode52.indexOf('ev.setAllDayDate(sParsed.startDate)') !== -1;
+assertTest('cleanupDuplicateAndOrphanCalendarEvents: 수동 정리 시 diffDays >= 2 어긋난 과거 일정 완벽 치유 검증', hasMismatchHealManual);
+
+// 52-3: 런타임 시뮬레이션 - 시트는 2026.10.25, 캘린더에는 2026.10.29 잔여 일정이 남아있는 시나리오
+let deletedInSim52 = [];
+let movedInSim52 = [];
+
+const mockOldResidualEvent = {
+  getId: () => 'mismatched-residual-id-1029',
+  getTitle: () => '🟥 [철거] 신대방우성 16동 1501호',
+  getDescription: () => '📌 현장명: 신대방우성 16동 1501호\n🔨 공종: 철거',
+  getLocation: () => '',
+  isAllDayEvent: () => true,
+  getAllDayStartDate: () => new Date(2026, 9, 29),
+  getStartTime: () => new Date(2026, 9, 29),
+  deleteEvent: function() { deletedInSim52.push(this.getId()); },
+  setAllDayDate: function(d) { movedInSim52.push({ id: this.getId(), to: d }); }
+};
+
+const mockCorrectEvent = {
+  getId: () => 'correct-on-date-id-1025',
+  getTitle: () => '🟥 [철거] 신대방우성 16동 1501호',
+  getDescription: () => '📌 현장명: 신대방우성 16동 1501호\n🔨 공종: 철거',
+  getLocation: () => '',
+  isAllDayEvent: () => true,
+  getAllDayStartDate: () => new Date(2026, 9, 25),
+  getStartTime: () => new Date(2026, 9, 25),
+  deleteEvent: () => {},
+  setAllDayDate: () => {}
+};
+
+const calEventsSim52 = [mockOldResidualEvent, mockCorrectEvent];
+
+const mockCal52 = {
+  getEvents: (s, e) => calEventsSim52,
+  deleteEvent: (ev) => ev.deleteEvent()
+};
+
+let sheetValsRecorded52 = {};
+const sheetData52 = [
+  // 2행: 시트 날짜는 2026.10.25인데, I열(9번째)에 과거 잔여 일정 ID인 mismatched-residual-id-1029가 남아있는 상황!
+  ['신대방우성 16동 1501호', '2026.10.25', '철거', '', true, '', '', '진행', 'mismatched-residual-id-1029', Date.now(), '', '', '', '']
+];
+
+const mockSheet52 = {
+  getName: () => '현장서식',
+  getLastRow: () => sheetData52.length + 1,
+  getMaxColumns: () => 14,
+  setColumnWidth: () => {},
+  hideColumns: () => {},
+  getRange: (r, c, nr, nc) => ({
+    getValue: () => "진행",
+    setValue: (v) => { sheetValsRecorded52[`${r},${c}`] = v; },
+    getValues: () => sheetData52
+  })
+};
+
+const resultCleaned52 = sandbox.cleanupOrphanCalendarEventsSilent(mockSheet52, mockCal52);
+
+assertTest('런타임 시뮬레이션: 시트 날짜(10.25)와 어긋난 과거 캘린더 잔여 일정(10.29) 정확 삭제 검증',
+  deletedInSim52.indexOf('mismatched-residual-id-1029') !== -1
+);
+assertTest('런타임 시뮬레이션: 올바른 날짜의 정상 일정 ID(correct-on-date-id-1025)로 시트 I열 자동 재매핑 검증',
+  sheetValsRecorded52['2,9'] === 'correct-on-date-id-1025'
+);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);

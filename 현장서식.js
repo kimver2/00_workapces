@@ -1075,6 +1075,8 @@ function cleanupOrphanCalendarEventsSilent(sheet, cal) {
     var lastRow = sheet.getLastRow();
     var validEventIds = {};
     var unsyncedRows = [];
+    var minDate = null;
+    var maxDate = null;
 
     if (lastRow >= 2) {
       var values = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
@@ -1086,13 +1088,23 @@ function cleanupOrphanCalendarEventsSilent(sheet, cal) {
         if (rawSite) lastKnownSite = rawSite;
 
         var eventId = String(rowVal[8] || "").trim();
-        var hasDateOrTask = Boolean(String(rowVal[1] || "").trim() || String(rowVal[2] || "").trim());
+        var dateVal = rowVal[1];
+        var hasDateOrTask = Boolean(String(dateVal || "").trim() || String(rowVal[2] || "").trim());
 
         if (eventId) {
           validEventIds[eventId] = i + 2;
         } else if (hasDateOrTask) {
           if (!rowVal[0] && lastKnownSite) rowVal[0] = lastKnownSite;
           unsyncedRows.push({ rowNum: i + 2, rowVals: rowVal });
+        }
+
+        if (dateVal) {
+          var parsed = parseScheduleDateRange(dateVal);
+          if (parsed && parsed.startDate) {
+            if (!minDate || parsed.startDate < minDate) minDate = parsed.startDate;
+            var endD = parsed.endDate || parsed.startDate;
+            if (!maxDate || endD > maxDate) maxDate = endD;
+          }
         }
       }
 
@@ -1111,10 +1123,21 @@ function cleanupOrphanCalendarEventsSilent(sheet, cal) {
       }
     }
 
-    // 최근 60일 전 ~ 향후 180일 구간 스캔 (1회 API 호출로 고속 조회)
+    // [핵심 해결 1]: 동적 날짜 윈도우 계산 (시트 내 2026년~2027년 일정까지 100% 무조건 포함)
     var now = new Date();
-    var searchStart = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-    var searchEnd = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
+    var defaultPast = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    var defaultFuture = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+
+    var searchStart = defaultPast;
+    if (minDate && minDate.getTime() - 60 * 24 * 60 * 60 * 1000 < searchStart.getTime()) {
+      searchStart = new Date(minDate.getTime() - 60 * 24 * 60 * 60 * 1000);
+    }
+
+    var searchEnd = defaultFuture;
+    if (maxDate && maxDate.getTime() + 90 * 24 * 60 * 60 * 1000 > searchEnd.getTime()) {
+      searchEnd = new Date(maxDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+    }
+
     var allCalEvents = [];
     try {
       allCalEvents = cal.getEvents(searchStart, searchEnd);
@@ -1124,23 +1147,75 @@ function cleanupOrphanCalendarEventsSilent(sheet, cal) {
     var deletedCount = 0;
 
     for (var k = 0; k < allCalEvents.length; k++) {
-      if (deletedCount >= 50) break; // 1회 최대 50건 삭제로 Rate Limit 완벽 보호 및 잔여 테스트 일정 일괄 정리
+      if (deletedCount >= 50) break; // 1회 최대 50건 안전 정리
       var ev = allCalEvents[k];
       var evId = ev.getId();
 
       if (!isSystemSiteScheduleEvent(ev)) continue; // 개인 일정 절대 보호
-      if (validEventIds[evId]) continue;            // 시트에 존재하는 정상 일정 통과
 
-      // 시트에서 행 삭제로 사라진 유령 일정 삭제!
+      var matchedRowNum = validEventIds[evId];
+      if (matchedRowNum && values && values[matchedRowNum - 2]) {
+        // 시트 matchedRowNum 행과 ID가 매칭된 경우: 날짜 불일치(어긋난 일정) 자율 위치 치유
+        var sRowVals = values[matchedRowNum - 2];
+        var sDateVal = sRowVals[1];
+        var sParsed = parseScheduleDateRange(sDateVal);
+
+        if (sParsed && sParsed.startDate) {
+          var isAllDay = typeof ev.isAllDayEvent === 'function' ? ev.isAllDayEvent() : false;
+          var evStart = isAllDay
+            ? (typeof ev.getAllDayStartDate === 'function' ? ev.getAllDayStartDate() : null)
+            : (typeof ev.getStartTime === 'function' ? ev.getStartTime() : null);
+          if (!evStart && typeof ev.getStartTime === 'function') evStart = ev.getStartTime();
+          if (!evStart && typeof ev.getAllDayStartDate === 'function') evStart = ev.getAllDayStartDate();
+
+          if (evStart && typeof evStart.getTime === 'function') {
+            var diffDays = Math.abs(Math.round((evStart.getTime() - sParsed.startDate.getTime()) / (24 * 60 * 60 * 1000)));
+
+            // 시트 날짜와 캘린더 날짜가 2일 이상 어긋난 경우:
+            if (diffDays >= 2) {
+              var sDetails = buildEventDetails(sRowVals, matchedRowNum, null, sheet);
+              var existingOnDate = findMatchingCalendarEvent(cal, sDetails, null, evId, allCalEvents);
+              if (existingOnDate) {
+                // 이미 올바른 날짜에 정상 일정이 따로 있다면, 이 어긋난 과거 잔여 일정은 삭제!
+                try {
+                  ev.deleteEvent();
+                  deletedCount++;
+                  Utilities.sleep(100);
+                } catch(eDelOld) {}
+                sheet.getRange(matchedRowNum, 9).setValue(existingOnDate.getId());
+                sheet.getRange(matchedRowNum, 10).setValue(Date.now());
+                continue;
+              } else {
+                // 올바른 날짜에 일정이 없다면 이 일정을 시트 날짜로 이동!
+                try {
+                  if (sParsed.hasTime && typeof ev.setTime === 'function') {
+                    ev.setTime(sParsed.startTime, sParsed.endTime);
+                  } else if (sParsed.isRange && typeof ev.setAllDayDates === 'function') {
+                    ev.setAllDayDates(sParsed.startDate, sParsed.endDate);
+                  } else if (typeof ev.setAllDayDate === 'function') {
+                    ev.setAllDayDate(sParsed.startDate);
+                  }
+                  sheet.getRange(matchedRowNum, 10).setValue(Date.now());
+                  deletedCount++;
+                } catch(eMove) {}
+                continue;
+              }
+            }
+          }
+        }
+        continue; // 정상 일치 일정
+      }
+
+      // 시트 어디에도 ID가 없는 고아/유령 일정 삭제!
       try {
         ev.deleteEvent();
         deletedCount++;
-        Utilities.sleep(150);
+        Utilities.sleep(100);
       } catch (eDel) {}
     }
 
     if (deletedCount > 0) {
-      Logger.log("🧹 유령 일정 무음 자동 정리 완료: " + deletedCount + "건 삭제");
+      Logger.log("🧹 유령/불일치 일정 무음 자동 정리 완료: " + deletedCount + "건 조치");
     }
     return deletedCount;
   } catch (e) {
@@ -3555,11 +3630,20 @@ function cleanupDuplicateAndOrphanCalendarEvents() {
     }
   }
 
+  // [핵심 해결 1]: 동적 날짜 윈도우 계산 (시트 내 2026년~2027년 일정까지 100% 무조건 포함)
   var now = new Date();
-  var defaultStart = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-  var defaultEnd = new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000);
-  var searchStart = (minDate && minDate < defaultStart) ? new Date(minDate.getTime() - 30 * 24 * 60 * 60 * 1000) : defaultStart;
-  var searchEnd = (maxDate && maxDate > defaultEnd) ? new Date(maxDate.getTime() + 60 * 24 * 60 * 60 * 1000) : defaultEnd;
+  var defaultPast = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  var defaultFuture = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+
+  var searchStart = defaultPast;
+  if (minDate && minDate.getTime() - 60 * 24 * 60 * 60 * 1000 < searchStart.getTime()) {
+    searchStart = new Date(minDate.getTime() - 60 * 24 * 60 * 60 * 1000);
+  }
+
+  var searchEnd = defaultFuture;
+  if (maxDate && maxDate.getTime() + 90 * 24 * 60 * 60 * 1000 > searchEnd.getTime()) {
+    searchEnd = new Date(maxDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+  }
 
   // 1단계: I열이 비어있는 행이 있다면, 캘린더의 기존 일정과 스마트 자동 재연결
   var reconnectedCount = 0;
@@ -3599,22 +3683,71 @@ function cleanupDuplicateAndOrphanCalendarEvents() {
       continue; // 개인 일정 철저 보호
     }
 
-    if (validEventIds[evId]) {
-      continue; // 시트에 유효하게 등록된 정상 일정
+    var matchedRowNum = validEventIds[evId];
+    if (matchedRowNum && values && values[matchedRowNum - 2]) {
+      // 시트 matchedRowNum 행과 ID가 매칭된 경우: 날짜 불일치(어긋난 일정) 자율 위치 치유
+      var sRowVals = values[matchedRowNum - 2];
+      var sDateVal = sRowVals[1];
+      var sParsed = parseScheduleDateRange(sDateVal);
+
+      if (sParsed && sParsed.startDate) {
+        var isAllDay = typeof ev.isAllDayEvent === 'function' ? ev.isAllDayEvent() : false;
+        var evStart = isAllDay
+          ? (typeof ev.getAllDayStartDate === 'function' ? ev.getAllDayStartDate() : null)
+          : (typeof ev.getStartTime === 'function' ? ev.getStartTime() : null);
+        if (!evStart && typeof ev.getStartTime === 'function') evStart = ev.getStartTime();
+        if (!evStart && typeof ev.getAllDayStartDate === 'function') evStart = ev.getAllDayStartDate();
+
+        if (evStart && typeof evStart.getTime === 'function') {
+          var diffDays = Math.abs(Math.round((evStart.getTime() - sParsed.startDate.getTime()) / (24 * 60 * 60 * 1000)));
+
+          // 시트 날짜와 캘린더 날짜가 2일 이상 어긋난 경우:
+          if (diffDays >= 2) {
+            var sDetails = buildEventDetails(sRowVals, matchedRowNum, null, sheet);
+            var existingOnDate = findMatchingCalendarEvent(cal, sDetails, null, evId, allCalEvents);
+            if (existingOnDate) {
+              // 이미 올바른 날짜에 정상 일정이 따로 있다면, 이 어긋난 과거 잔여 일정은 삭제!
+              try {
+                ev.deleteEvent();
+                deletedCount++;
+                Utilities.sleep(100);
+              } catch(eDelOld) {}
+              sheet.getRange(matchedRowNum, 9).setValue(existingOnDate.getId());
+              sheet.getRange(matchedRowNum, 10).setValue(Date.now());
+              continue;
+            } else {
+              // 올바른 날짜에 일정이 없다면 이 일정을 시트 날짜로 이동!
+              try {
+                if (sParsed.hasTime && typeof ev.setTime === 'function') {
+                  ev.setTime(sParsed.startTime, sParsed.endTime);
+                } else if (sParsed.isRange && typeof ev.setAllDayDates === 'function') {
+                  ev.setAllDayDates(sParsed.startDate, sParsed.endDate);
+                } else if (typeof ev.setAllDayDate === 'function') {
+                  ev.setAllDayDate(sParsed.startDate);
+                }
+                sheet.getRange(matchedRowNum, 10).setValue(Date.now());
+                deletedCount++;
+              } catch(eMove) {}
+              continue;
+            }
+          }
+        }
+      }
+      continue; // 정상 일치 일정
     }
 
     // 시트 I열에 없는 고아/중복 일정 안전 삭제
     try {
       ev.deleteEvent();
       deletedCount++;
-      Utilities.sleep(150);
+      Utilities.sleep(100);
     } catch (e) {}
   }
 
   SpreadsheetApp.flush();
 
   var resultMsg = "✅ 캘린더 중복 및 유령 일정 정리가 완료되었습니다!\n\n" +
-                  "• 삭제된 중복/유령 일정: " + deletedCount + "건\n" +
+                  "• 삭제 또는 정상화된 중복/유령 일정: " + deletedCount + "건\n" +
                   (reconnectedCount > 0 ? "• 시트와 자동 재연결된 일정: " + reconnectedCount + "건\n" : "") +
                   "• 현재 정상 연동 일정: " + Object.keys(validEventIds).length + "건";
 
@@ -4894,14 +5027,22 @@ function removeAuditColumnsKtoN() {
  * 배포된 웹 앱 URL 가져오기
  */
 function getWebAppUrl() {
-  var docProps = PropertiesService.getDocumentProperties();
-  var savedUrl = docProps.getProperty("WEB_APP_URL");
-  if (savedUrl) return savedUrl.trim();
+  try {
+    if (typeof PropertiesService !== "undefined" && PropertiesService.getDocumentProperties) {
+      var docProps = PropertiesService.getDocumentProperties();
+      if (docProps) {
+        var savedUrl = docProps.getProperty("WEB_APP_URL");
+        if (savedUrl) return savedUrl.trim();
+      }
+    }
+  } catch(eProp) {}
 
   try {
-    var url = ScriptApp.getService().getUrl();
-    if (url && url.indexOf("macros/s") !== -1) {
-      return url;
+    if (typeof ScriptApp !== "undefined" && ScriptApp.getService) {
+      var url = ScriptApp.getService().getUrl();
+      if (url && url.indexOf("macros/s") !== -1) {
+        return url;
+      }
     }
   } catch(e) {}
 
