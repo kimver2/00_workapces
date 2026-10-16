@@ -188,7 +188,7 @@ console.log('\n🔍 [Step 3.5: 핵심 엔진 런타임 실행(Mock Runtime Execu
 const buildDetailsFn = sandbox.buildEventDetails;
 
 // Row 템플릿: 0:현장, 1:날짜, 2:공종, 3:협력, 4:공유, 5:비고, 6:담당자, 7:진행상태, 8:캘린더ID, 9:시각, 10:작성일, 11:작성자, 12:수정일, 13:수정자
-const baseMockRow = ['래미안 101동', '26.10.15', '목공', '우성목재', true, '오전작업', '김팀장', '예정', '', 0, '', '', '', ''];
+const baseMockRow = ['래미안 101동', '26.10.25', '목공', '우성목재', true, '오전작업', '김팀장', '예정', '', 0, '', '', '', ''];
 
 // 1. 상태 '완료' 런타임 호출 테스트 (ReferenceError 방지 검증)
 const rowDone = [...baseMockRow];
@@ -1970,6 +1970,84 @@ mockSidebarSheet.setActiveRange = (rng) => { activatedRange = rng; };
 const focusRes = sandbox.focusSheetRow(2);
 assertTest('focusSheetRow: 정상 행 클릭 시 활성화 및 success 반환 검증',
   focusRes && focusRes.success === true && activatedRange !== null
+);
+
+// ========================================================
+// 📱 [Step 28: 반응형 모바일 대시보드 및 원터치 바텀시트 관리 QA]
+// ========================================================
+console.log('\n📱 [Step 28: 반응형 모바일 대시보드 및 원터치 바텀시트 관리 QA]');
+
+// 28-1: showMobileDashboardUrl 함수 탑재 및 상단 메뉴 등록 검증
+assertTest('showMobileDashboardUrl 함수 탑재 여부', typeof sandbox.showMobileDashboardUrl === 'function');
+assertTest('onOpen: 모바일 대시보드 URL 안내 메뉴 항목 등록 검증',
+  onOpenCode.indexOf('showMobileDashboardUrl') !== -1
+);
+
+// 28-2: buildSidebarDashboardHtml("mobile") 모바일 최적화 및 메타 태그 검증
+const mobileHtml = sandbox.buildSidebarDashboardHtml('mobile');
+assertTest('buildSidebarDashboardHtml("mobile"): 모바일 반응형 뷰포트(viewport) 메타 태그 탑재',
+  mobileHtml.indexOf('viewport') !== -1 && mobileHtml.indexOf('user-scalable=no') !== -1
+);
+assertTest('buildSidebarDashboardHtml("mobile"): iOS 홈 화면 추가(apple-mobile-web-app-capable) 메타 태그 탑재',
+  mobileHtml.indexOf('apple-mobile-web-app-capable') !== -1
+);
+assertTest('buildSidebarDashboardHtml("mobile"): 모바일 실시간 타이틀 표기 검증',
+  mobileHtml.indexOf('📱 현장 실시간 모바일 대시보드') !== -1
+);
+assertTest('buildSidebarDashboardHtml("mobile"): 모바일 원터치 바텀시트(bottom-sheet) 컨테이너 탑재',
+  mobileHtml.indexOf('sheet-overlay') !== -1 && mobileHtml.indexOf('bottom-sheet') !== -1
+);
+assertTest('buildSidebarDashboardHtml("mobile"): 바텀시트 내 상태 버튼 및 비고 메모 편집 탑재',
+  mobileHtml.indexOf('sheet-status-grid') !== -1 && mobileHtml.indexOf('sheetMemoInput') !== -1
+);
+
+// 28-3: doGet(e) 라우팅 검증
+// 가상 HtmlOutput 모의 객체
+sandbox.HtmlService = {
+  createHtmlOutput: function(htmlContent) {
+    var out = {
+      _content: htmlContent,
+      _title: '',
+      _metaTags: {},
+      _xFrame: '',
+      setTitle: function(t) { out._title = t; return out; },
+      addMetaTag: function(n, c) { out._metaTags[n] = c; return out; },
+      setXFrameOptionsMode: function(m) { out._xFrame = m; return out; },
+      getContent: function() { return out._content; }
+    };
+    return out;
+  },
+  XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' }
+};
+
+// A. row 파라미터 없을 때 -> 모바일 전체 대시보드 반환
+const doGetDash = sandbox.doGet({});
+assertTest('doGet: row 파라미터 생략 시 모바일 전체 대시보드 자동 서빙 검증',
+  doGetDash && doGetDash._title.indexOf('대시보드') !== -1 &&
+  doGetDash._content.indexOf('📱 현장 실시간 모바일 대시보드') !== -1
+);
+assertTest('doGet: view="dashboard" 명시 시에도 모바일 전체 대시보드 서빙 검증',
+  sandbox.doGet({ parameter: { view: 'dashboard' } })._content.indexOf('kpi-grid') !== -1
+);
+
+// B. row=2 단일 일정 접근 시 -> buildMobileStatusHtml 반환 및 상단 전체 대시보드 링크 검증
+const mockGetRange = (r, c, nr, nc) => ({
+  getValues: () => [
+    ['보라매 101동', '26.10.25', '목공', '우성', true, '현장메모', '김소장', '진행', 'ev-1']
+  ],
+  getValue: () => '보라매 101동'
+});
+mockSidebarSheet.getRange = mockGetRange;
+mockSidebarSheet.getLastRow = () => 10;
+sandbox.findSiteScheduleSheet = () => mockSidebarSheet;
+
+const doGetSingle = sandbox.doGet({ parameter: { row: '2' } });
+assertTest('doGet: row=2 전달 시 단일 일정 상태 관리 화면 출력 검증',
+  doGetSingle && doGetSingle._content.indexOf('보라매 101동') !== -1 &&
+  doGetSingle._content.indexOf('목공') !== -1
+);
+assertTest('doGet: 단일 일정 관리 화면 상단에 "← 📱 전체 대시보드" 바로가기 링크 탑재 검증',
+  doGetSingle && doGetSingle._content.indexOf('← 📱 전체 대시보드') !== -1
 );
 
 console.log('\n========================================================');

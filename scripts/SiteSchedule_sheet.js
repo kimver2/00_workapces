@@ -291,6 +291,7 @@ function onOpen() {
     // [자주 쓰는 핵심 기능]
     .addItem("🖥️ 현장 공정 사이드바 열기 (우측 화면)", "openSiteScheduleSidebar")
     .addItem("🔍 현장 공정 종합 대시보드 (대형 팝업 화면)", "openSiteScheduleModal")
+    .addItem("📱 모바일 대시보드 URL 확인 및 안내", "showMobileDashboardUrl")
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
     .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
     .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
@@ -4357,6 +4358,72 @@ function configureWebAppUrl() {
 }
 
 /**
+ * [메뉴용] 모바일 대시보드 URL 및 QR 코드 안내 팝업
+ */
+function showMobileDashboardUrl() {
+  var ui = SpreadsheetApp.getUi();
+  var webAppUrl = getWebAppUrl();
+  if (!webAppUrl) {
+    var res = ui.alert(
+      "📱 모바일 웹앱 배포 필요",
+      "스마트폰에서 모바일 대시보드를 열기 위해서는 웹 앱 배포 URL이 필요합니다.\n\n" +
+      "지금 웹 앱 배포 안내 및 URL 등록 화면을 여시겠습니까?",
+      ui.ButtonSet.YES_NO
+    );
+    if (res === ui.Button.YES) {
+      configureWebAppUrl();
+    }
+    return;
+  }
+
+  var qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=" + encodeURIComponent(webAppUrl);
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<style>' +
+    '* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }' +
+    'body { padding: 20px; text-align: center; color: #1e293b; background: #ffffff; }' +
+    'h3 { font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }' +
+    'p.sub { font-size: 12.5px; color: #64748b; margin-bottom: 16px; }' +
+    '.qr-box { margin: 0 auto 16px; padding: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; display: inline-block; box-shadow: 0 4px 14px rgba(0,0,0,0.06); }' +
+    '.url-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 11px; word-break: break-all; margin-bottom: 14px; color: #2563eb; font-family: monospace; text-align: left; }' +
+    '.btn-wrap { display: flex; gap: 8px; justify-content: center; margin-bottom: 16px; }' +
+    '.btn { padding: 9px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; border: none; cursor: pointer; text-decoration: none; }' +
+    '.btn-primary { background: #2563eb; color: #ffffff; }' +
+    '.btn-primary:hover { background: #1d4ed8; }' +
+    '.btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }' +
+    '.btn-secondary:hover { background: #e2e8f0; }' +
+    '.guide-box { background: #eff6ff; border-radius: 10px; padding: 12px 14px; text-align: left; font-size: 11.5px; color: #1e40af; line-height: 1.6; }' +
+    '</style></head><body>' +
+    '<h3>📱 모바일 현장 대시보드 바로가기</h3>' +
+    '<p class="sub">스마트폰 기본 카메라로 아래 QR 코드를 비추면 즉시 열립니다.</p>' +
+    '<div class="qr-box"><img src="' + qrUrl + '" width="180" height="180" alt="대시보드 QR코드"></div>' +
+    '<div class="url-box" id="urlText">' + webAppUrl + '</div>' +
+    '<div class="btn-wrap">' +
+    '  <button class="btn btn-primary" onclick="copyUrl()">📋 URL 복사하기</button>' +
+    '  <a class="btn btn-secondary" href="' + webAppUrl + '" target="_blank">🌐 새 창 열기</a>' +
+    '</div>' +
+    '<div class="guide-box">' +
+    '  <b>💡 홈 화면에 추가하여 앱처럼 사용하는 방법:</b><br>' +
+    '  • <b>아이폰 (Safari)</b>: 하단 공유(내보내기) 버튼 ➔ <b>[홈 화면에 추가]</b><br>' +
+    '  • <b>갤럭시 (Chrome)</b>: 우측 상단 메뉴(⋮) ➔ <b>[홈 화면에 추가]</b><br>' +
+    '  ➔ 스마트폰 바탕화면에 앱 아이콘이 생성되어 터치 한 번으로 열립니다!' +
+    '</div>' +
+    '<script>' +
+    'function copyUrl() {' +
+    '  var text = document.getElementById("urlText").innerText;' +
+    '  navigator.clipboard.writeText(text).then(function() {' +
+    '    alert("✅ 모바일 대시보드 URL이 클립보드에 복사되었습니다!");' +
+    '  }).catch(function() {' +
+    '    alert("복사 실패: 수동으로 주소를 복사해 주세요.");' +
+    '  });' +
+    '}' +
+    '</script>' +
+    '</body></html>';
+
+  var htmlOutput = HtmlService.createHtmlOutput(html).setWidth(430).setHeight(530);
+  ui.showModalDialog(htmlOutput, "📱 모바일 대시보드 접속 안내");
+}
+
+/**
  * 모바일 웹앱 상태 변경 서버 함수 (google.script.run 클라이언트 RPC 연동)
  */
 function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
@@ -4426,6 +4493,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo) {
 function doGet(e) {
   var p = (e && e.parameter) ? e.parameter : {};
   var row = parseInt(p.row, 10);
+  var view = p.view ? String(p.view).toLowerCase().trim() : "";
   var targetSite = p.site ? String(p.site).trim() : "";
   var targetTask = p.task ? String(p.task).trim() : "";
   var targetId = p.id ? String(p.id).trim() : "";
@@ -4547,41 +4615,61 @@ function doGet(e) {
       .setTitle("공유/진행상태/비고 변경 완료 - " + newStatus);
   }
 
-  // 2) 모바일 UI 화면 출력
-  if (!row || row < 2 || !sheet) {
-    return HtmlService.createHtmlOutput("<h3 style='font-family:sans-serif;text-align:center;margin-top:50px;'>⚠️ 올바른 일정 링크가 아닙니다.</h3>");
+  // 2) 특정 일정 단일 관리 화면 출력 (row 파라미터가 유효하고 view가 'dashboard'가 아닌 경우)
+  if (row >= 2 && view !== "dashboard") {
+    if (!sheet) {
+      return HtmlService.createHtmlOutput("<h3 style='font-family:sans-serif;text-align:center;margin-top:50px;'>⚠️ 현장데이터 시트를 찾을 수 없습니다.</h3>");
+    }
+
+    var lastRow = sheet.getLastRow();
+    if (row > lastRow) {
+      var notFoundHtml = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
+        "<style>body { background:#f1f5f9; display:flex; justify-content:center; align-items:center; min-height:100vh; padding:16px; font-family:-apple-system, sans-serif; text-align:center; }" +
+        ".box { background:#fff; padding:32px 24px; border-radius:18px; max-width:380px; width:100%; box-shadow:0 8px 24px rgba(0,0,0,0.08); }" +
+        "h2 { color:#dc2626; font-size:18px; margin-bottom:12px; }" +
+        "p { color:#475569; font-size:13.5px; line-height:1.6; margin-bottom:20px; }" +
+        ".btn { display:inline-block; padding:11px 20px; background:#2563eb; color:#fff; text-decoration:none; border-radius:10px; font-weight:700; font-size:13.5px; }" +
+        "</style></head><body><div class='box'>" +
+        "<h2>⚠️ 유효하지 않은 일정</h2>" +
+        "<p>해당 일정이 이미 완료/삭제되었거나 행 번호가 변경되었습니다.<br>전체 모바일 대시보드에서 최신 일정을 확인하세요.</p>" +
+        "<a href='" + (getWebAppUrl() || "?view=dashboard") + "' class='btn'>📱 전체 대시보드로 이동</a>" +
+        "</div></body></html>";
+      return HtmlService.createHtmlOutput(notFoundHtml);
+    }
+
+    var rowVals = sheet.getRange(row, 1, 1, 9).getValues()[0];
+    var siteName = String(rowVals[0] || "").trim();
+    if (!siteName && row > 2) {
+      try {
+        var prevSites = sheet.getRange(2, 1, row - 2, 1).getValues();
+        for (var ps = prevSites.length - 1; ps >= 0; ps--) {
+          var pSite = String(prevSites[ps][0] || "").trim();
+          if (pSite) { siteName = pSite; break; }
+        }
+      } catch(ePs) {}
+    }
+    if (!siteName) siteName = "-";
+    var dateStr = formatScheduleDateDisplay(rowVals[1]) || String(rowVals[1] || "-").trim();
+    var taskName = String(rowVals[2] || "-").trim();
+    var rawShare = rowVals[4];
+    var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
+    var memo = String(rowVals[5] || "").trim(); // F열 비고
+    var currentStatus = String(rowVals[7] || "예정").trim() || "예정";
+    var eventIdVal = String(rowVals[8] || targetId || "").trim();
+    var webAppUrl = getWebAppUrl();
+
+    var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared, memo, eventIdVal);
+    return HtmlService.createHtmlOutput(html)
+      .setTitle("현장 공정 관리 - " + siteName)
+      .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover");
   }
 
-  var lastRow = sheet.getLastRow();
-  if (row > lastRow) {
-    return HtmlService.createHtmlOutput("<h3 style='font-family:sans-serif;text-align:center;margin-top:50px;'>⚠️ 이미 삭제되었거나 유효하지 않은 일정입니다.</h3>");
-  }
-
-  var rowVals = sheet.getRange(row, 1, 1, 9).getValues()[0];
-  var siteName = String(rowVals[0] || "").trim();
-  if (!siteName && row > 2) {
-    try {
-      var prevSites = sheet.getRange(2, 1, row - 2, 1).getValues();
-      for (var ps = prevSites.length - 1; ps >= 0; ps--) {
-        var pSite = String(prevSites[ps][0] || "").trim();
-        if (pSite) { siteName = pSite; break; }
-      }
-    } catch(ePs) {}
-  }
-  if (!siteName) siteName = "-";
-  var dateStr = formatScheduleDateDisplay(rowVals[1]) || String(rowVals[1] || "-").trim();
-  var taskName = String(rowVals[2] || "-").trim();
-  var rawShare = rowVals[4];
-  var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
-  var memo = String(rowVals[5] || "").trim(); // F열 비고
-  var currentStatus = String(rowVals[7] || "예정").trim() || "예정";
-  var eventIdVal = String(rowVals[8] || targetId || "").trim();
-  var webAppUrl = getWebAppUrl();
-
-  var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared, memo, eventIdVal);
-  return HtmlService.createHtmlOutput(html)
-    .setTitle("현장 공정 공유/진행상태/비고 관리 - " + siteName)
-    .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
+  // 3) 전체 모바일 대시보드 화면 출력 (URL 직접 접속 또는 row 미지정 시)
+  var dashHtml = buildSidebarDashboardHtml("mobile");
+  return HtmlService.createHtmlOutput(dashHtml)
+    .setTitle("📱 현장 공정 실시간 대시보드")
+    .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover")
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 /**
@@ -4650,6 +4738,12 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "</head>" +
     "<body>" +
     "  <div class='card'>" +
+    "    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;'>" +
+    "      <a href='" + (webAppUrl || "?view=dashboard") + "' style='font-size:12px; color:#2563eb; text-decoration:none; font-weight:700; display:inline-flex; align-items:center; gap:4px; padding:4px 8px; border-radius:6px; background:#eff6ff;'>" +
+    "        ← 📱 전체 대시보드" +
+    "      </a>" +
+    "      <span style='font-size:11px; color:#94a3b8;'>단일 일정 모드</span>" +
+    "    </div>" +
     "    <div class='header'>" +
     "      <div class='badge'>현장 공정 공유/진행상태/비고 관리</div>" +
     "      <div class='title'>" + siteName + "</div>" +
@@ -5844,18 +5938,26 @@ function focusSheetRow(rowNumber) {
 }
 
 /**
- * 실시간 대시보드 HTML/CSS/JS 생성기
+ * 실시간 대시보드 HTML/CSS/JS 생성기 (사이드바, 모달, 모바일 웹앱 지원)
  */
 function buildSidebarDashboardHtml(mode) {
   var isModal = (mode === "modal");
+  var isMobile = (mode === "mobile");
+  var webAppUrl = getWebAppUrl();
   var html = "";
   html += '<!DOCTYPE html><html><head><meta charset="utf-8">';
+  if (isMobile) {
+    html += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">';
+    html += '<meta name="apple-mobile-web-app-capable" content="yes">';
+    html += '<meta name="apple-mobile-web-app-status-bar-style" content="default">';
+    html += '<meta name="theme-color" content="#2563eb">';
+  }
   html += '<style>';
-  html += '* { box-sizing: border-box; margin: 0; padding: 0; }';
-  html += 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; padding-bottom: 70px; }';
-  html += '.header { background: #ffffff; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 20; }';
+  html += '* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }';
+  html += 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; padding-bottom: ' + (isMobile ? 'calc(80px + env(safe-area-inset-bottom, 0px))' : '70px') + '; }';
+  html += '.header { background: #ffffff; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 20; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }';
-  html += '.title { font-size: 15px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px; }';
+  html += '.title { font-size: ' + (isMobile ? '16px' : '15px') + '; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px; }';
   html += '.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }';
   html += '.kpi-card { background: #f1f5f9; border-radius: 8px; padding: 8px 6px; text-align: center; cursor: pointer; transition: all 0.15s ease; border: 1px solid transparent; }';
   html += '.kpi-card:hover { background: #e2e8f0; }';
@@ -5865,34 +5967,34 @@ function buildSidebarDashboardHtml(mode) {
   html += '.kpi-num.delay { color: #dc2626; }';
   html += '.kpi-label { font-size: 11px; color: #64748b; font-weight: 500; margin-top: 2px; }';
   html += '.search-box { position: relative; margin-bottom: 8px; }';
-  html += '.search-input { width: 100%; padding: 7px 10px 7px 28px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; outline: none; background: #ffffff; }';
+  html += '.search-input { width: 100%; padding: 8px 10px 8px 28px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12.5px; outline: none; background: #ffffff; }';
   html += '.search-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }';
   html += '.search-icon { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #94a3b8; }';
   html += '.filter-tabs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; }';
-  html += '.filter-tab { padding: 4px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; cursor: pointer; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; white-space: nowrap; transition: all 0.15s; }';
+  html += '.filter-tab { padding: 5px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 600; cursor: pointer; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; white-space: nowrap; transition: all 0.15s; }';
   html += '.filter-tab:hover { background: #e2e8f0; }';
   html += '.filter-tab.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }';
-  html += '.content { padding: 12px; }';
+  html += '.content { padding: 12px; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; }';
   html += '.site-card:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.06); }';
-  html += '.site-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; cursor: pointer; user-select: none; background: #ffffff; border-left: 4px solid #2563eb; }';
+  html += '.site-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; cursor: pointer; user-select: none; background: #ffffff; border-left: 4px solid #2563eb; }';
   html += '.site-header:hover { background: #f8fafc; }';
   html += '.site-title-area { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; }';
-  html += '.site-name { font-weight: 700; font-size: 13px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }';
+  html += '.site-name { font-weight: 700; font-size: 13.5px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }';
   html += '.site-badge { font-size: 10.5px; padding: 2px 6px; border-radius: 10px; background: #f1f5f9; color: #475569; font-weight: 600; }';
   html += '.site-toggle { font-size: 10px; color: #94a3b8; transition: transform 0.2s; }';
   html += '.site-card.expanded .site-toggle { transform: rotate(180deg); }';
   html += '.task-list { display: none; padding: 6px 10px 8px 10px; background: #f8fafc; border-top: 1px solid #f1f5f9; }';
   html += '.site-card.expanded .task-list { display: block; }';
-  html += '.task-item { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-bottom: 5px; cursor: pointer; transition: all 0.15s; }';
+  html += '.task-item { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 9px 11px; margin-bottom: 6px; cursor: pointer; transition: all 0.15s; }';
   html += '.task-item:hover { border-color: #2563eb; background: #f0f7ff; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(37,99,235,0.08); }';
   html += '.task-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }';
-  html += '.task-name { font-weight: 700; color: #0f172a; font-size: 12.5px; }';
-  html += '.task-date { font-size: 11px; color: #64748b; font-weight: 600; }';
+  html += '.task-name { font-weight: 700; color: #0f172a; font-size: 13px; }';
+  html += '.task-date { font-size: 11.5px; color: #64748b; font-weight: 600; }';
   html += '.task-date.today { color: #2563eb; font-weight: 700; }';
   html += '.task-date.delay { color: #dc2626; font-weight: 700; }';
   html += '.task-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b; }';
-  html += '.task-memo { margin-top: 4px; font-size: 11px; color: #475569; background: #f8fafc; padding: 3px 6px; border-radius: 4px; line-height: 1.35; word-break: break-all; }';
+  html += '.task-memo { margin-top: 4px; font-size: 11px; color: #475569; background: #f8fafc; padding: 4px 6px; border-radius: 4px; line-height: 1.35; word-break: break-all; }';
   html += '.status-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }';
   html += '.status-예정 { background: #f1f5f9; color: #475569; }';
   html += '.status-진행 { background: #dbeafe; color: #1e40af; }';
@@ -5902,14 +6004,41 @@ function buildSidebarDashboardHtml(mode) {
   html += '.empty-state { text-align: center; padding: 40px 20px; color: #64748b; }';
   html += '.spinner { border: 3px solid #f1f5f9; border-top: 3px solid #2563eb; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; margin: 30px auto 10px; }';
   html += '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
-  html += '.footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #ffffff; border-top: 1px solid #e2e8f0; padding: 8px 12px; display: flex; gap: 6px; box-shadow: 0 -2px 8px rgba(0,0,0,0.04); z-index: 30; }';
-  html += '.btn { flex: 1; padding: 8px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid transparent; text-align: center; transition: all 0.15s; }';
+  html += '.footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #ffffff; border-top: 1px solid #e2e8f0; padding: 10px 14px ' + (isMobile ? 'calc(10px + env(safe-area-inset-bottom, 0px))' : '10px') + '; display: flex; gap: 8px; box-shadow: 0 -2px 8px rgba(0,0,0,0.04); z-index: 30; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
+  html += '.btn { flex: 1; padding: 10px; border-radius: 8px; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid transparent; text-align: center; transition: all 0.15s; }';
   html += '.btn-primary { background: #2563eb; color: #ffffff; }';
   html += '.btn-primary:hover { background: #1d4ed8; }';
   html += '.btn-secondary { background: #ffffff; border-color: #cbd5e1; color: #334155; }';
   html += '.btn-secondary:hover { background: #f8fafc; }';
-  html += '.toast { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #ffffff; padding: 7px 14px; border-radius: 20px; font-size: 11.5px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 100; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }';
+  html += '.toast { position: fixed; bottom: 75px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #ffffff; padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 2000; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.18); }';
   html += '.toast.show { opacity: 1; }';
+
+  // 모바일 바텀시트 모달 스타일
+  html += '.sheet-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.55); z-index: 1000; display: none; align-items: flex-end; justify-content: center; backdrop-filter: blur(2px); }';
+  html += '.sheet-overlay.show { display: flex; }';
+  html += '.bottom-sheet { background: #ffffff; width: 100%; max-width: 520px; border-radius: 20px 20px 0 0; padding: 18px 18px calc(20px + env(safe-area-inset-bottom, 0px)) 18px; max-height: 85vh; overflow-y: auto; box-shadow: 0 -10px 30px rgba(0,0,0,0.2); animation: slideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1); }';
+  html += '@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }';
+  html += '.sheet-handle { width: 36px; height: 4px; background: #cbd5e1; border-radius: 2px; margin: 0 auto 12px; }';
+  html += '.sheet-title-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }';
+  html += '.sheet-site { font-size: 13px; color: #2563eb; font-weight: 700; }';
+  html += '.sheet-task { font-size: 18px; color: #0f172a; font-weight: 800; margin-top: 2px; }';
+  html += '.sheet-close { background: #f1f5f9; border: none; width: 28px; height: 28px; border-radius: 50%; font-size: 14px; font-weight: 700; color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; }';
+  html += '.sheet-info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 12.5px; line-height: 1.5; color: #475569; }';
+  html += '.sheet-sec-label { font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 7px; display: flex; align-items: center; gap: 5px; }';
+  html += '.sheet-status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }';
+  html += '.sheet-status-btn { padding: 9px 4px; border-radius: 8px; border: 2px solid #e2e8f0; font-size: 12.5px; font-weight: 700; cursor: pointer; background: #ffffff; color: #475569; text-align: center; }';
+  html += '.sheet-status-btn.active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 800; }';
+  html += '.sheet-share-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }';
+  html += '.sheet-share-btn { padding: 9px; border-radius: 8px; border: 2px solid #e2e8f0; font-size: 12.5px; font-weight: 700; cursor: pointer; background: #ffffff; color: #64748b; text-align: center; }';
+  html += '.sheet-share-btn.active-on { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 800; }';
+  html += '.sheet-share-btn.active-off { border-color: #ef4444; background: #fef2f2; color: #dc2626; font-weight: 800; }';
+  html += '.sheet-memo-input { width: 100%; min-height: 60px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 12.5px; font-family: inherit; outline: none; margin-bottom: 14px; resize: vertical; }';
+  html += '.sheet-memo-input:focus { border-color: #2563eb; }';
+  html += '.sheet-action-row { display: flex; gap: 8px; }';
+  html += '.sheet-save-btn { flex: 1; padding: 12px; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; font-weight: 700; border: none; cursor: pointer; }';
+  html += '.sheet-save-btn:disabled { background: #94a3b8; cursor: not-allowed; }';
+  html += '.sheet-solo-btn { flex: none; padding: 12px 14px; border-radius: 8px; background: #f1f5f9; color: #334155; font-size: 12.5px; font-weight: 700; border: 1px solid #cbd5e1; cursor: pointer; text-decoration: none; display: flex; align-items: center; }';
+
   if (isModal) {
     html += '.content { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }';
   }
@@ -5918,8 +6047,8 @@ function buildSidebarDashboardHtml(mode) {
   // Body HTML
   html += '<div class="header">';
   html += '  <div class="title-row">';
-  html += '    <div class="title">🏗️ 현장 실시간 대시보드</div>';
-  html += '    <button class="btn btn-secondary" style="flex:none;padding:3px 8px;font-size:11px;" onclick="loadData()">🔄 새로고침</button>';
+  html += '    <div class="title">' + (isMobile ? '📱 현장 실시간 모바일 대시보드' : '🏗️ 현장 실시간 대시보드') + '</div>';
+  html += '    <button class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
   html += '  </div>';
 
   html += '  <div class="kpi-grid">';
@@ -5960,12 +6089,55 @@ function buildSidebarDashboardHtml(mode) {
   html += '  <button class="btn btn-primary" onclick="syncCalendar()">📅 캘린더 동기화</button>';
   html += '</div>';
 
+  // 모바일 바텀시트 모달 컨테이너
+  html += '<div id="sheetOverlay" class="sheet-overlay" onclick="closeBottomSheet(event)">';
+  html += '  <div class="bottom-sheet" onclick="event.stopPropagation()">';
+  html += '    <div class="sheet-handle"></div>';
+  html += '    <div class="sheet-title-row">';
+  html += '      <div>';
+  html += '        <div class="sheet-site" id="sheetSiteName">-</div>';
+  html += '        <div class="sheet-task" id="sheetTaskName">-</div>';
+  html += '      </div>';
+  html += '      <button type="button" class="sheet-close" onclick="closeBottomSheet()">✕</button>';
+  html += '    </div>';
+  html += '    <div class="sheet-info-box" id="sheetInfoBox">';
+  html += '      <div>📅 <b>일정:</b> <span id="sheetDateDisplay">-</span></div>';
+  html += '      <div style="margin-top:3px;">👤 <b>담당자/업체:</b> <span id="sheetMetaDisplay">-</span></div>';
+  html += '    </div>';
+  html += '    <div class="sheet-sec-label">⚡ 진행 상태 변경</div>';
+  html += '    <div class="sheet-status-grid">';
+  html += '      <button type="button" class="sheet-status-btn" data-status="예정" onclick="selectSheetStatus(\'예정\')">📅 예정</button>';
+  html += '      <button type="button" class="sheet-status-btn" data-status="진행 중" onclick="selectSheetStatus(\'진행 중\')">▶️ 진행 중</button>';
+  html += '      <button type="button" class="sheet-status-btn" data-status="완료" onclick="selectSheetStatus(\'완료\')">✅ 완료</button>';
+  html += '      <button type="button" class="sheet-status-btn" data-status="AS" onclick="selectSheetStatus(\'AS\')">🛠️ AS</button>';
+  html += '      <button type="button" class="sheet-status-btn" data-status="지연" onclick="selectSheetStatus(\'지연\')">⚠️ 지연</button>';
+  html += '    </div>';
+  html += '    <div class="sheet-sec-label">🔗 캘린더 공정 공유</div>';
+  html += '    <div class="sheet-share-grid">';
+  html += '      <button type="button" id="sheetShareOn" class="sheet-share-btn" onclick="selectSheetShare(true)">🟦 공유 (ON)</button>';
+  html += '      <button type="button" id="sheetShareOff" class="sheet-share-btn" onclick="selectSheetShare(false)">🟥 미공유 (OFF)</button>';
+  html += '    </div>';
+  html += '    <div class="sheet-sec-label">📝 현장 비고 / 특이사항</div>';
+  html += '    <textarea id="sheetMemoInput" class="sheet-memo-input" placeholder="현장 특이사항이나 전달사항을 입력하세요..."></textarea>';
+  html += '    <div class="sheet-action-row">';
+  html += '      <button type="button" id="sheetSaveBtn" class="sheet-save-btn" onclick="saveSheetTask()">💾 저장하기</button>';
+  html += '      <button type="button" class="sheet-solo-btn" onclick="openSoloPage()">🔗 상세화면</button>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '</div>';
+
   html += '<div class="toast" id="toast"></div>';
 
   // Script
   html += '<script>';
+  html += 'const isMobileMode = ' + (isMobile ? 'true' : 'false') + ';';
+  html += 'const webAppBaseUrl = "' + (webAppUrl || "") + '";';
   html += 'let rawData = null;';
   html += 'let currentFilter = "all";';
+  html += 'let curTaskObj = null;';
+  html += 'let curSiteName = "";';
+  html += 'let selectedStatus = "예정";';
+  html += 'let selectedShare = true;';
 
   html += 'function showToast(msg) {';
   html += '  const t = document.getElementById("toast");';
@@ -6016,7 +6188,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  let html = "";';
   html += '  let visibleSitesCount = 0;';
 
-  html += '  rawData.sites.forEach(site => {';
+  html += '  rawData.sites.forEach((site, sIdx) => {';
   html += '    const filteredTasks = site.tasks.filter(t => {';
   html += '      if (currentFilter === "today" && !t.isToday) return false;';
   html += '      if (currentFilter === "delay" && !t.isDelayed) return false;';
@@ -6057,19 +6229,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '      else if (task.status.indexOf("진행") !== -1) statusClass = "status-진행";';
   html += '      else if (task.status.indexOf("AS") !== -1) statusClass = "status-AS";';
 
-  html += '      html += \'    <div class="task-item" onclick="onTaskClick(\' + task.row + \', \\\'\' + escapeJs(site.siteName) + \'\\\', \\\'\' + escapeJs(task.taskName) + \'\\\')">\';';
-  html += '      html += \'      <div class="task-top">\';';
-  html += '      html += \'        <span class="task-name">[\' + escapeHtml(task.taskName) + \']</span>\';';
-  html += '      html += \'        <span class="task-date \' + dateClass + \'">\' + (task.isToday ? "🔥 오늘 " : (task.isDelayed ? "⚠️ 지연 " : "")) + escapeHtml(task.dateDisplay) + \'</span>\';';
-  html += '      html += \'      </div>\';';
-  html += '      html += \'      <div class="task-meta">\';';
-  html += '      html += \'        <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? " / " + escapeHtml(task.partner) : "") + \'</span>\';';
-  html += '      html += \'        <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : escapeHtml(task.status)) + \'</span>\';';
-  html += '      html += \'      </div>\';';
+  html += '      const taskJson = encodeURIComponent(JSON.stringify(task));';
+  html += '      const siteEnc = encodeURIComponent(site.siteName);';
+  html += '      html += \'<div class="task-item" onclick="onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')">\';';
+  html += '      html += \'  <div class="task-top">\';';
+  html += '      html += \'    <span class="task-name">[\' + escapeHtml(task.taskName) + \']</span>\';';
+  html += '      html += \'    <span class="task-date \' + dateClass + \'">\' + (task.isToday ? "🔥 오늘 " : (task.isDelayed ? "⚠️ 지연 " : "")) + escapeHtml(task.dateDisplay) + \'</span>\';';
+  html += '      html += \'  </div>\';';
+  html += '      html += \'  <div class="task-meta">\';';
+  html += '      html += \'    <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? " / " + escapeHtml(task.partner) : "") + \'</span>\';';
+  html += '      html += \'    <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : escapeHtml(task.status)) + \'</span>\';';
+  html += '      html += \'  </div>\';';
   html += '      if (task.memo) {';
-  html += '        html += \'      <div class="task-memo">📝 \' + escapeHtml(task.memo) + \'</div>\';';
+  html += '        html += \'  <div class="task-memo">📝 \' + escapeHtml(task.memo) + \'</div>\';';
   html += '      }';
-  html += '      html += \'    </div>\';';
+  html += '      html += \'</div>\';';
   html += '    });';
   html += '    html += \'  </div>\';';
   html += '    html += \'</div>\';';
@@ -6086,11 +6260,105 @@ function buildSidebarDashboardHtml(mode) {
   html += '  el.parentElement.classList.toggle("expanded");';
   html += '}';
 
-  html += 'function onTaskClick(row, site, task) {';
-  html += '  showToast("📌 시트 " + row + "행으로 이동 중...");';
+  html += 'function onTaskClick(arg1, arg2, arg3) {';
+  html += '  var site = "";';
+  html += '  var task = null;';
+  html += '  if (typeof arg1 === "number" || /^[0-9]+$/.test(String(arg1))) {';
+  html += '    site = String(arg2 || "");';
+  html += '    task = { row: parseInt(arg1, 10), taskName: String(arg3 || "") };';
+  html += '  } else {';
+  html += '    try {';
+  html += '      site = decodeURIComponent(arg1);';
+  html += '      task = (typeof arg2 === "string") ? JSON.parse(decodeURIComponent(arg2)) : arg2;';
+  html += '    } catch(e) {';
+  html += '      site = String(arg1 || "");';
+  html += '      task = { row: 2, taskName: "" };';
+  html += '    }';
+  html += '  }';
+  html += '  if (isMobileMode) {';
+  html += '    openBottomSheet(site, task);';
+  html += '  } else {';
+  html += '    var targetRow = (task && task.row) ? task.row : parseInt(arg1, 10);';
+  html += '    showToast("📌 시트 " + targetRow + "행으로 이동 중...");';
+  html += '    google.script.run';
+  html += '      .withSuccessHandler(() => showToast("✅ [" + (site || "현장") + " - " + ((task && task.taskName) || "공정") + "] 행으로 이동했습니다."))';
+  html += '      .focusSheetRow(targetRow);';
+  html += '  }';
+  html += '}';
+
+  html += 'function openBottomSheet(site, task) {';
+  html += '  curSiteName = site;';
+  html += '  curTaskObj = task;';
+  html += '  selectedStatus = task.status || "예정";';
+  html += '  selectedShare = (task.isShared === true);';
+  html += '  document.getElementById("sheetSiteName").innerText = site;';
+  html += '  document.getElementById("sheetTaskName").innerText = task.taskName;';
+  html += '  document.getElementById("sheetDateDisplay").innerText = task.dateDisplay || "-";';
+  html += '  document.getElementById("sheetMetaDisplay").innerText = (task.manager || "-") + (task.partner ? " / " + task.partner : "");';
+  html += '  document.getElementById("sheetMemoInput").value = task.memo || "";';
+  html += '  updateSheetStatusBtns();';
+  html += '  updateSheetShareBtns();';
+  html += '  document.getElementById("sheetOverlay").classList.add("show");';
+  html += '}';
+
+  html += 'function closeBottomSheet(e) {';
+  html += '  if (e && e.target !== document.getElementById("sheetOverlay") && !e.target.classList.contains("sheet-close")) return;';
+  html += '  document.getElementById("sheetOverlay").classList.remove("show");';
+  html += '}';
+
+  html += 'function selectSheetStatus(s) {';
+  html += '  selectedStatus = s;';
+  html += '  updateSheetStatusBtns();';
+  html += '}';
+
+  html += 'function updateSheetStatusBtns() {';
+  html += '  const cleanSel = selectedStatus.replace(/\\s+/g, "");';
+  html += '  document.querySelectorAll(".sheet-status-btn").forEach(b => {';
+  html += '    const st = b.dataset.status.replace(/\\s+/g, "");';
+  html += '    b.classList.toggle("active", cleanSel.indexOf(st) !== -1 || st.indexOf(cleanSel) !== -1);';
+  html += '  });';
+  html += '}';
+
+  html += 'function selectSheetShare(val) {';
+  html += '  selectedShare = val;';
+  html += '  updateSheetShareBtns();';
+  html += '}';
+
+  html += 'function updateSheetShareBtns() {';
+  html += '  document.getElementById("sheetShareOn").classList.toggle("active-on", selectedShare);';
+  html += '  document.getElementById("sheetShareOff").classList.toggle("active-off", !selectedShare);';
+  html += '}';
+
+  html += 'function saveSheetTask() {';
+  html += '  if (!curTaskObj) return;';
+  html += '  const saveBtn = document.getElementById("sheetSaveBtn");';
+  html += '  const memoVal = document.getElementById("sheetMemoInput").value.trim();';
+  html += '  saveBtn.disabled = true;';
+  html += '  saveBtn.innerText = "저장 중...";';
   html += '  google.script.run';
-  html += '    .withSuccessHandler(() => showToast("✅ [" + site + " - " + task + "] 행으로 이동했습니다."))';
-  html += '    .focusSheetRow(row);';
+  html += '    .withSuccessHandler(res => {';
+  html += '      saveBtn.disabled = false;';
+  html += '      saveBtn.innerText = "💾 저장하기";';
+  html += '      if (res && res.success) {';
+  html += '        document.getElementById("sheetOverlay").classList.remove("show");';
+  html += '        showToast("✅ [" + curTaskObj.taskName + "] 상태가 저장되었습니다!");';
+  html += '        loadData();';
+  html += '      } else {';
+  html += '        showToast("⚠️ 저장 실패: " + ((res && res.error) || "알 수 없는 오류"));';
+  html += '      }';
+  html += '    })';
+  html += '    .withFailureHandler(err => {';
+  html += '      saveBtn.disabled = false;';
+  html += '      saveBtn.innerText = "💾 저장하기";';
+  html += '      showToast("⚠️ 에러: " + (err.message || err));';
+  html += '    })';
+  html += '    .updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal);';
+  html += '}';
+
+  html += 'function openSoloPage() {';
+  html += '  if (!curTaskObj) return;';
+  html += '  const url = (webAppBaseUrl || window.location.href.split("?")[0]) + "?row=" + curTaskObj.row;';
+  html += '  window.location.href = url;';
   html += '}';
 
   html += 'function syncCalendar() {';
@@ -6111,13 +6379,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '    .replace(/>/g, "&gt;")';
   html += '    .replace(/"/g, "&quot;")';
   html += '    .replace(/\'/g, "&#39;");';
-  html += '}';
-
-  html += 'function escapeJs(str) {';
-  html += '  return String(str || "")';
-  html += '    .replace(/\\\\/g, "\\\\\\\\")';
-  html += '    .replace(/\'/g, "\\\\\'")';
-  html += '    .replace(/"/g, "\\\\\\"");';
   html += '}';
 
   html += 'window.onload = loadData;';
