@@ -2213,9 +2213,9 @@ assertTest('getSidebarDashboardData: 시트 예외 발생 시 에러 객체 반�
   safeDashData.sites.length === 0
 );
 
-// 31-5: 전체 및 완료 탭, 검색 시 카드를 기본 접힌 상태 유지 검증
-assertTest('buildSidebarDashboardHtml: 기본 접힘(isExpanded = false) 적용 검증 (today/delay 제외 기본 접힘)',
-  modalHtml.indexOf('(currentFilter === "today" || currentFilter === "delay")') !== -1
+// 31-5: 전체 및 완료 탭에서는 접힌 상태, 검색 시에는 펼쳐진 상태 유지 검증
+assertTest('buildSidebarDashboardHtml: 전체/완료 탭에서는 기본 접힘, 검색 시에는 펼침(isExpanded) 적용 검증',
+  modalHtml.indexOf('(query !== "") || (currentFilter !== "all" && currentFilter !== "done")') !== -1
 );
 
 // ========================================================
