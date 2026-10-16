@@ -127,6 +127,7 @@ function ensureTasksInValidation(sheet, newTasks) {
  */
 function getMemberNames(ss) {
   var members = [];
+  var EXCLUDED_MEMBERS = ["김종혁"];
   try {
     if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) ss = getAppSpreadsheet();
@@ -153,7 +154,7 @@ function getMemberNames(ss) {
           var parts = nm.split(/[,/]/);
           for (var p = 0; p < parts.length; p++) {
             var subNm = parts[p].trim();
-            if (subNm && members.indexOf(subNm) === -1) {
+            if (subNm && EXCLUDED_MEMBERS.indexOf(subNm) === -1 && members.indexOf(subNm) === -1) {
               members.push(subNm);
             }
           }
@@ -168,7 +169,7 @@ function getMemberNames(ss) {
     members = ["조항만", "송지은", "전예린", "영하"];
   }
 
-  return members;
+  return members.filter(function(m) { return EXCLUDED_MEMBERS.indexOf(m) === -1; });
 }
 
 /**
@@ -6301,6 +6302,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  let tabsHtml = \'<div class="member-tab \' + (!selectedMember ? "active" : "") + \'" onclick="setMemberFilter(\\\'\\\')">👤 전체</div>\';';
   html += '  members.forEach(m => {';
+  html += '    if (m === "김종혁" || m.indexOf("김종혁") !== -1) return;';
   html += '    const isAct = (selectedMember === m);';
   html += '    const mEnc = encodeURIComponent(m);';
   html += '    tabsHtml += \'<div class="member-tab \' + (isAct ? "active" : "") + \'" onclick="setMemberFilter(\\\'\' + mEnc + \'\\\')">\' + escapeHtml(m) + \'</div>\';';
@@ -6391,6 +6393,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return false;';
   html += '      }';
   html += '      if (selectedMember) {';
+  html += '        const stClean = (t.status || "").replace(/\\s+/g, "");';
+  html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return false;';
   html += '        const mgr = (t.manager || "").trim();';
   html += '        if (mgr.indexOf(selectedMember) === -1) return false;';
   html += '      }';

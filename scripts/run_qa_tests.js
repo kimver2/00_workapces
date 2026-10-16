@@ -2361,10 +2361,10 @@ assertTest('getMemberNames 함수 탑재 여부',
   typeof sandbox.getMemberNames === 'function'
 );
 
-// 33-2: getMemberNames가 03_구성원 시트에서 개별 구성원 이름 추출하는지 검증
+// 33-2: getMemberNames가 03_구성원 시트에서 개별 구성원 이름 추출 및 김종혁 제외 검증
 const mockMembersSheet = {
   getName: () => '03_구성원',
-  getLastRow: () => 4,
+  getLastRow: () => 5,
   getLastColumn: () => 3,
   getRange: (r, c, nr, nc) => {
     if (r === 1) {
@@ -2372,6 +2372,7 @@ const mockMembersSheet = {
     }
     return {
       getValues: () => [
+        ['김종혁'],
         ['조항만'],
         ['송지은, 전예린'],
         ['영하']
@@ -2384,9 +2385,10 @@ const mockSSWithMembers = {
 };
 const extractedMembers = sandbox.getMemberNames(mockSSWithMembers);
 
-assertTest('getMemberNames: 03_구성원 시트의 복합 담당자(쉼표 분리) 포함 개별 이름 정상 추출 검증',
+assertTest('getMemberNames: 03_구성원 시트 추출 시 "김종혁" 배제 및 복합 담당자 개별 분리 검증',
   Array.isArray(extractedMembers) &&
   extractedMembers.length === 4 &&
+  !extractedMembers.includes('김종혁') &&
   extractedMembers[0] === '조항만' &&
   extractedMembers[1] === '송지은' &&
   extractedMembers[2] === '전예린' &&
@@ -2395,8 +2397,8 @@ assertTest('getMemberNames: 03_구성원 시트의 복합 담당자(쉼표 분�
 
 // 33-3: 시트 미존재 시 fallback 기본 구성원 반환 검증
 const fallbackMembers = sandbox.getMemberNames({ getSheets: () => [] });
-assertTest('getMemberNames: 구성원 시트 부재 시 fallback 기본 멤버 반환 검증',
-  fallbackMembers.length === 4 && fallbackMembers.includes('조항만')
+assertTest('getMemberNames: 구성원 시트 부재 시 fallback 기본 멤버 반환 및 김종혁 미포함 검증',
+  fallbackMembers.length === 4 && fallbackMembers.includes('조항만') && !fallbackMembers.includes('김종혁')
 );
 
 // 33-4: getSidebarDashboardData 반환값에 members 포함 검증
@@ -2436,12 +2438,23 @@ assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 검색 �
   dashHtml33.indexOf('function setMemberFilter(enc)') !== -1
 );
 
-// 33-9: onDataLoaded에서 renderMemberFilterTabs 호출 탑재 검증
+// 33-9: 클라이언트 renderMemberFilterTabs에서 김종혁 필터 버튼 생성 배제 검증
+assertTest('buildSidebarDashboardHtml: 클라이언트 renderMemberFilterTabs에서 "김종혁" 버튼 2중 방어 배제 검증',
+  dashHtml33.indexOf('if (m === "김종혁" || m.indexOf("김종혁") !== -1) return;') !== -1
+);
+
+// 33-10: onDataLoaded에서 renderMemberFilterTabs 호출 탑재 검증
 assertTest('buildSidebarDashboardHtml: onDataLoaded 시 renderMemberFilterTabs(data.members) 자동 호출 검증',
   dashHtml33.indexOf('renderMemberFilterTabs(data.members || []);') !== -1
 );
 
-// 33-10: 담당자 필터링 시뮬레이션 검증 (특정 멤버 클릭 시 해당 담당자 공정만 필터 & 펼침 & 빠른 일정순 정렬)
+// 33-11: 담당자 필터 선택 시 완료/취소 공정 제외 로직 탑재 검증
+assertTest('buildSidebarDashboardHtml: 담당자 선택 시 완료/취소 공정 제외 로직 탑재 검증',
+  dashHtml33.indexOf('if (selectedMember) {') !== -1 &&
+  dashHtml33.indexOf('if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return false;') !== -1
+);
+
+// 33-12: 담당자 필터링 시뮬레이션 검증 (특정 멤버 클릭 시 해당 담당자의 완료 제외 미완료 공정만 필터 & 펼침 & 빠른 일정순 정렬)
 const testMemberFilterSites = [
   {
     siteName: '현장A',
@@ -2449,6 +2462,7 @@ const testMemberFilterSites = [
     isAllCompleted: false,
     tasks: [
       { taskName: '도배', manager: '송지은', dateDisplay: '26.10.25', dateMs: 1761350400000, status: '예정' },
+      { taskName: '철거', manager: '송지은', dateDisplay: '26.10.15', dateMs: 1760486400000, status: '완료' },
       { taskName: '타일', manager: '조항만', dateDisplay: '26.10.18', dateMs: 1760745600000, status: '진행중' }
     ]
   },
@@ -2462,10 +2476,15 @@ const testMemberFilterSites = [
   }
 ];
 
+// 시뮬레이션: '송지은' 담당자 필터 적용
 const simSelectedMember = '송지은';
 const simMatchedMemberSites = [];
 testMemberFilterSites.forEach(s => {
   const fTasks = s.tasks.filter(t => {
+    // 담당자 필터 시 완료/취소 공정 배제
+    const stClean = (t.status || '').replace(/\s+/g, '');
+    if (stClean.indexOf('완료') !== -1 || stClean.indexOf('취소') !== -1) return false;
+
     const mgr = (t.manager || '').trim();
     return mgr.indexOf(simSelectedMember) !== -1;
   });
@@ -2480,17 +2499,17 @@ simMatchedMemberSites.sort((a, b) => a.earliestFilteredMs - b.earliestFilteredMs
 
 const simIsExpanded = ('' !== '') || (simSelectedMember !== '') || ('all' !== 'all' && 'all' !== 'done');
 
-assertTest('담당자 필터 시뮬레이션: "송지은" 필터 시 10.20 일정을 가진 현장B가 10.25 현장A보다 상위 정렬되고 카드가 펼쳐짐(isExpanded: true) 검증',
+assertTest('담당자 필터 시뮬레이션: "송지은" 필터 시 완료 공정(철거)은 제외되고, 10.20 일정을 가진 현장B가 10.25 현장A보다 상위 정렬되며 펼쳐짐(isExpanded: true) 검증',
   simMatchedMemberSites.length === 2 &&
   simMatchedMemberSites[0].site.siteName === '현장B' &&
   simMatchedMemberSites[0].filteredTasks.length === 1 &&
   simMatchedMemberSites[1].site.siteName === '현장A' &&
   simMatchedMemberSites[1].filteredTasks.length === 1 &&
-  simMatchedMemberSites[1].filteredTasks[0].taskName === '도배' &&
+  simMatchedMemberSites[1].filteredTasks[0].taskName === '도배' && // 철거(완료)는 제외!
   simIsExpanded === true
 );
 
-// 33-11: 필터 해제 시 시뮬레이션 (선택 해제 시 평상시 접힌 상태 유지)
+// 33-13: 필터 해제 시 시뮬레이션 (선택 해제 시 평상시 접힌 상태 유지)
 const simResetMember = '';
 const simResetQuery = '';
 const simResetFilter = 'all';
