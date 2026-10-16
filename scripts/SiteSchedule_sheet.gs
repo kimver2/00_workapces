@@ -1196,6 +1196,39 @@ function handleCalendarEditTrigger(e) {
       }
     }
 
+    // [지연 여부에 따른 배경색 실시간 동기화 (지연 공정: #fff1f2, 정상/미래/완료 공정: #ffffff)]
+    if ((startCol <= 2 && endCol >= 2) || (startCol <= 8 && endCol >= 8)) {
+      try {
+        var rowRange = sheet.getRange(actualStartRow, 1, numRows, 8);
+        var rowVals = rowRange.getValues();
+        var rowBgs = rowRange.getBackgrounds();
+        var bgUpdated = false;
+        for (var bi = 0; bi < numRows; bi++) {
+          var rDVal = rowVals[bi][1];
+          var rStVal = String(rowVals[bi][7] || "").trim().replace(/\s+/g, "");
+          var rParsed = parseScheduleDateRange(rDVal);
+          var isDly = rParsed ? isScheduleDelayed(rParsed, rStVal, now) : false;
+          if (isDly) {
+            if (rowBgs[bi][0] !== "#fff1f2") {
+              for (var bc = 0; bc < 8; bc++) rowBgs[bi][bc] = "#fff1f2";
+              bgUpdated = true;
+            }
+          } else {
+            // 미래 일정이거나 완료 상태이면 붉은색 잔여물을 흰색(#ffffff)으로 즉시 복구!
+            if (rowBgs[bi][0] && rowBgs[bi][0] !== "#ffffff" && rowBgs[bi][0] !== "#FFFFFF") {
+              for (var bc2 = 0; bc2 < 8; bc2++) rowBgs[bi][bc2] = "#ffffff";
+              bgUpdated = true;
+            }
+          }
+        }
+        if (bgUpdated) {
+          rowRange.setBackgrounds(rowBgs);
+        }
+      } catch (eBg) {
+        Logger.log("배경색 실시간 동기화 예외: " + eBg.toString());
+      }
+    }
+
     // [스마트 디바운스 모드 (기본 권장)]:
     // 사용자가 입력 중일 때는 즉시 API를 호출하지 않고 타이핑 완료 1분 뒤 1회만 자동 동기화되도록 예약!
     if (syncMode === "DEBOUNCE" || !syncMode) {
@@ -5217,9 +5250,9 @@ function checkAndHighlightDelayedSchedules() {
         bgChanged = true;
       }
     } else {
-      // 정상 상태 복구 (기존에 붉은색이었던 경우 흰색으로 복구)
+      // 정상 상태 복구: 지연이 아닌 모든 정상 행(완료되었거나 미래 일정)은 흰색(#ffffff)으로 완벽 복구!
       var currentBg = backgrounds[i][0];
-      if (currentBg === "#fff1f2" || currentBg === "#fee2e2" || currentBg === "#fce8e6") {
+      if (currentBg && currentBg !== "#ffffff" && currentBg !== "#FFFFFF") {
         for (var c2 = 0; c2 < 8; c2++) {
           backgrounds[i][c2] = "#ffffff";
         }
