@@ -6306,7 +6306,7 @@ function buildSidebarDashboardHtml(mode) {
 
   html += '    if (filteredTasks.length === 0) return;';
   html += '    visibleSitesCount++;';
-  html += '    const isExpanded = (query !== "" || currentFilter !== "all" || (rawData.kpi && rawData.kpi.activeSites <= 5));';
+  html += '    const isExpanded = (query !== "") || (currentFilter !== "all" && currentFilter !== "done");';
 
   html += '    html += \'<div class="site-card \' + (isExpanded ? "expanded" : "") + \'">\';';
   html += '    html += \'  <div class="site-header" style="border-left-color: \' + site.colorHex + \';" onclick="toggleSite(this)">\';';

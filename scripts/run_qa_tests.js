@@ -2213,6 +2213,11 @@ assertTest('getSidebarDashboardData: 시트 예외 발생 시 에러 객체 반�
   safeDashData.sites.length === 0
 );
 
+// 31-5: 전체 및 완료 탭에서는 카드를 기본으로 펼치지 않고 접힌 상태 유지 검증
+assertTest('buildSidebarDashboardHtml: 전체/완료 탭에서는 기본 접힘(isExpanded = false) 적용 검증',
+  modalHtml.indexOf('(currentFilter !== "all" && currentFilter !== "done")') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
