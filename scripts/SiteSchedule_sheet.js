@@ -5855,10 +5855,18 @@ function getSidebarDashboardData() {
     var isToday = false;
     var isDelayed = false;
     var dateDisplay = formatScheduleDateDisplay(dateVal);
+    var dateMs = 0;
 
-    if (parsed && parsed.startDate) {
-      isToday = isScheduleActiveToday(parsed, today);
-      isDelayed = isScheduleDelayed(parsed, status, today);
+    if (parsed) {
+      if (parsed.hasTime && parsed.startTime) {
+        dateMs = parsed.startTime.getTime();
+      } else if (parsed.startDate) {
+        dateMs = parsed.startDate.getTime();
+      }
+      if (parsed.startDate) {
+        isToday = isScheduleActiveToday(parsed, today);
+        isDelayed = isScheduleDelayed(parsed, status, today);
+      }
     }
 
     if (isToday) todayCount++;
@@ -5871,7 +5879,8 @@ function getSidebarDashboardData() {
         siteName: siteName,
         colorCode: colorCode,
         colorHex: getHexColorForCalendarCode(colorCode),
-        tasks: []
+        tasks: [],
+        initialOrder: siteOrder.length
       };
       siteOrder.push(siteName);
     }
@@ -5880,6 +5889,7 @@ function getSidebarDashboardData() {
       row: row,
       taskName: taskName,
       dateDisplay: dateDisplay,
+      dateMs: dateMs,
       partner: partner,
       manager: manager,
       status: status,
@@ -5892,13 +5902,68 @@ function getSidebarDashboardData() {
   }
 
   var sitesList = [];
+  var activeSitesCount = 0;
+
   for (var s = 0; s < siteOrder.length; s++) {
-    sitesList.push(sitesMap[siteOrder[s]]);
+    var siteObj = sitesMap[siteOrder[s]];
+
+    // 1. 공정(tasks) 날짜 오름차순 정렬 (빠른 날짜 우선, 날짜 없으면 뒤로, 동일 날짜는 시트 행 순서 유지)
+    siteObj.tasks.sort(function(a, b) {
+      var aMs = a.dateMs || 0;
+      var bMs = b.dateMs || 0;
+      if (aMs && bMs) {
+        if (aMs !== bMs) return aMs - bMs;
+      } else if (aMs) {
+        return -1;
+      } else if (bMs) {
+        return 1;
+      }
+      return a.row - b.row;
+    });
+
+    // 2. 블록 전체 완료 여부 판별 (공정이 1개 이상이고 모든 공정의 상태가 '완료' 또는 '취소'인 경우)
+    var activeTasks = siteObj.tasks.filter(function(t) {
+      var st = (t.status || "").replace(/\s+/g, "");
+      return st.indexOf("완료") === -1 && st.indexOf("취소") === -1;
+    });
+
+    var isAllCompleted = (siteObj.tasks.length > 0) && (activeTasks.length === 0);
+    siteObj.isAllCompleted = isAllCompleted;
+    siteObj.activeTasksCount = activeTasks.length;
+    siteObj.completedTasksCount = siteObj.tasks.length - activeTasks.length;
+
+    if (!isAllCompleted) {
+      activeSitesCount++;
+    }
+
+    // 3. 현장 카드 정렬 기준 날짜 계산: 진행 중인 공정의 가장 빠른 날짜 (없으면 전체 중 가장 빠른 날짜)
+    var earliestTask = (activeTasks.length > 0) ? activeTasks[0] : siteObj.tasks[0];
+    siteObj.earliestDateMs = (earliestTask && earliestTask.dateMs) ? earliestTask.dateMs : 0;
+
+    sitesList.push(siteObj);
   }
+
+  // 4. 현장 카드(sitesList) 정렬: 활성 현장 우선, 가장 빠른 일정 순 (동일하거나 없으면 시트 순서 보존)
+  sitesList.sort(function(a, b) {
+    if (!a.isAllCompleted && b.isAllCompleted) return -1;
+    if (a.isAllCompleted && !b.isAllCompleted) return 1;
+
+    var aMs = a.earliestDateMs || 0;
+    var bMs = b.earliestDateMs || 0;
+    if (aMs && bMs) {
+      if (aMs !== bMs) return aMs - bMs;
+    } else if (aMs) {
+      return -1;
+    } else if (bMs) {
+      return 1;
+    }
+    return a.initialOrder - b.initialOrder;
+  });
 
   return {
     kpi: {
       totalSites: siteOrder.length,
+      activeSites: activeSitesCount,
       totalTasks: totalTasks,
       todayCount: todayCount,
       delayedCount: delayedCount
@@ -6045,7 +6110,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  <div class="kpi-grid">';
   html += '    <div class="kpi-card" data-filter="all" onclick="setFilter(\'all\')">';
   html += '      <div class="kpi-num" id="kpiSites">-</div>';
-  html += '      <div class="kpi-label">전체 현장</div>';
+  html += '      <div class="kpi-label">진행 현장</div>';
   html += '    </div>';
   html += '    <div class="kpi-card" data-filter="today" onclick="setFilter(\'today\')">';
   html += '      <div class="kpi-num" id="kpiToday" style="color:#2563eb;">-</div>';
@@ -6067,6 +6132,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="filter-tab" data-filter="today" onclick="setFilter(\'today\')">🔥 오늘</div>';
   html += '    <div class="filter-tab" data-filter="delay" onclick="setFilter(\'delay\')">⚠️ 지연</div>';
   html += '    <div class="filter-tab" data-filter="prog" onclick="setFilter(\'prog\')">진행중</div>';
+  html += '    <div class="filter-tab" data-filter="done" onclick="setFilter(\'done\')">✅ 완료</div>';
   html += '  </div>';
   html += '</div>';
 
@@ -6154,7 +6220,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ \' + data.error + \'</div>\';';
   html += '    return;';
   html += '  }';
-  html += '  document.getElementById("kpiSites").innerText = data.kpi.totalSites;';
+  html += '  document.getElementById("kpiSites").innerText = (data.kpi.activeSites !== undefined) ? data.kpi.activeSites : data.kpi.totalSites;';
   html += '  document.getElementById("kpiToday").innerText = data.kpi.todayCount;';
   html += '  document.getElementById("kpiDelay").innerText = data.kpi.delayedCount;';
   html += '  renderList();';
@@ -6179,10 +6245,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '  let visibleSitesCount = 0;';
 
   html += '  rawData.sites.forEach((site, sIdx) => {';
+  html += '    if (currentFilter === "done") {';
+  html += '      if (!site.isAllCompleted) return;';
+  html += '    } else {';
+  html += '      if (site.isAllCompleted) return;';
+  html += '    }';
+
   html += '    const filteredTasks = site.tasks.filter(t => {';
   html += '      if (currentFilter === "today" && !t.isToday) return false;';
   html += '      if (currentFilter === "delay" && !t.isDelayed) return false;';
   html += '      if (currentFilter === "prog" && t.status.indexOf("진행") === -1) return false;';
+  html += '      if (currentFilter === "done" && t.status.indexOf("완료") === -1 && t.status.indexOf("취소") === -1) return false;';
   html += '      if (query) {';
   html += '        const matchSite = site.siteName.toLowerCase().indexOf(query) !== -1;';
   html += '        const matchTask = t.taskName.toLowerCase().indexOf(query) !== -1;';
@@ -6196,15 +6269,19 @@ function buildSidebarDashboardHtml(mode) {
 
   html += '    if (filteredTasks.length === 0) return;';
   html += '    visibleSitesCount++;';
-  html += '    const isExpanded = (query !== "" || currentFilter !== "all" || rawData.sites.length <= 5);';
+  html += '    const isExpanded = (query !== "" || currentFilter !== "all" || (rawData.kpi && rawData.kpi.activeSites <= 5));';
 
   html += '    html += \'<div class="site-card \' + (isExpanded ? "expanded" : "") + \'">\';';
   html += '    html += \'  <div class="site-header" style="border-left-color: \' + site.colorHex + \';" onclick="toggleSite(this)">\';';
   html += '    html += \'    <div class="site-title-area">\';';
   html += '    html += \'      <span class="site-name">\' + escapeHtml(site.siteName) + \'</span>\';';
-  html += '    html += \'      <span class="site-badge">\' + filteredTasks.length + \'건</span>\';';
+  html += '    if (site.isAllCompleted) {';
+  html += '      html += \'      <span class="site-badge" style="background:#dcfce7;color:#166534;">완료 \' + filteredTasks.length + \'건</span>\';';
+  html += '    } else {';
+  html += '      html += \'      <span class="site-badge">\' + filteredTasks.length + \'건</span>\';';
+  html += '    }';
   html += '    html += \'    </div>\';';
-  html += '    html += \'    <span class="site-toggle">▼</span>\';';
+  html += '    <span class="site-toggle">▼</span>\';';
   html += '    html += \'  </div>\';';
 
   html += '    html += \'  <div class="task-list">\';';
@@ -6240,7 +6317,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });';
 
   html += '  if (visibleSitesCount === 0) {';
-  html += '    container.innerHTML = \'<div class="empty-state">🔍 일치하는 현장 및 공정이 없습니다.</div>\';';
+  html += '    if (currentFilter === "done") {';
+  html += '      container.innerHTML = \'<div class="empty-state">✅ 완료된 현장이 없습니다.</div>\';';
+  html += '    } else {';
+  html += '      container.innerHTML = \'<div class="empty-state">🔍 일치하는 현장 및 공정이 없습니다.</div>\';';
+  html += '    }';
   html += '  } else {';
   html += '    container.innerHTML = html;';
   html += '  }';

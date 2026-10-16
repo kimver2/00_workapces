@@ -2092,6 +2092,78 @@ assertTest('buildSidebarDashboardHtml: "💾 저장하기" 버튼 100% 전체 �
   currentDashHtml.indexOf('.sheet-save-btn { width: 100%;') !== -1
 );
 
+// ========================================================
+// 🎯 Step 30: 공정 날짜순 오름차순 정렬 & 완료 블록 목록 노출 배제 QA
+// ========================================================
+console.log('\n🎯 [Step 30: 공정 날짜순 오름차순 정렬 & 완료 블록 목록 노출 배제 QA]');
+
+const testSortAndCompletedSheetData = [
+  // 신대방우성 16동 1501호: 시트상 26.11.25가 26.11.03보다 위에 위치 (사용자 캡처 실사례)
+  ['신대방우성 16동 1501호', '26.11.25', '철거', '철거업체', true, '', '홍길동', '예정', 'ev-s1', Date.now(), '', '', '', ''],
+  ['신대방우성 16동 1501호', '26.11.03', '홈파기', '설비업체', true, '', '홍길동', '예정', 'ev-s2', Date.now(), '', '', '', ''],
+  // 압구정 현대아파트: 모든 공정이 완료된 현장 (블록 전체 완료)
+  ['압구정 현대아파트', '26.10.01', '철거', '철거팀', true, '', '김반장', '완료', 'ev-a1', Date.now(), '', '', '', ''],
+  ['압구정 현대아파트', '26.10.05', '타일', '타일팀', true, '', '김반장', '완료', 'ev-a2', Date.now(), '', '', '', ''],
+  // 반포 자이: 일부만 완료된 현장 (블록 미완료)
+  ['반포 자이', '26.12.01', '도배', '도배팀', true, '', '이소장', '예정', 'ev-b1', Date.now(), '', '', '', ''],
+  ['반포 자이', '26.11.20', '마루', '마루팀', true, '', '이소장', '완료', 'ev-b2', Date.now(), '', '', '', '']
+];
+
+sandbox.findSiteScheduleSheet = () => ({
+  getLastRow: () => testSortAndCompletedSheetData.length + 1,
+  getRange: () => ({
+    getValues: () => testSortAndCompletedSheetData
+  })
+});
+
+const sortDashData = sandbox.getSidebarDashboardData();
+
+// 30-1: 공정 날짜순 오름차순 정렬 검증 (신대방우성: 11.03 홈파기가 11.25 철거보다 앞으로 정렬)
+const shindaebang = sortDashData.sites.find(s => s.siteName === '신대방우성 16동 1501호');
+assertTest('getSidebarDashboardData: 현장 내 공정 날짜순 오름차순 정렬 검증 (11.03 홈파기 우선)',
+  shindaebang &&
+  shindaebang.tasks.length === 2 &&
+  shindaebang.tasks[0].taskName === '홈파기' &&
+  shindaebang.tasks[1].taskName === '철거'
+);
+
+// 30-2: 블록 전체 완료 여부 판별 검증
+const apgujeong = sortDashData.sites.find(s => s.siteName === '압구정 현대아파트');
+const banpo = sortDashData.sites.find(s => s.siteName === '반포 자이');
+
+assertTest('getSidebarDashboardData: 모든 공정이 완료된 블록은 isAllCompleted === true 검증',
+  apgujeong && apgujeong.isAllCompleted === true
+);
+
+assertTest('getSidebarDashboardData: 일부 공정만 완료된 블록은 isAllCompleted === false 검증',
+  banpo && banpo.isAllCompleted === false &&
+  shindaebang && shindaebang.isAllCompleted === false
+);
+
+// 30-3: KPI 활성 현장 수 검증 (전체 3개 중 완료된 1개 제외하고 activeSites === 2)
+assertTest('getSidebarDashboardData: KPI activeSites 지표에 완료 현장 배제 검증 (3개 중 2개)',
+  sortDashData.kpi.totalSites === 3 &&
+  sortDashData.kpi.activeSites === 2
+);
+
+// 30-4: 현장 카드(sites) 정렬 검증: 가장 빠른 일정 순 정렬 (신대방우성 11.03 vs 반포 자이 12.01)
+assertTest('getSidebarDashboardData: 활성 현장 카드 가장 빠른 일정 순 정렬 검증',
+  sortDashData.sites[0].siteName === '신대방우성 16동 1501호'
+);
+
+// 30-5: buildSidebarDashboardHtml 렌더링 내 완료 블록 노출 배제 로직 탑재 검증
+const step30TestHtml = sandbox.buildSidebarDashboardHtml('sidebar');
+assertTest('buildSidebarDashboardHtml: 완료 블록 기본 리스트 노출 배제(site.isAllCompleted) 필터 탑재 검증',
+  step30TestHtml.indexOf('site.isAllCompleted') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 상단 필터 탭에 "✅ 완료" 아카이브 탭 탑재 검증',
+  step30TestHtml.indexOf('data-filter="done"') !== -1 &&
+  step30TestHtml.indexOf('✅ 완료') !== -1
+);
+assertTest('buildSidebarDashboardHtml: KPI 라벨이 "진행 현장"으로 표기 검증',
+  step30TestHtml.indexOf('진행 현장') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
