@@ -1181,12 +1181,13 @@ const hasBatchDashboardWrite = refreshDashBatchCode.indexOf('rowsToUpdate[pos.ro
   refreshDashBatchCode.indexOf('dashSheet.getRange(parseInt(rNum, 10), 2, 1, 7).setValues(') !== -1;
 assertTest('refreshDashboardCalendar: 주차별 2D 배열 배치 쓰기로 31회 개별 setValue 호출 제거 및 10배 가속 검증', hasBatchDashboardWrite);
 
-// 14-5: updateScheduleStatusFromWeb 모바일 동시 접속 충돌 방어 (LockService 적용)
+// 14-5: updateScheduleStatusFromWeb 모바일 동시 접속 충돌 방어 및 논블로킹 즉시 저장 검증
 const mobileWebCode = code.slice(code.indexOf('function updateScheduleStatusFromWeb('), code.indexOf('function doGet('));
 const hasMobileLockService = mobileWebCode.indexOf('LockService.getScriptLock()') !== -1 &&
-  mobileWebCode.indexOf('lock.tryLock(10000)') !== -1 &&
-  mobileWebCode.indexOf('lock.releaseLock()') !== -1;
-assertTest('updateScheduleStatusFromWeb: 모바일 웹 동시 접속 상태 변경 충돌 방어(LockService 10초 대기) 탑재 검증', hasMobileLockService);
+  mobileWebCode.indexOf('lock.tryLock') !== -1 &&
+  mobileWebCode.indexOf('lock.releaseLock()') !== -1 &&
+  mobileWebCode.indexOf('sheet.getRange(rowNum, 8).setValue(newStatus)') !== -1;
+assertTest('updateScheduleStatusFromWeb: 모바일 웹 논블로킹 즉시 시트 저장 및 Lock 경합 완화 탑재 검증', hasMobileLockService);
 // ========================================================
 // 15. [공종 50+ 사전 탑재 및 실시간 자동 학습(Auto-Learning) 유효성 검사 엔진 QA]
 // ========================================================
@@ -3973,6 +3974,86 @@ const addNewSiteCode49 = code.slice(code.indexOf('function addNewSiteAtTop('), c
 const has10ColumnsInNewSite = addNewSiteCode49.indexOf('sheet.getRange(2, 1, 4, 10).setValues(newRows)') !== -1 &&
   addNewSiteCode49.indexOf('sheet.getRange(2, 1, 4, 14)') === -1;
 assertTest('addNewSiteAtTop: 신규 현장 추가 시 10개 열(A~J열) 채우기 적용 검증', has10ColumnsInNewSite);
+
+// ========================================================
+// 50. [모바일 상세 화면 논블로킹 즉시 저장 및 락 경합 해소 QA]
+// ========================================================
+console.log('\n📱 [Step 50: 모바일 상세 화면 논블로킹 즉시 저장 및 락 경합 해소 QA]');
+
+// 50-1: updateScheduleStatusFromWeb 정적 분석 검증
+const updateWebCode50 = code.slice(code.indexOf('function updateScheduleStatusFromWeb('), code.indexOf('function doGet('));
+const hasNonBlockingSheetWrite = updateWebCode50.indexOf('sheet.getRange(rowNum, 8).setValue(newStatus)') !== -1 &&
+  updateWebCode50.indexOf('sheet.getRange(rowNum, 5).setValue(isSharedBool)') !== -1 &&
+  updateWebCode50.indexOf('sheet.getRange(rowNum, 6).setValue(cleanMemo)') !== -1 &&
+  updateWebCode50.indexOf('sheet.getRange(rowNum, 10).setValue(now.getTime())') !== -1 &&
+  updateWebCode50.indexOf('SpreadsheetApp.flush()') !== -1;
+assertTest('updateScheduleStatusFromWeb: 락 대기 없이 시트 셀(H, E, F, J열) 원자적 즉시 쓰기 및 flush 탑재 검증', hasNonBlockingSheetWrite);
+
+// 50-2: 모바일 응답 가속화 - skipDashboardRefresh=true 전달 검증
+const hasSkipDashboardInWebSave = updateWebCode50.indexOf('syncSingleRowToCalendar(sheet, rowNum, true, true)') !== -1;
+assertTest('updateScheduleStatusFromWeb: 캘린더 동기화 시 skipDashboardRefresh=true로 모바일 응답속도 초고속화 검증', hasSkipDashboardInWebSave);
+
+// 50-3: 락 경합 시에도 에러를 리턴하지 않고 백그라운드 위임(Non-blocking) 검증
+const hasLockFailureFallback = updateWebCode50.indexOf('triggerDebouncedSync()') !== -1 &&
+  updateWebCode50.indexOf('return { success: false, error: "현재 다른 작업이 처리 중입니다') === -1;
+assertTest('updateScheduleStatusFromWeb: 락 경합 시 "현재 다른 작업이 처리 중" 에러 차단 및 백그라운드 자동 위임 검증', hasLockFailureFallback);
+
+// 50-4: 런타임 시뮬레이션 - 락 획득 실패(Lock Contention) 상태에서도 100% 정상 저장 및 성공 반환 검증
+const mockSheetCells50 = {};
+const mockSheet50 = {
+  getRange: (r, c) => ({
+    setValue: (val) => {
+      mockSheetCells50[`${r}_${c}`] = val;
+    }
+  })
+};
+
+// 락이 무조건 실패(false)하는 환경 시뮬레이션
+sandbox.LockService = {
+  getScriptLock: () => ({
+    tryLock: () => false, // 락 획득 실패!
+    releaseLock: () => {}
+  })
+};
+sandbox.getAppSpreadsheet = () => ({});
+sandbox.findSiteScheduleSheet = () => mockSheet50;
+let calSyncCalled50 = false;
+sandbox.syncSingleRowToCalendar = (s, r, force, skip) => {
+  calSyncCalled50 = true;
+};
+sandbox.SpreadsheetApp.flush = () => {};
+
+const updateWebFn = sandbox.updateScheduleStatusFromWeb;
+const testRes50 = updateWebFn(5, '진행 중', true, '고객 요청 메모 추가');
+
+assertTest('런타임 시뮬레이션: 락 획득 실패(다른 작업 처리 중) 상황에서도 성공(success: true) 반환 검증',
+  testRes50 && testRes50.success === true && testRes50.status === '진행 중' && testRes50.shared === true && testRes50.memo === '고객 요청 메모 추가'
+);
+assertTest('런타임 시뮬레이션: 락 실패 상황에서도 H열(8열: 상태) 즉시 기록 검증',
+  mockSheetCells50['5_8'] === '진행 중'
+);
+assertTest('런타임 시뮬레이션: 락 실패 상황에서도 E열(5열: 공유) 즉시 기록 검증',
+  mockSheetCells50['5_5'] === true
+);
+assertTest('런타임 시뮬레이션: 락 실패 상황에서도 F열(6열: 비고) 즉시 기록 검증',
+  mockSheetCells50['5_6'] === '고객 요청 메모 추가'
+);
+assertTest('런타임 시뮬레이션: 락 실패 상황에서도 J열(10열: 타임스탬프) 최신 시각 기록 검증',
+  typeof mockSheetCells50['5_10'] === 'number' && mockSheetCells50['5_10'] > 0
+);
+assertTest('런타임 시뮬레이션: 캘린더 동기화 함수 즉각 연동 시도 검증',
+  calSyncCalled50 === true
+);
+
+// 50-5: 잘못된 파라미터 방어 검증
+const invalidRowRes = updateWebFn(1, '완료', false, '');
+assertTest('런타임 시뮬레이션: 1행(헤더) 또는 음수 행 요청 시 안전 방어 검증',
+  invalidRowRes && invalidRowRes.success === false
+);
+const invalidStatusRes = updateWebFn(5, '', false, '');
+assertTest('런타임 시뮬레이션: 상태 누락 시 안전 방어 검증',
+  invalidStatusRes && invalidStatusRes.success === false
+);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
