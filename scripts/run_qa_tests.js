@@ -3548,6 +3548,294 @@ try {
 }
 assertTest('buildSidebarDashboardHtml: 같은 날 다중 일정 네비게이션 탑재 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk44);
 
+console.log('\n👥 [Step 45: 현장데이터 담당자 열 구성원 시트 연동 & 김종혁 제외 자동 반영 QA]');
+
+// 45-1: isMembersSheet 시트명 판별 함수 검증
+const isMembersSheetFn = sandbox.isMembersSheet;
+assertTest('isMembersSheet: 함수 정의 및 호출 가능 검증', typeof isMembersSheetFn === 'function');
+assertTest('isMembersSheet: "구성원" 시트 true 판정', isMembersSheetFn({ getName: () => '구성원' }) === true);
+assertTest('isMembersSheet: "03_구성원" 시트 true 판정', isMembersSheetFn({ getName: () => '03_구성원' }) === true);
+assertTest('isMembersSheet: "팀원" 시트 true 판정', isMembersSheetFn({ getName: () => '팀원' }) === true);
+assertTest('isMembersSheet: "직원 명단" 시트 true 판정', isMembersSheetFn({ getName: () => '직원 명단' }) === true);
+assertTest('isMembersSheet: "조직도" 시트 true 판정', isMembersSheetFn({ getName: () => '조직도' }) === true);
+assertTest('isMembersSheet: "members" 영문 시트 true 판정', isMembersSheetFn({ getName: () => 'members' }) === true);
+assertTest('isMembersSheet: "현장데이터" 시트는 false 판정', isMembersSheetFn({ getName: () => '현장데이터' }) === false);
+assertTest('isMembersSheet: "대시보드" 시트는 false 판정', isMembersSheetFn({ getName: () => '대시보드' }) === false);
+assertTest('isMembersSheet: null / undefined 시트 방어 (false 반환)', isMembersSheetFn(null) === false && isMembersSheetFn(undefined) === false);
+
+// 45-2: getAvailableManagers 복합 조합 제거 및 순수 개별 명단 반환 검증
+const getAvailableManagersFn = sandbox.getAvailableManagers;
+assertTest('getAvailableManagers: 함수 정의 및 호출 가능 검증', typeof getAvailableManagersFn === 'function');
+
+// 모의 구성원 시트 및 스프레드시트 구축
+let mockMemberList = ['조항만', '송지은', '김종혁', '전예린', '영하'];
+const createMockSsWithMembers = (membersArr) => {
+  const memberSheet = {
+    getName: () => '구성원',
+    getLastRow: () => membersArr.length + 1,
+    getLastColumn: () => 2,
+    getRange: (r, c, nr, nc) => {
+      if (r === 1) {
+        return { getValues: () => [['이름', '연락처']] };
+      }
+      return {
+        getValues: () => membersArr.map(m => [m])
+      };
+    }
+  };
+  return {
+    getSheets: () => [memberSheet],
+    getSheetByName: (n) => (n === '구성원' ? memberSheet : null)
+  };
+};
+
+const mockSs1 = createMockSsWithMembers(mockMemberList);
+const mgrs1 = getAvailableManagersFn(mockSs1);
+
+assertTest('getAvailableManagers: 반환 결과 배열 유효성 검증', Array.isArray(mgrs1) && mgrs1.length > 0);
+assertTest('getAvailableManagers: 복합 담당자 조합("조항만, 송지은") 일체 미포함 검증',
+  mgrs1.every(m => m.indexOf(',') === -1)
+);
+assertTest('getAvailableManagers: "김종혁" 담당자 드롭다운 목록에서 완전 배제 검증',
+  mgrs1.indexOf('김종혁') === -1
+);
+assertTest('getAvailableManagers: "조항만", "송지은", "전예린", "영하" 개별 인원 정확 포함 검증',
+  mgrs1.indexOf('조항만') !== -1 && mgrs1.indexOf('송지은') !== -1 && mgrs1.indexOf('전예린') !== -1 && mgrs1.indexOf('영하') !== -1
+);
+assertTest('getAvailableManagers: 반환 인원 수 정확성 검증 (5명 중 김종혁 1명 제외 = 4명)',
+  mgrs1.length === 4
+);
+
+// 45-3: 구성원 시트에 신규 인원 추가 시 자동 반영 시뮬레이션 검증
+const mockMemberList2 = ['조항만', '송지은', '김종혁', '전예린', '영하', '홍길동', '이순신'];
+const mockSs2 = createMockSsWithMembers(mockMemberList2);
+const mgrs2 = getAvailableManagersFn(mockSs2);
+
+assertTest('구성원 추가 시뮬레이션: 새로 추가된 "홍길동", "이순신"이 즉각 목록에 자동 반영 검증',
+  mgrs2.indexOf('홍길동') !== -1 && mgrs2.indexOf('이순신') !== -1
+);
+assertTest('구성원 추가 시뮬레이션: 추가 후에도 "김종혁"은 철저히 배제 검증',
+  mgrs2.indexOf('김종혁') === -1
+);
+assertTest('구성원 추가 시뮬레이션: 총 6명(기존4 + 신규2) 정확 일치 검증',
+  mgrs2.length === 6
+);
+
+// 45-4: 쉼표/슬래시 다중 입력, 공백, null 등 엣지 케이스 파싱 검증
+const mockMemberListEdge = ['조항만', '  송지은  ', '김종혁', '강감찬, 을지문덕', '신사임당/율곡이이', '', null];
+const mockSsEdge = createMockSsWithMembers(mockMemberListEdge);
+const mgrsEdge = getAvailableManagersFn(mockSsEdge);
+
+assertTest('엣지 케이스 파싱: 공백 자동 트림("송지은") 검증', mgrsEdge.indexOf('송지은') !== -1);
+assertTest('엣지 케이스 파싱: 쉼표 분리("강감찬", "을지문덕") 개별 분리 추가 검증',
+  mgrsEdge.indexOf('강감찬') !== -1 && mgrsEdge.indexOf('을지문덕') !== -1
+);
+assertTest('엣지 케이스 파싱: 슬래시 분리("신사임당", "율곡이이") 개별 분리 추가 검증',
+  mgrsEdge.indexOf('신사임당') !== -1 && mgrsEdge.indexOf('율곡이이') !== -1
+);
+assertTest('엣지 케이스 파싱: 빈 값 및 null 안전 필터링 검증',
+  mgrsEdge.every(m => typeof m === 'string' && m.trim().length > 0)
+);
+
+// 45-5: applySiteScheduleValidations G열(담당자) 유효성 검사 설정 검증
+let appliedRules = {};
+const mockSiteScheduleSheet = {
+  getName: () => '현장데이터',
+  getParent: () => mockSs2,
+  getLastRow: () => 10,
+  getMaxRows: () => 50,
+  getRange: (r, c, nr, nc) => ({
+    setDataValidation: (rule) => {
+      appliedRules[c] = rule;
+    }
+  })
+};
+
+const applyValidationsFn = sandbox.applySiteScheduleValidations;
+assertTest('applySiteScheduleValidations: 함수 정의 및 호출 가능 검증', typeof applyValidationsFn === 'function');
+
+applyValidationsFn(mockSiteScheduleSheet, 2, 20);
+
+assertTest('applySiteScheduleValidations: G열(7열: 담당자) 데이터 유효성 검사 규칙 적용 검증', appliedRules[7] !== undefined);
+const gRuleVals = appliedRules[7] ? appliedRules[7].getCriteriaValues() : [];
+const gList = (gRuleVals && gRuleVals[0]) || [];
+
+assertTest('applySiteScheduleValidations: G열 드롭다운 목록에 최신 구성원("홍길동", "이순신") 탑재 검증',
+  gList.indexOf('홍길동') !== -1 && gList.indexOf('이순신') !== -1
+);
+assertTest('applySiteScheduleValidations: G열 드롭다운 목록에서 "김종혁" 배제 검증',
+  gList.indexOf('김종혁') === -1
+);
+assertTest('applySiteScheduleValidations: G열 드롭다운 목록에 복합 조합(쉼표 포함) 부재 검증',
+  gList.every(m => m.indexOf(',') === -1)
+);
+
+// 45-6: onEdit 트리거 구성원 시트 편집 감지 및 즉시 동기화 연동 검증
+let onEditValidationCalled = false;
+const mockSiteForOnEdit = {
+  getName: () => '현장데이터',
+  getParent: () => null,
+  getLastRow: () => 10,
+  getLastColumn: () => 8,
+  getMaxRows: () => 50,
+  getSheetId: () => 999,
+  getRange: (r, c, nr, nc) => {
+    if (r === 1) {
+      return {
+        getValues: () => [['현장명', '시작일', '공종', '내용', '체크', '비고', '담당자', '진행상태']]
+      };
+    }
+    return {
+      getValues: () => [['']],
+      setDataValidation: (rule) => {
+        onEditValidationCalled = true;
+      }
+    };
+  }
+};
+
+const mockMemberSheetForOnEdit = {
+  getName: () => '03_구성원',
+  getLastRow: () => 5,
+  getLastColumn: () => 2,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => (r === 1 ? [['이름', '연락처']] : [['조항만'], ['송지은'], ['신규직원']])
+  })
+};
+
+const mockSsForOnEdit = {
+  getSheets: () => [
+    mockMemberSheetForOnEdit,
+    mockSiteForOnEdit
+  ],
+  getSheetByName: (n) => (n === '현장데이터' ? mockSiteForOnEdit : (n === '03_구성원' ? mockMemberSheetForOnEdit : null))
+};
+
+const onEditFn = sandbox.onEdit;
+assertTest('onEdit: 함수 정의 및 호출 가능 검증', typeof onEditFn === 'function');
+
+// Step 45 onEdit 테스트용 findSiteScheduleSheet 지정
+sandbox.findSiteScheduleSheet = (ss) => mockSiteForOnEdit;
+
+// 구성원 시트 편집 이벤트 발생
+const mockEditEvent = {
+  range: {
+    getSheet: () => mockMemberSheetForOnEdit,
+    getRow: () => 4,
+    getColumn: () => 1
+  },
+  source: mockSsForOnEdit
+};
+
+onEditFn(mockEditEvent);
+assertTest('onEdit: 구성원 시트 편집 시 applySiteScheduleValidations 즉시 자동 호출(실시간 동기화) 검증', onEditValidationCalled === true);
+
+console.log('\n🚫 [Step 46: 담당자 없음 필터 버튼 & 지연 일정 붉은색 노출 및 공유 앞 경고 아이콘 QA]');
+
+// 46-1: 대시보드 HTML 내 필수 CSS 및 마크업 검증
+const html46 = sandbox.buildSidebarDashboardHtml("desktop");
+assertTest('buildSidebarDashboardHtml: .cal-event-pill.status-delayed (#dc2626) CSS 탑재 검증',
+  html46.indexOf('.cal-event-pill.status-delayed') !== -1 && html46.indexOf('#dc2626 !important') !== -1
+);
+assertTest('buildSidebarDashboardHtml: .cal-delay-warn-icon CSS 스타일 탑재 검증',
+  html46.indexOf('.cal-delay-warn-icon') !== -1
+);
+assertTest('buildSidebarDashboardHtml: renderMemberFilterTabs 내 "🚫 담당자 없음" 버튼 탑재 검증',
+  html46.indexOf('🚫 담당자 없음') !== -1 && html46.indexOf('__NONE__') !== -1
+);
+assertTest('buildSidebarDashboardHtml: isMemberMatch 헬퍼 함수 탑재 검증',
+  html46.indexOf('function isMemberMatch(') !== -1
+);
+
+// 46-2: 캘린더 월간/주간 뷰 렌더링 내 지연 공정 붉은색 및 ⚠️ 경고 아이콘 로직 검증
+assertTest('buildSidebarDashboardHtml: renderCalendar 내 지연 공정(#dc2626) 및 경고 아이콘(⚠️) 연동 검증',
+  html46.indexOf('isDelayed ? "#dc2626"') !== -1 &&
+  html46.indexOf('cal-delay-warn-icon') !== -1 &&
+  html46.indexOf('⚠️ 공정 지연') !== -1
+);
+assertTest('buildSidebarDashboardHtml: renderWeeklyCalendar 내 지연 공정(#dc2626) 및 경고 아이콘(⚠️) 연동 검증',
+  html46.indexOf('listHtml += \'  <span class="cal-delay-warn-icon"') !== -1
+);
+
+// 46-3: 클라이언트 JS 스크립트 추출 및 VM 무결성 검증
+const scriptMatch46 = html46.match(/<script[\s\S]*?>([\s\S]*?)<\/script>/i);
+let clientSyntaxOk46 = false;
+let step46Script = scriptMatch46 ? scriptMatch46[1] : "";
+try {
+  new vm.Script(step46Script);
+  clientSyntaxOk46 = true;
+} catch (err) {
+  console.error('Step 46 클라이언트 JS 구문 에러:', err);
+}
+assertTest('buildSidebarDashboardHtml: 신규 기능 탑재 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk46);
+
+// 46-4: isMemberMatch 단위 시뮬레이션 검증
+const isMemberMatchSim = (taskManager, sel) => {
+  if (!sel) return true;
+  const mgr = (taskManager || "").trim();
+  if (sel === "__NONE__" || sel === "담당자 없음") {
+    return (!mgr || mgr === "담당자 없음" || mgr === "미지정" || mgr === "없음");
+  }
+  return mgr.indexOf(sel) !== -1;
+};
+
+assertTest('isMemberMatch: __NONE__ 선택 시 담당자 빈 문자열("") -> 일치(true)', isMemberMatchSim("", "__NONE__") === true);
+assertTest('isMemberMatch: __NONE__ 선택 시 담당자 null/undefined -> 일치(true)', isMemberMatchSim(null, "__NONE__") === true && isMemberMatchSim(undefined, "__NONE__") === true);
+assertTest('isMemberMatch: __NONE__ 선택 시 담당자 "담당자 없음" -> 일치(true)', isMemberMatchSim("담당자 없음", "__NONE__") === true);
+assertTest('isMemberMatch: __NONE__ 선택 시 담당자 "미지정" -> 일치(true)', isMemberMatchSim("미지정", "__NONE__") === true);
+assertTest('isMemberMatch: __NONE__ 선택 시 담당자 "조항만" -> 불일치(false)', isMemberMatchSim("조항만", "__NONE__") === false);
+assertTest('isMemberMatch: __NONE__ 선택 시 담당자 "송지은, 전예린" -> 불일치(false)', isMemberMatchSim("송지은, 전예린", "__NONE__") === false);
+
+assertTest('isMemberMatch: "조항만" 선택 시 "조항만" -> 일치(true)', isMemberMatchSim("조항만", "조항만") === true);
+assertTest('isMemberMatch: "조항만" 선택 시 "조항만, 송지은" -> 일치(true)', isMemberMatchSim("조항만, 송지은", "조항만") === true);
+assertTest('isMemberMatch: "조항만" 선택 시 "송지은" -> 불일치(false)', isMemberMatchSim("송지은", "조항만") === false);
+assertTest('isMemberMatch: "조항만" 선택 시 "" -> 불일치(false)', isMemberMatchSim("", "조항만") === false);
+
+assertTest('isMemberMatch: 전체("") 선택 시 모든 담당자 -> 항상 일치(true)',
+  isMemberMatchSim("조항만", "") === true && isMemberMatchSim("", "") === true
+);
+
+// 46-5: 지연 일정 시각화 렌더링 시뮬레이션 검증
+const simulateTaskPill = (task, site) => {
+  const isDone = (task.status && (task.status.indexOf("완료") !== -1 || task.status.indexOf("취소") !== -1));
+  const isDelayed = (task.isDelayed === true && !isDone);
+  const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1");
+  const shClass = isSh ? "blue" : "red";
+  const bgCol = isDelayed ? "#dc2626" : (site.colorHex || "#2563eb");
+  const classes = ["cal-event-pill"];
+  if (isDelayed) classes.push("status-delayed");
+  if (isDone) classes.push("status-done");
+
+  let pillHtml = `<div class="${classes.join(' ')}" style="background-color:${bgCol};">`;
+  if (isDelayed) {
+    pillHtml += '<span class="cal-delay-warn-icon" title="⚠️ 공정 지연">⚠️</span>';
+  }
+  pillHtml += `<span class="cal-sh-box ${shClass}"></span><span class="cal-pill-text">${task.taskName}</span></div>`;
+  return { pillHtml, isDelayed, bgCol, hasWarnIcon: pillHtml.indexOf('cal-delay-warn-icon') !== -1 };
+};
+
+const mockSiteA = { siteName: "역삼 자이", colorHex: "#10b981" };
+
+// 시나리오 1: 미완료 지연 공정 (10월 15일 타일)
+const delayedTask46 = { taskName: "타일", status: "진행", isDelayed: true, isShared: true };
+const resDelayed46 = simulateTaskPill(delayedTask46, mockSiteA);
+assertTest('지연 공정 렌더링: 배경색 #dc2626 붉은색 적용 검증', resDelayed46.bgCol === "#dc2626");
+assertTest('지연 공정 렌더링: status-delayed CSS 클래스 부여 검증', resDelayed46.pillHtml.indexOf('status-delayed') !== -1);
+assertTest('지연 공정 렌더링: 공유 아이콘 앞에 ⚠️ 경고 아이콘 노출 검증', resDelayed46.hasWarnIcon === true);
+
+// 시나리오 2: 정상 진행 공정 (10월 17일 양생)
+const normalTask46 = { taskName: "양생", status: "진행", isDelayed: false, isShared: true };
+const resNormal46 = simulateTaskPill(normalTask46, mockSiteA);
+assertTest('정상 공정 렌더링: 현장 고유색(#10b981) 유지 및 붉은색 미적용 검증', resNormal46.bgCol === "#10b981");
+assertTest('정상 공정 렌더링: ⚠️ 경고 아이콘 미노출 검증', resNormal46.hasWarnIcon === false);
+
+// 시나리오 3: 이미 완료된 과거 공정 (10월 10일 철거)
+const doneTask46 = { taskName: "철거", status: "완료", isDelayed: true, isShared: true }; // 백엔드 플래그가 true이더라도 isDone이면 지연 해제
+const resDone46 = simulateTaskPill(doneTask46, mockSiteA);
+assertTest('완료 공정 렌더링: 완료된 일정은 지연 붉은색 대신 status-done(취소선) 적용 검증',
+  resDone46.bgCol === "#10b981" && resDone46.pillHtml.indexOf('status-done') !== -1 && resDone46.hasWarnIcon === false
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

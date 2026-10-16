@@ -173,21 +173,23 @@ function getMemberNames(ss) {
 }
 
 /**
- * 담당자 드롭다운 목록 반환 (구성원 시트 연동 + 기본 담당자 조합)
+ * 담당자 드롭다운 목록 반환 (구성원 시트 연동 순수 개별 인원 명단, 김종혁 제외)
  */
 function getAvailableManagers(ss) {
   var baseManagers = getMemberNames(ss);
-  var managers = baseManagers.slice();
+  var EXCLUDED = ["김종혁"];
+  var managers = [];
 
-  // 복합 담당자 조합 추가 (빨간 삼각형 에러 방지)
-  var baseCount = baseManagers.length;
-  for (var a = 0; a < baseCount; a++) {
-    for (var b = a + 1; b < baseCount; b++) {
-      var comb = baseManagers[a] + ", " + baseManagers[b];
-      if (managers.indexOf(comb) === -1) {
-        managers.push(comb);
-      }
+  for (var i = 0; i < baseManagers.length; i++) {
+    var m = String(baseManagers[i] || "").trim();
+    if (m && EXCLUDED.indexOf(m) === -1 && managers.indexOf(m) === -1) {
+      managers.push(m);
     }
+  }
+
+  // 예외 폴백 (구성원 시트가 없거나 비어있는 경우)
+  if (managers.length === 0) {
+    managers = ["조항만", "송지은", "전예린", "영하"];
   }
 
   return managers;
@@ -305,10 +307,11 @@ function onOpen() {
     var activeSs = SpreadsheetApp.getActiveSpreadsheet();
     if (activeSs) {
       PropertiesService.getDocumentProperties().setProperty("SPREADSHEET_ID", activeSs.getId());
-      // 스프레드시트가 열릴 때 정상 행 배경색 자동 청소 1회 무음 실행 (미래 일정/완료 일정 흰색 복구)
+      // 스프레드시트가 열릴 때 정상 행 배경색 및 최신 구성원 연동 담당자 드롭다운 무음 동기화 1회 실행
       var sheet = findSiteScheduleSheet(activeSs);
       if (sheet) {
         cleanNonDelayedRowBackgroundsSilent(sheet);
+        applySiteScheduleValidations(sheet);
       }
     }
   } catch(e) {}
@@ -370,7 +373,7 @@ function onOpen() {
 // 2. [실시간 스프레드시트 UI 감지 (단순 트리거)]
 // - 대시보드에서 Today 버튼 클릭 시 오늘 날짜로 이동
 // - 대시보드에서 '월' 또는 '년도' 변경 시 달력 즉시 새로고침
-// - 현장데이터 시트에서 A, B, C열 수정 시 대시보드 달력 즉시 갱신
+// - 구성원 시트 수정 시 현장데이터 시트 G열 담당자 드롭다운 실시간 자동 갱신
 // ========================================================
 function onEdit(e) {
   if (!e || !e.range) return;
@@ -395,7 +398,22 @@ function onEdit(e) {
     }
   }
 
-  // ② [현장데이터 시트]
+  // ② [구성원 시트 변경 감지 -> 현장데이터 담당자(G열) 드롭다운 즉시 실시간 갱신]
+  // 사용자가 구성원 시트에 새로운 인원을 추가하거나 이름을 수정하면, 즉시 현장데이터 시트의
+  // 담당자 드롭다운 유효성 검사 목록을 최신 구성원 명단으로 자동 동기화합니다.
+  if (isMembersSheet(sheet)) {
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) {
+        applySiteScheduleValidations(siteSheet);
+      }
+    } catch (eMem) {
+      Logger.log("구성원 시트 편집 시 담당자 드롭다운 갱신 예외: " + eMem.toString());
+    }
+    return;
+  }
+
+  // ③ [현장데이터 시트]
   // 설치형 트리거(handleCalendarEditTrigger)가 메타데이터 기록 및 대시보드 갱신을 단 1회 전담하므로,
   // 단순 트리거(onEdit)에서는 이중 렌더링 방지를 위해 대시보드 갱신을 수행하지 않습니다.
 }
@@ -655,6 +673,12 @@ function handleSheetChangeTrigger(e) {
 
       // 1) 삭제된 행이 대시보드 달력에서도 즉시 사라지도록 새로고침
       refreshDashboardCalendar(ss);
+
+      // 1-1) 구성원 시트 행 삭제 가능성 대비 현장데이터 담당자 드롭다운 유효성 검사 동기화
+      var siteSheetForVal = findSiteScheduleSheet(ss);
+      if (siteSheetForVal) {
+        applySiteScheduleValidations(siteSheetForVal);
+      }
 
       var props = PropertiesService.getScriptProperties();
       var syncMode = props.getProperty("SYNC_MODE") || "DEBOUNCE";
@@ -5377,6 +5401,21 @@ function findMembersSheet(ss) {
 }
 
 /**
+ * 주어진 시트가 [구성원] (또는 팀원/직원/조직도) 시트인지 확인
+ */
+function isMembersSheet(sheet) {
+  if (!sheet) return false;
+  var sName = sheet.getName().trim().toLowerCase();
+  var candidateNames = ["구성원", "팀원", "직원", "조직도", "members", "team", "member"];
+  for (var c = 0; c < candidateNames.length; c++) {
+    if (sName === candidateNames[c] || sName.indexOf(candidateNames[c]) !== -1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * [구성원] 시트에서 모닝 브리핑 수신 대상 이메일 목록 추출
  */
 function extractMemberBriefingEmails(sheet) {
@@ -6487,6 +6526,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '.cal-event-pill { display: flex; align-items: center; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; border-radius: 3px; padding: 1.5px 3px; font-size: 9.5px; font-weight: 800; line-height: 1.25; cursor: pointer; color: #ffffff; overflow: hidden; margin-bottom: 1px; }';
   html += '.cal-event-pill:hover { filter: brightness(0.92); }';
   html += '.cal-event-pill.status-done { opacity: 0.5; text-decoration: line-through; }';
+  html += '.cal-event-pill.status-delayed { background-color: #dc2626 !important; color: #ffffff !important; box-shadow: 0 1px 2px rgba(220,38,38,0.35); }';
+  html += '.cal-delay-warn-icon { font-size: 8.5px; line-height: 1; margin-right: 2px; flex-shrink: 0; display: inline-flex; align-items: center; }';
   html += '.cal-sh-box { display: inline-block; width: 6.5px; height: 6.5px; border-radius: 1px; flex-shrink: 0; margin-right: 2.5px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.95); }';
   html += '.cal-sh-box.blue { background-color: #38bdf8; }';
   html += '.cal-sh-box.red { background-color: #ef4444; }';
@@ -7062,7 +7103,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '        noticeParts.push("☑️ " + escapeHtml(firstSite) + " 외 " + (siteArr.length - 1) + "건");';
   html += '      }';
   html += '    }';
-  html += '    if (selectedMember) noticeParts.push("👤 " + escapeHtml(selectedMember));';
+  html += '    if (selectedMember) {';
+  html += '      const dispName = (selectedMember === "__NONE__" || selectedMember === "담당자 없음") ? "🚫 담당자 없음" : selectedMember;';
+  html += '      noticeParts.push("👤 " + escapeHtml(dispName));';
+  html += '    }';
   html += '    const q = (document.getElementById("searchInput") ? document.getElementById("searchInput").value.trim() : "");';
   html += '    if (q) noticeParts.push("🔍 " + escapeHtml(q));';
   html += '    if (noticeParts.length > 0) {';
@@ -7081,8 +7125,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  targetSites.forEach(site => {';
   html += '    site.tasks.forEach(task => {';
   html += '      if (selectedMember) {';
-  html += '        const mgr = (task.manager || "").trim();';
-  html += '        if (mgr.indexOf(selectedMember) === -1) return;';
+  html += '        if (!isMemberMatch(task.manager, selectedMember)) return;';
   html += '        const stClean = (task.status || "").replace(/\\s+/g, "");';
   html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return;';
   html += '      }';
@@ -7164,13 +7207,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '      const siteEnc = encodeURIComponent(site.siteName);';
   html += '      const taskJson = encodeURIComponent(JSON.stringify(task));';
   html += '      const isDone = (task.status && (task.status.indexOf("완료") !== -1 || task.status.indexOf("취소") !== -1));';
+  html += '      const isDelayed = (task.isDelayed === true && !isDone);';
   html += '      const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1");';
   html += '      const shClass = isSh ? "blue" : "red";';
-  html += '      const bgCol = site.colorHex || "#2563eb";';
-  html += '      const isLight = (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26");';
+  html += '      const bgCol = isDelayed ? "#dc2626" : (site.colorHex || "#2563eb");';
+  html += '      const isLight = !isDelayed && (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26");';
   html += '      const txtCol = isLight ? "#0f172a" : "#ffffff";';
   html += '      const txtShadow = isLight ? "none" : "0 1px 1px rgba(0,0,0,0.45)";';
-  html += '      const fullTitle = escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + ")";';
+  html += '      const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
   html += '      const tLen = (task.taskName || "").length;';
   html += '      let fontStyle = "font-weight:800;";';
   html += '      if (tLen <= 2) {';
@@ -7183,7 +7227,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (txtShadow !== "none") {';
   html += '        fontStyle += "text-shadow:" + txtShadow + ";";';
   html += '      }';
-  html += '      gridHtml += \'<div class="cal-event-pill \' + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
+  html += '      gridHtml += \'<div class="cal-event-pill \' + (isDelayed ? "status-delayed " : "") + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
+  html += '      if (isDelayed) {';
+  html += '        gridHtml += \'<span class="cal-delay-warn-icon" title="⚠️ 공정 지연">⚠️</span>\';';
+  html += '      }';
   html += '      gridHtml += \'<span class="cal-sh-box \' + shClass + \'"></span><span class="cal-pill-text" style="\' + fontStyle + \'">\' + escapeHtml(task.taskName) + \'</span>\';';
   html += '      gridHtml += \'</div>\';';
   html += '    });';
@@ -7229,7 +7276,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (siteArr.length === 1) noticeParts.push("☑️ " + escapeHtml(firstSite));';
   html += '      else noticeParts.push("☑️ " + escapeHtml(firstSite) + " 외 " + (siteArr.length - 1) + "건");';
   html += '    }';
-  html += '    if (selectedMember) noticeParts.push("👤 " + escapeHtml(selectedMember));';
+  html += '    if (selectedMember) {';
+  html += '      const dispName = (selectedMember === "__NONE__" || selectedMember === "담당자 없음") ? "🚫 담당자 없음" : selectedMember;';
+  html += '      noticeParts.push("👤 " + escapeHtml(dispName));';
+  html += '    }';
   html += '    const q = (document.getElementById("searchInput") ? document.getElementById("searchInput").value.trim() : "");';
   html += '    if (q) noticeParts.push("🔍 " + escapeHtml(q));';
   html += '    if (noticeParts.length > 0) {';
@@ -7246,8 +7296,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  targetSites.forEach(site => {';
   html += '    site.tasks.forEach(task => {';
   html += '      if (selectedMember) {';
-  html += '        const mgr = (task.manager || "").trim();';
-  html += '        if (mgr.indexOf(selectedMember) === -1) return;';
+  html += '        if (!isMemberMatch(task.manager, selectedMember)) return;';
   html += '        const stClean = (task.status || "").replace(/\\s+/g, "");';
   html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return;';
   html += '      }';
@@ -7312,15 +7361,19 @@ function buildSidebarDashboardHtml(mode) {
   html += '        const siteEnc = encodeURIComponent(site.siteName);';
   html += '        const taskJson = encodeURIComponent(JSON.stringify(task));';
   html += '        const isDone = (task.status && (task.status.indexOf("완료") !== -1 || task.status.indexOf("취소") !== -1));';
+  html += '        const isDelayed = (task.isDelayed === true && !isDone);';
   html += '        const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1");';
   html += '        const shClass = isSh ? "blue" : "red";';
-  html += '        const bgCol = site.colorHex || "#2563eb";';
-  html += '        const isLight = (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26");';
+  html += '        const bgCol = isDelayed ? "#dc2626" : (site.colorHex || "#2563eb");';
+  html += '        const isLight = !isDelayed && (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26");';
   html += '        const txtCol = isLight ? "#0f172a" : "#ffffff";';
   html += '        const txtShadow = isLight ? "none" : "0 1px 1px rgba(0,0,0,0.45)";';
-  html += '        const fullTitle = escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + ")";';
-  html += '        listHtml += \'<div class="cal-event-pill \' + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';padding:4px 6px;font-size:11px;\' + (txtShadow !== "none" ? "text-shadow:" + txtShadow + ";" : "") + \'" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
+  html += '        const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
+  html += '        listHtml += \'<div class="cal-event-pill \' + (isDelayed ? "status-delayed " : "") + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';padding:4px 6px;font-size:11px;\' + (txtShadow !== "none" ? "text-shadow:" + txtShadow + ";" : "") + \'" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
   html += '        const pRateTag = (typeof site.progressRate === "number") ? " " + site.progressRate + "%" : "";';
+  html += '        if (isDelayed) {';
+  html += '          listHtml += \'  <span class="cal-delay-warn-icon" style="font-size:10px;margin-right:3px;" title="⚠️ 공정 지연">⚠️</span>\';';
+  html += '        }';
   html += '        listHtml += \'  <span class="cal-sh-box \' + shClass + \'" style="width:7.5px;height:7.5px;"></span>\';';
   html += '        listHtml += \'  <span class="cal-pill-text" style="font-size:11px;font-weight:800;">[\' + escapeHtml(site.siteName) + pRateTag + \'] \' + escapeHtml(task.taskName) + (task.manager ? " (" + escapeHtml(task.manager) + ")" : "") + (task.status ? " - " + escapeHtml(task.status) : "") + \'</span>\';';
   html += '        listHtml += \'</div>\';';
@@ -7402,8 +7455,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    site.tasks.forEach(task => {';
   html += '      if (task.startDateStr && task.startDateStr <= dStr && dStr <= (task.endDateStr || task.startDateStr)) {';
   html += '        if (selectedMember) {';
-  html += '          const mgr = (task.manager || "").trim();';
-  html += '          if (mgr.indexOf(selectedMember) === -1) return;';
+  html += '          if (!isMemberMatch(task.manager, selectedMember)) return;';
   html += '        }';
   html += '        dayTasks.push({ site: site, task: task });';
   html += '      }';
@@ -7446,6 +7498,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (isCalendarMode) renderCurrentCalendarView(); else renderList();';
   html += '}';
 
+  html += 'function isMemberMatch(taskManager, sel) {';
+  html += '  if (!sel) return true;';
+  html += '  const mgr = (taskManager || "").trim();';
+  html += '  if (sel === "__NONE__" || sel === "담당자 없음") {';
+  html += '    return (!mgr || mgr === "담당자 없음" || mgr === "미지정" || mgr === "없음");';
+  html += '  }';
+  html += '  return mgr.indexOf(sel) !== -1;';
+  html += '}';
+  html += '';
   html += 'function renderMemberFilterTabs(members) {';
   html += '  const bar = document.getElementById("memberFilterBar");';
   html += '  if (!bar) return;';
@@ -7460,6 +7521,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const mEnc = encodeURIComponent(m);';
   html += '    tabsHtml += \'<div class="member-tab \' + (isAct ? "active" : "") + \'" onclick="setMemberFilter(\\\'\' + mEnc + \'\\\')">\' + escapeHtml(m) + \'</div>\';';
   html += '  });';
+  html += '  const isNoneAct = (selectedMember === "__NONE__" || selectedMember === "담당자 없음");';
+  html += '  tabsHtml += \'<div class="member-tab \' + (isNoneAct ? "active" : "") + \'" onclick="setMemberFilter(\\\'__NONE__\\\')">🚫 담당자 없음</div>\';';
   html += '  bar.innerHTML = tabsHtml;';
   html += '}';
 
@@ -7556,8 +7619,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (selectedMember) {';
   html += '        const stClean = (t.status || "").replace(/\\s+/g, "");';
   html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return false;';
-  html += '        const mgr = (t.manager || "").trim();';
-  html += '        if (mgr.indexOf(selectedMember) === -1) return false;';
+  html += '        if (!isMemberMatch(t.manager, selectedMember)) return false;';
   html += '      }';
   html += '      if (query) {';
   html += '        const matchSite = site.siteName.toLowerCase().indexOf(query) !== -1;';
