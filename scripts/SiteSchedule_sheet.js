@@ -6406,12 +6406,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '.cal-day-cell { background: #ffffff; min-height: 72px; min-width: 0; padding: 2px 2px 4px 2px; display: flex; flex-direction: column; overflow: hidden; cursor: pointer; }';
   html += '.cal-day-cell:hover { background: #f8fafc; }';
   html += '.cal-day-cell.other-month { background: #fafbfc; opacity: 0.4; }';
-  html += '.cal-day-header { display: flex; align-items: center; padding: 1px 2px; font-size: 10.5px; font-weight: 700; color: #334155; }';
+  html += '.cal-day-header { display: flex; flex-direction: column; align-items: flex-start; padding: 1px 2px; font-size: 10.5px; font-weight: 700; color: #334155; width: 100%; }';
   html += '.cal-day-cell.sun .cal-day-header { color: #dc2626; }';
   html += '.cal-day-cell.sat .cal-day-header { color: #2563eb; }';
   html += '.cal-day-cell.holiday { background: #fff8f8; }';
   html += '.cal-day-cell.holiday .cal-day-header { color: #dc2626; font-weight: 800; }';
-  html += '.cal-holiday-name { font-size: 8.5px; font-weight: 700; color: #dc2626; margin-left: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 19px); line-height: 1; }';
+  html += '.cal-holiday-name { font-size: 8px; font-weight: 700; color: #dc2626; margin-top: 1px; margin-left: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; line-height: 1.15; letter-spacing: -0.3px; display: block; }';
   html += '.cal-day-num { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; }';
   html += '.cal-day-cell.today .cal-day-num { background: #2563eb; color: #ffffff; font-weight: 800; }';
   html += '.cal-events-list { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; width: 100%; margin-top: 1px; }';
@@ -6930,7 +6930,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (prevM < 1) { prevM = 12; prevY--; }';
   html += '    const pStr = prevY + "-" + (prevM < 10 ? "0" + prevM : prevM) + "-" + (dayNum < 10 ? "0" + dayNum : dayNum);';
   html += '    const pHoliday = (typeof activeHolidays !== "undefined" && activeHolidays[pStr]) ? activeHolidays[pStr] : "";';
-  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + dayNum + \'</span>\' + (pHoliday ? \'<span class="cal-holiday-name">\' + escapeHtml(pHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
+  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + dayNum + \'</span>\' + (pHoliday ? \'<span class="cal-holiday-name" title="\' + escapeHtml(pHoliday) + \'">\' + escapeHtml(pHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
   html += '  }';
   html += '  for (let d = 1; d <= totalDays; d++) {';
   html += '    const dStr = calYear + "-" + (calMonth < 10 ? "0" + calMonth : calMonth) + "-" + (d < 10 ? "0" + d : d);';
@@ -6988,7 +6988,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (nextM > 12) { nextM = 1; nextY++; }';
   html += '    const nStr = nextY + "-" + (nextM < 10 ? "0" + nextM : nextM) + "-" + (n < 10 ? "0" + n : n);';
   html += '    const nHoliday = (typeof activeHolidays !== "undefined" && activeHolidays[nStr]) ? activeHolidays[nStr] : "";';
-  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + n + \'</span>\' + (nHoliday ? \'<span class="cal-holiday-name">\' + escapeHtml(nHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
+  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + n + \'</span>\' + (nHoliday ? \'<span class="cal-holiday-name" title="\' + escapeHtml(nHoliday) + \'">\' + escapeHtml(nHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
   html += '  }';
   html += '  grid.innerHTML = gridHtml;';
   html += '}';

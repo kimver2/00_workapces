@@ -2930,6 +2930,17 @@ assertTest('buildSidebarDashboardHtml: onCalDayClick 클릭 알림 시 공휴일
   clientScript.indexOf('dStr + (holidayName ? " (" + holidayName + ")" : "")') !== -1
 );
 
+// 38-9: 모바일 캘린더 날짜 하단 공휴일 라벨 세로 배치(flex-direction: column) 및 max-width 100% 검증
+assertTest('buildSidebarDashboardHtml: .cal-day-header 날짜 아래 공휴일 텍스트 세로 배치(flex-direction: column) CSS 검증',
+  mobileCalHtml.indexOf('.cal-day-header { display: flex; flex-direction: column; align-items: flex-start;') !== -1
+);
+
+// 38-10: 공휴일 텍스트 스타일(max-width: 100%, margin-top: 1px, letter-spacing: -0.3px) 검증
+assertTest('buildSidebarDashboardHtml: .cal-holiday-name 날짜 하단 마진 및 100% 너비 확장(말줄임 방지) CSS 검증',
+  mobileCalHtml.indexOf('.cal-holiday-name { font-size: 8px; font-weight: 700; color: #dc2626; margin-top: 1px; margin-left: 1px;') !== -1 &&
+  mobileCalHtml.indexOf('max-width: 100%;') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
