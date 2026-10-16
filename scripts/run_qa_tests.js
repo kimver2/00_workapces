@@ -14,9 +14,9 @@ console.log('🧪 [QA & 코드리뷰 검증 파이프라인] 테스트 시작');
 console.log('========================================================\n');
 
 // 1. 소스 파일 로드 및 구문 검증
-const scriptPath = fs.existsSync(path.join(__dirname, 'SiteSchedule_sheet.gs'))
-  ? path.join(__dirname, 'SiteSchedule_sheet.gs')
-  : path.join(__dirname, 'SiteSchedule_sheet.js');
+const scriptPath = fs.existsSync(path.join(__dirname, '..', '현장서식.js'))
+  ? path.join(__dirname, '..', '현장서식.js')
+  : path.join(__dirname, '현장서식.js');
 let code = '';
 try {
   code = fs.readFileSync(scriptPath, 'utf8');

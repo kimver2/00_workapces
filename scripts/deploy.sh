@@ -4,9 +4,7 @@ set -e
 DEPLOYMENT_ID="AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg"
 DESC="${1:-현장관리_자동배포}"
 
-echo "🔍 1. 문법 및 QA 무결성 검증..."
-cp scripts/SiteSchedule_sheet.gs scripts/SiteSchedule_sheet.js
-cp scripts/SiteSchedule_sheet.gs 현장서식.js
+echo "🔍 1. 문법 및 QA 무결성 검증 (현장서식.js)..."
 node -c 현장서식.js
 node scripts/run_qa_tests.js
 
