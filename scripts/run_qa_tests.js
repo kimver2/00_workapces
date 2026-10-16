@@ -2941,6 +2941,92 @@ assertTest('buildSidebarDashboardHtml: .cal-holiday-name 날짜 하단 마진 �
   mobileCalHtml.indexOf('max-width: 100%;') !== -1
 );
 
+// ========================================================
+// 🎯 Step 39: 캘린더 네비게이션 년/월 중앙 정렬 & 완료 목록 최근 일자 우선 정렬 QA
+// ========================================================
+console.log('\n🧭 [Step 39: 캘린더 상단 년/월 중앙 정렬 & 좌측 캡쳐/우측 오늘 배치 & 완료 목록 최근순 정렬 QA]');
+
+const step39Html = sandbox.buildSidebarDashboardHtml('mobile');
+const sStart = step39Html.indexOf('<script>');
+const sEnd = step39Html.lastIndexOf('</script>');
+const step39Script = step39Html.slice(sStart + 8, sEnd);
+
+// 39-1: .cal-nav-bar 좌/중/우 3분할 flex 컨테이너 클래스 CSS 탑재 검증
+assertTest('buildSidebarDashboardHtml: .cal-nav-bar 좌/중/우 flex 컨테이너 CSS (.cal-nav-left, .cal-nav-center, .cal-nav-right) 탑재 검증',
+  step39Html.indexOf('.cal-nav-left {') !== -1 &&
+  step39Html.indexOf('.cal-nav-center {') !== -1 &&
+  step39Html.indexOf('.cal-nav-right {') !== -1
+);
+
+// 39-2: 캘린더 헤더 네비게이션 마크업 배치(좌: 캡쳐, 중: ◀ 년/월 ▶, 우: 오늘) 검증
+assertTest('buildSidebarDashboardHtml: 캘린더 상단 년/월 중앙 정렬, 좌측 캡쳐, 우측 오늘 버튼 마크업 검증',
+  step39Html.indexOf('class="cal-nav-left"') !== -1 &&
+  step39Html.indexOf('id="btnCaptureCal"') !== -1 &&
+  step39Html.indexOf('class="cal-nav-center"') !== -1 &&
+  step39Html.indexOf('id="calMonthTitle"') !== -1 &&
+  step39Html.indexOf('class="cal-nav-right"') !== -1 &&
+  step39Html.indexOf('class="cal-today-btn"') !== -1 &&
+  step39Html.indexOf('class="cal-nav-left"') < step39Html.indexOf('class="cal-nav-center"') &&
+  step39Html.indexOf('class="cal-nav-center"') < step39Html.indexOf('class="cal-nav-right"')
+);
+
+// 39-3: renderList 내 완료 목록 최근 일자 내림차순 정렬 로직 탑재 검증
+assertTest('buildSidebarDashboardHtml: renderList 내 currentFilter === "done" 일 때 bLatest - aLatest 최근순 정렬 검증',
+  step39Script.indexOf('currentFilter === "done"') !== -1 &&
+  step39Script.indexOf('return bLatest - aLatest;') !== -1 &&
+  step39Script.indexOf('latestFilteredMs') !== -1
+);
+
+// 39-4: 완료 목록 정렬 시뮬레이션 검증 (최근 완공 현장이 상위 노출)
+const mockDoneSites = [
+  { site: { siteName: "Site_Old", initialOrder: 1 }, latestFilteredMs: new Date("2026-08-10").getTime(), earliestFilteredMs: new Date("2026-08-01").getTime() },
+  { site: { siteName: "Site_Recent", initialOrder: 2 }, latestFilteredMs: new Date("2026-10-15").getTime(), earliestFilteredMs: new Date("2026-10-01").getTime() },
+  { site: { siteName: "Site_Mid", initialOrder: 3 }, latestFilteredMs: new Date("2026-09-24").getTime(), earliestFilteredMs: new Date("2026-09-10").getTime() }
+];
+
+function sortSites(sites, filter) {
+  const cloned = sites.slice();
+  cloned.sort((a, b) => {
+    if (filter === "done") {
+      const aLatest = a.latestFilteredMs || a.earliestFilteredMs || 0;
+      const bLatest = b.latestFilteredMs || b.earliestFilteredMs || 0;
+      if (aLatest && bLatest) {
+        if (aLatest !== bLatest) return bLatest - aLatest;
+      } else if (aLatest) {
+        return -1;
+      } else if (bLatest) {
+        return 1;
+      }
+      return (b.site.initialOrder || 0) - (a.site.initialOrder || 0);
+    }
+    const aMs = a.earliestFilteredMs || 0;
+    const bMs = b.earliestFilteredMs || 0;
+    if (aMs && bMs) {
+      if (aMs !== bMs) return aMs - bMs;
+    } else if (aMs) {
+      return -1;
+    } else if (bMs) {
+      return 1;
+    }
+    return 0;
+  });
+  return cloned;
+}
+
+const doneSorted = sortSites(mockDoneSites, "done");
+assertTest('정렬 시뮬레이션: 완료(done) 탭에서는 최근 완공 현장(10.15)이 1위, 과거 현장(08.10)이 최하위로 정렬 검증',
+  doneSorted[0].site.siteName === "Site_Recent" &&
+  doneSorted[1].site.siteName === "Site_Mid" &&
+  doneSorted[2].site.siteName === "Site_Old"
+);
+
+const allSorted = sortSites(mockDoneSites, "all");
+assertTest('정렬 시뮬레이션: 일반(all) 탭에서는 기존대로 가장 빠른 일정(08.01)이 1위로 정렬 유지 검증',
+  allSorted[0].site.siteName === "Site_Old" &&
+  allSorted[1].site.siteName === "Site_Mid" &&
+  allSorted[2].site.siteName === "Site_Recent"
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
