@@ -5807,110 +5807,165 @@ function getHexColorForCalendarCode(code) {
  * 사이드바/모달 대시보드용 실시간 데이터 집계 API
  */
 function getSidebarDashboardData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) ss = getAppSpreadsheet();
-  var sheet = findSiteScheduleSheet(ss);
-  if (!sheet) return { error: "현장데이터 시트를 찾을 수 없습니다." };
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    var sheet = findSiteScheduleSheet(ss);
+    if (!sheet) return { error: "현장데이터 시트를 찾을 수 없습니다." };
 
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    return {
-      kpi: { totalSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
-      todayStr: formatDateYYMMDD(new Date()),
-      sites: []
-    };
-  }
-
-  var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
-  var today = new Date();
-  var todayYYMMDD = formatDateYYMMDD(today);
-  var nowMs = today.getTime();
-
-  var sitesMap = {};
-  var siteOrder = [];
-  var lastKnownSite = "";
-  var totalTasks = 0;
-  var todayCount = 0;
-  var delayedCount = 0;
-
-  for (var i = 0; i < values.length; i++) {
-    var row = i + 2;
-    var rowVals = values[i];
-    var rawSite = String(rowVals[0] || "").trim();
-    if (rawSite) lastKnownSite = rawSite;
-    var siteName = rawSite || lastKnownSite;
-    var dateVal = rowVals[1];
-    var taskName = String(rowVals[2] || "").trim();
-
-    if (!siteName || !dateVal || !taskName) continue;
-
-    var partner = String(rowVals[3] || "").trim();
-    var isShared = (rowVals[4] === true || String(rowVals[4]).toUpperCase() === "TRUE");
-    var memo = String(rowVals[5] || "").trim();
-    var manager = String(rowVals[6] || "").trim();
-    var status = String(rowVals[7] || "예정").trim();
-    var calId = String(rowVals[8] || "").trim();
-
-    var parsed = parseScheduleDateRange(dateVal);
-    var isToday = false;
-    var isDelayed = false;
-    var dateDisplay = formatScheduleDateDisplay(dateVal);
-    var dateMs = 0;
-
-    if (parsed) {
-      if (parsed.hasTime && parsed.startTime) {
-        dateMs = parsed.startTime.getTime();
-      } else if (parsed.startDate) {
-        dateMs = parsed.startDate.getTime();
-      }
-      if (parsed.startDate) {
-        isToday = isScheduleActiveToday(parsed, today);
-        isDelayed = isScheduleDelayed(parsed, status, today);
-      }
-    }
-
-    if (isToday) todayCount++;
-    if (isDelayed) delayedCount++;
-    totalTasks++;
-
-    if (!sitesMap[siteName]) {
-      var colorCode = getCalendarColorForSite(siteName, sheet);
-      sitesMap[siteName] = {
-        siteName: siteName,
-        colorCode: colorCode,
-        colorHex: getHexColorForCalendarCode(colorCode),
-        tasks: [],
-        initialOrder: siteOrder.length
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return {
+        kpi: { totalSites: 0, activeSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
+        todayStr: formatDateYYMMDD(new Date()),
+        sites: []
       };
-      siteOrder.push(siteName);
     }
 
-    sitesMap[siteName].tasks.push({
-      row: row,
-      taskName: taskName,
-      dateDisplay: dateDisplay,
-      dateMs: dateMs,
-      partner: partner,
-      manager: manager,
-      status: status,
-      isShared: isShared,
-      memo: memo,
-      isToday: isToday,
-      isDelayed: isDelayed,
-      hasCal: !!calId
-    });
-  }
+    var values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+    var today = new Date();
+    var todayYYMMDD = formatDateYYMMDD(today);
+    var nowMs = today.getTime();
 
-  var sitesList = [];
-  var activeSitesCount = 0;
+    var sitesMap = {};
+    var siteOrder = [];
+    var lastKnownSite = "";
+    var totalTasks = 0;
+    var todayCount = 0;
+    var delayedCount = 0;
 
-  for (var s = 0; s < siteOrder.length; s++) {
-    var siteObj = sitesMap[siteOrder[s]];
+    for (var i = 0; i < values.length; i++) {
+      var row = i + 2;
+      var rowVals = values[i];
+      var rawSite = String(rowVals[0] || "").trim();
+      if (rawSite) lastKnownSite = rawSite;
+      var siteName = rawSite || lastKnownSite;
+      var dateVal = rowVals[1];
+      var taskName = String(rowVals[2] || "").trim();
 
-    // 1. 공정(tasks) 날짜 오름차순 정렬 (빠른 날짜 우선, 날짜 없으면 뒤로, 동일 날짜는 시트 행 순서 유지)
-    siteObj.tasks.sort(function(a, b) {
-      var aMs = a.dateMs || 0;
-      var bMs = b.dateMs || 0;
+      if (!siteName || !dateVal || !taskName) continue;
+
+      var partner = String(rowVals[3] || "").trim();
+      var isShared = (rowVals[4] === true || String(rowVals[4]).toUpperCase() === "TRUE");
+      var memo = String(rowVals[5] || "").trim();
+      var manager = String(rowVals[6] || "").trim();
+      var status = String(rowVals[7] || "예정").trim();
+      var calId = String(rowVals[8] || "").trim();
+
+      var parsed = null;
+      try {
+        parsed = parseScheduleDateRange(dateVal);
+      } catch (pe) {
+        parsed = null;
+      }
+      var isToday = false;
+      var isDelayed = false;
+      var dateDisplay = "";
+      try {
+        dateDisplay = formatScheduleDateDisplay(dateVal);
+      } catch (de) {
+        dateDisplay = String(dateVal || "");
+      }
+      var dateMs = 0;
+
+      if (parsed) {
+        if (parsed.hasTime && parsed.startTime) {
+          dateMs = parsed.startTime.getTime();
+        } else if (parsed.startDate) {
+          dateMs = parsed.startDate.getTime();
+        }
+        if (parsed.startDate) {
+          isToday = isScheduleActiveToday(parsed, today);
+          isDelayed = isScheduleDelayed(parsed, status, today);
+        }
+      }
+
+      if (isToday) todayCount++;
+      if (isDelayed) delayedCount++;
+      totalTasks++;
+
+      if (!sitesMap[siteName]) {
+        var colorCode = "9";
+        try {
+          colorCode = getCalendarColorForSite(siteName, sheet);
+        } catch (ce) {
+          colorCode = "9";
+        }
+        sitesMap[siteName] = {
+          siteName: siteName,
+          colorCode: colorCode,
+          colorHex: getHexColorForCalendarCode(colorCode),
+          tasks: [],
+          initialOrder: siteOrder.length
+        };
+        siteOrder.push(siteName);
+      }
+
+      sitesMap[siteName].tasks.push({
+        row: row,
+        taskName: taskName,
+        dateDisplay: dateDisplay,
+        dateMs: dateMs,
+        partner: partner,
+        manager: manager,
+        status: status,
+        isShared: isShared,
+        memo: memo,
+        isToday: isToday,
+        isDelayed: isDelayed,
+        hasCal: !!calId
+      });
+    }
+
+    var sitesList = [];
+    var activeSitesCount = 0;
+
+    for (var s = 0; s < siteOrder.length; s++) {
+      var siteObj = sitesMap[siteOrder[s]];
+
+      // 1. 공정(tasks) 날짜 오름차순 정렬 (빠른 날짜 우선, 날짜 없으면 뒤로, 동일 날짜는 시트 행 순서 유지)
+      siteObj.tasks.sort(function(a, b) {
+        var aMs = a.dateMs || 0;
+        var bMs = b.dateMs || 0;
+        if (aMs && bMs) {
+          if (aMs !== bMs) return aMs - bMs;
+        } else if (aMs) {
+          return -1;
+        } else if (bMs) {
+          return 1;
+        }
+        return a.row - b.row;
+      });
+
+      // 2. 블록 전체 완료 여부 판별 (공정이 1개 이상이고 모든 공정의 상태가 '완료' 또는 '취소'인 경우)
+      var activeTasks = siteObj.tasks.filter(function(t) {
+        var st = (t.status || "").replace(/\s+/g, "");
+        return st.indexOf("완료") === -1 && st.indexOf("취소") === -1;
+      });
+
+      var isAllCompleted = (siteObj.tasks.length > 0) && (activeTasks.length === 0);
+      siteObj.isAllCompleted = isAllCompleted;
+      siteObj.activeTasksCount = activeTasks.length;
+      siteObj.completedTasksCount = siteObj.tasks.length - activeTasks.length;
+
+      if (!isAllCompleted) {
+        activeSitesCount++;
+      }
+
+      // 3. 현장 카드 정렬 기준 날짜 계산: 진행 중인 공정의 가장 빠른 날짜 (없으면 전체 중 가장 빠른 날짜)
+      var earliestTask = (activeTasks.length > 0) ? activeTasks[0] : siteObj.tasks[0];
+      siteObj.earliestDateMs = (earliestTask && earliestTask.dateMs) ? earliestTask.dateMs : 0;
+
+      sitesList.push(siteObj);
+    }
+
+    // 4. 현장 카드(sitesList) 정렬: 활성 현장 우선, 가장 빠른 일정 순 (동일하거나 없으면 시트 순서 보존)
+    sitesList.sort(function(a, b) {
+      if (!a.isAllCompleted && b.isAllCompleted) return -1;
+      if (a.isAllCompleted && !b.isAllCompleted) return 1;
+
+      var aMs = a.earliestDateMs || 0;
+      var bMs = b.earliestDateMs || 0;
       if (aMs && bMs) {
         if (aMs !== bMs) return aMs - bMs;
       } else if (aMs) {
@@ -5918,59 +5973,28 @@ function getSidebarDashboardData() {
       } else if (bMs) {
         return 1;
       }
-      return a.row - b.row;
+      return a.initialOrder - b.initialOrder;
     });
 
-    // 2. 블록 전체 완료 여부 판별 (공정이 1개 이상이고 모든 공정의 상태가 '완료' 또는 '취소'인 경우)
-    var activeTasks = siteObj.tasks.filter(function(t) {
-      var st = (t.status || "").replace(/\s+/g, "");
-      return st.indexOf("완료") === -1 && st.indexOf("취소") === -1;
-    });
-
-    var isAllCompleted = (siteObj.tasks.length > 0) && (activeTasks.length === 0);
-    siteObj.isAllCompleted = isAllCompleted;
-    siteObj.activeTasksCount = activeTasks.length;
-    siteObj.completedTasksCount = siteObj.tasks.length - activeTasks.length;
-
-    if (!isAllCompleted) {
-      activeSitesCount++;
-    }
-
-    // 3. 현장 카드 정렬 기준 날짜 계산: 진행 중인 공정의 가장 빠른 날짜 (없으면 전체 중 가장 빠른 날짜)
-    var earliestTask = (activeTasks.length > 0) ? activeTasks[0] : siteObj.tasks[0];
-    siteObj.earliestDateMs = (earliestTask && earliestTask.dateMs) ? earliestTask.dateMs : 0;
-
-    sitesList.push(siteObj);
+    return {
+      kpi: {
+        totalSites: siteOrder.length,
+        activeSites: activeSitesCount,
+        totalTasks: totalTasks,
+        todayCount: todayCount,
+        delayedCount: delayedCount
+      },
+      todayStr: todayYYMMDD,
+      sites: sitesList
+    };
+  } catch (err) {
+    return {
+      error: "데이터 처리 중 오류 발생: " + (err.message || err),
+      kpi: { totalSites: 0, activeSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
+      todayStr: formatDateYYMMDD(new Date()),
+      sites: []
+    };
   }
-
-  // 4. 현장 카드(sitesList) 정렬: 활성 현장 우선, 가장 빠른 일정 순 (동일하거나 없으면 시트 순서 보존)
-  sitesList.sort(function(a, b) {
-    if (!a.isAllCompleted && b.isAllCompleted) return -1;
-    if (a.isAllCompleted && !b.isAllCompleted) return 1;
-
-    var aMs = a.earliestDateMs || 0;
-    var bMs = b.earliestDateMs || 0;
-    if (aMs && bMs) {
-      if (aMs !== bMs) return aMs - bMs;
-    } else if (aMs) {
-      return -1;
-    } else if (bMs) {
-      return 1;
-    }
-    return a.initialOrder - b.initialOrder;
-  });
-
-  return {
-    kpi: {
-      totalSites: siteOrder.length,
-      activeSites: activeSitesCount,
-      totalTasks: totalTasks,
-      todayCount: todayCount,
-      delayedCount: delayedCount
-    },
-    todayStr: todayYYMMDD,
-    sites: sitesList
-  };
 }
 
 /**
@@ -6057,8 +6081,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '.status-완료 { background: #dcfce7; color: #166534; }';
   html += '.status-AS { background: #fef3c7; color: #92400e; }';
   html += '.status-지연 { background: #fee2e2; color: #991b1b; }';
-  html += '.empty-state { text-align: center; padding: 40px 20px; color: #64748b; }';
-  html += '.spinner { border: 3px solid #f1f5f9; border-top: 3px solid #2563eb; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; margin: 30px auto 10px; }';
+  html += '.empty-state { text-align: center; padding: 50px 20px; color: #64748b; grid-column: 1 / -1; width: 100%; }';
+  html += '.loading-state { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; text-align: center; width: 100%; }';
+  html += '.loading-text { text-align: center; color: #64748b; font-size: 13px; font-weight: 600; margin-top: 14px; }';
+  html += '.spinner { border: 3.5px solid #e2e8f0; border-top: 3.5px solid #2563eb; border-radius: 50%; width: 32px; height: 32px; animation: spin 0.8s linear infinite; margin: 0 auto; }';
   html += '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
   html += '.footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #ffffff; border-top: 1px solid #e2e8f0; padding: 10px 14px ' + (isMobile ? 'calc(10px + env(safe-area-inset-bottom, 0px))' : '10px') + '; display: flex; gap: 8px; box-shadow: 0 -2px 8px rgba(0,0,0,0.04); z-index: 30; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.btn { flex: 1; padding: 10px; border-radius: 8px; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid transparent; text-align: center; transition: all 0.15s; }';
@@ -6137,8 +6163,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '</div>';
 
   html += '<div class="content" id="contentArea">';
-  html += '  <div class="spinner"></div>';
-  html += '  <p style="text-align:center;color:#64748b;font-size:12px;">현장 데이터 불러오는 중...</p>';
+  html += '  <div class="loading-state">';
+  html += '    <div class="spinner"></div>';
+  html += '    <p class="loading-text">현장 데이터 불러오는 중...</p>';
+  html += '  </div>';
   html += '</div>';
 
   html += '<div class="footer-bar">';
@@ -6203,7 +6231,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
 
   html += 'function loadData() {';
-  html += '  document.getElementById("contentArea").innerHTML = \'<div class="spinner"></div><p style="text-align:center;color:#64748b;font-size:12px;">현장 데이터 불러오는 중...</p>\';';
+  html += '  document.getElementById("contentArea").innerHTML = \'<div class="loading-state"><div class="spinner"></div><p class="loading-text">현장 데이터 불러오는 중...</p></div>\';';
   html += '  google.script.run';
   html += '    .withSuccessHandler(onDataLoaded)';
   html += '    .withFailureHandler(onError)';
@@ -6211,19 +6239,28 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
 
   html += 'function onError(err) {';
-  html += '  document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.<br><small style="color:#ef4444;">\' + (err.message || err) + \'</small></div>\';';
+  html += '  document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.<br><small style="color:#ef4444;">\' + escapeHtml((err && err.message) || err || "") + \'</small></div>\';';
   html += '}';
 
   html += 'function onDataLoaded(data) {';
   html += '  rawData = data;';
-  html += '  if (data.error) {';
-  html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ \' + data.error + \'</div>\';';
+  html += '  if (!data) {';
+  html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.</div>\';';
   html += '    return;';
   html += '  }';
-  html += '  document.getElementById("kpiSites").innerText = (data.kpi.activeSites !== undefined) ? data.kpi.activeSites : data.kpi.totalSites;';
-  html += '  document.getElementById("kpiToday").innerText = data.kpi.todayCount;';
-  html += '  document.getElementById("kpiDelay").innerText = data.kpi.delayedCount;';
-  html += '  renderList();';
+  html += '  if (data.error) {';
+  html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ \' + escapeHtml(data.error) + \'</div>\';';
+  html += '    return;';
+  html += '  }';
+  html += '  try {';
+  html += '    const kpi = data.kpi || {};';
+  html += '    document.getElementById("kpiSites").innerText = (kpi.activeSites !== undefined) ? kpi.activeSites : (kpi.totalSites || 0);';
+  html += '    document.getElementById("kpiToday").innerText = kpi.todayCount || 0;';
+  html += '    document.getElementById("kpiDelay").innerText = kpi.delayedCount || 0;';
+  html += '    renderList();';
+  html += '  } catch (renderErr) {';
+  html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 대시보드 렌더링 오류: \' + escapeHtml(renderErr.message || renderErr) + \'</div>\';';
+  html += '  }';
   html += '}';
 
   html += 'function setFilter(type) {';
@@ -6281,7 +6318,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'      <span class="site-badge">\' + filteredTasks.length + \'건</span>\';';
   html += '    }';
   html += '    html += \'    </div>\';';
-  html += '    <span class="site-toggle">▼</span>\';';
+  html += '    html += \'    <span class="site-toggle">▼</span>\';';
   html += '    html += \'  </div>\';';
 
   html += '    html += \'  <div class="task-list">\';';
@@ -6446,7 +6483,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '    .replace(/\'/g, "&#39;");';
   html += '}';
 
-  html += 'window.onload = loadData;';
+  html += 'if (document.readyState === "complete" || document.readyState === "interactive") {';
+  html += '  setTimeout(loadData, 10);';
+  html += '} else {';
+  html += '  window.addEventListener("DOMContentLoaded", loadData);';
+  html += '  window.addEventListener("load", loadData);';
+  html += '}';
   html += '</script>';
   html += '</body></html>';
 

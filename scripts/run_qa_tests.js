@@ -2164,6 +2164,55 @@ assertTest('buildSidebarDashboardHtml: KPI 라벨이 "진행 현장"으로 표�
   step30TestHtml.indexOf('진행 현장') !== -1
 );
 
+// ========================================================
+// 🎯 Step 31: 팝업 로딩 중앙 정렬 & 클라이언트 스크립트 구문 무결성 및 무한로딩 방어 QA
+// ========================================================
+console.log('\n🎯 [Step 31: 팝업 로딩 중앙 정렬 & 클라이언트 스크립트 구문 무결성 및 무한로딩 방어 QA]');
+
+const modalHtml = sandbox.buildSidebarDashboardHtml('modal');
+const modalScriptMatch = modalHtml.match(/<script>([\s\S]*?)<\/script>/);
+
+// 31-1: 모달 팝업 내 클라이언트 인라인 자바스크립트 구문 무결성 검증 (Unexpected token 방어)
+let scriptSyntaxValid = false;
+try {
+  new vm.Script(modalScriptMatch[1]);
+  scriptSyntaxValid = true;
+} catch(e) {
+  scriptSyntaxValid = false;
+}
+assertTest('buildSidebarDashboardHtml("modal"): 생성된 클라이언트 JS 구문 무결성(SyntaxError 0) 검증',
+  scriptSyntaxValid === true
+);
+
+// 31-2: 팝업 내 로딩 바(spinner)와 안내 텍스트 중앙 정렬(loading-state) 검증
+assertTest('buildSidebarDashboardHtml: 로딩 컨테이너 grid-column: 1 / -1 전체 너비 확장 검증',
+  modalHtml.indexOf('.loading-state { grid-column: 1 / -1;') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 로딩 컨테이너 flex 세로 중앙 정렬 탑재 검증',
+  modalHtml.indexOf('display: flex; flex-direction: column; align-items: center; justify-content: center;') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 로딩 텍스트(loading-text) 텍스트 중앙 정렬 탑재 검증',
+  modalHtml.indexOf('.loading-text { text-align: center;') !== -1 &&
+  modalHtml.indexOf('class="loading-text"') !== -1
+);
+
+// 31-3: document.readyState 대응 안전 초기화 로직 탑재 검증
+assertTest('buildSidebarDashboardHtml: document.readyState 확인 및 DOMContentLoaded/load 안전 이벤트 리스너 탑재 검증',
+  modalHtml.indexOf('document.readyState === "complete"') !== -1 &&
+  modalHtml.indexOf('addEventListener("DOMContentLoaded"') !== -1
+);
+
+// 31-4: getSidebarDashboardData 예외 방어(try-catch) 탑재 검증
+sandbox.findSiteScheduleSheet = () => { throw new Error("시트 읽기 테스트 예외"); };
+const safeDashData = sandbox.getSidebarDashboardData();
+assertTest('getSidebarDashboardData: 시트 예외 발생 시 에러 객체 반환 및 스크립트 중단 방어 검증',
+  safeDashData &&
+  safeDashData.error &&
+  safeDashData.error.indexOf("데이터 처리 중 오류 발생") !== -1 &&
+  safeDashData.kpi &&
+  safeDashData.sites.length === 0
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
