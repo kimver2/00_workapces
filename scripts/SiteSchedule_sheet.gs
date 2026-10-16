@@ -6253,16 +6253,54 @@ function getSidebarDashboardData() {
         return a.row - b.row;
       });
 
-      // 2. 블록 전체 완료 여부 판별 (공정이 1개 이상이고 모든 공정의 상태가 '완료' 또는 '취소'인 경우)
+      // 2. 블록 전체 완료 여부 판별 및 공정 진척률 정밀 계산
+      var completedCount = 0;
+      var canceledCount = 0;
+      var inProgressCount = 0;
+      var delayedCountSite = 0;
+
+      for (var ti = 0; ti < siteObj.tasks.length; ti++) {
+        var tObj = siteObj.tasks[ti];
+        var stClean = (tObj.status || "").replace(/\s+/g, "");
+        if (stClean.indexOf("완료") !== -1) {
+          completedCount++;
+        } else if (stClean.indexOf("취소") !== -1) {
+          canceledCount++;
+        } else if (stClean.indexOf("진행") !== -1) {
+          inProgressCount++;
+        }
+        if (tObj.isDelayed) {
+          delayedCountSite++;
+        }
+      }
+
       var activeTasks = siteObj.tasks.filter(function(t) {
         var st = (t.status || "").replace(/\s+/g, "");
         return st.indexOf("완료") === -1 && st.indexOf("취소") === -1;
       });
 
       var isAllCompleted = (siteObj.tasks.length > 0) && (activeTasks.length === 0);
+      var totalTasksCount = siteObj.tasks.length;
+      var validTasksCount = totalTasksCount - canceledCount;
+
+      var progressRate = 0;
+      if (validTasksCount > 0) {
+        if (isAllCompleted) {
+          progressRate = 100;
+        } else {
+          progressRate = Math.min(100, Math.max(0, Math.round((completedCount / validTasksCount) * 100)));
+        }
+      }
+
       siteObj.isAllCompleted = isAllCompleted;
       siteObj.activeTasksCount = activeTasks.length;
-      siteObj.completedTasksCount = siteObj.tasks.length - activeTasks.length;
+      siteObj.completedTasksCount = completedCount;
+      siteObj.canceledTasksCount = canceledCount;
+      siteObj.inProgressTasksCount = inProgressCount;
+      siteObj.delayedTasksCount = delayedCountSite;
+      siteObj.totalTasksCount = totalTasksCount;
+      siteObj.validTasksCount = validTasksCount;
+      siteObj.progressRate = progressRate;
 
       if (!isAllCompleted) {
         activeSitesCount++;
@@ -6464,6 +6502,20 @@ function buildSidebarDashboardHtml(mode) {
   html += '.share-tag.share-on { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }';
   html += '.share-tag.share-off { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }';
   html += '.site-badge { font-size: 10.5px; padding: 2px 6px; border-radius: 10px; background: #f1f5f9; color: #475569; font-weight: 600; white-space: nowrap; flex-shrink: 0; }';
+  html += '.site-progress-badge { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; line-height: 1.2; white-space: nowrap; flex-shrink: 0; }';
+  html += '.site-progress-badge.done { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }';
+  html += '.site-progress-badge.high { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }';
+  html += '.site-progress-badge.mid { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }';
+  html += '.site-progress-badge.low { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }';
+  html += '.site-delay-mini-badge { font-size: 9.5px; font-weight: 700; padding: 1.5px 5px; border-radius: 5px; background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; white-space: nowrap; flex-shrink: 0; }';
+  html += '.site-progress-track { width: 100%; height: 4.5px; background: #f1f5f9; position: relative; overflow: hidden; }';
+  html += '.site-progress-bar { height: 100%; transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 0 2px 2px 0; }';
+  html += '.site-summary-box { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; margin-bottom: 8px; background: #ffffff; border-radius: 6px; border: 1px solid #e2e8f0; font-size: 11.5px; }';
+  html += '.site-summary-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }';
+  html += '.site-summary-rate { color: #0f172a; font-weight: 600; font-size: 11.5px; }';
+  html += '.site-summary-rate strong { color: #2563eb; font-weight: 800; font-size: 12.5px; }';
+  html += '.site-summary-rate.done strong { color: #16a34a; }';
+  html += '.site-summary-counts { color: #64748b; font-size: 11px; }';
   html += '.site-toggle { font-size: 10px; color: #94a3b8; transition: transform 0.2s; flex-shrink: 0; }';
   html += '.site-card.expanded .site-toggle { transform: rotate(180deg); }';
   html += '.task-list { display: none; padding: 6px 10px 8px 10px; background: #f8fafc; border-top: 1px solid #f1f5f9; }';
@@ -7252,8 +7304,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '        const txtShadow = isLight ? "none" : "0 1px 1px rgba(0,0,0,0.45)";';
   html += '        const fullTitle = escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + ")";';
   html += '        listHtml += \'<div class="cal-event-pill \' + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';padding:4px 6px;font-size:11px;\' + (txtShadow !== "none" ? "text-shadow:" + txtShadow + ";" : "") + \'" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
+  html += '        const pRateTag = (typeof site.progressRate === "number") ? " " + site.progressRate + "%" : "";';
   html += '        listHtml += \'  <span class="cal-sh-box \' + shClass + \'" style="width:7.5px;height:7.5px;"></span>\';';
-  html += '        listHtml += \'  <span class="cal-pill-text" style="font-size:11px;font-weight:800;">[\' + escapeHtml(site.siteName) + \'] \' + escapeHtml(task.taskName) + (task.manager ? " (" + escapeHtml(task.manager) + ")" : "") + (task.status ? " - " + escapeHtml(task.status) : "") + \'</span>\';';
+  html += '        listHtml += \'  <span class="cal-pill-text" style="font-size:11px;font-weight:800;">[\' + escapeHtml(site.siteName) + pRateTag + \'] \' + escapeHtml(task.taskName) + (task.manager ? " (" + escapeHtml(task.manager) + ")" : "") + (task.status ? " - " + escapeHtml(task.status) : "") + \'</span>\';';
   html += '        listHtml += \'</div>\';';
   html += '      });';
   html += '    }';
@@ -7555,18 +7608,43 @@ function buildSidebarDashboardHtml(mode) {
   html += '    html += \'<div class="site-card \' + (isExpanded ? "expanded" : "") + \'">\';';
   html += '    html += \'  <div class="site-header" style="border-left-color: \' + site.colorHex + \';" onclick="toggleSite(this)">\';';
   html += '    html += \'    <input type="checkbox" class="site-check" data-sitename="\' + siteEnc + \'" \' + (isChecked ? "checked" : "") + \' onclick="onSiteCheckboxClick(event, this)" title="현장 선택">\';';
+  html += '    const pRate = (typeof site.progressRate === "number") ? site.progressRate : 0;';
+  html += '    let rateClass = "low";';
+  html += '    if (site.isAllCompleted) rateClass = "done";';
+  html += '    else if (pRate >= 70) rateClass = "high";';
+  html += '    else if (pRate >= 30) rateClass = "mid";';
+  html += '    const validTotal = site.validTasksCount || site.totalTasksCount || site.tasks.length;';
+  html += '    const compTotal = site.completedTasksCount || 0;';
   html += '    html += \'    <div class="site-title-area">\';';
   html += '    html += \'      <span class="site-name">\' + escapeHtml(site.siteName) + \'</span>\';';
+  html += '    html += \'      <span class="site-progress-badge \' + rateClass + \'">\' + pRate + \'%</span>\';';
   html += '    if (site.isAllCompleted) {';
-  html += '      html += \'      <span class="site-badge" style="background:#dcfce7;color:#166534;">완료 \' + filteredTasks.length + \'건</span>\';';
+  html += '      html += \'      <span class="site-badge" style="background:#dcfce7;color:#166534;">완료 \' + compTotal + \'/\' + validTotal + \'</span>\';';
   html += '    } else {';
-  html += '      html += \'      <span class="site-badge">\' + filteredTasks.length + \'건</span>\';';
+  html += '      html += \'      <span class="site-badge">\' + compTotal + \'/\' + validTotal + \'건</span>\';';
+  html += '      if (site.delayedTasksCount > 0) {';
+  html += '        html += \'      <span class="site-delay-mini-badge">⚠️ \' + site.delayedTasksCount + \'</span>\';';
+  html += '      }';
   html += '    }';
   html += '    html += \'    </div>\';';
   html += '    html += \'    <span class="site-toggle">▼</span>\';';
   html += '    html += \'  </div>\';';
-
+  html += '    const barColor = site.isAllCompleted ? "#10b981" : ((site.delayedTasksCount > 0) ? "#f59e0b" : (site.colorHex || "#2563eb"));';
+  html += '    html += \'  <div class="site-progress-track" title="공정 진척률: \' + pRate + \'%"><div class="site-progress-bar" style="width:\' + pRate + \'%;background:\' + barColor + \';"></div></div>\';';
+  html += '';
   html += '    html += \'  <div class="task-list">\';';
+  html += '    const progTotal = site.inProgressTasksCount || 0;';
+  html += '    const delayTotal = site.delayedTasksCount || 0;';
+  html += '    let sumText = "총 " + validTotal + "개 공정 중 완료 " + compTotal + "건";';
+  html += '    if (progTotal > 0) sumText += " · 진행 " + progTotal + "건";';
+  html += '    if (delayTotal > 0) sumText += " · ⚠️ 지연 " + delayTotal + "건";';
+  html += '    if (site.canceledTasksCount > 0) sumText += " (취소 " + site.canceledTasksCount + "건 제외)";';
+  html += '    html += \'    <div class="site-summary-box">\';';
+  html += '    html += \'      <div class="site-summary-main">\';';
+  html += '    html += \'        <span class="site-summary-rate \' + (site.isAllCompleted ? "done" : "") + \'">진척률 <strong>\' + pRate + \'%</strong></span>\';';
+  html += '    html += \'        <span class="site-summary-counts">\' + escapeHtml(sumText) + \'</span>\';';
+  html += '    html += \'      </div>\';';
+  html += '    html += \'    </div>\';';
   html += '    filteredTasks.forEach(task => {';
   html += '      let dateClass = "";';
   html += '      if (task.isDelayed) dateClass = "delay";';

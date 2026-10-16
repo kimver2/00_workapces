@@ -3285,6 +3285,124 @@ assertTest('주간 네비게이션 시뮬레이션: 다음 주 이동 시 10-25�
   nextWeekDays[6] === '2026-10-31'
 );
 
+// ========================================================
+// 📊 Step 43: 현장별 공정 진척률(progressRate) 계산 및 게이지 바/뱃지 QA
+// ========================================================
+console.log('\n📊 [Step 43: 현장별 공정 진척률(progressRate) 계산 및 게이지 바/뱃지 QA]');
+
+// 43-1: getSidebarDashboardData 데이터 무결성 검증 (각 현장에 progressRate, validTasksCount 등 진척 필드 포함)
+const testProgressDashData = sandbox.getSidebarDashboardData();
+const firstSite43 = (testProgressDashData && testProgressDashData.sites && testProgressDashData.sites[0]) || {};
+assertTest('getSidebarDashboardData: 각 현장 객체에 progressRate, validTasksCount, completedTasksCount 필드 포함 검증',
+  typeof firstSite43.progressRate === 'number' &&
+  typeof firstSite43.validTasksCount === 'number' &&
+  typeof firstSite43.completedTasksCount === 'number' &&
+  typeof firstSite43.inProgressTasksCount === 'number' &&
+  typeof firstSite43.canceledTasksCount === 'number'
+);
+
+// 43-2: 진척률 계산 알고리즘 시뮬레이션 함수
+function calculateSiteProgressRateSim(tasks) {
+  let completedCount = 0;
+  let canceledCount = 0;
+  let inProgressCount = 0;
+  for (let i = 0; i < tasks.length; i++) {
+    const st = (tasks[i].status || "").replace(/\s+/g, "");
+    if (st.indexOf("완료") !== -1) completedCount++;
+    else if (st.indexOf("취소") !== -1) canceledCount++;
+    else if (st.indexOf("진행") !== -1) inProgressCount++;
+  }
+  const totalCount = tasks.length;
+  const validCount = totalCount - canceledCount;
+  if (validCount <= 0) return 0;
+  const activeTasks = tasks.filter(t => {
+    const st = (t.status || "").replace(/\s+/g, "");
+    return st.indexOf("완료") === -1 && st.indexOf("취소") === -1;
+  });
+  if (totalCount > 0 && activeTasks.length === 0) return 100;
+  return Math.min(100, Math.max(0, Math.round((completedCount / validCount) * 100)));
+}
+
+// 43-3: 100% 완료 현장 진척률 검증
+const mockAllDoneTasks = [
+  { taskName: '철거', status: '완료' },
+  { taskName: '도배', status: '완료' },
+  { taskName: '마루', status: '완료' }
+];
+assertTest('진척률 계산 시뮬레이션: 모든 공정 완료 시 progressRate === 100 검증',
+  calculateSiteProgressRateSim(mockAllDoneTasks) === 100
+);
+
+// 43-4: 50% 진행 현장 진척률 검증 (4개 중 완료 2개, 진행 1개, 예정 1개)
+const mockHalfTasks = [
+  { taskName: '철거', status: '완료' },
+  { taskName: '설비', status: '완료' },
+  { taskName: '목공', status: '진행중' },
+  { taskName: '타일', status: '예정' }
+];
+assertTest('진척률 계산 시뮬레이션: 유효 4개 중 완료 2개일 때 progressRate === 50 검증',
+  calculateSiteProgressRateSim(mockHalfTasks) === 50
+);
+
+// 43-5: 취소 공정 분모 제외 정밀 계산 검증 (총 5개 중 취소 1개, 완료 2개, 예정 2개 -> 유효 4개 중 완료 2개 = 50%)
+const mockCancelTasks = [
+  { taskName: '철거', status: '완료' },
+  { taskName: '설비', status: '완료' },
+  { taskName: '샷시', status: '취소' }, // 취소는 모수에서 제외!
+  { taskName: '목공', status: '예정' },
+  { taskName: '타일', status: '예정' }
+];
+assertTest('진척률 계산 시뮬레이션: 취소 공정(샷시) 모수 제외 후 유효 4개 중 완료 2개로 정확히 50% 계산 검증',
+  calculateSiteProgressRateSim(mockCancelTasks) === 50
+);
+
+// 43-6: 공정이 0개이거나 모두 취소된 경우 방어 (0% 반환)
+const mockAllCancelTasks = [
+  { taskName: '철거', status: '취소' },
+  { taskName: '설비', status: '취소' }
+];
+assertTest('진척률 계산 시뮬레이션: 전 공정 취소 시 NaN/Infinity 방어 및 0% 반환 검증',
+  calculateSiteProgressRateSim(mockAllCancelTasks) === 0 &&
+  calculateSiteProgressRateSim([]) === 0
+);
+
+// 43-7: buildSidebarDashboardHtml CSS 내 진척률 클래스 탑재 검증
+const step43Html = sandbox.buildSidebarDashboardHtml('mobile');
+const s43Start = step43Html.indexOf('<script>');
+const s43End = step43Html.lastIndexOf('</script>');
+const step43Script = step43Html.slice(s43Start + 8, s43End);
+
+assertTest('buildSidebarDashboardHtml: .site-progress-badge, .site-progress-track, .site-progress-bar, .site-summary-box CSS 탑재 검증',
+  step43Html.indexOf('.site-progress-badge') !== -1 &&
+  step43Html.indexOf('.site-progress-track') !== -1 &&
+  step43Html.indexOf('.site-progress-bar') !== -1 &&
+  step43Html.indexOf('.site-summary-box') !== -1 &&
+  step43Html.indexOf('.site-summary-rate') !== -1
+);
+
+// 43-8: renderList 내 진척률 뱃지, 게이지 바, 요약 박스 렌더링 로직 검증
+assertTest('buildSidebarDashboardHtml: renderList 내 pRate 뱃지, 미니 게이지 바, 서머리 박스 렌더링 검증',
+  step43Script.indexOf('site-progress-badge') !== -1 &&
+  step43Script.indexOf('site-progress-track') !== -1 &&
+  step43Script.indexOf('site-progress-bar') !== -1 &&
+  step43Script.indexOf('site-summary-box') !== -1
+);
+
+// 43-9: renderWeeklyCalendar 내 주간 알약 진척률 태그 탑재 검증
+assertTest('buildSidebarDashboardHtml: renderWeeklyCalendar 내 현장 알약 진척률 태그(pRateTag) 탑재 검증',
+  step43Script.indexOf('const pRateTag = (typeof site.progressRate === "number") ? " " + site.progressRate + "%" : "";') !== -1
+);
+
+// 43-10: 클라이언트 JS 구문 무결성(SyntaxError 0) 검증
+let clientSyntaxOk43 = false;
+try {
+  new vm.Script(step43Script);
+  clientSyntaxOk43 = true;
+} catch (err) {
+  console.error('Step 43 클라이언트 JS 구문 에러:', err);
+}
+assertTest('buildSidebarDashboardHtml: 진척률 기능 탑재 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk43);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
