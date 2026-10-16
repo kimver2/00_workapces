@@ -7671,10 +7671,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '.content { padding: 12px; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; }';
   html += '.site-card:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.06); }';
-  html += '.site-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; cursor: pointer; user-select: none; background: #ffffff; border-left: 4px solid #2563eb; gap: 8px; }';
+  html += '.site-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 10px 12px; cursor: pointer; user-select: none; background: #ffffff; border-left: 4px solid #2563eb; gap: 8px; }';
   html += '.site-header:hover { background: #f8fafc; }';
-  html += '.site-title-area { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; min-width: 0; }';
-  html += '.site-name { font-weight: 700; font-size: 13.5px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; min-width: 0; }';
+  html += '.site-check { margin-top: 3px; flex-shrink: 0; cursor: pointer; }';
+  html += '.site-title-area { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 4px; }';
+  html += '.site-name-row { display: flex; align-items: center; width: 100%; min-width: 0; }';
+  html += '.site-name { font-weight: 700; font-size: 13.5px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; letter-spacing: -0.2px; }';
+  html += '.site-badges-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }';
   html += '.share-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 4px; line-height: 1.2; white-space: nowrap; }';
   html += '.share-tag.share-on { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }';
   html += '.share-tag.share-off { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }';
@@ -7787,7 +7790,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="title" id="pageTitle">' + (isMobile ? '📱 우성아이디 현장 대시보드' : '🏗️ 우성아이디 현장 대시보드') + '</div>';
   html += '    <div style="display:flex;align-items:center;gap:5px;">';
   if (!isModal && !isMobile) {
-    html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 8px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:3px;" onclick="openWideModalView()" title="대시보드를 넓은 대형 팝업 창(1020px)으로 엽니다">⛶ 크게 보기</button>';
+    html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 8px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:3px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #93c5fd;" onclick="openWideModalView()" title="대시보드를 넓은 대형 팝업 창(1020px)으로 엽니다">⛶ 크게 보기</button>';
   }
   html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
   html += '    </div>';
@@ -8877,18 +8880,20 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const validTotal = site.validTasksCount || site.totalTasksCount || site.tasks.length;';
   html += '    const compTotal = site.completedTasksCount || 0;';
   html += '    html += \'    <div class="site-title-area">\';';
-  html += '    html += \'      <span class="site-name">\' + escapeHtml(site.siteName) + \'</span>\';';
-  html += '    html += \'      <span class="site-progress-badge \' + rateClass + \'">\' + pRate + \'%</span>\';';
+  html += '    html += \'      <div class="site-name-row"><span class="site-name" title="\' + escapeHtml(site.siteName) + \'">\' + escapeHtml(site.siteName) + \'</span></div>\';';
+  html += '    html += \'      <div class="site-badges-row">\';';
+  html += '    html += \'        <span class="site-progress-badge \' + rateClass + \'">\' + pRate + \'%</span>\';';
   html += '    if (site.isAllCompleted) {';
-  html += '      html += \'      <span class="site-badge" style="background:#dcfce7;color:#166534;">완료 \' + compTotal + \'/\' + validTotal + \'</span>\';';
+  html += '      html += \'        <span class="site-badge" style="background:#dcfce7;color:#166534;">완료 \' + compTotal + \'/\' + validTotal + \'</span>\';';
   html += '    } else {';
-  html += '      html += \'      <span class="site-badge">\' + compTotal + \'/\' + validTotal + \'건</span>\';';
+  html += '      html += \'        <span class="site-badge">\' + compTotal + \'/\' + validTotal + \'건</span>\';';
   html += '      if (site.delayedTasksCount > 0) {';
-  html += '        html += \'      <span class="site-delay-mini-badge">⚠️ \' + site.delayedTasksCount + \'</span>\';';
+  html += '        html += \'        <span class="site-delay-mini-badge">⚠️ \' + site.delayedTasksCount + \'</span>\';';
   html += '      }';
   html += '    }';
+  html += '    html += \'      </div>\';';
   html += '    html += \'    </div>\';';
-  html += '    html += \'    <span class="site-toggle">▼</span>\';';
+  html += '    html += \'    <span class="site-toggle" style="margin-top:3px;">▼</span>\';';
   html += '    html += \'  </div>\';';
   html += '    const barColor = site.isAllCompleted ? "#10b981" : ((site.delayedTasksCount > 0) ? "#f59e0b" : (site.colorHex || "#2563eb"));';
   html += '    html += \'  <div class="site-progress-track" title="공정 진척률: \' + pRate + \'%"><div class="site-progress-bar" style="width:\' + pRate + \'%;background:\' + barColor + \';"></div></div>\';';
