@@ -2741,8 +2741,15 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       if (details.isDelayed) {
         sheet.getRange(row, 1, 1, 8).setBackground("#fff1f2");
       } else {
-        var curBg = sheet.getRange(row, 1).getBackground();
-        if (curBg && (curBg === "#fff1f2" || curBg === "#fee2e2" || (curBg !== "#ffffff" && curBg !== "#FFFFFF"))) {
+        var rowBgs = sheet.getRange(row, 1, 1, 8).getBackgrounds()[0];
+        var needWhiteFix = false;
+        for (var rc = 0; rc < 8; rc++) {
+          if (rowBgs[rc] && rowBgs[rc] !== "#ffffff" && rowBgs[rc] !== "#FFFFFF") {
+            needWhiteFix = true;
+            break;
+          }
+        }
+        if (needWhiteFix) {
           sheet.getRange(row, 1, 1, 8).setBackground("#ffffff");
         }
       }
@@ -5248,28 +5255,27 @@ function cleanNonDelayedRowBackgroundsSilent(targetSheet) {
     var status = String(values[i][7] || "").trim();
     var statusClean = status.replace(/\s+/g, "");
 
-    // 1) 필수 데이터가 없는 빈 행인 경우: 과거 붉은색 잔여물이 있다면 깨끗하게 흰색으로 청소
+    // 1) 필수 데이터가 없는 빈 행인 경우: 과거 붉은색/비정상 배경색 잔여물이 있다면 깨끗하게 흰색으로 청소
     if (!siteName && !taskName && !dateVal) {
-      var emptyBg = backgrounds[i][0];
-      if (emptyBg && (emptyBg === "#fff1f2" || emptyBg === "#fee2e2" || (emptyBg !== "#ffffff" && emptyBg !== "#FFFFFF"))) {
-        for (var ce = 0; ce < 8; ce++) {
+      for (var ce = 0; ce < 8; ce++) {
+        var eBg = backgrounds[i][ce];
+        if (eBg && eBg !== "#ffffff" && eBg !== "#FFFFFF") {
           backgrounds[i][ce] = "#ffffff";
+          bgChanged = true;
         }
-        bgChanged = true;
       }
       continue;
     }
 
-    // 2) 날짜 파싱
+    // 2) 날짜 파싱 실패 시: 지연 대상이 아니므로 비정상 배경색이 있다면 흰색 복구
     var parsed = parseScheduleDateRange(dateVal);
     if (!parsed) {
-      // 날짜가 없거나 유효하지 않은 경우 지연 대상이 아니므로 잔여 붉은색이 있다면 흰색 복구
-      var unparsedBg = backgrounds[i][0];
-      if (unparsedBg && (unparsedBg === "#fff1f2" || unparsedBg === "#fee2e2" || (unparsedBg !== "#ffffff" && unparsedBg !== "#FFFFFF"))) {
-        for (var cu = 0; cu < 8; cu++) {
+      for (var cu = 0; cu < 8; cu++) {
+        var uBg = backgrounds[i][cu];
+        if (uBg && uBg !== "#ffffff" && uBg !== "#FFFFFF") {
           backgrounds[i][cu] = "#ffffff";
+          bgChanged = true;
         }
-        bgChanged = true;
       }
       continue;
     }
@@ -5284,21 +5290,21 @@ function cleanNonDelayedRowBackgroundsSilent(targetSheet) {
         manager: manager,
         status: status
       });
-      // 지연 행 연한 붉은색(#fff1f2) 경고 하이라이트
-      if (backgrounds[i][0] !== "#fff1f2") {
-        for (var c = 0; c < 8; c++) {
+      // 지연 행 연한 붉은색(#fff1f2) 경고 하이라이트 (A~H열 전체 적용)
+      for (var c = 0; c < 8; c++) {
+        if (backgrounds[i][c] !== "#fff1f2") {
           backgrounds[i][c] = "#fff1f2";
+          bgChanged = true;
         }
-        bgChanged = true;
       }
     } else {
-      // 4) 정상/미래/완료 행 복구: 지연이 아닌 모든 정상 행은 흰색(#ffffff)으로 완벽 복구!
-      var currentBg = backgrounds[i][0];
-      if (currentBg && (currentBg === "#fff1f2" || currentBg === "#fee2e2" || (currentBg !== "#ffffff" && currentBg !== "#FFFFFF"))) {
-        for (var c2 = 0; c2 < 8; c2++) {
+      // 4) 정상/미래/완료 행 복구: 지연이 아닌 모든 정상 행은 A~H열 중 흰색이 아닌 셀(수동 칠해짐 포함)을 전부 흰색(#ffffff)으로 완벽 복구!
+      for (var c2 = 0; c2 < 8; c2++) {
+        var curCellBg = backgrounds[i][c2];
+        if (curCellBg && curCellBg !== "#ffffff" && curCellBg !== "#FFFFFF") {
           backgrounds[i][c2] = "#ffffff";
+          bgChanged = true;
         }
-        bgChanged = true;
       }
     }
   }

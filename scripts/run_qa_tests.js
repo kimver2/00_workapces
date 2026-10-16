@@ -2800,19 +2800,21 @@ const mockSheetRows = [
   // [현장명, 날짜, 공종, 협력업체, 공유, 비고, 담당자, 진행상태]
   ['보경102동', '2026.08.10', '철거', '', true, '', '전예린', '완료'],      // 107행: 과거 완료 -> 흰색 복구 대상
   ['보경102동', '2026.10.21', '상담', '', true, '1차 샘플링', '전예린', '예정'], // 109행: 미래 예정 -> 흰색 복구 대상!
+  ['보경102동', '2026.09.22', '창호실측', '', true, '', '전예린', '완료'],   // 111행: A열 흰색, B~F열만 수동 칠해진 행!
   ['보경102동', '2026.10.15', '타일', '', false, '', '전예린', '예정'],       // 121행: 마감 경과(지연) -> 붉은색 유지 대상!
   ['보경102동', '2026.10.20', '타일', '', false, '', '전예린', '예정']        // 122행: 미래 예정 -> 흰색 유지 대상
 ];
 const mockBackgrounds = [
   ['#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2'], // 이전 분홍 잔여물
   ['#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2'], // 이전 분홍 잔여물 (미래 일정인데 분홍색이었음)
+  ['#ffffff', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#ffffff', '#ffffff'], // A열은 흰색, B~F열만 수동 채색된 패턴!
   ['#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2'], // 진짜 지연
   ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']  // 정상 흰색
 ];
 
 let updatedBg = null;
 const mockSheetObj = {
-  getLastRow: () => 5,
+  getLastRow: () => 6,
   getRange: (r, c, nr, nc) => ({
     getValues: () => mockSheetRows,
     getBackgrounds: () => mockBackgrounds,
@@ -2827,8 +2829,11 @@ assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 107행 완료 �
 assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 109행 미래 일정(2026.10.21)이 흰색(#ffffff)으로 자동 복구 검증',
   updatedBg && updatedBg[1][0] === '#ffffff'
 );
+assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: A열은 흰색이고 B~F열만 수동 채색된 111행의 B열 및 F열이 흰색(#ffffff)으로 완벽 복구 검증',
+  updatedBg && updatedBg[2][1] === '#ffffff' && updatedBg[2][4] === '#ffffff' && updatedBg[2][5] === '#ffffff'
+);
 assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 121행 진짜 마감 경과 지연 공정(2026.10.15 예정)은 붉은색(#fff1f2) 유지 검증',
-  updatedBg && updatedBg[2][0] === '#fff1f2'
+  updatedBg && updatedBg[3][0] === '#fff1f2'
 );
 
 // 37-3: onOpen 내 cleanNonDelayedRowBackgroundsSilent 무음 호출 탑재 검증
