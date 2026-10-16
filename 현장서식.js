@@ -411,6 +411,7 @@ function onOpen() {
     .addItem("대시보드 팝업 열기", "openSiteScheduleModal")
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
     .addItem("📅 현장별 날짜 오름차순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
+    .addItem("📦 완료 현장 시트로 이동 (아카이브)", "archiveCompletedSitesMenu")
     .addSeparator()
 
     // [3개 제외 모든 설정 및 보조 기능은 '고급 설정 & 시스템 관리' 하위로 일원화 배치]
@@ -423,6 +424,7 @@ function onOpen() {
 
       // 2. 현장 데이터 편집 / 보기 편의 기능
       .addItem("📅 현장별 날짜 오름차순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
+      .addItem("📦 완료 현장 시트로 이동 (블록 전체 완료 현장 아카이브)", "archiveCompletedSitesMenu")
       .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
       .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
       .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
@@ -937,6 +939,7 @@ function ensureRealtimeTriggerInstalledSilent() {
     var hasPeriodicTrigger = false;
     var hasBriefingTrigger = false;
     var hasHourlySortTrigger = false;
+    var hasDailyArchiveTrigger = false;
 
     for (var i = 0; i < triggers.length; i++) {
       var fn = triggers[i].getHandlerFunction();
@@ -945,6 +948,7 @@ function ensureRealtimeTriggerInstalledSilent() {
       if (fn === "runPeriodicAutoSync" || fn === "runPeriodic1MinSync") hasPeriodicTrigger = true;
       if (fn === "sendDailySiteMorningBriefing") hasBriefingTrigger = true;
       if (fn === "runHourlyAutoSortTrigger") hasHourlySortTrigger = true;
+      if (fn === "runDailyCompletedSitesArchiveTrigger") hasDailyArchiveTrigger = true;
     }
 
     // 1. 시트 셀 수정 감지용 onEdit 트리거 설치
@@ -1000,6 +1004,16 @@ function ensureRealtimeTriggerInstalledSilent() {
         .create();
       Logger.log("⏰ 1시간 주기 현장별 날짜 자동 정렬 트리거 설치 완료");
     }
+
+    // 7. [신규] 1일 1회 완료 현장 블록 자동 이동(아카이브) 트리거 설치 (새벽 3시)
+    if (!hasDailyArchiveTrigger) {
+      ScriptApp.newTrigger("runDailyCompletedSitesArchiveTrigger")
+        .timeBased()
+        .everyDays(1)
+        .atHour(3)
+        .create();
+      Logger.log("📦 1일 1회 완료 현장 자동 이동(아카이브) 트리거 설치 완료");
+    }
   } catch(e) {
     Logger.log("트리거 자동 점검 건너뜀: " + e.toString());
   }
@@ -1012,6 +1026,13 @@ function ensureRealtimeTriggerInstalledSilent() {
 function handleSheetChangeTrigger(e) {
   if (!e || e.changeType !== "REMOVE_ROW") return; // 오직 실제 '행 삭제(REMOVE_ROW)' 시에만 정확히 동작!
   try {
+    var props = PropertiesService.getScriptProperties();
+    // [아카이브 안전 가드]: 완료현장 시트로 데이터 이동 중 발생하는 행 삭제는 캘린더 유령 일정 삭제 트리거 완전 차단!
+    if (props && props.getProperty("IS_ARCHIVING_ACTIVE") === "true") {
+      Logger.log("📦 완료 현장 시트 이동(아카이브) 중 발생한 행 삭제이므로 캘린더 삭제 트리거를 건너뜁니다.");
+      return;
+    }
+
     var ss = e.source || getAppSpreadsheet();
     if (!ss) return;
 
@@ -1123,6 +1144,30 @@ function cleanupOrphanCalendarEventsSilent(sheet, cal) {
       }
     }
 
+    // [완료현장 시트 보존 일정 보호]: 완료현장 시트로 아카이브된 일정 ID도 유효한 ID로 등록하여 캘린더 삭제 절대 방어!
+    try {
+      var ssParent = (sheet && sheet.getParent) ? sheet.getParent() : SpreadsheetApp.getActiveSpreadsheet();
+      var compSheet = findCompletedSitesSheet(ssParent, false);
+      if (compSheet && compSheet.getLastRow() >= 2) {
+        var compVals = compSheet.getRange(2, 1, compSheet.getLastRow() - 1, 10).getValues();
+        for (var cp = 0; cp < compVals.length; cp++) {
+          var cpId = String(compVals[cp][8] || "").trim();
+          if (cpId) {
+            validEventIds[cpId] = -1; // 완료현장 시트에 보관된 정상 일정이므로 절대 삭제 방어!
+          }
+          var cpDate = compVals[cp][1];
+          if (cpDate) {
+            var cpParsed = parseScheduleDateRange(cpDate);
+            if (cpParsed && cpParsed.startDate) {
+              if (!minDate || cpParsed.startDate < minDate) minDate = cpParsed.startDate;
+              var cpEndD = cpParsed.endDate || cpParsed.startDate;
+              if (!maxDate || cpEndD > maxDate) maxDate = cpEndD;
+            }
+          }
+        }
+      }
+    } catch(eComp) {}
+
     // [핵심 해결 1]: 동적 날짜 윈도우 계산 (시트 내 2026년~2027년 일정까지 100% 무조건 포함)
     var now = new Date();
     var defaultPast = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
@@ -1154,6 +1199,9 @@ function cleanupOrphanCalendarEventsSilent(sheet, cal) {
       if (!isSystemSiteScheduleEvent(ev)) continue; // 개인 일정 절대 보호
 
       var matchedRowNum = validEventIds[evId];
+      if (matchedRowNum === -1) {
+        continue; // 완료현장 시트에 보관된 정상 일정이므로 통과 (캘린더 절대 삭제 방어!)
+      }
       if (matchedRowNum && values && values[matchedRowNum - 2]) {
         // 시트 matchedRowNum 행과 ID가 매칭된 경우: 날짜 불일치(어긋난 일정) 자율 위치 치유
         var sRowVals = values[matchedRowNum - 2];
@@ -3630,6 +3678,29 @@ function cleanupDuplicateAndOrphanCalendarEvents() {
     }
   }
 
+  // [완료현장 시트 보존 일정 보호]: 완료현장 시트로 아카이브된 일정 ID도 유효한 ID로 등록하여 절대 캘린더에서 삭제되지 않도록 방어!
+  try {
+    var compSheet = findCompletedSitesSheet(ss, false);
+    if (compSheet && compSheet.getLastRow() >= 2) {
+      var compVals = compSheet.getRange(2, 1, compSheet.getLastRow() - 1, 10).getValues();
+      for (var cp = 0; cp < compVals.length; cp++) {
+        var cpId = String(compVals[cp][8] || "").trim();
+        if (cpId) {
+          validEventIds[cpId] = -1; // 완료현장 시트에 보관된 정상 일정이므로 절대 삭제 방어!
+        }
+        var cpDate = compVals[cp][1];
+        if (cpDate) {
+          var cpParsed = parseScheduleDateRange(cpDate);
+          if (cpParsed && cpParsed.startDate) {
+            if (!minDate || cpParsed.startDate < minDate) minDate = cpParsed.startDate;
+            var cpEndD = cpParsed.endDate || cpParsed.startDate;
+            if (!maxDate || cpEndD > maxDate) maxDate = cpEndD;
+          }
+        }
+      }
+    }
+  } catch(eComp) {}
+
   // [핵심 해결 1]: 동적 날짜 윈도우 계산 (시트 내 2026년~2027년 일정까지 100% 무조건 포함)
   var now = new Date();
   var defaultPast = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
@@ -3684,6 +3755,9 @@ function cleanupDuplicateAndOrphanCalendarEvents() {
     }
 
     var matchedRowNum = validEventIds[evId];
+    if (matchedRowNum === -1) {
+      continue; // 완료현장 시트에 보관된 정상 일정이므로 통과 (캘린더 절대 삭제 방어!)
+    }
     if (matchedRowNum && values && values[matchedRowNum - 2]) {
       // 시트 matchedRowNum 행과 ID가 매칭된 경우: 날짜 불일치(어긋난 일정) 자율 위치 치유
       var sRowVals = values[matchedRowNum - 2];
@@ -4702,11 +4776,12 @@ function hasDayOfWeekHeader(sheet) {
  */
 function isSiteScheduleSheet(sheet) {
   if (!sheet) return false;
-  // 사용가이드/매뉴얼/구성원 시트는 절대 현장데이터 시트가 아님!
+  // 사용가이드/매뉴얼/구성원/완료현장 시트는 절대 진행중 현장데이터 시트가 아님!
   var name = sheet.getName().toLowerCase();
   if (name.indexOf("가이드") !== -1 || name.indexOf("guide") !== -1 || name.indexOf("매뉴얼") !== -1 || name.indexOf("manual") !== -1 ||
       name.indexOf("구성원") !== -1 || name.indexOf("팀원") !== -1 || name.indexOf("직원") !== -1 || name.indexOf("조직도") !== -1 ||
-      name.indexOf("member") !== -1 || name.indexOf("team") !== -1) {
+      name.indexOf("member") !== -1 || name.indexOf("team") !== -1 ||
+      name.indexOf("완료") !== -1 || name.indexOf("archive") !== -1) {
     return false;
   }
   // 요일 헤더('일, 월, 화...')가 있는 시트는 대시보드이므로 절대 현장데이터 시트가 아님!
@@ -4788,13 +4863,14 @@ function findSiteScheduleSheet(ss) {
     if (isSiteScheduleSheet(sheets[i])) return sheets[i];
   }
 
-  // 2순위: 대시보드나 가이드/구성원이 아닌 시트 중 첫 번째
+  // 2순위: 대시보드나 가이드/구성원/완료현장이 아닌 시트 중 첫 번째
   var dash = findDashboardSheet(ss);
   for (var k = 0; k < sheets.length; k++) {
     var sName = sheets[k].getName().toLowerCase();
     if (sName.indexOf("가이드") === -1 && sName.indexOf("guide") === -1 && sName.indexOf("매뉴얼") === -1 && sName.indexOf("manual") === -1 &&
         sName.indexOf("구성원") === -1 && sName.indexOf("팀원") === -1 && sName.indexOf("직원") === -1 && sName.indexOf("조직도") === -1 &&
-        sName.indexOf("member") === -1 && sName.indexOf("team") === -1) {
+        sName.indexOf("member") === -1 && sName.indexOf("team") === -1 &&
+        sName.indexOf("완료") === -1 && sName.indexOf("archive") === -1) {
       if (!dash || sheets[k].getSheetId() !== dash.getSheetId()) {
         if (!hasDayOfWeekHeader(sheets[k])) {
           return sheets[k];
@@ -4804,6 +4880,62 @@ function findSiteScheduleSheet(ss) {
   }
 
   return sheets.length > 1 ? sheets[1] : sheets[0];
+}
+
+/**
+ * [신규] 완료 현장 아카이브 시트('완료현장') 탐색 및 자동 생성 헬퍼
+ * - 현장데이터 시트와 완전히 동일한 10개 열(A~J열) 구조 및 헤더 서식 적용
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss] 스프레드시트 객체
+ * @param {boolean} [createIfMissing=false] 시트가 없을 때 신규 생성할지 여부
+ * @return {GoogleAppsScript.Spreadsheet.Sheet|null}
+ */
+function findCompletedSitesSheet(ss, createIfMissing) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
+
+  var sheet = ss.getSheetByName("완료현장");
+  if (!sheet) {
+    var sheets = ss.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      var n = sheets[i].getName();
+      if (n === "완료현장" || n === "완료_현장" || n === "완료현장데이터") {
+        return sheets[i];
+      }
+    }
+  }
+
+  if (sheet) return sheet;
+  if (!createIfMissing) return null;
+
+  // 신규 생성
+  var newSheet = ss.insertSheet("완료현장");
+  var headers = [["현장명", "날짜", "공종", "협력업체", "공유", "비고", "담당자", "진행상태", "캘린더ID", "최종수정일시"]];
+  var headerRange = newSheet.getRange(1, 1, 1, 10);
+  headerRange.setValues(headers)
+    .setBackground("#1e293b")
+    .setFontColor("#ffffff")
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  newSheet.setRowHeight(1, 36);
+  newSheet.setFrozenRows(1);
+
+  // 현장데이터 시트와 동일한 열 너비 복사 적용
+  var srcSheet = findSiteScheduleSheet(ss);
+  if (srcSheet) {
+    for (var c = 1; c <= 10; c++) {
+      try {
+        newSheet.setColumnWidth(c, srcSheet.getColumnWidth(c));
+      } catch(eW) {}
+    }
+    // 9, 10열(캘린더ID, 타임스탬프) 숨김 처리 (현장데이터 시트와 동일하게)
+    try {
+      newSheet.hideColumns(9, 2);
+    } catch(eH) {}
+  }
+
+  return newSheet;
 }
 
 
@@ -5016,6 +5148,236 @@ function removeAuditColumnsKtoN() {
   } else {
     ss.toast("이미 K~N열이 삭제되어 A~J열(10열) 체제로 깔끔하게 정돈되어 있습니다.", "확인 완료", 3);
   }
+}
+
+/**
+ * [상단 메뉴 전용] 완료 현장 블록을 '완료현장' 시트로 즉시 이동 (수동 실행)
+ */
+function archiveCompletedSitesMenu() {
+  archiveCompletedSiteBlocks(true);
+}
+
+/**
+ * [1일 1회 트리거 전용] 매일 새벽 완료 현장 블록 무음 자동 이동 (스케줄 트리거)
+ */
+function runDailyCompletedSitesArchiveTrigger() {
+  archiveCompletedSiteBlocks(false);
+}
+
+/**
+ * [신규] 완료 현장 블록 자동 아카이브 엔진
+ * - 현장데이터 시트에서 블록 단위로 모든 공정이 완료(또는 취소)된 현장을 감지
+ * - '완료현장' 시트로 데이터를 이동(복사 후 안전 삭제)
+ * - 캘린더 일정은 100% 영구 보존 (유령 일정 삭제 방어 연동)
+ *
+ * @param {boolean} [isManual=false] 사용자가 메뉴에서 직접 실행했는지 여부
+ * @return {object} { movedSitesCount, movedRowsCount, siteNames }
+ */
+function archiveCompletedSiteBlocks(isManual) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { movedSitesCount: 0, movedRowsCount: 0, siteNames: [] };
+
+  var srcSheet = findSiteScheduleSheet(ss);
+  if (!srcSheet) {
+    if (isManual) SpreadsheetApp.getUi().alert("현장데이터 시트를 찾을 수 없습니다.");
+    return { movedSitesCount: 0, movedRowsCount: 0, siteNames: [] };
+  }
+
+  var lastRow = srcSheet.getLastRow();
+  if (lastRow < 2) {
+    if (isManual) SpreadsheetApp.getUi().alert("ℹ️ 현장데이터 시트에 이동할 데이터가 없습니다.");
+    return { movedSitesCount: 0, movedRowsCount: 0, siteNames: [] };
+  }
+
+  // A~J열(10열) 읽기
+  var values = srcSheet.getRange(2, 1, lastRow - 1, 10).getValues();
+  var backgrounds = srcSheet.getRange(2, 1, lastRow - 1, 10).getBackgrounds();
+  var fontColors = srcSheet.getRange(2, 1, lastRow - 1, 10).getFontColors();
+  var fontWeights = srcSheet.getRange(2, 1, lastRow - 1, 10).getFontWeights();
+  var horizontalAlignments = srcSheet.getRange(2, 1, lastRow - 1, 10).getHorizontalAlignments();
+
+  // 1. 블록 단위 그룹화
+  var blocks = [];
+  var currentBlock = null;
+  var lastKnownSite = "";
+
+  for (var i = 0; i < values.length; i++) {
+    var rowVals = values[i];
+    var rawSite = String(rowVals[0] || "").trim();
+    var taskName = String(rowVals[2] || "").trim();
+    var dateVal = rowVals[1];
+
+    var isEmptyRow = (!rawSite && !taskName && !dateVal);
+    if (isEmptyRow) {
+      if (currentBlock && currentBlock.items.length > 0) {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+      lastKnownSite = "";
+      continue;
+    }
+
+    var effectiveSite = rawSite || lastKnownSite;
+    if (rawSite) lastKnownSite = rawSite;
+
+    if (rawSite && (!currentBlock || currentBlock.siteName !== rawSite)) {
+      if (currentBlock && currentBlock.items.length > 0) {
+        blocks.push(currentBlock);
+      }
+      currentBlock = {
+        siteName: rawSite,
+        startRow: i + 2,
+        items: []
+      };
+    } else if (!currentBlock && effectiveSite) {
+      currentBlock = {
+        siteName: effectiveSite,
+        startRow: i + 2,
+        items: []
+      };
+    }
+
+    if (currentBlock) {
+      currentBlock.items.push({
+        rowIndex: i + 2,
+        vals: rowVals,
+        bg: backgrounds[i],
+        fontColor: fontColors[i],
+        fontWeight: fontWeights[i],
+        align: horizontalAlignments[i]
+      });
+    }
+  }
+
+  if (currentBlock && currentBlock.items.length > 0) {
+    blocks.push(currentBlock);
+  }
+
+  // 2. 전체 완료된 블록 판별 (블록 내 모든 유효 공정이 '완료' 또는 '취소'인 현장만 선별)
+  var completedBlocks = [];
+  for (var b = 0; b < blocks.length; b++) {
+    var blk = blocks[b];
+    var validTasksCount = 0;
+    var isAllDone = true;
+
+    for (var k = 0; k < blk.items.length; k++) {
+      var itemVals = blk.items[k].vals;
+      var tName = String(itemVals[2] || "").trim();
+      var dVal = itemVals[1];
+      if (!tName && !dVal) continue; // 빈 행 스킵
+
+      validTasksCount++;
+      var st = String(itemVals[7] || "").replace(/\s+/g, "");
+      // 완료 또는 취소만 완료로 인정! (예정, 진행, 지연 등 미완료 공정이 1개라도 있으면 제외)
+      if (st.indexOf("완료") === -1 && st.indexOf("취소") === -1) {
+        isAllDone = false;
+        break;
+      }
+    }
+
+    if (validTasksCount > 0 && isAllDone) {
+      completedBlocks.push(blk);
+    }
+  }
+
+  if (completedBlocks.length === 0) {
+    if (isManual) {
+      SpreadsheetApp.getUi().alert("ℹ️ 안내", "현재 모든 공정이 완료(또는 취소)된 현장 블록이 없습니다.\n(진행 중이거나 예정된 공정이 1개라도 있는 현장은 이동되지 않습니다.)", SpreadsheetApp.getUi().ButtonSet.OK);
+    }
+    return { movedSitesCount: 0, movedRowsCount: 0, siteNames: [] };
+  }
+
+  // 3. 완료현장 시트 준비 및 이동 실행
+  var destSheet = findCompletedSitesSheet(ss, true);
+  var movedSitesCount = completedBlocks.length;
+  var movedRowsCount = 0;
+  var movedSiteNames = [];
+
+  var allRowsToAppend = [];
+  var allBgsToAppend = [];
+  var allFontColorsToAppend = [];
+  var allFontWeightsToAppend = [];
+  var allAlignsToAppend = [];
+
+  for (var cb = 0; cb < completedBlocks.length; cb++) {
+    var cBlk = completedBlocks[cb];
+    movedSiteNames.push(cBlk.siteName);
+    for (var ci = 0; ci < cBlk.items.length; ci++) {
+      var it = cBlk.items[ci];
+      // A열 현장명 보장 (아코디언 형태였더라도 완료현장 시트에서는 명확히 표시)
+      it.vals[0] = it.vals[0] || cBlk.siteName;
+      allRowsToAppend.push(it.vals);
+      allBgsToAppend.push(it.bg);
+      allFontColorsToAppend.push(it.fontColor);
+      allFontWeightsToAppend.push(it.fontWeight);
+      allAlignsToAppend.push(it.align);
+      movedRowsCount++;
+    }
+  }
+
+  // [트리거 방어 가드]: 행 삭제 중 캘린더 일정 삭제 트리거 방지 플래그 설정
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty("IS_ARCHIVING_ACTIVE", "true");
+
+  try {
+    // 3-1. 완료현장 시트에 데이터 추가 (A~J열 10개 열)
+    var destLastRow = destSheet.getLastRow();
+    var destStartRow = Math.max(2, destLastRow + 1);
+
+    var targetRange = destSheet.getRange(destStartRow, 1, allRowsToAppend.length, 10);
+    targetRange.setValues(allRowsToAppend);
+    try {
+      targetRange.setBackgrounds(allBgsToAppend);
+      targetRange.setFontColors(allFontColorsToAppend);
+      targetRange.setFontWeights(allFontWeightsToAppend);
+      targetRange.setHorizontalAlignments(allAlignsToAppend);
+      targetRange.setVerticalAlignment("middle");
+      targetRange.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+    } catch(eStyle) {}
+
+    // E열 체크박스 서식 적용
+    try {
+      destSheet.getRange(destStartRow, 5, allRowsToAppend.length, 1).insertCheckboxes();
+    } catch(eChk) {}
+
+    // 3-2. 현장데이터 시트에서 완료된 블록 행들 삭제 (역순 삭제로 행 번호 밀림 방지!)
+    completedBlocks.sort(function(a, b) {
+      return b.startRow - a.startRow;
+    });
+
+    for (var d = 0; d < completedBlocks.length; d++) {
+      var dBlk = completedBlocks[d];
+      var delStart = dBlk.startRow;
+      var delCount = dBlk.items.length;
+      srcSheet.deleteRows(delStart, delCount);
+    }
+
+    SpreadsheetApp.flush();
+
+    // 3-3. 대시보드 달력 즉시 새로고침
+    try {
+      refreshDashboardCalendar(ss);
+    } catch(eDash) {}
+
+  } finally {
+    props.deleteProperty("IS_ARCHIVING_ACTIVE");
+  }
+
+  Logger.log("📦 완료 현장 아카이브 완료: " + movedSitesCount + "개 현장 (" + movedRowsCount + "개 공정) 이동됨");
+
+  if (isManual) {
+    var msg = "총 " + movedSitesCount + "개 현장 (" + movedRowsCount + "개 공정)이 [완료현장] 시트로 안전하게 이동되었습니다!\n\n" +
+              "• 이동된 현장: " + movedSiteNames.join(", ") + "\n\n" +
+              "🛡️ [구글 캘린더 100% 보존]: 완료현장으로 이동된 모든 일정은 구글 캘린더에서 삭제되지 않고 안전하게 보존됩니다.";
+    SpreadsheetApp.getUi().alert("📦 완료 현장 시트 이동 완료", msg, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+
+  return {
+    movedSitesCount: movedSitesCount,
+    movedRowsCount: movedRowsCount,
+    siteNames: movedSiteNames
+  };
 }
 
 
@@ -6806,6 +7168,68 @@ function getSidebarDashboardData() {
         hasCal: !!calId
       });
     }
+
+    // [완료현장 시트의 아카이브된 완료 현장들도 대시보드 완료 탭에서 확인 가능하도록 로드]
+    try {
+      var compSheet = findCompletedSitesSheet(ss, false);
+      if (compSheet && compSheet.getLastRow() >= 2) {
+        var compData = compSheet.getRange(2, 1, compSheet.getLastRow() - 1, 10).getValues();
+        var compLastKnownSite = "";
+        for (var ci = 0; ci < compData.length; ci++) {
+          var cRowVals = compData[ci];
+          var cRawSite = String(cRowVals[0] || "").trim();
+          if (cRawSite) compLastKnownSite = cRawSite;
+          var cSiteName = cRawSite || compLastKnownSite;
+          var cDateVal = cRowVals[1];
+          var cTaskName = String(cRowVals[2] || "").trim();
+
+          if (!cSiteName || !cDateVal || !cTaskName) continue;
+
+          var cPartner = String(cRowVals[3] || "").trim();
+          var cIsShared = (cRowVals[4] === true || String(cRowVals[4]).toUpperCase() === "TRUE");
+          var cMemo = String(cRowVals[5] || "").trim();
+          var cManager = String(cRowVals[6] || "").trim();
+          var cStatus = String(cRowVals[7] || "완료").trim();
+          var cCalId = String(cRowVals[8] || "").trim();
+
+          var cParsed = null;
+          try { cParsed = parseScheduleDateRange(cDateVal); } catch(eP) {}
+          var cDateDisplay = "";
+          try { cDateDisplay = formatScheduleDateDisplay(cDateVal); } catch(eD) { cDateDisplay = String(cDateVal || ""); }
+          var cDateMs = (cParsed && cParsed.startDate) ? cParsed.startDate.getTime() : 0;
+
+          if (!sitesMap[cSiteName]) {
+            var cColorCode = "9";
+            try { cColorCode = getCalendarColorForSite(cSiteName, compSheet); } catch(eC) {}
+            sitesMap[cSiteName] = {
+              siteName: cSiteName,
+              colorCode: cColorCode,
+              colorHex: getHexColorForCalendarCode(cColorCode),
+              tasks: [],
+              isArchived: true,
+              initialOrder: siteOrder.length
+            };
+            siteOrder.push(cSiteName);
+          }
+
+          sitesMap[cSiteName].tasks.push({
+            row: ci + 2,
+            taskName: cTaskName,
+            dateDisplay: cDateDisplay,
+            dateMs: cDateMs,
+            partner: cPartner,
+            manager: cManager,
+            status: cStatus,
+            isShared: cIsShared,
+            memo: cMemo,
+            isToday: false,
+            isDelayed: false,
+            hasCal: !!cCalId,
+            isArchived: true
+          });
+        }
+      }
+    } catch(eCompDash) {}
 
     var sitesList = [];
     var activeSitesCount = 0;

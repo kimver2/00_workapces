@@ -4282,6 +4282,204 @@ assertTest('런타임 시뮬레이션: 올바른 날짜의 정상 일정 ID(corr
   sheetValsRecorded52['2,9'] === 'correct-on-date-id-1025'
 );
 
+// ========================================================
+// 53. [블록 단위 전체 완료 현장 '완료현장' 시트 이동(아카이브) 및 캘린더 100% 보존 QA]
+// ========================================================
+console.log('\n📦 [Step 53: 완료 현장 블록 아카이브 & 구글 캘린더 100% 영구 보존 QA]');
+
+// 53-1: 함수 탑재 검증
+assertTest('findCompletedSitesSheet: 함수 정의 및 로드 검증', typeof sandbox.findCompletedSitesSheet === 'function');
+assertTest('archiveCompletedSiteBlocks: 함수 정의 및 로드 검증', typeof sandbox.archiveCompletedSiteBlocks === 'function');
+assertTest('archiveCompletedSitesMenu: 함수 정의 및 로드 검증', typeof sandbox.archiveCompletedSitesMenu === 'function');
+assertTest('runDailyCompletedSitesArchiveTrigger: 함수 정의 및 로드 검증', typeof sandbox.runDailyCompletedSitesArchiveTrigger === 'function');
+
+// 53-2: isSiteScheduleSheet 내 "완료" 시트 배제 검증
+const mockCompletedSheet = {
+  getName: () => '완료현장',
+  getLastRow: () => 10,
+  getLastColumn: () => 10,
+  getRange: () => ({ getValues: () => [['현장명', '날짜', '공종']] })
+};
+assertTest('isSiteScheduleSheet: "완료현장" 시트는 진행중 현장데이터 시트에서 완전 배제(false) 검증',
+  sandbox.isSiteScheduleSheet(mockCompletedSheet) === false
+);
+
+// 53-3: onOpen 상단 메뉴 및 고급 설정 내 아카이브 항목 탑재 검증
+const onOpenCode53 = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
+assertTest('onOpen: 상단 메인 메뉴 내 "완료 현장 시트로 이동 (아카이브)" 탑재 검증',
+  onOpenCode53.indexOf('📦 완료 현장 시트로 이동 (아카이브)') !== -1 &&
+  onOpenCode53.indexOf('archiveCompletedSitesMenu') !== -1
+);
+assertTest('onOpen: 고급 설정 서브메뉴 내 아카이브 항목 탑재 검증',
+  onOpenCode53.indexOf('📦 완료 현장 시트로 이동 (블록 전체 완료 현장 아카이브)') !== -1
+);
+
+// 53-4: 1일 1회 자동 이동 트리거 (runDailyCompletedSitesArchiveTrigger atHour(3)) 탑재 검증
+const triggerCode53 = code.slice(code.indexOf('function ensureRealtimeTriggerInstalledSilent('), code.indexOf('function handleSheetChangeTrigger('));
+assertTest('ensureRealtimeTriggerInstalledSilent: 1일 1회 새벽 3시 완료현장 아카이브 트리거(atHour(3)) 설치 검증',
+  triggerCode53.indexOf('runDailyCompletedSitesArchiveTrigger') !== -1 &&
+  triggerCode53.indexOf('atHour(3)') !== -1
+);
+
+// 53-5: 아카이브 도중 행 삭제 시 캘린더 삭제 트리거 방어 가드 검증
+const changeCode53 = code.slice(code.indexOf('function handleSheetChangeTrigger('), code.indexOf('function cleanupOrphanCalendarEventsSilent('));
+assertTest('handleSheetChangeTrigger: IS_ARCHIVING_ACTIVE 플래그 시 캘린더 삭제 스킵 가드 검증',
+  changeCode53.indexOf('IS_ARCHIVING_ACTIVE') !== -1 &&
+  changeCode53.indexOf('캘린더 삭제 트리거를 건너뜁니다') !== -1
+);
+
+// 53-6: cleanupOrphanCalendarEventsSilent & cleanupDuplicateAndOrphanCalendarEvents 캘린더 보존 검증
+const silentCode53 = code.slice(code.indexOf('function cleanupOrphanCalendarEventsSilent('), code.indexOf('function runPeriodicAutoSync('));
+assertTest('cleanupOrphanCalendarEventsSilent: 완료현장 시트 ID validEventIds[cpId] = -1 보호 탑재 검증',
+  silentCode53.indexOf('findCompletedSitesSheet') !== -1 &&
+  silentCode53.indexOf('validEventIds[cpId] = -1') !== -1 &&
+  silentCode53.indexOf('matchedRowNum === -1') !== -1
+);
+
+const manualCode53 = code.slice(code.indexOf('function cleanupDuplicateAndOrphanCalendarEvents('), code.indexOf('function cleanupDuplicateCalendarEventsSilent('));
+assertTest('cleanupDuplicateAndOrphanCalendarEvents: 완료현장 시트 ID 캘린더 삭제 절대 방어 탑재 검증',
+  manualCode53.indexOf('findCompletedSitesSheet') !== -1 &&
+  manualCode53.indexOf('validEventIds[cpId] = -1') !== -1 &&
+  manualCode53.indexOf('matchedRowNum === -1') !== -1
+);
+
+// 53-7: 런타임 시뮬레이션
+// 현장 1 (보라매경남 102동): 2개 공정 모두 완료 -> 완료현장으로 이동되어야 함
+// 현장 2 (롯데낙천대 101동): 1개 완료, 1개 예정 -> 이동되면 안 됨
+let appendedToCompleted = [];
+let deletedFromSource = [];
+let scriptPropsMap53 = {};
+
+sandbox.PropertiesService = {
+  getScriptProperties: () => ({
+    getProperty: (k) => scriptPropsMap53[k] || null,
+    setProperty: (k, v) => { scriptPropsMap53[k] = v; },
+    deleteProperty: (k) => { delete scriptPropsMap53[k]; }
+  }),
+  getDocumentProperties: () => ({
+    getProperty: () => null,
+    setProperty: () => {}
+  })
+};
+
+let simSrcData53 = [
+  // 2~3행: 보라매경남 (모두 완료)
+  ['보라매경남 102동 1104호', '2026.07.13', '철거', '이수현 반장님', true, '', '전예린', '완료', 'cal-boramae-01', Date.now()],
+  ['보라매경남 102동 1104호', '2026.07.14', '목공', '박동연 반장님', true, '', '전예린', '완료', 'cal-boramae-02', Date.now()],
+  // 4~5행: 롯데낙천대 (1개 완료, 1개 예정)
+  ['롯데낙천대 101동 505호', '2026.06.19', '신고', '우성', true, '', '송지은', '완료', 'cal-lotte-01', Date.now()],
+  ['롯데낙천대 101동 505호', '2026.11.26', '신고', '우성', true, '', '송지은', '예정', 'cal-lotte-02', Date.now()]
+];
+
+const mockSrcSheet53 = {
+  getName: () => '현장서식',
+  getSheetId: () => 101,
+  getLastRow: () => simSrcData53.length + 1,
+  getLastColumn: () => 10,
+  getParent: () => mockSs53,
+  getRange: (r, c, nr, nc) => {
+    if (r === 1 && nr === 1) {
+      return {
+        getValues: () => [['현장명', '날짜', '공종', '협력업체', '공유', '비고', '담당자', '진행상태', '캘린더ID', '최종수정일시']]
+      };
+    }
+    return {
+      getValues: () => simSrcData53,
+      getBackgrounds: () => simSrcData53.map(() => Array(10).fill('#ffffff')),
+      getFontColors: () => simSrcData53.map(() => Array(10).fill('#000000')),
+      getFontWeights: () => simSrcData53.map(() => Array(10).fill('normal')),
+      getHorizontalAlignments: () => simSrcData53.map(() => Array(10).fill('center'))
+    };
+  },
+  deleteRows: (startRow, count) => {
+    deletedFromSource.push({ startRow, count });
+    simSrcData53.splice(startRow - 2, count);
+  }
+};
+
+const mockDestSheet53 = {
+  getName: () => '완료현장',
+  getSheetId: () => 102,
+  getLastRow: () => appendedToCompleted.length + 1,
+  getLastColumn: () => 10,
+  getParent: () => mockSs53,
+  getRange: (r, c, nr, nc) => ({
+    setValues: (vals) => { appendedToCompleted.push(...vals); },
+    setBackgrounds: () => {},
+    setFontColors: () => {},
+    setFontWeights: () => {},
+    setHorizontalAlignments: () => {},
+    setVerticalAlignment: () => {},
+    setBorder: () => {},
+    insertCheckboxes: () => {}
+  })
+};
+
+const mockSs53 = {
+  getSheets: () => [mockSrcSheet53, mockDestSheet53],
+  getSheetByName: (n) => (n === '완료현장' ? mockDestSheet53 : (n === '현장서식' ? mockSrcSheet53 : null)),
+  toast: () => {}
+};
+
+sandbox.SpreadsheetApp.getActiveSpreadsheet = () => mockSs53;
+sandbox.getAppSpreadsheet = () => mockSs53;
+sandbox.findSiteScheduleSheet = () => mockSrcSheet53;
+
+const archiveResult = sandbox.archiveCompletedSiteBlocks(false);
+
+assertTest('런타임 시뮬레이션: 완료 현장(보라매경남) 1개 정확 판별 검증',
+  archiveResult.movedSitesCount === 1 && archiveResult.siteNames[0] === '보라매경남 102동 1104호'
+);
+assertTest('런타임 시뮬레이션: 완료 공정 2개 행 완료현장 시트로 이동 검증',
+  archiveResult.movedRowsCount === 2 && appendedToCompleted.length === 2
+);
+assertTest('런타임 시뮬레이션: 미완료 예정 공정이 있는 현장(롯데낙천대)은 시트에 그대로 보존 검증',
+  simSrcData53.length === 2 && simSrcData53[0][0] === '롯데낙천대 101동 505호'
+);
+assertTest('런타임 시뮬레이션: 이동 완료 후 IS_ARCHIVING_ACTIVE 플래그 정상 해제 검증',
+  scriptPropsMap53['IS_ARCHIVING_ACTIVE'] === undefined
+);
+
+// 캘린더 유령 일정 청소 시 완료현장 시트로 이동된 일정이 절대 삭제되지 않는지 검증
+let deletedCalEvents53 = [];
+const mockCal53 = {
+  getEvents: () => [
+    {
+      getId: () => 'cal-boramae-01', // 완료현장 시트로 이동된 일정!
+      getTitle: () => '🟦 [철거] 보라매경남 102동 1104호',
+      getDescription: () => '📌 현장명: 보라매경남 102동 1104호\n🔨 공종: 철거',
+      deleteEvent: function() { deletedCalEvents53.push(this.getId()); }
+    },
+    {
+      getId: () => 'cal-real-orphan-999', // 시트 어디에도 없는 진짜 유령 일정
+      getTitle: () => '🟦 [철거] 삭제된옛날현장',
+      getDescription: () => '📌 현장명: 삭제된옛날현장\n🔨 공종: 철거',
+      deleteEvent: function() { deletedCalEvents53.push(this.getId()); }
+    }
+  ]
+};
+
+const mockDestSheetWithVals53 = {
+  getName: () => '완료현장',
+  getLastRow: () => appendedToCompleted.length + 1,
+  getLastColumn: () => 10,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => appendedToCompleted
+  }),
+  getParent: () => mockSs53
+};
+mockSs53.getSheets = () => [mockSrcSheet53, mockDestSheetWithVals53];
+mockSs53.getSheetByName = (n) => (n === '완료현장' ? mockDestSheetWithVals53 : mockSrcSheet53);
+
+sandbox.cleanupOrphanCalendarEventsSilent(mockSrcSheet53, mockCal53);
+
+assertTest('🛡️ 구글 캘린더 100% 보존 검증: 완료현장으로 이동된 일정(cal-boramae-01)은 캘린더에서 절대 삭제되지 않음',
+  deletedCalEvents53.indexOf('cal-boramae-01') === -1
+);
+assertTest('🛡️ 구글 캘린더 정상 청소 검증: 진짜 유령 일정(cal-real-orphan-999)은 정상 삭제됨',
+  deletedCalEvents53.indexOf('cal-real-orphan-999') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
