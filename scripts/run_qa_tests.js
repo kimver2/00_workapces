@@ -2677,6 +2677,60 @@ assertTest('선택 탭 빈 상태 시뮬레이션: 체크된 현장 0개 시 친
   emptyCheckedHtml.indexOf('☑️ 선택된 현장이 없습니다.') !== -1
 );
 
+// ========================================================
+// 35. [캘린더 오늘 버튼 옆 📷 캡쳐 버튼 & 전체 화면 캡쳐 및 다운로드 모달 QA]
+// ========================================================
+console.log('\n📷 [Step 35: 캘린더 오늘 버튼 옆 📷 캡쳐 버튼 & 전체 화면 캡쳐 및 다운로드 모달 QA]');
+
+const dashHtml35 = sandbox.buildSidebarDashboardHtml('mobile');
+
+// 35-1: head 태그 내 html2canvas CDN 스크립트 포함 검증
+assertTest('buildSidebarDashboardHtml: head 태그 내 html2canvas CDN 라이브러리 스크립트 포함 검증',
+  dashHtml35.indexOf('html2canvas.min.js') !== -1
+);
+
+// 35-2: 오늘 버튼 옆 📷 캡쳐 버튼(#btnCaptureCal) 탑재 검증
+assertTest('buildSidebarDashboardHtml: 오늘 버튼 옆 [📷 캡쳐] 버튼(#btnCaptureCal) 및 onclick="captureCalendarScreen()" 연동 검증',
+  dashHtml35.indexOf('id="btnCaptureCal"') !== -1 &&
+  dashHtml35.indexOf('class="cal-capture-btn"') !== -1 &&
+  dashHtml35.indexOf('onclick="captureCalendarScreen()"') !== -1 &&
+  dashHtml35.indexOf('📷 캡쳐') !== -1
+);
+
+// 35-3: .cal-capture-btn CSS 스타일 정의 검증
+assertTest('buildSidebarDashboardHtml: .cal-capture-btn 버튼 스타일 및 disabled 상태 CSS 탑재 검증',
+  dashHtml35.indexOf('.cal-capture-btn {') !== -1 &&
+  dashHtml35.indexOf('.cal-capture-btn:disabled') !== -1
+);
+
+// 35-4: 캘린더 캡쳐 프리뷰 모달(#captureModal) 및 다운로드 버튼 검증
+assertTest('buildSidebarDashboardHtml: 캘린더 캡쳐 프리뷰 모달(#captureModal), 이미지(#capturePreviewImg), 다운로드 버튼(#btnDownloadCapture) 검증',
+  dashHtml35.indexOf('id="captureModal"') !== -1 &&
+  dashHtml35.indexOf('id="capturePreviewImg"') !== -1 &&
+  dashHtml35.indexOf('id="btnDownloadCapture"') !== -1 &&
+  dashHtml35.indexOf('onclick="closeCaptureModal()"') !== -1
+);
+
+// 35-5: 클라이언트 스크립트에 captureCalendarScreen, showCaptureModal, closeCaptureModal 함수 탑재 검증
+assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 captureCalendarScreen, showCaptureModal, closeCaptureModal 함수 탑재 검증',
+  dashHtml35.indexOf('function captureCalendarScreen()') !== -1 &&
+  dashHtml35.indexOf('function showCaptureModal(dataUrl, filename)') !== -1 &&
+  dashHtml35.indexOf('function closeCaptureModal(e)') !== -1
+);
+
+// 35-6: 캡쳐 로직 추가 후 클라이언트 JS 무결성(SyntaxError 0) 검증
+const scriptMatch35 = dashHtml35.match(/<script>([\s\S]*?)<\/script>/);
+let clientSyntaxOk35 = false;
+if (scriptMatch35 && scriptMatch35[1]) {
+  try {
+    new vm.Script(scriptMatch35[1]);
+    clientSyntaxOk35 = true;
+  } catch (err) {
+    console.error('클라이언트 JS 구문 에러:', err);
+  }
+}
+assertTest('buildSidebarDashboardHtml: 캡쳐 로직 추가 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk35);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
