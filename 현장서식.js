@@ -6024,6 +6024,77 @@ function getHexColorForCalendarCode(code) {
 }
 
 /**
+ * 대한민국 법정 공휴일 맵 반환 ({ "YYYY-MM-DD": "공휴일명" })
+ * - 1순위: 스프레드시트 내 00_Calendar 시트의 X열(날짜)/Y열(명칭) 캐시 데이터
+ * - 2순위: 2024~2027 기본 법정 공휴일 & 대체공휴일 내장 데이터 (오프라인/단독 환경 100% 보장)
+ * @param {Spreadsheet} [ss]
+ * @returns {Object} { [dateStr]: holidayName }
+ */
+function getKoreanHolidaysMap(ss) {
+  var holidayMap = {};
+
+  // 1) 2024~2027 법정공휴일 및 대체공휴일 기본 베이스 데이터
+  var defaultList = [
+    // 2024
+    ["2024-01-01", "신정"], ["2024-02-09", "설날연휴"], ["2024-02-10", "설날"], ["2024-02-11", "설날연휴"], ["2024-02-12", "대체공휴일"],
+    ["2024-03-01", "삼일절"], ["2024-04-10", "총선"], ["2024-05-05", "어린이날"], ["2024-05-06", "대체공휴일"], ["2024-05-15", "부처님오신날"],
+    ["2024-06-06", "현충일"], ["2024-08-15", "광복절"], ["2024-09-16", "추석연휴"], ["2024-09-17", "추석"], ["2024-09-18", "추석연휴"],
+    ["2024-10-03", "개천절"], ["2024-10-09", "한글날"], ["2024-12-25", "성탄절"],
+    // 2025
+    ["2025-01-01", "신정"], ["2025-01-28", "설날연휴"], ["2025-01-29", "설날"], ["2025-01-30", "설날연휴"],
+    ["2025-03-01", "삼일절"], ["2025-03-03", "대체공휴일"], ["2025-05-05", "어린이날"], ["2025-05-06", "대체공휴일"],
+    ["2025-06-06", "현충일"], ["2025-08-15", "광복절"], ["2025-10-03", "개천절"], ["2025-10-05", "추석연휴"],
+    ["2025-10-06", "추석"], ["2025-10-07", "추석연휴"], ["2025-10-08", "대체공휴일"], ["2025-10-09", "한글날"], ["2025-12-25", "성탄절"],
+    // 2026
+    ["2026-01-01", "신정"], ["2026-02-16", "설날연휴"], ["2026-02-17", "설날"], ["2026-02-18", "설날연휴"],
+    ["2026-03-01", "삼일절"], ["2026-03-02", "대체공휴일"], ["2026-05-05", "어린이날"], ["2026-05-24", "부처님오신날"],
+    ["2026-05-25", "대체공휴일"], ["2026-06-03", "지방선거"], ["2026-06-06", "현충일"], ["2026-08-15", "광복절"],
+    ["2026-08-17", "대체공휴일"], ["2026-09-24", "추석연휴"], ["2026-09-25", "추석"], ["2026-09-26", "추석연휴"],
+    ["2026-09-28", "대체공휴일"], ["2026-10-03", "개천절"], ["2026-10-05", "대체공휴일"], ["2026-10-09", "한글날"], ["2026-12-25", "성탄절"],
+    // 2027
+    ["2027-01-01", "신정"], ["2027-02-06", "설날연휴"], ["2027-02-07", "설날"], ["2027-02-08", "설날연휴"], ["2027-02-09", "대체공휴일"],
+    ["2027-03-01", "삼일절"], ["2027-05-05", "어린이날"], ["2027-05-13", "부처님오신날"], ["2027-06-06", "현충일"], ["2027-06-07", "대체공휴일"],
+    ["2027-08-15", "광복절"], ["2027-08-16", "대체공휴일"], ["2027-09-14", "추석연휴"], ["2027-09-15", "추석"], ["2027-09-16", "추석연휴"],
+    ["2027-10-03", "개천절"], ["2027-10-04", "대체공휴일"], ["2027-10-09", "한글날"], ["2027-10-11", "대체공휴일"], ["2027-12-25", "성탄절"]
+  ];
+  for (var i = 0; i < defaultList.length; i++) {
+    holidayMap[defaultList[i][0]] = defaultList[i][1];
+  }
+
+  // 2) 00_Calendar 시트의 X열/Y열 공휴일 캐시가 있다면 최신 데이터로 병합
+  try {
+    if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    if (ss) {
+      var calSheet = ss.getSheetByName("00_Calendar") || ss.getSheetByName("캘린더") || ss.getSheetByName("Calendar");
+      if (calSheet) {
+        var lastR = calSheet.getLastRow();
+        if (lastR >= 1) {
+          var checkRows = Math.min(lastR, 300);
+          var vals = calSheet.getRange(1, 24, checkRows, 2).getValues(); // X열(24), Y열(25)
+          for (var r = 0; r < vals.length; r++) {
+            var rawD = vals[r][0];
+            var name = String(vals[r][1] || "").trim();
+            if (rawD && name) {
+              var dObj = (rawD instanceof Date) ? rawD : new Date(rawD);
+              if (!isNaN(dObj.getTime())) {
+                var y = dObj.getFullYear();
+                var m = dObj.getMonth() + 1;
+                var d = dObj.getDate();
+                var key = y + "-" + (m < 10 ? "0" + m : m) + "-" + (d < 10 ? "0" + d : d);
+                holidayMap[key] = name;
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (eSheet) {}
+
+  return holidayMap;
+}
+
+/**
  * 사이드바/모달 대시보드용 실시간 데이터 집계 API
  */
 function getSidebarDashboardData() {
@@ -6039,6 +6110,7 @@ function getSidebarDashboardData() {
         kpi: { totalSites: 0, activeSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
         todayStr: formatDateYYMMDD(new Date()),
         members: getMemberNames(ss),
+        holidays: getKoreanHolidaysMap(ss),
         sites: []
       };
     }
@@ -6226,6 +6298,7 @@ function getSidebarDashboardData() {
       },
       todayStr: todayYYMMDD,
       members: getMemberNames(ss),
+      holidays: getKoreanHolidaysMap(ss),
       sites: sitesList
     };
   } catch (err) {
@@ -6234,6 +6307,7 @@ function getSidebarDashboardData() {
       kpi: { totalSites: 0, activeSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
       todayStr: formatDateYYMMDD(new Date()),
       members: ["조항만", "송지은", "전예린", "영하"],
+      holidays: getKoreanHolidaysMap(null),
       sites: []
     };
   }
@@ -6329,6 +6403,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '.cal-day-header { display: flex; align-items: center; padding: 1px 2px; font-size: 10.5px; font-weight: 700; color: #334155; }';
   html += '.cal-day-cell.sun .cal-day-header { color: #dc2626; }';
   html += '.cal-day-cell.sat .cal-day-header { color: #2563eb; }';
+  html += '.cal-day-cell.holiday { background: #fff8f8; }';
+  html += '.cal-day-cell.holiday .cal-day-header { color: #dc2626; font-weight: 800; }';
+  html += '.cal-holiday-name { font-size: 8.5px; font-weight: 700; color: #dc2626; margin-left: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 19px); line-height: 1; }';
   html += '.cal-day-num { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; }';
   html += '.cal-day-cell.today .cal-day-num { background: #2563eb; color: #ffffff; font-weight: 800; }';
   html += '.cal-events-list { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; width: 100%; margin-top: 1px; }';
@@ -6570,6 +6647,26 @@ function buildSidebarDashboardHtml(mode) {
   html += 'let curSiteName = "";';
   html += 'let selectedStatus = "예정";';
   html += 'let selectedShare = true;';
+  html += 'const DEFAULT_KOREAN_HOLIDAYS = {';
+  html += '  "2024-01-01":"신정","2024-02-09":"설날연휴","2024-02-10":"설날","2024-02-11":"설날연휴","2024-02-12":"대체공휴일",';
+  html += '  "2024-03-01":"삼일절","2024-04-10":"총선","2024-05-05":"어린이날","2024-05-06":"대체공휴일","2024-05-15":"부처님오신날",';
+  html += '  "2024-06-06":"현충일","2024-08-15":"광복절","2024-09-16":"추석연휴","2024-09-17":"추석","2024-09-18":"추석연휴",';
+  html += '  "2024-10-03":"개천절","2024-10-09":"한글날","2024-12-25":"성탄절",';
+  html += '  "2025-01-01":"신정","2025-01-28":"설날연휴","2025-01-29":"설날","2025-01-30":"설날연휴",';
+  html += '  "2025-03-01":"삼일절","2025-03-03":"대체공휴일","2025-05-05":"어린이날","2025-05-06":"대체공휴일",';
+  html += '  "2025-06-06":"현충일","2025-08-15":"광복절","2025-10-03":"개천절","2025-10-05":"추석연휴",';
+  html += '  "2025-10-06":"추석","2025-10-07":"추석연휴","2025-10-08":"대체공휴일","2025-10-09":"한글날","2025-12-25":"성탄절",';
+  html += '  "2026-01-01":"신정","2026-02-16":"설날연휴","2026-02-17":"설날","2026-02-18":"설날연휴",';
+  html += '  "2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-05":"어린이날","2026-05-24":"부처님오신날",';
+  html += '  "2026-05-25":"대체공휴일","2026-06-03":"지방선거","2026-06-06":"현충일","2026-08-15":"광복절",';
+  html += '  "2026-08-17":"대체공휴일","2026-09-24":"추석연휴","2026-09-25":"추석","2026-09-26":"추석연휴",';
+  html += '  "2026-09-28":"대체공휴일","2026-10-03":"개천절","2026-10-05":"대체공휴일","2026-10-09":"한글날","2026-12-25":"성탄절",';
+  html += '  "2027-01-01":"신정","2027-02-06":"설날연휴","2027-02-07":"설날","2027-02-08":"설날연휴","2027-02-09":"대체공휴일",';
+  html += '  "2027-03-01":"삼일절","2027-05-05":"어린이날","2027-05-13":"부처님오신날","2027-06-06":"현충일","2027-06-07":"대체공휴일",';
+  html += '  "2027-08-15":"광복절","2027-08-16":"대체공휴일","2027-09-14":"추석연휴","2027-09-15":"추석","2027-09-16":"추석연휴",';
+  html += '  "2027-10-03":"개천절","2027-10-04":"대체공휴일","2027-10-09":"한글날","2027-10-11":"대체공휴일","2027-12-25":"성탄절"';
+  html += '};';
+  html += 'let activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS);';
 
   html += 'function showToast(msg) {';
   html += '  const t = document.getElementById("toast");';
@@ -6822,18 +6919,29 @@ function buildSidebarDashboardHtml(mode) {
   html += '  let gridHtml = "";';
   html += '  for (let p = 0; p < firstDay; p++) {';
   html += '    const dayNum = prevMonthTotalDays - firstDay + p + 1;';
-  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + dayNum + \'</span></div></div>\';';
+  html += '    let prevY = calYear;';
+  html += '    let prevM = calMonth - 1;';
+  html += '    if (prevM < 1) { prevM = 12; prevY--; }';
+  html += '    const pStr = prevY + "-" + (prevM < 10 ? "0" + prevM : prevM) + "-" + (dayNum < 10 ? "0" + dayNum : dayNum);';
+  html += '    const pHoliday = (typeof activeHolidays !== "undefined" && activeHolidays[pStr]) ? activeHolidays[pStr] : "";';
+  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + dayNum + \'</span>\' + (pHoliday ? \'<span class="cal-holiday-name">\' + escapeHtml(pHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
   html += '  }';
   html += '  for (let d = 1; d <= totalDays; d++) {';
   html += '    const dStr = calYear + "-" + (calMonth < 10 ? "0" + calMonth : calMonth) + "-" + (d < 10 ? "0" + d : d);';
   html += '    const dayOfWeek = (firstDay + d - 1) % 7;';
+  html += '    const holidayName = (typeof activeHolidays !== "undefined" && activeHolidays[dStr]) ? activeHolidays[dStr] : "";';
   html += '    let dayClass = "cal-day-cell";';
-  html += '    if (dayOfWeek === 0) dayClass += " sun";';
-  html += '    else if (dayOfWeek === 6) dayClass += " sat";';
+  html += '    if (holidayName) {';
+  html += '      dayClass += " holiday sun";';
+  html += '    } else if (dayOfWeek === 0) {';
+  html += '      dayClass += " sun";';
+  html += '    } else if (dayOfWeek === 6) {';
+  html += '      dayClass += " sat";';
+  html += '    }';
   html += '    if (dStr === todayStr) dayClass += " today";';
   html += '    const dayTasks = dayTasksMap[dStr] || [];';
   html += '    gridHtml += \'<div class="\' + dayClass + \'" onclick="onCalDayClick(\\\'\' + dStr + \'\\\')">\';';
-  html += '    gridHtml += \'  <div class="cal-day-header"><span class="cal-day-num">\' + d + \'</span></div>\';';
+  html += '    gridHtml += \'  <div class="cal-day-header"><span class="cal-day-num">\' + d + \'</span>\' + (holidayName ? \'<span class="cal-holiday-name" title="\' + escapeHtml(holidayName) + \'">\' + escapeHtml(holidayName) + \'</span>\' : \'\') + \'</div>\';';
   html += '    gridHtml += \'  <div class="cal-events-list">\';';
   html += '    dayTasks.forEach(item => {';
   html += '      const site = item.site;';
@@ -6869,7 +6977,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const totalCellsSoFar = firstDay + totalDays;';
   html += '  const remainingCells = (totalCellsSoFar % 7 === 0) ? 0 : (7 - (totalCellsSoFar % 7));';
   html += '  for (let n = 1; n <= remainingCells; n++) {';
-  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + n + \'</span></div></div>\';';
+  html += '    let nextY = calYear;';
+  html += '    let nextM = calMonth + 1;';
+  html += '    if (nextM > 12) { nextM = 1; nextY++; }';
+  html += '    const nStr = nextY + "-" + (nextM < 10 ? "0" + nextM : nextM) + "-" + (n < 10 ? "0" + n : n);';
+  html += '    const nHoliday = (typeof activeHolidays !== "undefined" && activeHolidays[nStr]) ? activeHolidays[nStr] : "";';
+  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + n + \'</span>\' + (nHoliday ? \'<span class="cal-holiday-name">\' + escapeHtml(nHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
   html += '  }';
   html += '  grid.innerHTML = gridHtml;';
   html += '}';
@@ -6888,6 +7001,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (!rawData || !rawData.sites) return;';
   html += '  const targetSites = (checkedSites.size > 0) ? rawData.sites.filter(s => checkedSites.has(s.siteName)) : rawData.sites;';
   html += '  const dayTasks = [];';
+  html += '  const holidayName = (typeof activeHolidays !== "undefined" && activeHolidays[dStr]) ? activeHolidays[dStr] : "";';
+  html += '  const datePrefix = "📅 " + dStr + (holidayName ? " (" + holidayName + ")" : "");';
   html += '  targetSites.forEach(site => {';
   html += '    site.tasks.forEach(task => {';
   html += '      if (task.startDateStr && task.startDateStr <= dStr && dStr <= (task.endDateStr || task.startDateStr)) {';
@@ -6900,12 +7015,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '    });';
   html += '  });';
   html += '  if (dayTasks.length === 0) {';
-  html += '    showToast("📅 " + dStr + ": 등록된 일정이 없습니다.");';
+  html += '    showToast(datePrefix + ": 등록된 일정이 없습니다.");';
   html += '    return;';
   html += '  }';
   html += '  onTaskClick(encodeURIComponent(dayTasks[0].site.siteName), encodeURIComponent(JSON.stringify(dayTasks[0].task)));';
   html += '  if (dayTasks.length > 1) {';
-  html += '    showToast("📅 " + dStr + " 일정 " + dayTasks.length + "건 중 첫 번째 공정");';
+  html += '    showToast(datePrefix + " 일정 " + dayTasks.length + "건 중 첫 번째 공정");';
   html += '  }';
   html += '}';
 
@@ -6984,6 +7099,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    return;';
   html += '  }';
   html += '  try {';
+  html += '    if (data.holidays && typeof data.holidays === "object") {';
+  html += '      activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS, data.holidays);';
+  html += '    }';
   html += '    const kpi = data.kpi || {};';
   html += '    document.getElementById("kpiSites").innerText = (kpi.activeSites !== undefined) ? kpi.activeSites : (kpi.totalSites || 0);';
   html += '    document.getElementById("kpiToday").innerText = kpi.todayCount || 0;';

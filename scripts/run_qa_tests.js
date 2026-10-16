@@ -2857,6 +2857,74 @@ assertTest('상단 메뉴: 최상위 3개 핵심 항목(사이드바, 팝업, �
   onOpenMenuSlice.indexOf('ui.createMenu("⚙️ 고급 설정 & 시스템 관리")') !== -1
 );
 
+console.log('\n🇰🇷 [Step 38: 모바일 캘린더 대한민국 법정공휴일 표시 & 대시보드 동일 렌더링 QA]');
+
+// 38-1: getKoreanHolidaysMap 함수 탑재 여부
+assertTest('getKoreanHolidaysMap 함수 탑재 여부',
+  typeof sandbox.getKoreanHolidaysMap === 'function'
+);
+
+// 38-2: getKoreanHolidaysMap 2026년 공휴일 및 대체공휴일 정확도 검증
+const holidayMapSample = sandbox.getKoreanHolidaysMap(null);
+assertTest('getKoreanHolidaysMap: 2026-10-09 한글날 정상 매핑 검증',
+  holidayMapSample['2026-10-09'] === '한글날'
+);
+assertTest('getKoreanHolidaysMap: 2026-10-03 개천절 정상 매핑 검증',
+  holidayMapSample['2026-10-03'] === '개천절'
+);
+assertTest('getKoreanHolidaysMap: 2026-10-05 대체공휴일 정상 매핑 검증',
+  holidayMapSample['2026-10-05'] === '대체공휴일'
+);
+assertTest('getKoreanHolidaysMap: 2026-12-25 성탄절 정상 매핑 검증',
+  holidayMapSample['2026-12-25'] === '성탄절'
+);
+
+// 38-3: getSidebarDashboardData 반환 객체에 holidays 필드 포함 검증
+const dashDataSample = sandbox.getSidebarDashboardData();
+assertTest('getSidebarDashboardData: 반환 객체에 holidays 공휴일 맵 포함 검증',
+  dashDataSample && typeof dashDataSample.holidays === 'object' && dashDataSample.holidays['2026-10-09'] === '한글날'
+);
+
+// 38-4: buildSidebarDashboardHtml("mobile") 클라이언트 JS 무결성 검증
+const mobileCalHtml = sandbox.buildSidebarDashboardHtml('mobile');
+const scriptStartIdx = mobileCalHtml.indexOf('<script>');
+const scriptEndIdx = mobileCalHtml.lastIndexOf('</script>');
+const clientScript = mobileCalHtml.slice(scriptStartIdx + 8, scriptEndIdx);
+let clientSyntaxOk = false;
+try {
+  new vm.Script(clientScript);
+  clientSyntaxOk = true;
+} catch (eSyntax) {
+  console.error('Client Script Syntax Error:', eSyntax);
+}
+assertTest('buildSidebarDashboardHtml("mobile"): 공휴일 기능 탑재 후 클라이언트 JS 구문 무결성(SyntaxError 0) 검증',
+  clientSyntaxOk === true
+);
+
+// 38-5: CSS에 공휴일 스타일(.cal-day-cell.holiday, .cal-holiday-name) 탑재 검증
+assertTest('buildSidebarDashboardHtml: .cal-day-cell.holiday 연분홍 배경 및 #dc2626 빨간색 텍스트 CSS 검증',
+  mobileCalHtml.indexOf('.cal-day-cell.holiday') !== -1 &&
+  mobileCalHtml.indexOf('.cal-holiday-name') !== -1
+);
+
+// 38-6: DEFAULT_KOREAN_HOLIDAYS 내장 및 activeHolidays 병합 검증
+assertTest('buildSidebarDashboardHtml: DEFAULT_KOREAN_HOLIDAYS 내장 및 onDataLoaded 병합 로직 탑재 검증',
+  clientScript.indexOf('DEFAULT_KOREAN_HOLIDAYS') !== -1 &&
+  clientScript.indexOf('activeHolidays = Object.assign') !== -1
+);
+
+// 38-7: renderCalendar 셀 내 공휴일 클래스(holiday sun) 및 cal-holiday-name 렌더링 검증
+assertTest('buildSidebarDashboardHtml: renderCalendar 내 공휴일(holiday sun) 스타일 및 cal-holiday-name 라벨 렌더링 검증',
+  clientScript.indexOf('dayClass += " holiday sun"') !== -1 &&
+  clientScript.indexOf('cal-holiday-name') !== -1
+);
+
+// 38-8: onCalDayClick 알림에 공휴일 명칭 포함 검증
+assertTest('buildSidebarDashboardHtml: onCalDayClick 클릭 알림 시 공휴일 명칭(holidayName) 노출 검증',
+  clientScript.indexOf('const holidayName = (typeof activeHolidays !== "undefined" && activeHolidays[dStr])') !== -1 &&
+  clientScript.indexOf('dStr + (holidayName ? " (" + holidayName + ")" : "")') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
