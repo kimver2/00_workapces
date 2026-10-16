@@ -5902,6 +5902,20 @@ function getSidebarDashboardData() {
         }
       }
 
+      var startDateStr = "";
+      var endDateStr = "";
+      if (parsed && parsed.startDate) {
+        var sy = parsed.startDate.getFullYear();
+        var sm = parsed.startDate.getMonth() + 1;
+        var sd = parsed.startDate.getDate();
+        startDateStr = sy + "-" + (sm < 10 ? "0" + sm : sm) + "-" + (sd < 10 ? "0" + sd : sd);
+        var edObj = parsed.displayEndDate || parsed.endDate || parsed.startDate;
+        var ey = edObj.getFullYear();
+        var em = edObj.getMonth() + 1;
+        var ed = edObj.getDate();
+        endDateStr = ey + "-" + (em < 10 ? "0" + em : em) + "-" + (ed < 10 ? "0" + ed : ed);
+      }
+
       if (isToday) todayCount++;
       if (isDelayed) delayedCount++;
       totalTasks++;
@@ -5928,6 +5942,8 @@ function getSidebarDashboardData() {
         taskName: taskName,
         dateDisplay: dateDisplay,
         dateMs: dateMs,
+        startDateStr: startDateStr,
+        endDateStr: endDateStr,
         partner: partner,
         manager: manager,
         status: status,
@@ -6089,6 +6105,34 @@ function buildSidebarDashboardHtml(mode) {
   html += '.member-tab { padding: 4px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; cursor: pointer; background: #ffffff; color: #475569; border: 1px solid #cbd5e1; white-space: nowrap; transition: all 0.15s; flex-shrink: 0; }';
   html += '.member-tab:hover { background: #f1f5f9; }';
   html += '.member-tab.active { background: #0f172a; color: #ffffff; border-color: #0f172a; font-weight: 700; box-shadow: 0 1px 3px rgba(15,23,42,0.2); }';
+  html += '.site-check { width: 17px; height: 17px; cursor: pointer; accent-color: #2563eb; flex-shrink: 0; margin-right: 4px; }';
+  html += '.checked-action-bar { display: flex; justify-content: space-between; align-items: center; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 7px 10px; margin-top: 6px; margin-bottom: 2px; font-size: 11.5px; color: #1e40af; font-weight: 600; }';
+  html += '.btn-check-action { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid #93c5fd; background: #ffffff; color: #1d4ed8; cursor: pointer; }';
+  html += '.btn-check-action:hover { background: #dbeafe; }';
+  html += '.calendar-view { background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }';
+  html += '.cal-nav-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #ffffff; border-bottom: 1px solid #e2e8f0; }';
+  html += '.cal-month-title { font-size: 14.5px; font-weight: 800; color: #0f172a; }';
+  html += '.cal-nav-btn { padding: 3px 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; font-size: 11px; font-weight: 700; cursor: pointer; color: #334155; }';
+  html += '.cal-nav-btn:hover { background: #f1f5f9; }';
+  html += '.cal-today-btn { padding: 3px 8px; border-radius: 6px; border: 1px solid #2563eb; background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 700; cursor: pointer; }';
+  html += '.cal-filter-notice { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #eff6ff; border-bottom: 1px solid #bfdbfe; font-size: 11px; }';
+  html += '.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); background: #f8fafc; border-bottom: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: 700; padding: 5px 0; }';
+  html += '.cal-weekday.sun { color: #dc2626; }';
+  html += '.cal-weekday.sat { color: #2563eb; }';
+  html += '.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); background: #e2e8f0; gap: 1px; }';
+  html += '.cal-day-cell { background: #ffffff; min-height: 72px; padding: 2px 2px 4px 2px; display: flex; flex-direction: column; overflow: hidden; cursor: pointer; }';
+  html += '.cal-day-cell:hover { background: #f8fafc; }';
+  html += '.cal-day-cell.other-month { background: #fafbfc; opacity: 0.4; }';
+  html += '.cal-day-header { display: flex; align-items: center; padding: 1px 2px; font-size: 10.5px; font-weight: 700; color: #334155; }';
+  html += '.cal-day-cell.sun .cal-day-header { color: #dc2626; }';
+  html += '.cal-day-cell.sat .cal-day-header { color: #2563eb; }';
+  html += '.cal-day-num { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; }';
+  html += '.cal-day-cell.today .cal-day-num { background: #2563eb; color: #ffffff; font-weight: 800; }';
+  html += '.cal-events-list { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow: hidden; margin-top: 1px; }';
+  html += '.cal-event-pill { border-radius: 3px; padding: 2px 3px; font-size: 9.5px; line-height: 1.25; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid #2563eb; background: #f1f5f9; color: #0f172a; font-weight: 600; }';
+  html += '.cal-event-pill:hover { filter: brightness(0.95); }';
+  html += '.cal-event-pill.status-done { opacity: 0.55; text-decoration: line-through; }';
+  html += '.cal-event-more { font-size: 9px; color: #64748b; font-weight: 700; text-align: center; padding: 1px; cursor: pointer; }';
   html += '.content { padding: 12px; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; }';
   html += '.site-card:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.06); }';
@@ -6167,8 +6211,11 @@ function buildSidebarDashboardHtml(mode) {
   // Body HTML
   html += '<div class="header">';
   html += '  <div class="title-row">';
-  html += '    <div class="title">' + (isMobile ? '📱 우성아이디 현장 대시보드' : '🏗️ 우성아이디 현장 대시보드') + '</div>';
-  html += '    <button class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
+  html += '    <div class="title" id="pageTitle">' + (isMobile ? '📱 우성아이디 현장 대시보드' : '🏗️ 우성아이디 현장 대시보드') + '</div>';
+  html += '    <div style="display:flex;align-items:center;gap:6px;">';
+  html += '      <button type="button" id="calendarToggleBtn" class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;font-weight:700;" onclick="toggleCalendarView()">📅 달력</button>';
+  html += '      <button class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
+  html += '    </div>';
   html += '  </div>';
 
   html += '  <div class="kpi-grid">';
@@ -6198,14 +6245,46 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="filter-tab" data-filter="delay" onclick="setFilter(\'delay\')">⚠️ 지연</div>';
   html += '    <div class="filter-tab" data-filter="prog" onclick="setFilter(\'prog\')">진행중</div>';
   html += '    <div class="filter-tab" data-filter="done" onclick="setFilter(\'done\')">✅ 완료</div>';
+  html += '    <div class="filter-tab" id="checkedTab" data-filter="checked" onclick="setFilter(\'checked\')" style="display:none;">☑️ 선택 (<span id="checkedTabCount">0</span>)</div>';
   html += '  </div>';
   html += '  <div class="member-filter-bar" id="memberFilterBar"></div>';
+  html += '  <div id="checkedActionBar" class="checked-action-bar" style="display:none;">';
+  html += '    <span id="checkedCountMsg">☑️ 0개 현장 선택됨</span>';
+  html += '    <div style="display:flex;gap:4px;">';
+  html += '      <button type="button" id="btnToggleCheckedOnly" class="btn-check-action" onclick="toggleCheckedOnly()">선택 현장만 보기</button>';
+  html += '      <button type="button" class="btn-check-action" onclick="clearAllChecked()">해제</button>';
+  html += '    </div>';
+  html += '  </div>';
   html += '</div>';
 
   html += '<div class="content" id="contentArea">';
   html += '  <div class="loading-state">';
   html += '    <div class="spinner"></div>';
   html += '    <p class="loading-text">현장 데이터 불러오는 중...</p>';
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<div class="content" id="calendarArea" style="display:none;' + (isMobile ? 'max-width:600px;margin:0 auto;' : '') + '">';
+  html += '  <div class="calendar-view">';
+  html += '    <div class="cal-nav-bar">';
+  html += '      <button type="button" class="cal-nav-btn" onclick="prevMonth()">◀</button>';
+  html += '      <div style="display:flex;align-items:center;gap:6px;">';
+  html += '        <span id="calMonthTitle" class="cal-month-title">2026년 10월</span>';
+  html += '        <button type="button" class="cal-today-btn" onclick="goToTodayMonth()">오늘</button>';
+  html += '      </div>';
+  html += '      <button type="button" class="cal-nav-btn" onclick="nextMonth()">▶</button>';
+  html += '    </div>';
+  html += '    <div id="calFilterNotice" class="cal-filter-notice" style="display:none;"></div>';
+  html += '    <div class="cal-weekdays">';
+  html += '      <div class="cal-weekday sun">일</div>';
+  html += '      <div class="cal-weekday">월</div>';
+  html += '      <div class="cal-weekday">화</div>';
+  html += '      <div class="cal-weekday">수</div>';
+  html += '      <div class="cal-weekday">목</div>';
+  html += '      <div class="cal-weekday">금</div>';
+  html += '      <div class="cal-weekday sat">토</div>';
+  html += '    </div>';
+  html += '    <div class="cal-grid" id="calGrid"></div>';
   html += '  </div>';
   html += '</div>';
 
@@ -6259,6 +6338,10 @@ function buildSidebarDashboardHtml(mode) {
   html += 'let rawData = null;';
   html += 'let currentFilter = "all";';
   html += 'let selectedMember = "";';
+  html += 'const checkedSites = new Set();';
+  html += 'let isCalendarMode = false;';
+  html += 'let calYear = new Date().getFullYear();';
+  html += 'let calMonth = new Date().getMonth() + 1;';
   html += 'let curTaskObj = null;';
   html += 'let curSiteName = "";';
   html += 'let selectedStatus = "예정";';
@@ -6271,13 +6354,271 @@ function buildSidebarDashboardHtml(mode) {
   html += '  setTimeout(() => t.classList.remove("show"), 2200);';
   html += '}';
 
+  html += 'function onSiteCheckboxClick(e, cb) {';
+  html += '  e.stopPropagation();';
+  html += '  const siteName = decodeURIComponent(cb.dataset.sitename || "");';
+  html += '  if (cb.checked) {';
+  html += '    checkedSites.add(siteName);';
+  html += '  } else {';
+  html += '    checkedSites.delete(siteName);';
+  html += '  }';
+  html += '  updateCheckedStatusUI();';
+  html += '  if (currentFilter === "checked") {';
+  html += '    renderList();';
+  html += '  }';
+  html += '  if (isCalendarMode) {';
+  html += '    renderCalendar();';
+  html += '  }';
+  html += '}';
+
+  html += 'function updateCheckedStatusUI() {';
+  html += '  const count = checkedSites.size;';
+  html += '  const tab = document.getElementById("checkedTab");';
+  html += '  const tabCount = document.getElementById("checkedTabCount");';
+  html += '  const bar = document.getElementById("checkedActionBar");';
+  html += '  const countMsg = document.getElementById("checkedCountMsg");';
+  html += '  if (tabCount) tabCount.innerText = count;';
+  html += '  if (tab) tab.style.display = (count > 0) ? "block" : "none";';
+  html += '  if (bar) bar.style.display = (count > 0) ? "flex" : "none";';
+  html += '  if (countMsg) countMsg.innerText = "☑️ " + count + "개 현장 선택됨";';
+  html += '  const toggleBtn = document.getElementById("btnToggleCheckedOnly");';
+  html += '  if (toggleBtn) {';
+  html += '    toggleBtn.innerText = (currentFilter === "checked") ? "전체 현장 보기" : "선택 현장만 보기";';
+  html += '  }';
+  html += '}';
+
+  html += 'function toggleCheckedOnly() {';
+  html += '  if (currentFilter === "checked") {';
+  html += '    setFilter("all");';
+  html += '  } else {';
+  html += '    setFilter("checked");';
+  html += '  }';
+  html += '}';
+
+  html += 'function clearAllChecked() {';
+  html += '  checkedSites.clear();';
+  html += '  document.querySelectorAll(".site-check").forEach(cb => cb.checked = false);';
+  html += '  updateCheckedStatusUI();';
+  html += '  if (currentFilter === "checked") {';
+  html += '    setFilter("all");';
+  html += '  } else {';
+  html += '    renderList();';
+  html += '  }';
+  html += '  if (isCalendarMode) {';
+  html += '    renderCalendar();';
+  html += '  }';
+  html += '}';
+
+  html += 'function toggleCalendarView() {';
+  html += '  isCalendarMode = !isCalendarMode;';
+  html += '  const btn = document.getElementById("calendarToggleBtn");';
+  html += '  const contentArea = document.getElementById("contentArea");';
+  html += '  const calArea = document.getElementById("calendarArea");';
+  html += '  const pageTitle = document.getElementById("pageTitle");';
+  html += '  if (isCalendarMode) {';
+  html += '    if (btn) {';
+  html += '      btn.innerText = "📋 목록";';
+  html += '      btn.style.background = "#2563eb";';
+  html += '      btn.style.color = "#ffffff";';
+  html += '      btn.style.borderColor = "#2563eb";';
+  html += '    }';
+  html += '    if (pageTitle) {';
+  html += '      pageTitle.innerText = isMobileMode ? "📅 우성아이디 월간 달력" : "📅 우성아이디 월간 달력";';
+  html += '    }';
+  html += '    if (contentArea) contentArea.style.display = "none";';
+  html += '    if (calArea) calArea.style.display = "block";';
+  html += '    renderCalendar();';
+  html += '  } else {';
+  html += '    if (btn) {';
+  html += '      btn.innerText = "📅 달력";';
+  html += '      btn.style.background = "#ffffff";';
+  html += '      btn.style.color = "#334155";';
+  html += '      btn.style.borderColor = "#cbd5e1";';
+  html += '    }';
+  html += '    if (pageTitle) {';
+  html += '      pageTitle.innerText = isMobileMode ? "📱 우성아이디 현장 대시보드" : "🏗️ 우성아이디 현장 대시보드";';
+  html += '    }';
+  html += '    if (contentArea) contentArea.style.display = "block";';
+  html += '    if (calArea) calArea.style.display = "none";';
+  html += '    renderList();';
+  html += '  }';
+  html += '}';
+
+  html += 'function prevMonth() {';
+  html += '  calMonth--;';
+  html += '  if (calMonth < 1) { calMonth = 12; calYear--; }';
+  html += '  renderCalendar();';
+  html += '}';
+
+  html += 'function nextMonth() {';
+  html += '  calMonth++;';
+  html += '  if (calMonth > 12) { calMonth = 1; calYear++; }';
+  html += '  renderCalendar();';
+  html += '}';
+
+  html += 'function goToTodayMonth() {';
+  html += '  const now = new Date();';
+  html += '  calYear = now.getFullYear();';
+  html += '  calMonth = now.getMonth() + 1;';
+  html += '  renderCalendar();';
+  html += '}';
+
+  html += 'function renderCalendar() {';
+  html += '  if (!rawData || !rawData.sites) return;';
+  html += '  const grid = document.getElementById("calGrid");';
+  html += '  const title = document.getElementById("calMonthTitle");';
+  html += '  const notice = document.getElementById("calFilterNotice");';
+  html += '  if (!grid || !title) return;';
+  html += '  title.innerText = calYear + "년 " + calMonth + "월";';
+  html += '  if (notice) {';
+  html += '    let noticeParts = [];';
+  html += '    if (checkedSites.size > 0) noticeParts.push("☑️ 선택 현장 (" + checkedSites.size + "개)");';
+  html += '    if (selectedMember) noticeParts.push("👤 " + escapeHtml(selectedMember));';
+  html += '    const q = (document.getElementById("searchInput") ? document.getElementById("searchInput").value.trim() : "");';
+  html += '    if (q) noticeParts.push("🔍 " + escapeHtml(q));';
+  html += '    if (noticeParts.length > 0) {';
+  html += '      notice.innerHTML = \'<span style="font-size:11px;color:#1e40af;font-weight:700;">\' + noticeParts.join(" | ") + \'</span><button type="button" class="btn-check-action" style="padding:1px 6px;font-size:10px;margin-left:6px;" onclick="resetAllCalendarFilters()">전체 보기</button>\';';
+  html += '      notice.style.display = "flex";';
+  html += '    } else {';
+  html += '      notice.style.display = "none";';
+  html += '    }';
+  html += '  }';
+  html += '  let targetSites = rawData.sites;';
+  html += '  if (checkedSites.size > 0) {';
+  html += '    targetSites = targetSites.filter(s => checkedSites.has(s.siteName));';
+  html += '  }';
+  html += '  const dayTasksMap = {};';
+  html += '  const query = (document.getElementById("searchInput") ? document.getElementById("searchInput").value.trim().toLowerCase() : "");';
+  html += '  targetSites.forEach(site => {';
+  html += '    site.tasks.forEach(task => {';
+  html += '      if (selectedMember) {';
+  html += '        const mgr = (task.manager || "").trim();';
+  html += '        if (mgr.indexOf(selectedMember) === -1) return;';
+  html += '        const stClean = (task.status || "").replace(/\\s+/g, "");';
+  html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return;';
+  html += '      }';
+  html += '      if (query) {';
+  html += '        const matchSite = site.siteName.toLowerCase().indexOf(query) !== -1;';
+  html += '        const matchTask = task.taskName.toLowerCase().indexOf(query) !== -1;';
+  html += '        const matchMgr = (task.manager || "").toLowerCase().indexOf(query) !== -1;';
+  html += '        const matchPartner = (task.partner || "").toLowerCase().indexOf(query) !== -1;';
+  html += '        const matchMemo = (task.memo || "").toLowerCase().indexOf(query) !== -1;';
+  html += '        if (!matchSite && !matchTask && !matchMgr && !matchPartner && !matchMemo) return;';
+  html += '      }';
+  html += '      if (!task.startDateStr) return;';
+  html += '      const startStr = task.startDateStr;';
+  html += '      const endStr = task.endDateStr || task.startDateStr;';
+  html += '      const curMonthStart = calYear + "-" + (calMonth < 10 ? "0" + calMonth : calMonth) + "-01";';
+  html += '      const lastD = new Date(calYear, calMonth, 0).getDate();';
+  html += '      const curMonthEnd = calYear + "-" + (calMonth < 10 ? "0" + calMonth : calMonth) + "-" + lastD;';
+  html += '      if (startStr > curMonthEnd || endStr < curMonthStart) return;';
+  html += '      const sParts = startStr.split("-").map(Number);';
+  html += '      const eParts = endStr.split("-").map(Number);';
+  html += '      let curD = new Date(sParts[0], sParts[1] - 1, sParts[2]);';
+  html += '      const endD = new Date(eParts[0], eParts[1] - 1, eParts[2]);';
+  html += '      let count = 0;';
+  html += '      while (curD <= endD && count < 60) {';
+  html += '        count++;';
+  html += '        const y = curD.getFullYear();';
+  html += '        const m = curD.getMonth() + 1;';
+  html += '        const d = curD.getDate();';
+  html += '        if (y === calYear && m === calMonth) {';
+  html += '          const key = y + "-" + (m < 10 ? "0" + m : m) + "-" + (d < 10 ? "0" + d : d);';
+  html += '          if (!dayTasksMap[key]) dayTasksMap[key] = [];';
+  html += '          dayTasksMap[key].push({ site: site, task: task });';
+  html += '        }';
+  html += '        curD.setDate(curD.getDate() + 1);';
+  html += '      }';
+  html += '    });';
+  html += '  });';
+  html += '  const firstDay = new Date(calYear, calMonth - 1, 1).getDay();';
+  html += '  const totalDays = new Date(calYear, calMonth, 0).getDate();';
+  html += '  const prevMonthTotalDays = new Date(calYear, calMonth - 1, 0).getDate();';
+  html += '  const todayObj = new Date();';
+  html += '  const todayStr = todayObj.getFullYear() + "-" + ((todayObj.getMonth() + 1) < 10 ? "0" + (todayObj.getMonth() + 1) : (todayObj.getMonth() + 1)) + "-" + (todayObj.getDate() < 10 ? "0" + todayObj.getDate() : todayObj.getDate());';
+  html += '  let gridHtml = "";';
+  html += '  for (let p = 0; p < firstDay; p++) {';
+  html += '    const dayNum = prevMonthTotalDays - firstDay + p + 1;';
+  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + dayNum + \'</span></div></div>\';';
+  html += '  }';
+  html += '  for (let d = 1; d <= totalDays; d++) {';
+  html += '    const dStr = calYear + "-" + (calMonth < 10 ? "0" + calMonth : calMonth) + "-" + (d < 10 ? "0" + d : d);';
+  html += '    const dayOfWeek = (firstDay + d - 1) % 7;';
+  html += '    let dayClass = "cal-day-cell";';
+  html += '    if (dayOfWeek === 0) dayClass += " sun";';
+  html += '    else if (dayOfWeek === 6) dayClass += " sat";';
+  html += '    if (dStr === todayStr) dayClass += " today";';
+  html += '    const dayTasks = dayTasksMap[dStr] || [];';
+  html += '    gridHtml += \'<div class="\' + dayClass + \'" onclick="onCalDayClick(\\\'\' + dStr + \'\\\')">\';';
+  html += '    gridHtml += \'  <div class="cal-day-header"><span class="cal-day-num">\' + d + \'</span></div>\';';
+  html += '    gridHtml += \'  <div class="cal-events-list">\';';
+  html += '    const maxDisplay = isMobileMode ? 2 : 4;';
+  html += '    const showTasks = dayTasks.slice(0, maxDisplay);';
+  html += '    showTasks.forEach(item => {';
+  html += '      const site = item.site;';
+  html += '      const task = item.task;';
+  html += '      const siteEnc = encodeURIComponent(site.siteName);';
+  html += '      const taskJson = encodeURIComponent(JSON.stringify(task));';
+  html += '      const isDone = (task.status && (task.status.indexOf("완료") !== -1 || task.status.indexOf("취소") !== -1));';
+  html += '      gridHtml += \'<div class="cal-event-pill \' + (isDone ? "status-done" : "") + \'" style="border-left-color:\' + site.colorHex + \';" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')">\';';
+  html += '      gridHtml += escapeHtml(site.siteName) + " " + escapeHtml(task.taskName);';
+  html += '      gridHtml += \'</div>\';';
+  html += '    });';
+  html += '    if (dayTasks.length > maxDisplay) {';
+  html += '      gridHtml += \'<div class="cal-event-more" onclick="event.stopPropagation();onCalDayClick(\\\'\' + dStr + \'\\\')">+\' + (dayTasks.length - maxDisplay) + \'건 더보기</div>\';';
+  html += '    }';
+  html += '    gridHtml += \'  </div></div>\';';
+  html += '  }';
+  html += '  const totalCellsSoFar = firstDay + totalDays;';
+  html += '  const remainingCells = (totalCellsSoFar % 7 === 0) ? 0 : (7 - (totalCellsSoFar % 7));';
+  html += '  for (let n = 1; n <= remainingCells; n++) {';
+  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + n + \'</span></div></div>\';';
+  html += '  }';
+  html += '  grid.innerHTML = gridHtml;';
+  html += '}';
+  html += '';
+  html += 'function resetAllCalendarFilters() {';
+  html += '  checkedSites.clear();';
+  html += '  document.querySelectorAll(".site-check").forEach(cb => cb.checked = false);';
+  html += '  updateCheckedStatusUI();';
+  html += '  setMemberFilter("");';
+  html += '  const sInput = document.getElementById("searchInput");';
+  html += '  if (sInput) sInput.value = "";';
+  html += '  renderCalendar();';
+  html += '}';
+  html += '';
+  html += 'function onCalDayClick(dStr) {';
+  html += '  if (!rawData || !rawData.sites) return;';
+  html += '  const targetSites = (checkedSites.size > 0) ? rawData.sites.filter(s => checkedSites.has(s.siteName)) : rawData.sites;';
+  html += '  const dayTasks = [];';
+  html += '  targetSites.forEach(site => {';
+  html += '    site.tasks.forEach(task => {';
+  html += '      if (task.startDateStr && task.startDateStr <= dStr && dStr <= (task.endDateStr || task.startDateStr)) {';
+  html += '        if (selectedMember) {';
+  html += '          const mgr = (task.manager || "").trim();';
+  html += '          if (mgr.indexOf(selectedMember) === -1) return;';
+  html += '        }';
+  html += '        dayTasks.push({ site: site, task: task });';
+  html += '      }';
+  html += '    });';
+  html += '  });';
+  html += '  if (dayTasks.length === 0) {';
+  html += '    showToast("📅 " + dStr + ": 등록된 일정이 없습니다.");';
+  html += '    return;';
+  html += '  }';
+  html += '  onTaskClick(encodeURIComponent(dayTasks[0].site.siteName), encodeURIComponent(JSON.stringify(dayTasks[0].task)));';
+  html += '  if (dayTasks.length > 1) {';
+  html += '    showToast("📅 " + dStr + " 일정 " + dayTasks.length + "건 중 첫 번째 공정");';
+  html += '  }';
+  html += '}';
+
   html += 'function onSearchInput() {';
   html += '  const q = document.getElementById("searchInput").value;';
   html += '  const clearBtn = document.getElementById("searchClearBtn");';
   html += '  if (clearBtn) {';
   html += '    clearBtn.classList.toggle("show", q.length > 0);';
   html += '  }';
-  html += '  renderList();';
+  html += '  if (isCalendarMode) renderCalendar(); else renderList();';
   html += '}';
 
   html += 'function clearSearch() {';
@@ -6290,7 +6631,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (clearBtn) {';
   html += '    clearBtn.classList.remove("show");';
   html += '  }';
-  html += '  renderList();';
+  html += '  if (isCalendarMode) renderCalendar(); else renderList();';
   html += '}';
 
   html += 'function renderMemberFilterTabs(members) {';
@@ -6320,7 +6661,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (rawData && rawData.members) {';
   html += '    renderMemberFilterTabs(rawData.members);';
   html += '  }';
-  html += '  renderList();';
+  html += '  if (isCalendarMode) renderCalendar(); else renderList();';
   html += '}';
 
   html += 'function loadData() {';
@@ -6351,12 +6692,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '    document.getElementById("kpiToday").innerText = kpi.todayCount || 0;';
   html += '    document.getElementById("kpiDelay").innerText = kpi.delayedCount || 0;';
   html += '    renderMemberFilterTabs(data.members || []);';
-  html += '    renderList();';
+  html += '    updateCheckedStatusUI();';
+  html += '    if (isCalendarMode) renderCalendar(); else renderList();';
   html += '  } catch (renderErr) {';
   html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 대시보드 렌더링 오류: \' + escapeHtml(renderErr.message || renderErr) + \'</div>\';';
   html += '  }';
   html += '}';
-
+  html += '';
   html += 'function setFilter(type) {';
   html += '  currentFilter = type;';
   html += '  document.querySelectorAll(".filter-tab").forEach(b => {';
@@ -6365,7 +6707,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  document.querySelectorAll(".kpi-card").forEach(c => {';
   html += '    c.classList.toggle("active", c.dataset.filter === type);';
   html += '  });';
-  html += '  renderList();';
+  html += '  updateCheckedStatusUI();';
+  html += '  if (isCalendarMode) toggleCalendarView(); else renderList();';
   html += '}';
 
   html += 'function renderList() {';
@@ -6377,7 +6720,9 @@ function buildSidebarDashboardHtml(mode) {
 
   html += '  const matchedSites = [];';
   html += '  rawData.sites.forEach(site => {';
-  html += '    if (currentFilter === "done") {';
+  html += '    if (currentFilter === "checked") {';
+  html += '      if (!checkedSites.has(site.siteName)) return;';
+  html += '    } else if (currentFilter === "done") {';
   html += '      if (!site.isAllCompleted) return;';
   html += '    } else {';
   html += '      if (site.isAllCompleted) return;';
@@ -6445,9 +6790,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const site = item.site;';
   html += '    const filteredTasks = item.filteredTasks;';
   html += '    const isExpanded = (query !== "") || (selectedMember !== "") || (currentFilter !== "all" && currentFilter !== "done");';
-
+  html += '    const siteEnc = encodeURIComponent(site.siteName);';
+  html += '    const isChecked = checkedSites.has(site.siteName);';
+  html += '';
   html += '    html += \'<div class="site-card \' + (isExpanded ? "expanded" : "") + \'">\';';
   html += '    html += \'  <div class="site-header" style="border-left-color: \' + site.colorHex + \';" onclick="toggleSite(this)">\';';
+  html += '    html += \'    <input type="checkbox" class="site-check" data-sitename="\' + siteEnc + \'" \' + (isChecked ? "checked" : "") + \' onclick="onSiteCheckboxClick(event, this)" title="현장 선택">\';';
   html += '    html += \'    <div class="site-title-area">\';';
   html += '    html += \'      <span class="site-name">\' + escapeHtml(site.siteName) + \'</span>\';';
   html += '    if (site.isAllCompleted) {';
@@ -6499,7 +6847,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });';
 
   html += '  if (visibleSitesCount === 0) {';
-  html += '    if (currentFilter === "done") {';
+  html += '    if (currentFilter === "checked") {';
+  html += '      container.innerHTML = \'<div class="empty-state">☑️ 선택된 현장이 없습니다.<br><small style="color:#64748b;font-size:11px;">현장 카드 앞 체크박스를 선택 후 다시 확인해보세요.</small></div>\';';
+  html += '    } else if (currentFilter === "done") {';
   html += '      container.innerHTML = \'<div class="empty-state">✅ 완료된 현장이 없습니다.</div>\';';
   html += '    } else {';
   html += '      container.innerHTML = \'<div class="empty-state">🔍 일치하는 현장 및 공정이 없습니다.</div>\';';

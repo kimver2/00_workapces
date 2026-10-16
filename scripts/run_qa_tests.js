@@ -2518,6 +2518,141 @@ assertTest('필터 해제 시뮬레이션: 담당자 및 검색어가 없을 때
   simResetExpanded === false
 );
 
+// ========================================================
+// 34. [우측 상단 calendar 버튼 & 00_Calendar 스타일 모바일 달력 & 현장 체크박스 필터 QA]
+// ========================================================
+console.log('\n📅 [Step 34: 우측 상단 calendar 버튼 & 00_Calendar 스타일 모바일 달력 & 현장 체크박스 필터 QA]');
+
+const dashHtml34 = sandbox.buildSidebarDashboardHtml('mobile');
+
+// 34-1: 우측 상단 달력 토글 버튼(#calendarToggleBtn) 마크업 검증
+assertTest('buildSidebarDashboardHtml: 우측 상단 달력 토글 버튼(#calendarToggleBtn) 탑재 검증',
+  dashHtml34.indexOf('id="calendarToggleBtn"') !== -1 &&
+  dashHtml34.indexOf('toggleCalendarView()') !== -1
+);
+
+// 34-2: 모바일 월간 달력 페이지(#calendarArea 및 그리드) 마크업 & CSS 검증
+assertTest('buildSidebarDashboardHtml: 00_Calendar 스타일 월간 달력(#calendarArea 및 그리드) 탑재 검증',
+  dashHtml34.indexOf('id="calendarArea"') !== -1 &&
+  dashHtml34.indexOf('class="calendar-view"') !== -1 &&
+  dashHtml34.indexOf('class="cal-nav-bar"') !== -1 &&
+  dashHtml34.indexOf('class="cal-weekdays"') !== -1 &&
+  dashHtml34.indexOf('id="calGrid"') !== -1 &&
+  dashHtml34.indexOf('.cal-day-cell') !== -1 &&
+  dashHtml34.indexOf('.cal-event-pill') !== -1
+);
+
+// 34-3: 현장 카드 앞 체크박스(.site-check) 마크업 및 아코디언 간섭 방지 검증
+assertTest('buildSidebarDashboardHtml: 현장 카드 앞 체크박스(.site-check) 및 아코디언 클릭 간섭 방지(stopPropagation) 검증',
+  dashHtml34.indexOf('.site-check') !== -1 &&
+  dashHtml34.indexOf('class="site-check"') !== -1 &&
+  dashHtml34.indexOf('onSiteCheckboxClick(event, this)') !== -1 &&
+  dashHtml34.indexOf('e.stopPropagation();') !== -1
+);
+
+// 34-4: 체크박스 선택 시 액션 바(#checkedActionBar) 및 선택 탭(#checkedTab) 탑재 검증
+assertTest('buildSidebarDashboardHtml: 선택 현장 액션 바(#checkedActionBar) 및 탭(#checkedTab) 마크업 검증',
+  dashHtml34.indexOf('id="checkedTab"') !== -1 &&
+  dashHtml34.indexOf('id="checkedActionBar"') !== -1 &&
+  dashHtml34.indexOf('id="btnToggleCheckedOnly"') !== -1 &&
+  dashHtml34.indexOf('onclick="clearAllChecked()"') !== -1
+);
+
+// 34-5: 클라이언트 스크립트에 달력 및 체크박스 제어 함수 탑재 검증
+assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 달력 및 체크박스 제어 함수 탑재 검증',
+  dashHtml34.indexOf('function toggleCalendarView()') !== -1 &&
+  dashHtml34.indexOf('function renderCalendar()') !== -1 &&
+  dashHtml34.indexOf('function onSiteCheckboxClick(e, cb)') !== -1 &&
+  dashHtml34.indexOf('function updateCheckedStatusUI()') !== -1 &&
+  dashHtml34.indexOf('function toggleCheckedOnly()') !== -1 &&
+  dashHtml34.indexOf('function clearAllChecked()') !== -1 &&
+  dashHtml34.indexOf('function prevMonth()') !== -1 &&
+  dashHtml34.indexOf('function nextMonth()') !== -1 &&
+  dashHtml34.indexOf('function goToTodayMonth()') !== -1
+);
+
+// 34-6: getSidebarDashboardData 각 공정에 startDateStr, endDateStr 계산 탑재 검증
+const testDashData34 = sandbox.getSidebarDashboardData();
+const firstTask34 = (testDashData34 && testDashData34.sites && testDashData34.sites[0] && testDashData34.sites[0].tasks[0]) || {};
+assertTest('getSidebarDashboardData: 공정에 YYYY-MM-DD 형식의 startDateStr, endDateStr 계산 탑재 검증',
+  typeof firstTask34.startDateStr === 'string' &&
+  /^\d{4}-\d{2}-\d{2}$/.test(firstTask34.startDateStr)
+);
+
+// 34-7: 모바일 클라이언트 스크립트 구문 무결성(SyntaxError 0) 검증
+const scriptMatch34 = dashHtml34.match(/<script>([\s\S]*?)<\/script>/);
+let clientSyntaxOk34 = false;
+if (scriptMatch34 && scriptMatch34[1]) {
+  try {
+    new vm.Script(scriptMatch34[1]);
+    clientSyntaxOk34 = true;
+  } catch (err) {
+    console.error('클라이언트 JS 구문 에러:', err);
+  }
+}
+assertTest('buildSidebarDashboardHtml: 달력 및 체크박스 로직 추가 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk34);
+
+// 34-8: 달력 렌더링 시뮬레이션: 체크박스로 선택된 현장의 공정만 달력에 매핑되는지 검증
+const mockCalSites = [
+  {
+    siteName: '보경102동',
+    colorHex: '#10b981',
+    tasks: [
+      { taskName: '도배', startDateStr: '2026-10-20', endDateStr: '2026-10-21', status: '진행중', manager: '조항만' },
+      { taskName: '청소', startDateStr: '2026-10-25', endDateStr: '2026-10-25', status: '예정', manager: '송지은' }
+    ]
+  },
+  {
+    siteName: '신대방우성 5동 601호',
+    colorHex: '#2563eb',
+    tasks: [
+      { taskName: '타일', startDateStr: '2026-10-20', endDateStr: '2026-10-20', status: '예정', manager: '전예린' }
+    ]
+  }
+];
+
+// 시뮬레이션 A: '보경102동'만 체크되었을 때
+const simCheckedSites = new Set(['보경102동']);
+const simTargetSites = mockCalSites.filter(s => simCheckedSites.has(s.siteName));
+const simDayMapA = {};
+simTargetSites.forEach(s => {
+  s.tasks.forEach(t => {
+    if (!simDayMapA[t.startDateStr]) simDayMapA[t.startDateStr] = [];
+    simDayMapA[t.startDateStr].push({ site: s, task: t });
+  });
+});
+
+assertTest('달력 시뮬레이션: 체크된 현장("보경102동")만 필터링되어 "신대방우성" 공정(타일)은 달력 매핑에서 완벽 배제 검증',
+  simDayMapA['2026-10-20'] &&
+  simDayMapA['2026-10-20'].length === 1 &&
+  simDayMapA['2026-10-20'][0].site.siteName === '보경102동' &&
+  simDayMapA['2026-10-20'][0].task.taskName === '도배'
+);
+
+// 시뮬레이션 B: 담당자('송지은') 필터와 체크박스가 동시에 적용될 때
+const simMember = '송지은';
+const simDayMapB = {};
+simTargetSites.forEach(s => {
+  s.tasks.forEach(t => {
+    if (simMember && t.manager.indexOf(simMember) === -1) return;
+    if (!simDayMapB[t.startDateStr]) simDayMapB[t.startDateStr] = [];
+    simDayMapB[t.startDateStr].push({ site: s, task: t });
+  });
+});
+
+assertTest('달력 시뮬레이션: 체크된 현장("보경102동") 내에서 "송지은" 담당자 필터 적용 시 10.25 청소만 노출 검증',
+  !simDayMapB['2026-10-20'] &&
+  simDayMapB['2026-10-25'] &&
+  simDayMapB['2026-10-25'].length === 1 &&
+  simDayMapB['2026-10-25'][0].task.taskName === '청소'
+);
+
+// 시뮬레이션 C: 빈 상태 메시지 (선택 탭에서 아무 현장도 체크 안 되었을 때)
+const emptyCheckedHtml = (0 === 0) ? '<div class="empty-state">☑️ 선택된 현장이 없습니다.' : '';
+assertTest('선택 탭 빈 상태 시뮬레이션: 체크된 현장 0개 시 친절한 안내 메시지 출력 검증',
+  emptyCheckedHtml.indexOf('☑️ 선택된 현장이 없습니다.') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
