@@ -2213,9 +2213,9 @@ assertTest('getSidebarDashboardData: 시트 예외 발생 시 에러 객체 반�
   safeDashData.sites.length === 0
 );
 
-// 31-5: 전체 및 완료 탭에서는 접힌 상태, 검색 및 담당자 필터 시에는 펼쳐진 상태 유지 검증
-assertTest('buildSidebarDashboardHtml: 전체/완료 탭에서는 기본 접힘, 검색/담당자 필터 시에는 펼침(isExpanded) 적용 검증',
-  modalHtml.indexOf('(query !== "") || (selectedMember !== "") || (currentFilter !== "all" && currentFilter !== "done")') !== -1
+// 31-5: 전체 및 완료 탭 및 이름 필터에서는 접힌 상태, 검색 시에는 펼쳐진 상태 유지 검증
+assertTest('buildSidebarDashboardHtml: 전체/완료/이름 필터에서는 기본 접힘, 검색 시에는 펼침(isExpanded) 적용 검증',
+  modalHtml.indexOf('(query !== "") || (currentFilter !== "all" && currentFilter !== "done")') !== -1
 );
 
 // ========================================================
@@ -2497,16 +2497,16 @@ testMemberFilterSites.forEach(s => {
 });
 simMatchedMemberSites.sort((a, b) => a.earliestFilteredMs - b.earliestFilteredMs);
 
-const simIsExpanded = ('' !== '') || (simSelectedMember !== '') || ('all' !== 'all' && 'all' !== 'done');
+const simIsExpanded = ('' !== '') || ('all' !== 'all' && 'all' !== 'done');
 
-assertTest('담당자 필터 시뮬레이션: "송지은" 필터 시 완료 공정(철거)은 제외되고, 10.20 일정을 가진 현장B가 10.25 현장A보다 상위 정렬되며 펼쳐짐(isExpanded: true) 검증',
+assertTest('담당자 필터 시뮬레이션: "송지은" 필터 시 완료 공정(철거)은 제외되고, 10.20 일정을 가진 현장B가 10.25 현장A보다 상위 정렬되며 카드는 닫힌 상태(isExpanded: false) 유지 검증',
   simMatchedMemberSites.length === 2 &&
   simMatchedMemberSites[0].site.siteName === '현장B' &&
   simMatchedMemberSites[0].filteredTasks.length === 1 &&
   simMatchedMemberSites[1].site.siteName === '현장A' &&
   simMatchedMemberSites[1].filteredTasks.length === 1 &&
   simMatchedMemberSites[1].filteredTasks[0].taskName === '도배' && // 철거(완료)는 제외!
-  simIsExpanded === true
+  simIsExpanded === false
 );
 
 // 33-13: 필터 해제 시 시뮬레이션 (선택 해제 시 평상시 접힌 상태 유지)
@@ -2594,7 +2594,21 @@ if (scriptMatch34 && scriptMatch34[1]) {
 }
 assertTest('buildSidebarDashboardHtml: 달력 및 체크박스 로직 추가 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk34);
 
-// 34-8: 달력 렌더링 시뮬레이션: 체크박스로 선택된 현장의 공정만 달력에 매핑되는지 검증
+// 34-8: 캘린더 구글 캘린더 스타일 알약 포맷(공유현황 + [공종명] 현장명) 및 더보기 버튼 제거 검증
+assertTest('buildSidebarDashboardHtml: 캘린더 이벤트 알약 구글 캘린더 형식(공유 뱃지 + [공종명] 현장명) 렌더링 검증',
+  dashHtml34.indexOf('shareIcon + "[" + escapeHtml(task.taskName) + "] " + escapeHtml(site.siteName)') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 일정이 많을 때 더보기 버튼 완전 배제 및 전체 리스트 노출 검증',
+  dashHtml34.indexOf('cal-event-more') === -1 &&
+  dashHtml34.indexOf('건 더보기') === -1
+);
+
+// 34-9: 이름 눌렀을 때 카드가 닫힌 상태 유지 검증
+assertTest('buildSidebarDashboardHtml: 이름(담당자) 클릭 필터 시 카드 닫힌 상태(isExpanded에서 selectedMember 배제) 검증',
+  dashHtml34.indexOf('const isExpanded = (query !== "") || (currentFilter !== "all" && currentFilter !== "done");') !== -1
+);
+
+// 34-10: 달력 렌더링 시뮬레이션: 체크박스로 선택된 현장의 공정만 달력에 매핑되는지 검증
 const mockCalSites = [
   {
     siteName: '보경102동',
