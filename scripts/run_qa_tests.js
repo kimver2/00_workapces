@@ -3836,6 +3836,65 @@ assertTest('완료 공정 렌더링: 완료된 일정은 지연 붉은색 대신
   resDone46.bgCol === "#10b981" && resDone46.pillHtml.indexOf('status-done') !== -1 && resDone46.hasWarnIcon === false
 );
 
+// ========================================================
+// 47. [구글 캘린더 시트 삭제 유령(고아) 일정 자동 청소 QA]
+// ========================================================
+console.log('\n🧹 [Step 47: 구글 캘린더 시트 삭제 유령(고아) 일정 자동 청소 통합 QA]');
+
+// 47-1: syncSiteSchedulesBatchSafe 내 cleanupOrphanCalendarEventsSilent 자동 탑재 검증
+const batchSafeCode47 = code.slice(code.indexOf('function syncSiteSchedulesBatchSafe('), code.indexOf('function ensureCalendarSyncColumns('));
+const hasOrphanInBatchSafe = batchSafeCode47.indexOf('cleanupOrphanCalendarEventsSilent(sheet, cal)') !== -1;
+assertTest('syncSiteSchedulesBatchSafe: 상단 메뉴 동기화 시 유령 일정 자동 청소(cleanupOrphanCalendarEventsSilent) 결합 검증', hasOrphanInBatchSafe);
+
+// 47-2: cleanupOrphanCalendarEventsSilent 삭제 한도 상향(50건) 검증
+const orphanFuncCode47 = code.slice(code.indexOf('function cleanupOrphanCalendarEventsSilent('), code.indexOf('function runPeriodicAutoSync('));
+const has50Limit = orphanFuncCode47.indexOf('deletedCount >= 50') !== -1;
+assertTest('cleanupOrphanCalendarEventsSilent: 1회 최대 청소 한도 50건으로 상향 조정 검증', has50Limit);
+
+// 47-3: runPeriodicAutoSync 주간 30분 주기 자율 스캔 및 심야 가드 보강 검증
+const periodicSyncCode47 = code.slice(code.indexOf('function runPeriodicAutoSync('), code.indexOf('function runDebouncedSync('));
+const hasPeriodicOrphanScan = periodicSyncCode47.indexOf('shouldPeriodicOrphanScan') !== -1 &&
+  periodicSyncCode47.indexOf('LAST_ORPHAN_CLEANUP_MS') !== -1 &&
+  periodicSyncCode47.indexOf('needsOrphanCleanup || shouldPeriodicOrphanScan') !== -1;
+assertTest('runPeriodicAutoSync: 주간 30분 주기 유령 일정 자율 치유(Self-Healing) 및 심야 가드 검증', hasPeriodicOrphanScan);
+
+// 47-4: handleCalendarEditTrigger 셀 내용 Delete 키 삭제 시 유령 청소 플래그 세팅 검증
+const editTriggerCode47 = code.slice(code.indexOf('function handleCalendarEditTrigger('), code.indexOf('function syncCalendarToSiteSchedule('));
+const hasClearedRowDetection = editTriggerCode47.indexOf('hasClearedRow') !== -1 &&
+  editTriggerCode47.indexOf('NEEDS_ORPHAN_CLEANUP') !== -1;
+assertTest('handleCalendarEditTrigger: Delete 키로 날짜/공종 셀 삭제 시 유령 일정 청소 플래그 자동 마킹 검증', hasClearedRowDetection);
+
+// 47-5: isSystemSiteScheduleEvent 사용자 테스트 일정(상담, 철거, 목공, 마감) 매칭 검증
+const isSysEventFn = sandbox.isSystemSiteScheduleEvent;
+assertTest('isSystemSiteScheduleEvent: 함수 로드 검증', typeof isSysEventFn === 'function');
+
+const mockTestEventConsult47 = {
+  getTitle: () => '🟦 [상담] 테스트',
+  getDescription: () => '📌 현장명: 테스트\n🔨 공종: 상담\n현장 관리 시스템'
+};
+const mockTestEventDemolish47 = {
+  getTitle: () => '🟦 [철거] 테스트',
+  getDescription: () => '📌 현장명: 테스트\n🔨 공종: 철거'
+};
+const mockTestEventWood47 = {
+  getTitle: () => '🟥 [목공] 테스트',
+  getDescription: () => '📌 현장명: 테스트\n🔨 공종: 목공'
+};
+const mockTestEventFinish47 = {
+  getTitle: () => '🟥 [마감] 테스트',
+  getDescription: () => '📌 현장명: 테스트\n🔨 공종: 마감'
+};
+const mockPersonalEvent47 = {
+  getTitle: () => '결혼기념일',
+  getDescription: () => '가족 저녁식사'
+};
+
+assertTest('isSystemSiteScheduleEvent: 🟦 [상담] 테스트 일정 정상 시스템 일정으로 인식', isSysEventFn(mockTestEventConsult47) === true);
+assertTest('isSystemSiteScheduleEvent: 🟦 [철거] 테스트 일정 정상 시스템 일정으로 인식', isSysEventFn(mockTestEventDemolish47) === true);
+assertTest('isSystemSiteScheduleEvent: 🟥 [목공] 테스트 일정 정상 시스템 일정으로 인식', isSysEventFn(mockTestEventWood47) === true);
+assertTest('isSystemSiteScheduleEvent: 🟥 [마감] 테스트 일정 정상 시스템 일정으로 인식', isSysEventFn(mockTestEventFinish47) === true);
+assertTest('isSystemSiteScheduleEvent: 개인 일정(결혼기념일) 안전 보호(false 판정)', isSysEventFn(mockPersonalEvent47) === false);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

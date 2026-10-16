@@ -780,7 +780,7 @@ function cleanupOrphanCalendarEventsSilent(sheet, cal) {
     var deletedCount = 0;
 
     for (var k = 0; k < allCalEvents.length; k++) {
-      if (deletedCount >= 20) break; // 1회 최대 20건 삭제로 Rate Limit 완벽 보호
+      if (deletedCount >= 50) break; // 1회 최대 50건 삭제로 Rate Limit 완벽 보호 및 잔여 테스트 일정 일괄 정리
       var ev = allCalEvents[k];
       var evId = ev.getId();
 
@@ -870,9 +870,12 @@ function runPeriodicAutoSync() {
     }
 
     var needsOrphanCleanup = (props.getProperty("NEEDS_ORPHAN_CLEANUP") === "true");
-
-    // [심야 시간(22:00 ~ 07:00) 스마트 유휴 가드]
+    var lastOrphanMs = parseInt(props.getProperty("LAST_ORPHAN_CLEANUP_MS") || "0", 10);
     var isNightTime = (hour >= 22 || hour < 7);
+    // 주간(07시~22시) 30분 이상 경과 시 자율 치유 스캔
+    var shouldPeriodicOrphanScan = (!isNightTime && (nowMs - lastOrphanMs > 30 * 60 * 1000));
+
+    // [심야 시간(22:00 ~ 07:00) 스마트 유휴 가드: 변경 사항 및 유령 청소 필요 시에는 심야라도 즉시 처리!]
     if (isNightTime && rowsToSyncToCal.length === 0 && !needsOrphanCleanup) {
       props.setProperty("LAST_PERIODIC_SYNC_MS", String(nowMs));
       return;
@@ -976,8 +979,8 @@ function runPeriodicAutoSync() {
     var nextCursor = (cursor + stepsTaken) % Math.max(values.length, 1);
     props.setProperty("CAL_INSPECT_CURSOR", String(nextCursor));
 
-    // 4단계: 행 삭제(REMOVE_ROW) 발생 시 유령 일정 자동 청소 (모든 미등록 행이 2단계에서 등록 완료된 상태일 때만 안전 실행!)
-    if (!hasRemainingRowsToSync && needsOrphanCleanup) {
+    // 4단계: 행 삭제(REMOVE_ROW) 발생 시 또는 주기적 자율 치유 시 유령 일정 자동 청소 (모든 미등록 행이 2단계에서 등록 완료된 상태일 때만 안전 실행!)
+    if (!hasRemainingRowsToSync && (needsOrphanCleanup || shouldPeriodicOrphanScan)) {
       try {
         SpreadsheetApp.flush(); // 2단계에서 기록된 신규 캘린더ID를 시트에 확실히 반영 후 스캔
         var orphanDeleted = cleanupOrphanCalendarEventsSilent(sheet, cal);
@@ -1249,6 +1252,20 @@ function handleCalendarEditTrigger(e) {
         }
         if (bgUpdated) {
           rowRange.setBackgrounds(rowBgs);
+        }
+
+        // [Delete 키로 셀 내용(날짜/공종)을 지운 경우 유령 일정 청소 플래그 자동 활성화]
+        var hasClearedRow = false;
+        for (var cri = 0; cri < numRows; cri++) {
+          var rD = String(rowVals[cri][1] || "").trim();
+          var rT = String(rowVals[cri][2] || "").trim();
+          if (!rD && !rT) {
+            hasClearedRow = true;
+            break;
+          }
+        }
+        if (hasClearedRow) {
+          props.setProperty("NEEDS_ORPHAN_CLEANUP", "true");
         }
       } catch (eBg) {
         Logger.log("배경색 실시간 동기화 예외: " + eBg.toString());
@@ -2398,9 +2415,10 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
     }
   }
 
-  // 2) [캘린더 내 중복 일정 무음 사전 자동 정리]
+  // 2) [캘린더 내 중복 일정 및 시트 삭제 유령 일정 무음 사전 자동 정리]
   try {
     cleanupDuplicateCalendarEventsSilent(cal, sheet);
+    cleanupOrphanCalendarEventsSilent(sheet, cal);
   } catch (eClean) {}
 
   // 3) [핵심 성능 혁신: 전체 캘린더 이벤트 1회 사전 일괄 조회(Pre-fetch)]
@@ -2951,6 +2969,7 @@ function isSystemSiteScheduleEvent(ev) {
   if (desc.indexOf("📌 현장명:") !== -1 ||
       desc.indexOf("🔨 공종:") !== -1 ||
       desc.indexOf("우성아이디") !== -1 ||
+      desc.indexOf("현장 관리 시스템") !== -1 ||
       desc.indexOf("공유/진행상태 변경") !== -1) {
     return true;
   }
