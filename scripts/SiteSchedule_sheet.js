@@ -123,16 +123,17 @@ function ensureTasksInValidation(sheet, newTasks) {
 }
 
 /**
- * 담당자 드롭다운 목록 반환 (구성원 시트 연동 + 기본 담당자 조합)
+ * 03_구성원 시트 연동 개별 구성원 이름 목록 반환 (대시보드 담당자 필터 버튼용)
  */
-function getAvailableManagers(ss) {
-  var managers = [];
+function getMemberNames(ss) {
+  var members = [];
   try {
     if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
     var mSheet = findMembersSheet(ss);
     if (mSheet && mSheet.getLastRow() >= 2) {
       var lastR = mSheet.getLastRow();
-      var lastC = mSheet.getLastColumn();
+      var lastC = Math.max(mSheet.getLastColumn(), 1);
       var hVals = mSheet.getRange(1, 1, 1, lastC).getValues()[0];
       var nameCol = -1;
       for (var c = 0; c < lastC; c++) {
@@ -142,27 +143,46 @@ function getAvailableManagers(ss) {
           break;
         }
       }
-      if (nameCol !== -1) {
-        var names = mSheet.getRange(2, nameCol, lastR - 1, 1).getValues();
-        for (var i = 0; i < names.length; i++) {
-          var nm = String(names[i][0] || "").trim();
-          if (nm && managers.indexOf(nm) === -1) {
-            managers.push(nm);
+      if (nameCol === -1) {
+        nameCol = 1;
+      }
+      var names = mSheet.getRange(2, nameCol, lastR - 1, 1).getValues();
+      for (var i = 0; i < names.length; i++) {
+        var nm = String(names[i][0] || "").trim();
+        if (nm && nm !== "이름" && nm !== "성명" && nm !== "담당자") {
+          var parts = nm.split(/[,/]/);
+          for (var p = 0; p < parts.length; p++) {
+            var subNm = parts[p].trim();
+            if (subNm && members.indexOf(subNm) === -1) {
+              members.push(subNm);
+            }
           }
         }
       }
     }
-  } catch(e) {}
-
-  if (managers.length === 0) {
-    managers = ["조항만", "송지은", "전예린", "영하"];
+  } catch (e) {
+    Logger.log("getMemberNames 예외: " + e.toString());
   }
 
+  if (members.length === 0) {
+    members = ["조항만", "송지은", "전예린", "영하"];
+  }
+
+  return members;
+}
+
+/**
+ * 담당자 드롭다운 목록 반환 (구성원 시트 연동 + 기본 담당자 조합)
+ */
+function getAvailableManagers(ss) {
+  var baseManagers = getMemberNames(ss);
+  var managers = baseManagers.slice();
+
   // 복합 담당자 조합 추가 (빨간 삼각형 에러 방지)
-  var baseCount = managers.length;
+  var baseCount = baseManagers.length;
   for (var a = 0; a < baseCount; a++) {
     for (var b = a + 1; b < baseCount; b++) {
-      var comb = managers[a] + ", " + managers[b];
+      var comb = baseManagers[a] + ", " + baseManagers[b];
       if (managers.indexOf(comb) === -1) {
         managers.push(comb);
       }
@@ -5818,6 +5838,7 @@ function getSidebarDashboardData() {
       return {
         kpi: { totalSites: 0, activeSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
         todayStr: formatDateYYMMDD(new Date()),
+        members: getMemberNames(ss),
         sites: []
       };
     }
@@ -5988,6 +6009,7 @@ function getSidebarDashboardData() {
         delayedCount: delayedCount
       },
       todayStr: todayYYMMDD,
+      members: getMemberNames(ss),
       sites: sitesList
     };
   } catch (err) {
@@ -5995,6 +6017,7 @@ function getSidebarDashboardData() {
       error: "데이터 처리 중 오류 발생: " + (err.message || err),
       kpi: { totalSites: 0, activeSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
       todayStr: formatDateYYMMDD(new Date()),
+      members: ["조항만", "송지은", "전예린", "영하"],
       sites: []
     };
   }
@@ -6050,13 +6073,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '.kpi-num.delay { color: #dc2626; }';
   html += '.kpi-label { font-size: 11px; color: #64748b; font-weight: 500; margin-top: 2px; }';
   html += '.search-box { position: relative; margin-bottom: 8px; }';
-  html += '.search-input { width: 100%; padding: 8px 10px 8px 28px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12.5px; outline: none; background: #ffffff; }';
+  html += '.search-input { width: 100%; padding: 8px 30px 8px 28px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12.5px; outline: none; background: #ffffff; }';
   html += '.search-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }';
   html += '.search-icon { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #94a3b8; }';
+  html += '.search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; border-radius: 50%; background: #e2e8f0; color: #64748b; border: none; font-size: 11px; line-height: 18px; text-align: center; cursor: pointer; display: none; padding: 0; outline: none; }';
+  html += '.search-clear:hover { background: #cbd5e1; color: #1e293b; }';
+  html += '.search-clear.show { display: block; }';
   html += '.filter-tabs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; }';
   html += '.filter-tab { padding: 5px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 600; cursor: pointer; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; white-space: nowrap; transition: all 0.15s; }';
   html += '.filter-tab:hover { background: #e2e8f0; }';
   html += '.filter-tab.active { background: #2563eb; color: #ffffff; border-color: #2563eb; }';
+  html += '.member-filter-bar { display: flex; gap: 4px; overflow-x: auto; padding-top: 6px; padding-bottom: 2px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }';
+  html += '.member-filter-bar::-webkit-scrollbar { display: none; }';
+  html += '.member-tab { padding: 4px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; cursor: pointer; background: #ffffff; color: #475569; border: 1px solid #cbd5e1; white-space: nowrap; transition: all 0.15s; flex-shrink: 0; }';
+  html += '.member-tab:hover { background: #f1f5f9; }';
+  html += '.member-tab.active { background: #0f172a; color: #ffffff; border-color: #0f172a; font-weight: 700; box-shadow: 0 1px 3px rgba(15,23,42,0.2); }';
   html += '.content { padding: 12px; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; }';
   html += '.site-card:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.06); }';
@@ -6156,7 +6187,8 @@ function buildSidebarDashboardHtml(mode) {
 
   html += '  <div class="search-box">';
   html += '    <span class="search-icon">🔍</span>';
-  html += '    <input type="text" id="searchInput" class="search-input" placeholder="현장명, 공종, 담당자 실시간 검색..." oninput="renderList()">';
+  html += '    <input type="text" id="searchInput" class="search-input" placeholder="현장명, 공종, 담당자 실시간 검색..." oninput="onSearchInput()">';
+  html += '    <button type="button" id="searchClearBtn" class="search-clear" onclick="clearSearch()" title="검색어 삭제">✕</button>';
   html += '  </div>';
 
   html += '  <div class="filter-tabs">';
@@ -6166,6 +6198,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="filter-tab" data-filter="prog" onclick="setFilter(\'prog\')">진행중</div>';
   html += '    <div class="filter-tab" data-filter="done" onclick="setFilter(\'done\')">✅ 완료</div>';
   html += '  </div>';
+  html += '  <div class="member-filter-bar" id="memberFilterBar"></div>';
   html += '</div>';
 
   html += '<div class="content" id="contentArea">';
@@ -6224,6 +6257,7 @@ function buildSidebarDashboardHtml(mode) {
   html += 'const webAppBaseUrl = "' + (webAppUrl || "") + '";';
   html += 'let rawData = null;';
   html += 'let currentFilter = "all";';
+  html += 'let selectedMember = "";';
   html += 'let curTaskObj = null;';
   html += 'let curSiteName = "";';
   html += 'let selectedStatus = "예정";';
@@ -6234,6 +6268,57 @@ function buildSidebarDashboardHtml(mode) {
   html += '  t.innerText = msg;';
   html += '  t.classList.add("show");';
   html += '  setTimeout(() => t.classList.remove("show"), 2200);';
+  html += '}';
+
+  html += 'function onSearchInput() {';
+  html += '  const q = document.getElementById("searchInput").value;';
+  html += '  const clearBtn = document.getElementById("searchClearBtn");';
+  html += '  if (clearBtn) {';
+  html += '    clearBtn.classList.toggle("show", q.length > 0);';
+  html += '  }';
+  html += '  renderList();';
+  html += '}';
+
+  html += 'function clearSearch() {';
+  html += '  const input = document.getElementById("searchInput");';
+  html += '  if (input) {';
+  html += '    input.value = "";';
+  html += '    input.focus();';
+  html += '  }';
+  html += '  const clearBtn = document.getElementById("searchClearBtn");';
+  html += '  if (clearBtn) {';
+  html += '    clearBtn.classList.remove("show");';
+  html += '  }';
+  html += '  renderList();';
+  html += '}';
+
+  html += 'function renderMemberFilterTabs(members) {';
+  html += '  const bar = document.getElementById("memberFilterBar");';
+  html += '  if (!bar) return;';
+  html += '  if (!members || members.length === 0) {';
+  html += '    bar.innerHTML = "";';
+  html += '    return;';
+  html += '  }';
+  html += '  let tabsHtml = \'<div class="member-tab \' + (!selectedMember ? "active" : "") + \'" onclick="setMemberFilter(\\\'\\\')">👤 전체</div>\';';
+  html += '  members.forEach(m => {';
+  html += '    const isAct = (selectedMember === m);';
+  html += '    const mEnc = encodeURIComponent(m);';
+  html += '    tabsHtml += \'<div class="member-tab \' + (isAct ? "active" : "") + \'" onclick="setMemberFilter(\\\'\' + mEnc + \'\\\')">\' + escapeHtml(m) + \'</div>\';';
+  html += '  });';
+  html += '  bar.innerHTML = tabsHtml;';
+  html += '}';
+
+  html += 'function setMemberFilter(enc) {';
+  html += '  const name = enc ? decodeURIComponent(enc) : "";';
+  html += '  if (selectedMember === name) {';
+  html += '    selectedMember = "";';
+  html += '  } else {';
+  html += '    selectedMember = name;';
+  html += '  }';
+  html += '  if (rawData && rawData.members) {';
+  html += '    renderMemberFilterTabs(rawData.members);';
+  html += '  }';
+  html += '  renderList();';
   html += '}';
 
   html += 'function loadData() {';
@@ -6263,6 +6348,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    document.getElementById("kpiSites").innerText = (kpi.activeSites !== undefined) ? kpi.activeSites : (kpi.totalSites || 0);';
   html += '    document.getElementById("kpiToday").innerText = kpi.todayCount || 0;';
   html += '    document.getElementById("kpiDelay").innerText = kpi.delayedCount || 0;';
+  html += '    renderMemberFilterTabs(data.members || []);';
   html += '    renderList();';
   html += '  } catch (renderErr) {';
   html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 대시보드 렌더링 오류: \' + escapeHtml(renderErr.message || renderErr) + \'</div>\';';
@@ -6303,6 +6389,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (query && currentFilter !== "done") {';
   html += '        const stClean = (t.status || "").replace(/\\s+/g, "");';
   html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return false;';
+  html += '      }';
+  html += '      if (selectedMember) {';
+  html += '        const mgr = (t.manager || "").trim();';
+  html += '        if (mgr.indexOf(selectedMember) === -1) return false;';
   html += '      }';
   html += '      if (query) {';
   html += '        const matchSite = site.siteName.toLowerCase().indexOf(query) !== -1;';
@@ -6350,7 +6440,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    visibleSitesCount++;';
   html += '    const site = item.site;';
   html += '    const filteredTasks = item.filteredTasks;';
-  html += '    const isExpanded = (query !== "") || (currentFilter !== "all" && currentFilter !== "done");';
+  html += '    const isExpanded = (query !== "") || (selectedMember !== "") || (currentFilter !== "all" && currentFilter !== "done");';
 
   html += '    html += \'<div class="site-card \' + (isExpanded ? "expanded" : "") + \'">\';';
   html += '    html += \'  <div class="site-header" style="border-left-color: \' + site.colorHex + \';" onclick="toggleSite(this)">\';';

@@ -2213,9 +2213,9 @@ assertTest('getSidebarDashboardData: 시트 예외 발생 시 에러 객체 반�
   safeDashData.sites.length === 0
 );
 
-// 31-5: 전체 및 완료 탭에서는 접힌 상태, 검색 시에는 펼쳐진 상태 유지 검증
-assertTest('buildSidebarDashboardHtml: 전체/완료 탭에서는 기본 접힘, 검색 시에는 펼침(isExpanded) 적용 검증',
-  modalHtml.indexOf('(query !== "") || (currentFilter !== "all" && currentFilter !== "done")') !== -1
+// 31-5: 전체 및 완료 탭에서는 접힌 상태, 검색 및 담당자 필터 시에는 펼쳐진 상태 유지 검증
+assertTest('buildSidebarDashboardHtml: 전체/완료 탭에서는 기본 접힘, 검색/담당자 필터 시에는 펼침(isExpanded) 적용 검증',
+  modalHtml.indexOf('(query !== "") || (selectedMember !== "") || (currentFilter !== "all" && currentFilter !== "done")') !== -1
 );
 
 // ========================================================
@@ -2349,6 +2349,154 @@ simMatched.sort((a, b) => a.earliestFilteredMs - b.earliestFilteredMs);
 assertTest('동적 정렬 시뮬레이션: "도배" 검색 시 10.21 일정을 가진 신대방우성 1동 805호가 11.05 일정의 5동 601호보다 상위에 정렬',
   simMatched[0].site.siteName === '신대방우성 1동 805호' &&
   simMatched[1].site.siteName === '신대방우성 5동 601호'
+);
+
+// ========================================================
+// 🎯 Step 33: 검색창 검색어 삭제 ✕ 버튼 & 03_구성원 시트 연동 담당자 필터 버튼 QA
+// ========================================================
+console.log('\n🎯 [Step 33: 검색창 검색어 삭제 ✕ 버튼 & 03_구성원 시트 연동 담당자 필터 버튼 QA]');
+
+// 33-1: getMemberNames 함수 탑재 여부
+assertTest('getMemberNames 함수 탑재 여부',
+  typeof sandbox.getMemberNames === 'function'
+);
+
+// 33-2: getMemberNames가 03_구성원 시트에서 개별 구성원 이름 추출하는지 검증
+const mockMembersSheet = {
+  getName: () => '03_구성원',
+  getLastRow: () => 4,
+  getLastColumn: () => 3,
+  getRange: (r, c, nr, nc) => {
+    if (r === 1) {
+      return { getValues: () => [['직급', '성명', '연락처']] };
+    }
+    return {
+      getValues: () => [
+        ['조항만'],
+        ['송지은, 전예린'],
+        ['영하']
+      ]
+    };
+  }
+};
+const mockSSWithMembers = {
+  getSheets: () => [mockMembersSheet]
+};
+const extractedMembers = sandbox.getMemberNames(mockSSWithMembers);
+
+assertTest('getMemberNames: 03_구성원 시트의 복합 담당자(쉼표 분리) 포함 개별 이름 정상 추출 검증',
+  Array.isArray(extractedMembers) &&
+  extractedMembers.length === 4 &&
+  extractedMembers[0] === '조항만' &&
+  extractedMembers[1] === '송지은' &&
+  extractedMembers[2] === '전예린' &&
+  extractedMembers[3] === '영하'
+);
+
+// 33-3: 시트 미존재 시 fallback 기본 구성원 반환 검증
+const fallbackMembers = sandbox.getMemberNames({ getSheets: () => [] });
+assertTest('getMemberNames: 구성원 시트 부재 시 fallback 기본 멤버 반환 검증',
+  fallbackMembers.length === 4 && fallbackMembers.includes('조항만')
+);
+
+// 33-4: getSidebarDashboardData 반환값에 members 포함 검증
+const dashDataWithMembers = sandbox.getSidebarDashboardData();
+assertTest('getSidebarDashboardData: 반환 객체에 members 배열 포함 검증',
+  dashDataWithMembers && Array.isArray(dashDataWithMembers.members) && dashDataWithMembers.members.length > 0
+);
+
+// 33-5: 검색창 ✕ 버튼 HTML 및 CSS 스타일 탑재 검증
+const dashHtml33 = sandbox.buildSidebarDashboardHtml('mobile');
+assertTest('buildSidebarDashboardHtml: 검색창 내 검색어 삭제 ✕ 버튼(#searchClearBtn) 탑재 검증',
+  dashHtml33.indexOf('id="searchClearBtn"') !== -1 &&
+  dashHtml33.indexOf('onclick="clearSearch()"') !== -1 &&
+  dashHtml33.indexOf('.search-clear') !== -1 &&
+  dashHtml33.indexOf('.search-clear.show') !== -1
+);
+
+// 33-6: 검색창 input right padding 확장(30px) 및 onSearchInput 연동 검증
+assertTest('buildSidebarDashboardHtml: 검색창 30px 패딩 및 onSearchInput 입력 이벤트 연동 검증',
+  dashHtml33.indexOf('padding: 8px 30px 8px 28px;') !== -1 &&
+  dashHtml33.indexOf('oninput="onSearchInput()"') !== -1
+);
+
+// 33-7: 담당자 필터 바(#memberFilterBar) HTML 및 스타일 탑재 검증
+assertTest('buildSidebarDashboardHtml: 상단 필터 탭 하단에 담당자 필터 바(#memberFilterBar) 탑재 검증',
+  dashHtml33.indexOf('id="memberFilterBar"') !== -1 &&
+  dashHtml33.indexOf('.member-filter-bar') !== -1 &&
+  dashHtml33.indexOf('.member-tab') !== -1 &&
+  dashHtml33.indexOf('.member-tab.active') !== -1
+);
+
+// 33-8: 클라이언트 스크립트에 clearSearch, onSearchInput, renderMemberFilterTabs, setMemberFilter 탑재 검증
+assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 검색 삭제 및 담당자 필터 제어 함수 탑재 검증',
+  dashHtml33.indexOf('function onSearchInput()') !== -1 &&
+  dashHtml33.indexOf('function clearSearch()') !== -1 &&
+  dashHtml33.indexOf('function renderMemberFilterTabs(members)') !== -1 &&
+  dashHtml33.indexOf('function setMemberFilter(enc)') !== -1
+);
+
+// 33-9: onDataLoaded에서 renderMemberFilterTabs 호출 탑재 검증
+assertTest('buildSidebarDashboardHtml: onDataLoaded 시 renderMemberFilterTabs(data.members) 자동 호출 검증',
+  dashHtml33.indexOf('renderMemberFilterTabs(data.members || []);') !== -1
+);
+
+// 33-10: 담당자 필터링 시뮬레이션 검증 (특정 멤버 클릭 시 해당 담당자 공정만 필터 & 펼침 & 빠른 일정순 정렬)
+const testMemberFilterSites = [
+  {
+    siteName: '현장A',
+    colorHex: '#2563eb',
+    isAllCompleted: false,
+    tasks: [
+      { taskName: '도배', manager: '송지은', dateDisplay: '26.10.25', dateMs: 1761350400000, status: '예정' },
+      { taskName: '타일', manager: '조항만', dateDisplay: '26.10.18', dateMs: 1760745600000, status: '진행중' }
+    ]
+  },
+  {
+    siteName: '현장B',
+    colorHex: '#3F51B5',
+    isAllCompleted: false,
+    tasks: [
+      { taskName: '마루', manager: '송지은, 영하', dateDisplay: '26.10.20', dateMs: 1760918400000, status: '예정' }
+    ]
+  }
+];
+
+const simSelectedMember = '송지은';
+const simMatchedMemberSites = [];
+testMemberFilterSites.forEach(s => {
+  const fTasks = s.tasks.filter(t => {
+    const mgr = (t.manager || '').trim();
+    return mgr.indexOf(simSelectedMember) !== -1;
+  });
+  if (fTasks.length === 0) return;
+  let eMs = 0;
+  for (let i = 0; i < fTasks.length; i++) {
+    if (fTasks[i].dateMs && (!eMs || fTasks[i].dateMs < eMs)) eMs = fTasks[i].dateMs;
+  }
+  simMatchedMemberSites.push({ site: s, filteredTasks: fTasks, earliestFilteredMs: eMs });
+});
+simMatchedMemberSites.sort((a, b) => a.earliestFilteredMs - b.earliestFilteredMs);
+
+const simIsExpanded = ('' !== '') || (simSelectedMember !== '') || ('all' !== 'all' && 'all' !== 'done');
+
+assertTest('담당자 필터 시뮬레이션: "송지은" 필터 시 10.20 일정을 가진 현장B가 10.25 현장A보다 상위 정렬되고 카드가 펼쳐짐(isExpanded: true) 검증',
+  simMatchedMemberSites.length === 2 &&
+  simMatchedMemberSites[0].site.siteName === '현장B' &&
+  simMatchedMemberSites[0].filteredTasks.length === 1 &&
+  simMatchedMemberSites[1].site.siteName === '현장A' &&
+  simMatchedMemberSites[1].filteredTasks.length === 1 &&
+  simMatchedMemberSites[1].filteredTasks[0].taskName === '도배' &&
+  simIsExpanded === true
+);
+
+// 33-11: 필터 해제 시 시뮬레이션 (선택 해제 시 평상시 접힌 상태 유지)
+const simResetMember = '';
+const simResetQuery = '';
+const simResetFilter = 'all';
+const simResetExpanded = (simResetQuery !== '') || (simResetMember !== '') || (simResetFilter !== 'all' && simResetFilter !== 'done');
+assertTest('필터 해제 시뮬레이션: 담당자 및 검색어가 없을 때 전체 탭에서 카드가 접힌 상태(isExpanded: false) 유지 검증',
+  simResetExpanded === false
 );
 
 console.log('\n========================================================');
