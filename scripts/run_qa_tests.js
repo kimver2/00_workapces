@@ -179,10 +179,10 @@ console.log('\n🔍 [Step 3: 포맷팅 및 역방향 동기화 헬퍼 검증]');
 const fmtWithTime = sandbox.formatDateWithTime;
 const sA = new Date(2026, 9, 11, 15, 0);
 const eA1 = new Date(2026, 9, 11, 16, 0);
-assertTest('1시간 기본 일정 포맷팅: "26.10.11 15:00"', fmtWithTime(sA, eA1) === '26.10.11 15:00');
+assertTest('1시간 기본 일정 포맷팅: "2026.10.11 15:00"', fmtWithTime(sA, eA1) === '2026.10.11 15:00');
 
 const eA2 = new Date(2026, 9, 11, 18, 0);
-assertTest('3시간 일정 포맷팅: "26.10.11 15:00 ~ 18:00"', fmtWithTime(sA, eA2) === '26.10.11 15:00 ~ 18:00');
+assertTest('3시간 일정 포맷팅: "2026.10.11 15:00 ~ 18:00"', fmtWithTime(sA, eA2) === '2026.10.11 15:00 ~ 18:00');
 
 console.log('\n🔍 [Step 3.5: 핵심 엔진 런타임 실행(Mock Runtime Execution) 전수 검증]');
 const buildDetailsFn = sandbox.buildEventDetails;
@@ -1272,28 +1272,28 @@ console.log('\n📱 [Step 16: 모바일 웹앱 및 모닝 브리핑 날짜 표�
 
 // 16-1: formatScheduleDateDisplay 함수 탑재 및 단위 테스트 (요일 포함)
 assertTest('formatScheduleDateDisplay: 날짜 표준 포맷 변환 함수 탑재 여부', typeof sandbox.formatScheduleDateDisplay === 'function');
-assertTest('formatScheduleDateDisplay: 단일 종일 일정 -> 26.11.05 (목) 변환 검증',
-  sandbox.formatScheduleDateDisplay(new Date(2026, 10, 5)) === '26.11.05 (목)'
+assertTest('formatScheduleDateDisplay: 단일 종일 일정 -> 2026.11.05 (목) 변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date(2026, 10, 5)) === '2026.11.05 (목)'
 );
-assertTest('formatScheduleDateDisplay: 기간 종일 일정 -> 26.11.05 (목) ~ 26.11.07 (토) 변환 검증',
-  sandbox.formatScheduleDateDisplay('2026-11-05 ~ 2026-11-07') === '26.11.05 (목) ~ 26.11.07 (토)'
+assertTest('formatScheduleDateDisplay: 기간 종일 일정 -> 2026.11.05 (목) ~ 2026.11.07 (토) 변환 검증',
+  sandbox.formatScheduleDateDisplay('2026-11-05 ~ 2026-11-07') === '2026.11.05 (목) ~ 2026.11.07 (토)'
 );
-assertTest('formatScheduleDateDisplay: 단일 시간 일정 -> 26.11.05 (목) 14:00 변환 검증',
-  sandbox.formatScheduleDateDisplay(new Date(2026, 10, 5, 14, 0)) === '26.11.05 (목) 14:00'
+assertTest('formatScheduleDateDisplay: 단일 시간 일정 -> 2026.11.05 (목) 14:00 변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date(2026, 10, 5, 14, 0)) === '2026.11.05 (목) 14:00'
 );
-assertTest('formatScheduleDateDisplay: 당일 시간 범위 -> 26.11.05 (목) 14:00 ~ 16:00 변환 검증',
-  sandbox.formatScheduleDateDisplay('26.11.05 14:00 ~ 16:00') === '26.11.05 (목) 14:00 ~ 16:00'
+assertTest('formatScheduleDateDisplay: 당일 시간 범위 -> 2026.11.05 (목) 14:00 ~ 16:00 변환 검증',
+  sandbox.formatScheduleDateDisplay('26.11.05 14:00 ~ 16:00') === '2026.11.05 (목) 14:00 ~ 16:00'
 );
-assertTest('formatScheduleDateDisplay: 다일 시간 범위 -> 26.11.05 (목) 14:00 ~ 26.11.06 (금) 11:00 변환 검증',
-  sandbox.formatScheduleDateDisplay('26.11.05 14:00 ~ 26.11.06 11:00') === '26.11.05 (목) 14:00 ~ 26.11.06 (금) 11:00'
+assertTest('formatScheduleDateDisplay: 다일 시간 범위 -> 2026.11.05 (목) 14:00 ~ 2026.11.06 (금) 11:00 변환 검증',
+  sandbox.formatScheduleDateDisplay('26.11.05 14:00 ~ 26.11.06 11:00') === '2026.11.05 (목) 14:00 ~ 2026.11.06 (금) 11:00'
 );
-assertTest('formatScheduleDateDisplay: 원시 Date.toString() 문자열 -> 26.11.11 (수) 완벽 파싱/변환 검증',
-  sandbox.formatScheduleDateDisplay(new Date('2026-11-11T00:00:00+09:00')) === '26.11.11 (수)'
+assertTest('formatScheduleDateDisplay: 원시 Date.toString() 문자열 -> 2026.11.11 (수) 완벽 파싱/변환 검증',
+  sandbox.formatScheduleDateDisplay(new Date('2026-11-11T00:00:00+09:00')) === '2026.11.11 (수)'
 );
 
 // 16-2: buildMobileStatusHtml 일시 표기 시 formatScheduleDateDisplay 적용 및 GMT+0900 배제 검증
 const testHtml = sandbox.buildMobileStatusHtml(2, '신대방우성 5동 601호', new Date(2026, 10, 11), 'S/A', '예정');
-assertTest('buildMobileStatusHtml: 일시 출력 시 26.11.11 (수) 깔끔한 포맷 렌더링 검증', testHtml.indexOf("<span class='info-val'>26.11.11 (수)</span>") !== -1);
+assertTest('buildMobileStatusHtml: 일시 출력 시 2026.11.11 (수) 깔끔한 포맷 렌더링 검증', testHtml.indexOf("<span class='info-val'>2026.11.11 (수)</span>") !== -1);
 assertTest('buildMobileStatusHtml: 일시 출력에서 raw Date (GMT+0900 / 한국 표준시) 완전 제거 검증', testHtml.indexOf('GMT+0900') === -1);
 
 // 16-3: buildMobileStatusHtml 하단 버튼명 "저장하기" 간소화 검증
@@ -2730,6 +2730,62 @@ if (scriptMatch35 && scriptMatch35[1]) {
   }
 }
 assertTest('buildSidebarDashboardHtml: 캡쳐 로직 추가 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk35);
+
+// ========================================================
+// 36. [2026.00.00 날짜 표준 형식 통일 & 캡쳐 모달 다운로드 분리 QA]
+// ========================================================
+console.log('\n📅 [Step 36: 2026.00.00 날짜 표준 형식 통일 & 캡쳐 모달 다운로드 분리 QA]');
+
+// 36-1: formatDateYYMMDD가 4자리 연도 YYYY.MM.DD 반환 검증
+const testDate36 = new Date(2026, 9, 15); // 2026-10-15
+const formattedYmd36 = sandbox.formatDateYYMMDD(testDate36);
+assertTest('formatDateYYMMDD: 4자리 연도 YYYY.MM.DD (2026.10.15) 표준 형식 반환 검증',
+  formattedYmd36 === '2026.10.15'
+);
+
+// 36-2: formatDateTime이 4자리 연도 YYYY.MM.DD HH:mm 반환 검증
+const testTime36 = new Date(2026, 9, 9, 20, 50);
+const formattedTime36 = sandbox.formatDateTime(testTime36);
+assertTest('formatDateTime: 4자리 연도 YYYY.MM.DD HH:mm (2026.10.09 20:50) 표준 형식 반환 검증',
+  formattedTime36 === '2026.10.09 20:50'
+);
+
+// 36-3: normalizeDateStringToYYYYMMDD 다양한 입력 케이스 2026.00.00 정규화 검증
+assertTest('normalizeDateStringToYYYYMMDD: "26.10.15" -> "2026.10.15" 정규화 검증',
+  sandbox.normalizeDateStringToYYYYMMDD('26.10.15') === '2026.10.15'
+);
+assertTest('normalizeDateStringToYYYYMMDD: 공백 포함 "2026. 10. 21" -> "2026.10.21" 정규화 검증',
+  sandbox.normalizeDateStringToYYYYMMDD('2026. 10. 21') === '2026.10.21'
+);
+assertTest('normalizeDateStringToYYYYMMDD: 1자리 월/일 "2026. 9. 9" -> "2026.09.09" 패딩 정규화 검증',
+  sandbox.normalizeDateStringToYYYYMMDD('2026. 9. 9') === '2026.09.09'
+);
+assertTest('normalizeDateStringToYYYYMMDD: 기간 날짜 "26.10.21 ~ 26.10.22" -> "2026.10.21 ~ 2026.10.22" 정규화 검증',
+  sandbox.normalizeDateStringToYYYYMMDD('26.10.21 ~ 26.10.22') === '2026.10.21 ~ 2026.10.22'
+);
+
+// 36-4: formatAllDatesInSheetToYYYYMMDD 함수 탑재 여부 검증
+assertTest('formatAllDatesInSheetToYYYYMMDD: 시트 날짜 2026.00.00 일괄 변환 전용 함수 탑재 검증',
+  typeof sandbox.formatAllDatesInSheetToYYYYMMDD === 'function'
+);
+
+// 36-5: captureCalendarScreen 캡쳐 즉시 자동 다운로드 제거(팝업만 단독 띄움) 검증
+const dashHtml36 = sandbox.buildSidebarDashboardHtml('mobile');
+assertTest('buildSidebarDashboardHtml: 캡쳐 버튼 클릭 시 중복 다운로드 유발하던 즉시 link.click() 배제 및 팝업(showCaptureModal) 단독 호출 검증',
+  dashHtml36.indexOf('showCaptureModal(dataUrl, filename);') !== -1 &&
+  dashHtml36.indexOf('link.download = filename;\n        link.href = dataUrl;\n        document.body.appendChild(link);\n        link.click();') === -1
+);
+
+// 36-6: 마감 경과 미완료 공정(어제 일정 + 예정)이 지연(#fff1f2 붉은색)으로 판별되는 원리 검증
+const testDelayedTask = {
+  startDate: new Date(2026, 9, 15),
+  endDate: new Date(2026, 9, 15)
+};
+const todayRef = new Date(2026, 9, 16);
+const isDelayResult = sandbox.isScheduleDelayed(testDelayedTask, '예정', todayRef);
+assertTest('isScheduleDelayed: 오늘(10.16) 기준 어제(10.15) 예정 공정은 isDelayed === true (시트 #fff1f2 붉은색 하이라이트 정상 판정) 검증',
+  isDelayResult === true
+);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);

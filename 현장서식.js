@@ -315,6 +315,7 @@ function onOpen() {
     .addItem("📱 모바일 대시보드 URL 확인 및 안내", "showMobileDashboardUrl")
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
     .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
+    .addItem("📅 전체 날짜 2026.00.00 형식 일괄 변환", "formatAllDatesInSheetToYYYYMMDD")
     .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
     .addSeparator()
 
@@ -1172,6 +1173,29 @@ function handleCalendarEditTrigger(e) {
       }
     }
 
+    // [날짜(B열) 2026.00.00 표준 형식 실시간 자동 정규화]
+    if (startCol <= 2 && endCol >= 2) {
+      try {
+        var dateRange = sheet.getRange(actualStartRow, 2, numRows, 1);
+        var dateVals = dateRange.getValues();
+        var dateChanged = false;
+        for (var di = 0; di < dateVals.length; di++) {
+          var rawD = dateVals[di][0];
+          if (!rawD) continue;
+          var normD = normalizeDateStringToYYYYMMDD(rawD);
+          if (normD && String(rawD).trim() !== normD) {
+            dateVals[di][0] = normD;
+            dateChanged = true;
+          }
+        }
+        if (dateChanged) {
+          dateRange.setValues(dateVals);
+        }
+      } catch (eDate) {
+        Logger.log("날짜 자동 정규화 예외: " + eDate.toString());
+      }
+    }
+
     // [스마트 디바운스 모드 (기본 권장)]:
     // 사용자가 입력 중일 때는 즉시 API를 호출하지 않고 타이핑 완료 1분 뒤 1회만 자동 동기화되도록 예약!
     if (syncMode === "DEBOUNCE" || !syncMode) {
@@ -1434,24 +1458,24 @@ function isDateEqual(d1, d2) {
 }
 
 /**
- * Date 객체를 YY.MM.DD 문자열로 변환 (예: 26.10.15)
+ * Date 객체를 YYYY.MM.DD 문자열로 변환 (예: 2026.10.15)
  */
 function formatDateYYMMDD(date) {
   if (!date) return "";
-  var yy = String(date.getFullYear()).slice(-2);
+  var yyyy = String(date.getFullYear());
   var mm = String(date.getMonth() + 1);
   if (mm.length < 2) mm = "0" + mm;
   var dd = String(date.getDate());
   if (dd.length < 2) dd = "0" + dd;
-  return yy + "." + mm + "." + dd;
+  return yyyy + "." + mm + "." + dd;
 }
 
 /**
- * Date 객체를 YY.MM.DD HH:mm 문자열로 변환 (예: 26.10.09 20:50)
+ * Date 객체를 YYYY.MM.DD HH:mm 문자열로 변환 (예: 2026.10.09 20:50)
  */
 function formatDateTime(d) {
   if (!d) return "";
-  var yy = String(d.getFullYear()).slice(-2);
+  var yyyy = String(d.getFullYear());
   var mm = String(d.getMonth() + 1);
   if (mm.length < 2) mm = "0" + mm;
   var dd = String(d.getDate());
@@ -1460,7 +1484,90 @@ function formatDateTime(d) {
   if (hh.length < 2) hh = "0" + hh;
   var min = String(d.getMinutes());
   if (min.length < 2) min = "0" + min;
-  return yy + "." + mm + "." + dd + " " + hh + ":" + min;
+  return yyyy + "." + mm + "." + dd + " " + hh + ":" + min;
+}
+
+/**
+ * 임의의 날짜 입력을 2026.00.00 (YYYY.MM.DD) 표준 형식으로 변환 (공백 제거 및 2자리 패딩)
+ * 예: 26.10.15 -> 2026.10.15 / 2026. 10. 21 -> 2026.10.21 / 2026. 9. 9 -> 2026.09.09
+ */
+function normalizeDateStringToYYYYMMDD(val) {
+  if (!val) return "";
+  if (val instanceof Date) {
+    return formatDateYYMMDD(val);
+  }
+  var str = String(val).trim();
+  if (!str) return "";
+
+  var parsed = null;
+  try {
+    parsed = parseScheduleDateRange(str);
+  } catch (e) {}
+
+  if (parsed && parsed.startDate) {
+    var sy = parsed.startDate.getFullYear();
+    var sm = parsed.startDate.getMonth() + 1;
+    var sd = parsed.startDate.getDate();
+    var sStr = sy + "." + (sm < 10 ? "0" + sm : sm) + "." + (sd < 10 ? "0" + sd : sd);
+
+    var endD = parsed.displayEndDate || parsed.endDate;
+    if (endD && (parsed.startDate.getTime() !== endD.getTime())) {
+      var ey = endD.getFullYear();
+      var em = endD.getMonth() + 1;
+      var ed = endD.getDate();
+      var eStr = ey + "." + (em < 10 ? "0" + em : em) + "." + (ed < 10 ? "0" + ed : ed);
+      if (sStr !== eStr) {
+        return sStr + " ~ " + eStr;
+      }
+    }
+    return sStr;
+  }
+
+  // Regex fallback: 26.10.15 또는 2026. 9. 9 -> 2026.09.09
+  return str.replace(/(\b\d{2,4})[-./]\s*(\d{1,2})[-./]\s*(\d{1,2})\b/g, function(match, y, m, d) {
+    var yNum = parseInt(y, 10);
+    if (yNum < 100) yNum += 2000;
+    var mNum = parseInt(m, 10);
+    var dNum = parseInt(d, 10);
+    return yNum + "." + (mNum < 10 ? "0" + mNum : mNum) + "." + (dNum < 10 ? "0" + dNum : dNum);
+  });
+}
+
+/**
+ * 현장데이터 시트 B열의 모든 날짜를 2026.00.00 형식으로 일괄 변환
+ */
+function formatAllDatesInSheetToYYYYMMDD() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("현장데이터 시트를 찾을 수 없습니다.");
+    return;
+  }
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var range = sheet.getRange(2, 2, lastRow - 1, 1);
+  var values = range.getValues();
+  var updatedCount = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var rawVal = values[i][0];
+    if (!rawVal) continue;
+    var normalized = normalizeDateStringToYYYYMMDD(rawVal);
+    if (normalized && String(rawVal).trim() !== normalized) {
+      values[i][0] = normalized;
+      updatedCount++;
+    }
+  }
+
+  if (updatedCount > 0) {
+    range.setValues(values);
+    SpreadsheetApp.flush();
+    SpreadsheetApp.getUi().alert("📅 날짜 형식 변환 완료", "총 " + updatedCount + "건의 날짜가 '2026.00.00' 형식으로 일괄 통일되었습니다.", SpreadsheetApp.getUi().ButtonSet.OK);
+  } else {
+    SpreadsheetApp.getUi().alert("📅 날짜 형식 확인", "모든 날짜가 이미 '2026.00.00' 표준 형식으로 작성되어 있습니다.", SpreadsheetApp.getUi().ButtonSet.OK);
+  }
 }
 
 /**
@@ -6501,14 +6608,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }).then(function(canvas) {';
   html += '      const dataUrl = canvas.toDataURL("image/png");';
   html += '      const filename = "현장캘린더_" + calYear + "년" + calMonth + "월.png";';
-  html += '      try {';
-  html += '        const link = document.createElement("a");';
-  html += '        link.download = filename;';
-  html += '        link.href = dataUrl;';
-  html += '        document.body.appendChild(link);';
-  html += '        link.click();';
-  html += '        document.body.removeChild(link);';
-  html += '      } catch(e) {}';
   html += '      showCaptureModal(dataUrl, filename);';
   html += '      if (btn) { btn.disabled = false; btn.innerHTML = origText; }';
   html += '    }).catch(function(err) {';
