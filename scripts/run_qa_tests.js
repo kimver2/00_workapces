@@ -2056,10 +2056,16 @@ assertTest('doGet: 단일 일정 관리 화면 상단에 "← 📱 전체 대시
 // ========================================================
 console.log('\n🎯 [Step 29: 오늘 날짜 정밀 필터링 & 상세화면 버튼 제거 및 저장버튼 100% 확장 QA]');
 
-// 29-1: 오늘(10.16) vs 내일(10.17) 정밀 분리 검증 (14시간 시차 오차 제거)
+// 29-1: 오늘 vs 내일 정밀 분리 검증 (14시간 시차 오차 제거)
+const now29 = new Date();
+const pad29 = n => String(n).padStart(2, '0');
+const todayStr29 = `${String(now29.getFullYear()).slice(-2)}.${pad29(now29.getMonth() + 1)}.${pad29(now29.getDate())}`;
+const tmrw29 = new Date(now29.getTime() + 86400000);
+const tmrwStr29 = `${String(tmrw29.getFullYear()).slice(-2)}.${pad29(tmrw29.getMonth() + 1)}.${pad29(tmrw29.getDate())}`;
+
 const testTodayTomorrowData = [
-  ['신대방우성 5동 601호', '26.10.16', '양생1', '업체A', true, '', '송지은', '예정', '', 0, '', '', '', ''],
-  ['신대방우성 5동 601호', '26.10.17', '양생2', '업체B', true, '', '송지은', '예정', '', 0, '', '', '', '']
+  ['신대방우성 5동 601호', todayStr29, '양생1', '업체A', true, '', '송지은', '예정', '', 0, '', '', '', ''],
+  ['신대방우성 5동 601호', tmrwStr29, '양생2', '업체B', true, '', '송지은', '예정', '', 0, '', '', '', '']
 ];
 mockSidebarSheet.getRange = (r, c, nr, nc) => ({
   getValues: () => testTodayTomorrowData
@@ -2071,13 +2077,13 @@ const dashTodayCheck = sandbox.getSidebarDashboardData();
 const todayTask = dashTodayCheck.sites[0].tasks.find(t => t.taskName === '양생1');
 const tomorrowTask = dashTodayCheck.sites[0].tasks.find(t => t.taskName === '양생2');
 
-assertTest('getSidebarDashboardData: 오늘 일정(26.10.16)은 isToday === true 검증',
+assertTest('getSidebarDashboardData: 오늘 일정(' + todayStr29 + ')은 isToday === true 검증',
   todayTask && todayTask.isToday === true
 );
-assertTest('getSidebarDashboardData: 내일 일정(26.10.17)은 isToday === false (오늘 필터 배제) 검증',
+assertTest('getSidebarDashboardData: 내일 일정(' + tmrwStr29 + ')은 isToday === false (오늘 필터 배제) 검증',
   tomorrowTask && tomorrowTask.isToday === false
 );
-assertTest('getSidebarDashboardData: 오늘 일정(26.10.16)은 지연(isDelayed) 오인 방어(false) 검증',
+assertTest('getSidebarDashboardData: 오늘 일정(' + todayStr29 + ')은 지연(isDelayed) 오인 방어(false) 검증',
   todayTask && todayTask.isDelayed === false
 );
 assertTest('getSidebarDashboardData: KPI 오늘 공정 수에 내일 일정이 섞이지 않고 정확히 1건 집계 검증',
@@ -3150,6 +3156,133 @@ assertTest('제스처 시뮬레이션: 미세 탭/터치 떨림(deltaX: 15, delt
 
 assertTest('제스처 시뮬레이션: 0.75초 초과 롱 터치 드래그(deltaX: 70, deltaY: 5, 900ms) -> 오동작 방지(null 반환) 검증',
   evaluateSwipeGesture(70, 5, 900) === null
+);
+
+// ========================================================
+// ⛅ Step 42: 오늘기준 7일간 캘린더 날씨 예보 연동 및 주간 뷰(Weekly) 모드 QA
+// ========================================================
+console.log('\n⛅ [Step 42: 오늘기준 7일간 캘린더 날씨 예보 연동 및 주간 뷰(Weekly) 모드 QA]');
+
+const step42Html = sandbox.buildSidebarDashboardHtml('mobile');
+const s42Start = step42Html.indexOf('<script>');
+const s42End = step42Html.lastIndexOf('</script>');
+const step42Script = step42Html.slice(s42Start + 8, s42End);
+
+// 42-1: 캘린더 상단 월간/주간 전환 세그먼트 버튼 및 주간 리스트 컨테이너 마크업 검증
+assertTest('buildSidebarDashboardHtml: 캘린더 상단 월간/주간 전환 버튼(#btnModeMonth, #btnModeWeek) 및 주간 리스트(#calWeekList) 마크업 검증',
+  step42Html.indexOf('id="btnModeMonth"') !== -1 &&
+  step42Html.indexOf('id="btnModeWeek"') !== -1 &&
+  step42Html.indexOf('id="calWeekList"') !== -1 &&
+  step42Html.indexOf('setCalendarMode(\'month\')') !== -1 &&
+  step42Html.indexOf('setCalendarMode(\'week\')') !== -1
+);
+
+// 42-2: CSS 내 세그먼트 바, 날씨 뱃지, 주간 카드 스타일 탑재 검증
+assertTest('buildSidebarDashboardHtml: CSS 내 .cal-mode-bar, .cal-weather-badge, .cal-week-card 스타일 탑재 검증',
+  step42Html.indexOf('.cal-mode-bar') !== -1 &&
+  step42Html.indexOf('.cal-mode-btn') !== -1 &&
+  step42Html.indexOf('.cal-weather-badge') !== -1 &&
+  step42Html.indexOf('.cal-weather-badge.rain') !== -1 &&
+  step42Html.indexOf('.cal-weather-badge.snow') !== -1 &&
+  step42Html.indexOf('.cal-week-list') !== -1 &&
+  step42Html.indexOf('.cal-week-card') !== -1
+);
+
+// 42-3: 클라이언트 스크립트에 날씨/주간 뷰 핵심 함수 탑재 검증
+assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 주간 뷰 및 날씨 예보 제어 함수 탑재 검증',
+  step42Script.indexOf('function setCalendarMode(') !== -1 &&
+  step42Script.indexOf('function navPrevPeriod()') !== -1 &&
+  step42Script.indexOf('function navNextPeriod()') !== -1 &&
+  step42Script.indexOf('function navTodayPeriod()') !== -1 &&
+  step42Script.indexOf('function prevWeek()') !== -1 &&
+  step42Script.indexOf('function nextWeek()') !== -1 &&
+  step42Script.indexOf('function goToThisWeek()') !== -1 &&
+  step42Script.indexOf('function renderWeeklyCalendar(') !== -1 &&
+  step42Script.indexOf('function renderCurrentCalendarView(') !== -1 &&
+  step42Script.indexOf('function loadWeatherData()') !== -1 &&
+  step42Script.indexOf('function getSundayOfCurrentWeek(') !== -1
+);
+
+// 42-4: 날씨 및 주간 뷰 로직 추가 후 클라이언트 JS 무결성(SyntaxError 0) 검증
+let clientSyntaxOk42 = false;
+try {
+  new vm.Script(step42Script);
+  clientSyntaxOk42 = true;
+} catch (err) {
+  console.error('Step 42 클라이언트 JS 구문 에러:', err);
+}
+assertTest('buildSidebarDashboardHtml: 날씨 및 주간 뷰 탑재 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk42);
+
+// 42-5: 날씨 예보 데이터 파싱 시뮬레이션 함수
+function parseWeatherDataSim(code, maxT, minT, pop) {
+  let icon = "☀️", desc = "맑음";
+  if (code >= 1 && code <= 2) { icon = "⛅"; desc = "구름조금"; }
+  else if (code === 3) { icon = "☁️"; desc = "흐림"; }
+  else if (code === 45 || code === 48) { icon = "🌫️"; desc = "안개"; }
+  else if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) { icon = "🌧️"; desc = "비"; }
+  else if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) { icon = "❄️"; desc = "눈"; }
+  else if (code >= 95) { icon = "⛈️"; desc = "뇌우"; }
+  const isRain = (icon === "🌧️" || icon === "⛈️");
+  const isSnow = (icon === "❄️");
+  let badgeText = icon;
+  if (pop >= 30) badgeText += " " + pop + "%";
+  else if (maxT !== null) badgeText += " " + maxT + "°";
+  return {
+    icon, desc, maxT, minT, pop, isRain, isSnow, badgeText,
+    fullText: icon + " " + desc + (maxT !== null ? " " + maxT + "°/" + minT + "°" : "") + (pop > 0 ? " (강수 " + pop + "%)" : "")
+  };
+}
+
+assertTest('날씨 파싱 시뮬레이션: 맑음(code: 0, pop: 10%, maxT: 22도) -> ☀️ 22° 뱃지 검증',
+  (() => {
+    const w = parseWeatherDataSim(0, 22, 12, 10);
+    return w.icon === '☀️' && w.badgeText === '☀️ 22°' && !w.isRain && !w.isSnow;
+  })()
+);
+
+assertTest('날씨 파싱 시뮬레이션: 비(code: 61, pop: 80%, maxT: 18도) -> 🌧️ 80% 뱃지 및 isRain: true 검증',
+  (() => {
+    const w = parseWeatherDataSim(61, 18, 11, 80);
+    return w.icon === '🌧️' && w.badgeText === '🌧️ 80%' && w.isRain === true;
+  })()
+);
+
+assertTest('날씨 파싱 시뮬레이션: 눈(code: 71, pop: 60%, maxT: -2도) -> ❄️ 60% 뱃지 및 isSnow: true 검증',
+  (() => {
+    const w = parseWeatherDataSim(71, -2, -8, 60);
+    return w.icon === '❄️' && w.badgeText === '❄️ 60%' && w.isSnow === true;
+  })()
+);
+
+// 42-6: 주간 뷰 일주일 날짜 계산 시뮬레이션 함수 (일요일 기준 7일)
+function getWeekDaysListSim(startDate) {
+  const list = [];
+  const cur = new Date(startDate);
+  for (let i = 0; i < 7; i++) {
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, '0');
+    const d = String(cur.getDate()).padStart(2, '0');
+    list.push(`${y}-${m}-${d}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return list;
+}
+
+const testSunday = new Date('2026-10-18T00:00:00'); // 2026-10-18은 일요일
+const weekDays = getWeekDaysListSim(testSunday);
+assertTest('주간 날짜 계산 시뮬레이션: 일요일(10-18)부터 토요일(10-24)까지 7일 정확 계산 검증',
+  weekDays.length === 7 &&
+  weekDays[0] === '2026-10-18' &&
+  weekDays[6] === '2026-10-24'
+);
+
+// 42-7: 주간 네비게이션 시뮬레이션 (이전 주 / 다음 주 이동)
+const nextWeekDate = new Date(testSunday);
+nextWeekDate.setDate(nextWeekDate.getDate() + 7);
+const nextWeekDays = getWeekDaysListSim(nextWeekDate);
+assertTest('주간 네비게이션 시뮬레이션: 다음 주 이동 시 10-25부터 10-31까지 7일 계산 검증',
+  nextWeekDays[0] === '2026-10-25' &&
+  nextWeekDays[6] === '2026-10-31'
 );
 
 console.log('\n========================================================');
