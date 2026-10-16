@@ -309,14 +309,10 @@ function onOpen() {
   } catch(e) {}
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🚀 현장 관리")
-    // [자주 쓰는 핵심 기능]
+    // [자주 쓰는 핵심 3대 기능만 최상위 노출]
     .addItem("대시보드 사이드바 열기", "openSiteScheduleSidebar")
     .addItem("대시보드 팝업 열기", "openSiteScheduleModal")
-    .addItem("📱 모바일 대시보드 URL 확인 및 안내", "showMobileDashboardUrl")
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
-    .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
-    .addItem("📅 전체 날짜 2026.00.00 형식 일괄 변환", "formatAllDatesInSheetToYYYYMMDD")
-    .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
     .addSeparator()
 
     // [서브메뉴 1: 모닝 브리핑 관리]
@@ -352,8 +348,13 @@ function onOpen() {
     )
     .addSeparator()
 
-    // [서브메뉴 4: 고급 설정 & 시스템 관리 (1회성 / 유지보수 전용)]
+    // [서브메뉴 4: 고급 설정 & 시스템 관리]
     .addSubMenu(ui.createMenu("⚙️ 고급 설정 & 시스템 관리")
+      .addItem("📱 모바일 대시보드 URL 확인 및 안내", "showMobileDashboardUrl")
+      .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
+      .addItem("📅 전체 날짜 2026.00.00 형식 일괄 변환", "formatAllDatesInSheetToYYYYMMDD")
+      .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
+      .addSeparator()
       .addItem("🔧 공종/담당자/상태 드롭다운 및 서식 전체 복구", "fixStatusDropdownValidation")
       .addItem("🧹 빈 행 유령 이력/ID 일괄 청소", "cleanupEmptyRowsMetadata")
       .addItem("🧹 캘린더 중복 및 유령 일정 자동 정리", "cleanupDuplicateAndOrphanCalendarEvents")
