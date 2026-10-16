@@ -1,0 +1,6 @@
+# Ignore everything by default
+**/**
+
+# Allow only the Apps Script project files in root
+!appsscript.json
+!현장서식.js
