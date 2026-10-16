@@ -2557,7 +2557,6 @@ assertTest('buildSidebarDashboardHtml: 현장 카드 앞 체크박스(.site-chec
 assertTest('buildSidebarDashboardHtml: 선택 현장 액션 바(#checkedActionBar) 및 탭(#checkedTab) 마크업 검증',
   dashHtml34.indexOf('id="checkedTab"') !== -1 &&
   dashHtml34.indexOf('id="checkedActionBar"') !== -1 &&
-  dashHtml34.indexOf('id="btnToggleCheckedOnly"') !== -1 &&
   dashHtml34.indexOf('onclick="clearAllChecked()"') !== -1
 );
 
@@ -2567,7 +2566,6 @@ assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 달력 �
   dashHtml34.indexOf('function renderCalendar()') !== -1 &&
   dashHtml34.indexOf('function onSiteCheckboxClick(e, cb)') !== -1 &&
   dashHtml34.indexOf('function updateCheckedStatusUI()') !== -1 &&
-  dashHtml34.indexOf('function toggleCheckedOnly()') !== -1 &&
   dashHtml34.indexOf('function clearAllChecked()') !== -1 &&
   dashHtml34.indexOf('function prevMonth()') !== -1 &&
   dashHtml34.indexOf('function nextMonth()') !== -1 &&
@@ -3025,6 +3023,63 @@ assertTest('정렬 시뮬레이션: 일반(all) 탭에서는 기존대로 가장
   allSorted[0].site.siteName === "Site_Old" &&
   allSorted[1].site.siteName === "Site_Mid" &&
   allSorted[2].site.siteName === "Site_Recent"
+);
+
+// 🎯 Step 40: 선택 현장만 보기 버튼 제거 & 캘린더 상단 선택 현장명(1건: 현장명, 2건 이상: 현장명 외 N건) 표기 QA
+// ========================================================
+console.log('\n🏷️ [Step 40: 선택 현장만 보기 버튼 제거 & 캘린더 선택 현장명/외 N건 표기 QA]');
+
+const step40Html = sandbox.buildSidebarDashboardHtml('mobile');
+const s40Start = step40Html.indexOf('<script>');
+const s40End = step40Html.lastIndexOf('</script>');
+const step40Script = step40Html.slice(s40Start + 8, s40End);
+
+// 40-1: checkedActionBar에서 btnToggleCheckedOnly("선택 현장만 보기") 버튼 제거 및 해제 버튼 보존 검증
+assertTest('buildSidebarDashboardHtml: checkedActionBar에서 선택 현장만 보기 버튼 제거 및 해제 버튼 보존 검증',
+  step40Html.indexOf('id="btnToggleCheckedOnly"') === -1 &&
+  step40Html.indexOf('선택 현장만 보기') === -1 &&
+  step40Html.indexOf('id="checkedActionBar"') !== -1 &&
+  step40Html.indexOf('onclick="clearAllChecked()"') !== -1
+);
+
+// 40-2: renderCalendar 내 1건 선택 시 현장명 노출 로직 검증
+assertTest('buildSidebarDashboardHtml: renderCalendar 내 1건 선택 시 현장명 노출 로직 검증',
+  step40Script.indexOf('siteArr.length === 1') !== -1 &&
+  step40Script.indexOf('noticeParts.push("☑️ " + escapeHtml(firstSite))') !== -1
+);
+
+// 40-3: renderCalendar 내 2건 이상 선택 시 [현장명 외 N건] 노출 로직 검증
+assertTest('buildSidebarDashboardHtml: renderCalendar 내 2건 이상 선택 시 [현장명 외 N건] 노출 로직 검증',
+  step40Script.indexOf('noticeParts.push("☑️ " + escapeHtml(firstSite) + " 외 " + (siteArr.length - 1) + "건")') !== -1
+);
+
+// 40-4: 캘린더 선택 현장명 표기 시뮬레이션: 1건일 때 "☑️ 보경102동" 반환 검증
+function formatCalendarNotice(checkedSitesSet) {
+  if (!checkedSitesSet || checkedSitesSet.size === 0) return "";
+  const siteArr = Array.from(checkedSitesSet);
+  const firstSite = siteArr[0] || "현장";
+  if (siteArr.length === 1) {
+    return "☑️ " + firstSite;
+  } else {
+    return "☑️ " + firstSite + " 외 " + (siteArr.length - 1) + "건";
+  }
+}
+
+const sim1 = formatCalendarNotice(new Set(["보경102동"]));
+assertTest('시뮬레이션: 1개 현장 선택 시 "☑️ 보경102동" 단독 명칭 표기 검증',
+  sim1 === "☑️ 보경102동"
+);
+
+// 40-5: 캘린더 선택 현장명 표기 시뮬레이션: 2건일 때 "☑️ 보경102동 외 1건" 반환 검증
+const sim2 = formatCalendarNotice(new Set(["보경102동", "신대방우성"]));
+assertTest('시뮬레이션: 2개 현장 선택 시 "☑️ 보경102동 외 1건" 축약 표기 검증',
+  sim2 === "☑️ 보경102동 외 1건"
+);
+
+// 40-6: 캘린더 선택 현장명 표기 시뮬레이션: 4건일 때 "☑️ 보경102동 외 3건" 반환 검증
+const sim4 = formatCalendarNotice(new Set(["보경102동", "신대방우성", "래미안옥수", "자이서초"]));
+assertTest('시뮬레이션: 4개 현장 선택 시 "☑️ 보경102동 외 3건" 축약 표기 검증',
+  sim4 === "☑️ 보경102동 외 3건"
 );
 
 console.log('\n========================================================');

@@ -6539,10 +6539,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  <div class="member-filter-bar" id="memberFilterBar"></div>';
   html += '  <div id="checkedActionBar" class="checked-action-bar" style="display:none;">';
   html += '    <span id="checkedCountMsg">☑️ 0개 현장 선택됨</span>';
-  html += '    <div style="display:flex;gap:4px;">';
-  html += '      <button type="button" id="btnToggleCheckedOnly" class="btn-check-action" onclick="toggleCheckedOnly()">선택 현장만 보기</button>';
-  html += '      <button type="button" class="btn-check-action" onclick="clearAllChecked()">해제</button>';
-  html += '    </div>';
+  html += '    <button type="button" class="btn-check-action" onclick="clearAllChecked()">해제</button>';
   html += '  </div>';
   html += '</div>';
 
@@ -6715,18 +6712,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (tab) tab.style.display = (count > 0) ? "block" : "none";';
   html += '  if (bar) bar.style.display = (count > 0) ? "flex" : "none";';
   html += '  if (countMsg) countMsg.innerText = "☑️ " + count + "개 현장 선택됨";';
-  html += '  const toggleBtn = document.getElementById("btnToggleCheckedOnly");';
-  html += '  if (toggleBtn) {';
-  html += '    toggleBtn.innerText = (currentFilter === "checked") ? "전체 현장 보기" : "선택 현장만 보기";';
-  html += '  }';
-  html += '}';
-
-  html += 'function toggleCheckedOnly() {';
-  html += '  if (currentFilter === "checked") {';
-  html += '    setFilter("all");';
-  html += '  } else {';
-  html += '    setFilter("checked");';
-  html += '  }';
   html += '}';
 
   html += 'function clearAllChecked() {';
@@ -6865,7 +6850,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '  title.innerText = calYear + "년 " + calMonth + "월";';
   html += '  if (notice) {';
   html += '    let noticeParts = [];';
-  html += '    if (checkedSites.size > 0) noticeParts.push("☑️ 선택 현장 (" + checkedSites.size + "개)");';
+  html += '    if (checkedSites.size > 0) {';
+  html += '      const siteArr = Array.from(checkedSites);';
+  html += '      const firstSite = siteArr[0] || "현장";';
+  html += '      if (siteArr.length === 1) {';
+  html += '        noticeParts.push("☑️ " + escapeHtml(firstSite));';
+  html += '      } else {';
+  html += '        noticeParts.push("☑️ " + escapeHtml(firstSite) + " 외 " + (siteArr.length - 1) + "건");';
+  html += '      }';
+  html += '    }';
   html += '    if (selectedMember) noticeParts.push("👤 " + escapeHtml(selectedMember));';
   html += '    const q = (document.getElementById("searchInput") ? document.getElementById("searchInput").value.trim() : "");';
   html += '    if (q) noticeParts.push("🔍 " + escapeHtml(q));';
