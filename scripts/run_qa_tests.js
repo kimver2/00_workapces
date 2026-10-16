@@ -745,7 +745,7 @@ assertTest('공종(C열) 기본 37개+ 공종 목록 탑재 여부', code.indexO
 assertTest('담당자(G열) 드롭다운 유효성 검사 엔진(getAvailableManagers) 탑재 여부', code.indexOf('function getAvailableManagers(') !== -1 && code.indexOf('조항만') !== -1);
 assertTest('공종/담당자/상태 드롭다운 통합 적용 함수(applySiteScheduleValidations) 탑재 여부', code.indexOf('function applySiteScheduleValidations(') !== -1);
 assertTest('공종(C열) 및 담당자(G열) 노션 스타일 조건부 서식 뱃지 탑재 여부',
-  code.indexOf('var managerColorMap = [') !== -1 &&
+  (code.indexOf('var managerColorMap = [') !== -1 || code.indexOf('var managerColorMap = getManagerColorMap') !== -1) &&
   code.indexOf('var taskColorMap = [') !== -1
 );
 
@@ -4054,6 +4054,148 @@ const invalidStatusRes = updateWebFn(5, '', false, '');
 assertTest('런타임 시뮬레이션: 상태 누락 시 안전 방어 검증',
   invalidStatusRes && invalidStatusRes.success === false
 );
+
+// ========================================================
+// 51. [담당자 동적 서식 & 동일 현장 내 날짜 오름차순 정렬 QA]
+// ========================================================
+console.log('\n🎨 [Step 51: 담당자 동적 서식 & 동일 현장 내 날짜 오름차순 정렬 QA]');
+
+// 51-1: getManagerColorMap 함수 정의 및 한송이, 인경호 프리셋 색상 검증
+const getManagerColorFn = sandbox.getManagerColorMap;
+assertTest('getManagerColorMap: 함수 정의 및 로드 검증', typeof getManagerColorFn === 'function');
+
+const mockSs51 = {
+  getSheets: () => []
+};
+const defaultColorMap51 = getManagerColorFn(mockSs51);
+const hansongi = defaultColorMap51.find(m => m.key === '한송이');
+const inkyungho = defaultColorMap51.find(m => m.key === '인경호');
+const johangman = defaultColorMap51.find(m => m.key === '조항만');
+const songjieun = defaultColorMap51.find(m => m.key === '송지은');
+
+assertTest('getManagerColorMap: "한송이" 웜오렌지(#ffedd5 / #c2410c) 색상 배정 검증',
+  hansongi && hansongi.bg === '#ffedd5' && hansongi.font === '#c2410c'
+);
+assertTest('getManagerColorMap: "인경호" 인디고(#e0e7ff / #4338ca) 색상 배정 검증',
+  inkyungho && inkyungho.bg === '#e0e7ff' && inkyungho.font === '#4338ca'
+);
+assertTest('getManagerColorMap: "조항만", "송지은" 기존 프리셋 색상 완벽 유지 검증',
+  johangman && johangman.bg === '#dbeafe' && songjieun && songjieun.bg === '#fce7f3'
+);
+
+// 51-2: 나중에 새로 등록되는 신규 담당자("홍길동", "이순신") 동적 색상 자동 부여 검증
+sandbox.getMemberNames = () => ['조항만', '송지은', '한송이', '인경호', '전예린', '영하', '홍길동', '이순신'];
+const dynamicColorMap51 = getManagerColorFn(mockSs51);
+const hong = dynamicColorMap51.find(m => m.key === '홍길동');
+const lee = dynamicColorMap51.find(m => m.key === '이순신');
+
+assertTest('getManagerColorMap: 신규 담당자 "홍길동" 파스텔 팔레트 자동 배정 검증',
+  hong && typeof hong.bg === 'string' && typeof hong.font === 'string' && hong.bg.startsWith('#')
+);
+assertTest('getManagerColorMap: 신규 담당자 "이순신" 파스텔 팔레트 자동 배정 검증',
+  lee && typeof lee.bg === 'string' && typeof lee.font === 'string' && lee.bg.startsWith('#')
+);
+
+// 51-3: setupSiteSheetConditionalFormatting 내 한송이, 인경호 조건부 서식 등록 검증
+let createdRules51 = [];
+sandbox.SpreadsheetApp.newConditionalFormatRule = () => {
+  const ruleObj = {
+    whenTextContains: (txt) => { ruleObj.txt = txt; return ruleObj; },
+    setBackground: (bg) => { ruleObj.bg = bg; return ruleObj; },
+    setFontColor: (fc) => { ruleObj.fc = fc; return ruleObj; },
+    setBold: (b) => { ruleObj.bold = b; return ruleObj; },
+    setRanges: (rng) => { ruleObj.rng = rng; return ruleObj; },
+    build: () => { createdRules51.push(ruleObj); return ruleObj; }
+  };
+  return ruleObj;
+};
+const mockSiteSheet51 = {
+  getLastRow: () => 10,
+  getRange: () => ({ getValues: () => [] }),
+  setConditionalFormatRules: () => {},
+  getParent: () => mockSs51
+};
+createdRules51 = [];
+sandbox.setupSiteSheetConditionalFormatting(mockSiteSheet51);
+const ruleHansongi = createdRules51.find(r => r.txt === '한송이');
+const ruleInkyungho = createdRules51.find(r => r.txt === '인경호');
+assertTest('setupSiteSheetConditionalFormatting: "한송이" 조건부 서식 룰 생성 검증',
+  ruleHansongi && ruleHansongi.bg === '#ffedd5'
+);
+assertTest('setupSiteSheetConditionalFormatting: "인경호" 조건부 서식 룰 생성 검증',
+  ruleInkyungho && ruleInkyungho.bg === '#e0e7ff'
+);
+
+// 51-4: sortSiteScheduleTasksByDate - 사용자 스크린샷 2~5행 "연속 날짜" 현장 날짜 오름차순 정렬 시뮬레이션
+const sortTasksFn = sandbox.sortSiteScheduleTasksByDate;
+assertTest('sortSiteScheduleTasksByDate: 함수 정의 및 로드 검증', typeof sortTasksFn === 'function');
+
+let setValuesRecorded51 = null;
+let setBackgroundsRecorded51 = null;
+
+// 스크린샷 2~5행 케이스 (2026.10.17 -> 2026.10.19 -> 2026.10.18 -> 2026.10.20)
+// 스크린샷 13~14행 케이스 (2026.10.21 [도배] -> 2026.10.19 [목공])
+const mockValues51 = [
+  ['연속 날짜', '2026.10.17', '상담', '', true, '메모1', '한송이', '진행 중', 'id1', 1000],
+  ['연속 날짜', '2026.10.19', '철거', '', true, '', '한송이', '진행 중', 'id2', 2000],
+  ['연속 날짜', '2026.10.18', '목공', '', true, '', '인경호', '예정', 'id3', 3000],
+  ['연속 날짜', '2026.10.20', '마감', '', false, '', '인경호', '예정', 'id4', 4000],
+  ['신대방우성 1동 805호', '2026.10.21', '도배', '', false, '', '조항만', '예정', 'id5', 5000],
+  ['신대방우성 1동 805호', '2026.10.19', '목공', '', true, '박동연목수님', '조항만', '진행 중', 'id6', 6000]
+];
+const mockBackgrounds51 = [
+  ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
+  ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
+  ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
+  ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
+  ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
+  ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']
+];
+
+const mockSortSheet51 = {
+  getLastRow: () => 7,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => mockValues51.map(row => row.slice()),
+    getBackgrounds: () => mockBackgrounds51.map(row => row.slice()),
+    setValues: (vals) => { setValuesRecorded51 = vals; },
+    setBackgrounds: (bgs) => { setBackgroundsRecorded51 = vals => bgs; }
+  })
+};
+
+const sortedCount51 = sortTasksFn(mockSs51, mockSortSheet51, true);
+
+assertTest('sortSiteScheduleTasksByDate: 2개 현장 블록 재정렬 완료 검증', sortedCount51 === 2);
+assertTest('sortSiteScheduleTasksByDate: 원자적 setValues 호출 검증', setValuesRecorded51 !== null && setValuesRecorded51.length === 6);
+
+// "연속 날짜" 블록 검증 (17일 -> 18일 -> 19일 -> 20일)
+assertTest('"연속 날짜" 정렬: 1행 2026.10.17 [상담] 검증',
+  setValuesRecorded51[0][1] === '2026.10.17' && setValuesRecorded51[0][2] === '상담'
+);
+assertTest('"연속 날짜" 정렬: 2행 2026.10.18 [목공] 검증 (18일이 2번째로 상승)',
+  setValuesRecorded51[1][1] === '2026.10.18' && setValuesRecorded51[1][2] === '목공' && setValuesRecorded51[1][6] === '인경호'
+);
+assertTest('"연속 날짜" 정렬: 3행 2026.10.19 [철거] 검증 (19일이 3번째로 하강)',
+  setValuesRecorded51[2][1] === '2026.10.19' && setValuesRecorded51[2][2] === '철거' && setValuesRecorded51[2][6] === '한송이'
+);
+assertTest('"연속 날짜" 정렬: 4행 2026.10.20 [마감] 검증',
+  setValuesRecorded51[3][1] === '2026.10.20' && setValuesRecorded51[3][2] === '마감'
+);
+
+// "신대방우성 1동 805호" 블록 검증 (19일 [목공] -> 21일 [도배])
+assertTest('"신대방우성 1동" 정렬: 19일 [목공]이 21일 [도배]보다 앞으로 정렬 검증',
+  setValuesRecorded51[4][1] === '2026.10.19' && setValuesRecorded51[4][2] === '목공' &&
+  setValuesRecorded51[5][1] === '2026.10.21' && setValuesRecorded51[5][2] === '도배'
+);
+
+// 51-5: 1시간 주기 자동 정렬 트리거 핸들러 및 상단 메뉴 등록 검증
+const hasHourlyTriggerCode = code.indexOf('runHourlyAutoSortTrigger') !== -1 &&
+  code.indexOf('everyHours(1)') !== -1;
+assertTest('ensureRealtimeTriggerInstalledSilent: 1시간 주기 자동 정렬 트리거(everyHours(1)) 등록 검증', hasHourlyTriggerCode);
+
+const onOpenCode51 = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
+const hasSortInMenu = onOpenCode51.indexOf('sortSiteScheduleTasksByDateMenu') !== -1 &&
+  onOpenCode51.indexOf('현장별 날짜 오름차순 자동 정렬') !== -1;
+assertTest('onOpen: 상단 관리 메뉴 내 "현장별 날짜 오름차순 자동 정렬" 탑재 검증', hasSortInMenu);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);

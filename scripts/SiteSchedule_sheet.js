@@ -230,10 +230,103 @@ function applySiteScheduleValidations(sheet, startRow, numRows) {
     .setAllowInvalid(true)
     .build();
   sheet.getRange(startRow, 8, numRows, 1).setDataValidation(statusRule);
+
+  // 4. 조건부 서식(담당자 색상, 공종, 진행상태) 자동 동기화
+  try {
+    setupSiteSheetConditionalFormatting(sheet);
+  } catch(eCond) {}
+}
+
+/**
+ * 담당자별 뱃지 색상 매핑 생성 (프리셋 + 신규 인원 동적 파스텔 팔레트 순환 배정)
+ * - 한송이, 인경호 및 기존 4명 고유 색상 탑재
+ * - 나중에 새로 등록되는 모든 담당자도 파스텔 팔레트에서 자동으로 고유 색상 배정
+ * @param {Spreadsheet} ss 
+ * @param {Sheet} [sheet] 
+ * @return {Array<{key: string, bg: string, font: string}>}
+ */
+function getManagerColorMap(ss, sheet) {
+  // 1. 주요 담당자 고유 프리셋 색상 (디자인 가이드라인 준수)
+  var PRESET_COLORS = {
+    "조항만": { bg: "#dbeafe", font: "#1e40af" }, // 클래식 블루
+    "송지은": { bg: "#fce7f3", font: "#be185d" }, // 로즈핑크
+    "한송이": { bg: "#ffedd5", font: "#c2410c" }, // 웜오렌지 / 피치
+    "인경호": { bg: "#e0e7ff", font: "#4338ca" }, // 인디고 블루
+    "전예린": { bg: "#f3e8ff", font: "#7e22ce" }, // 퍼플
+    "영하":   { bg: "#ccfbf1", font: "#0f766e" }  // 민트 에메랄드
+  };
+
+  // 2. 신규 등록 담당자를 위한 노션 스타일 프리미엄 소프트 파스텔 팔레트
+  var DYNAMIC_PALETTE = [
+    { bg: "#fef3c7", font: "#b45309" }, // 앰버
+    { bg: "#dcfce7", font: "#15803d" }, // 소프트 그린
+    { bg: "#cffafe", font: "#0e7490" }, // 시안
+    { bg: "#fee2e2", font: "#b91c1c" }, // 소프트 코랄
+    { bg: "#f5f3ff", font: "#6d28d9" }, // 바이올렛
+    { bg: "#ecfdf5", font: "#047857" }, // 딥그린
+    { bg: "#fff1f2", font: "#e11d48" }, // 체리핑크
+    { bg: "#f1f5f9", font: "#334155" }, // 슬레이트
+    { bg: "#e0f2fe", font: "#0369a1" }, // 스카이블루
+    { bg: "#fef9c3", font: "#854d0e" }  // 옐로우
+  ];
+
+  var allManagers = [];
+  var seen = {};
+
+  // ① 구성원 시트에서 가져오기
+  try {
+    var available = getAvailableManagers(ss);
+    for (var i = 0; i < available.length; i++) {
+      var m = String(available[i] || "").trim();
+      if (m && !seen[m]) {
+        seen[m] = true;
+        allManagers.push(m);
+      }
+    }
+  } catch(e) {}
+
+  // ② 현장데이터 시트 G열에 이미 입력된 담당자도 수집
+  try {
+    if (sheet && typeof sheet.getLastRow === "function" && sheet.getLastRow() >= 2) {
+      var gVals = sheet.getRange(2, 7, sheet.getLastRow() - 1, 1).getValues();
+      for (var j = 0; j < gVals.length; j++) {
+        var gName = String(gVals[j][0] || "").trim();
+        if (gName && !seen[gName]) {
+          seen[gName] = true;
+          allManagers.push(gName);
+        }
+      }
+    }
+  } catch(e) {}
+
+  // ③ 프리셋 담당자 중 아직 포함되지 않은 사람도 기본 추가
+  for (var presetName in PRESET_COLORS) {
+    if (!seen[presetName]) {
+      seen[presetName] = true;
+      allManagers.push(presetName);
+    }
+  }
+
+  // 매핑 리스트 생성
+  var result = [];
+  var dynIdx = 0;
+  for (var k = 0; k < allManagers.length; k++) {
+    var name = allManagers[k];
+    if (PRESET_COLORS[name]) {
+      result.push({ key: name, bg: PRESET_COLORS[name].bg, font: PRESET_COLORS[name].font });
+    } else {
+      var pal = DYNAMIC_PALETTE[dynIdx % DYNAMIC_PALETTE.length];
+      dynIdx++;
+      result.push({ key: name, bg: pal.bg, font: pal.font });
+    }
+  }
+
+  return result;
 }
 
 /**
  * 현장데이터 시트 H열(진행상태), G열(담당자), C열(공종) 노션 스타일 조건부 서식 자동 설정
+ * - 담당자(G열): 한송이, 인경호 및 기존 4명 + 새로 추가되는 모든 담당자 자동 서식 적용
  */
 function setupSiteSheetConditionalFormatting(sheet) {
   if (!sheet) return;
@@ -241,6 +334,7 @@ function setupSiteSheetConditionalFormatting(sheet) {
   var rangeC = sheet.getRange(2, 3, lastRow - 1, 1); // C열: 공종
   var rangeG = sheet.getRange(2, 7, lastRow - 1, 1); // G열: 담당자
   var statusRange = sheet.getRange(2, 8, lastRow - 1, 1); // H열: 진행상태
+  var ss = sheet.getParent() || getAppSpreadsheet();
 
   var rules = [];
 
@@ -250,13 +344,8 @@ function setupSiteSheetConditionalFormatting(sheet) {
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("AS").setFontColor("#b91c1c").setBackground("#fee2e2").setBold(true).setRanges([statusRange]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("예정").setFontColor("#b45309").setBackground("#fef3c7").setBold(true).setRanges([statusRange]).build());
 
-  // 2. 담당자 인물 뱃지 색상 (G열)
-  var managerColorMap = [
-    { key: "조항만", bg: "#dbeafe", font: "#1e40af" }, // 블루
-    { key: "송지은", bg: "#fce7f3", font: "#be185d" }, // 로즈핑크
-    { key: "전예린", bg: "#f3e8ff", font: "#7e22ce" }, // 퍼플
-    { key: "영하", bg: "#ccfbf1", font: "#0f766e" }    // 민트
-  ];
+  // 2. 담당자 인물 뱃지 색상 (G열: 한송이, 인경호 + 신규 등록 담당자 전수 동적 배정)
+  var managerColorMap = getManagerColorMap(ss, sheet);
   managerColorMap.forEach(function(item) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenTextContains(item.key)
@@ -317,10 +406,11 @@ function onOpen() {
   } catch(e) {}
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🚀 현장 관리")
-    // [사용자 지정 최상위 3대 핵심 기능만 노출]
+    // [사용자 지정 최상위 핵심 기능 노출]
     .addItem("대시보드 사이드바 열기", "openSiteScheduleSidebar")
     .addItem("대시보드 팝업 열기", "openSiteScheduleModal")
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
+    .addItem("📅 현장별 날짜 오름차순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
     .addSeparator()
 
     // [3개 제외 모든 설정 및 보조 기능은 '고급 설정 & 시스템 관리' 하위로 일원화 배치]
@@ -332,6 +422,7 @@ function onOpen() {
       .addSeparator()
 
       // 2. 현장 데이터 편집 / 보기 편의 기능
+      .addItem("📅 현장별 날짜 오름차순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
       .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
       .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
       .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
@@ -367,6 +458,247 @@ function onOpen() {
       .addItem("⚙️ 연동 캘린더 변경 / 확인", "configureTargetCalendar")
     )
     .addToUi();
+}
+
+/**
+ * [상단 메뉴 전용] 현장데이터 시트 현장별 날짜 오름차순 즉시 정렬
+ */
+function sortSiteScheduleTasksByDateMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return;
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) return;
+
+  var count = sortSiteScheduleTasksByDate(ss, sheet, false);
+  setupSiteSheetConditionalFormatting(sheet);
+  refreshDashboardCalendar(ss);
+
+  if (count === 0) {
+    try {
+      ss.toast("모든 현장의 공정이 이미 날짜 빠른 순으로 완벽하게 정렬되어 있습니다.", "📅 정렬 상태 완벽", 3);
+    } catch(e) {}
+  }
+}
+
+/**
+ * 1시간 주기 현장데이터 시트 날짜 오름차순 자동 정렬 및 담당자 서식 동기화 엔진
+ * - 작업자가 처음 뒤죽박죽 입력했더라도 1시간마다 자동으로 날짜 빠른 순으로 정돈
+ * - 새로 추가된 담당자 조건부 서식도 함께 자동 최신화
+ * - 심야(22시~07시) 변경 없을 시 유휴 가드로 실행 시간 절약
+ */
+function runHourlyAutoSortTrigger() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    if (!ss) return;
+
+    var sheet = findSiteScheduleSheet(ss);
+    if (!sheet) return;
+
+    var now = new Date();
+    var hour = now.getHours();
+    var isNightTime = (hour >= 22 || hour < 7);
+
+    // 심야 시간(22시~07시) 유휴 가드
+    if (isNightTime) {
+      return;
+    }
+
+    // 1. 현장별 날짜 오름차순 자동 정렬 (무음 실행)
+    sortSiteScheduleTasksByDate(ss, sheet, true);
+
+    // 2. 담당자 조건부 서식 동적 최신화 (새로 등록된 담당자 색상 자동 생성)
+    setupSiteSheetConditionalFormatting(sheet);
+
+    // 3. 대시보드 달력 최신화
+    refreshDashboardCalendar(ss);
+  } catch (err) {
+    Logger.log("1시간 주기 자동 정렬 에러: " + err.toString());
+  }
+}
+
+/**
+ * 현장데이터 시트 내 동일 현장 블록별 날짜 오름차순 정렬 엔진
+ * - 같은 현장 내에서 공정들이 날짜 빠른 순(오름차순)으로 자동 정렬
+ * - 블록 내부 셀 값(Values) 및 배경색(Backgrounds)만 원자적 배치 교체하여 아코디언 그룹, 테두리, 드롭다운 100% 보존
+ * @param {Spreadsheet} [ss] 대상 스프레드시트
+ * @param {Sheet} [sheet] 대상 현장데이터 시트
+ * @param {boolean} [silent=false] UI 알림 표시 여부
+ * @return {number} 정렬된 현장 블록 개수
+ */
+function sortSiteScheduleTasksByDate(ss, sheet, silent) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return 0;
+  if (!sheet) sheet = findSiteScheduleSheet(ss);
+  if (!sheet) return 0;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  // 전체 데이터 읽기 (1~10열: A~J열)
+  var totalRows = lastRow - 1;
+  var rangeAll = sheet.getRange(2, 1, totalRows, 10);
+  var values = rangeAll.getValues();
+  var backgrounds = rangeAll.getBackgrounds();
+
+  // 현장 블록 단위로 그룹핑
+  var blocks = [];
+  var currentBlock = null;
+  var lastKnownSite = "";
+
+  for (var i = 0; i < values.length; i++) {
+    var rowVals = values[i];
+    var rawSite = String(rowVals[0] || "").trim();
+    var hasDateOrTask = Boolean(String(rowVals[1] || "").trim() || String(rowVals[2] || "").trim());
+
+    // 완전 빈 행 (현장명도 없고 날짜/공종도 없음)
+    if (!rawSite && !hasDateOrTask) {
+      if (currentBlock && currentBlock.items.length > 0) {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+      lastKnownSite = "";
+      continue;
+    }
+
+    var effectiveSite = rawSite || lastKnownSite;
+    if (rawSite) lastKnownSite = rawSite;
+
+    // 새로운 현장 시작 여부 판별:
+    // 현장명이 명시되었고, 기존 블록이 없거나 기존 블록의 현장명과 다를 때
+    if (rawSite && (!currentBlock || currentBlock.siteName !== rawSite)) {
+      if (currentBlock && currentBlock.items.length > 0) {
+        blocks.push(currentBlock);
+      }
+      currentBlock = {
+        siteName: rawSite,
+        hasExplicitSiteInAllRows: true,
+        items: []
+      };
+    } else if (!currentBlock && effectiveSite) {
+      currentBlock = {
+        siteName: effectiveSite,
+        hasExplicitSiteInAllRows: false,
+        items: []
+      };
+    }
+
+    if (!rawSite && currentBlock) {
+      currentBlock.hasExplicitSiteInAllRows = false;
+    }
+
+    // 날짜 파싱하여 밀리초 계산
+    var dateVal = rowVals[1];
+    var dateMs = 0;
+    if (dateVal) {
+      try {
+        var parsed = parseScheduleDateRange(dateVal);
+        if (parsed && parsed.startDate) {
+          dateMs = (parsed.startTime) ? parsed.startTime.getTime() : parsed.startDate.getTime();
+        }
+      } catch(eDate) {
+        dateMs = 0;
+      }
+    }
+
+    if (currentBlock) {
+      currentBlock.items.push({
+        idx: i,
+        vals: rowVals,
+        bg: backgrounds[i],
+        dateMs: dateMs,
+        taskName: String(rowVals[2] || "").trim()
+      });
+    }
+  }
+
+  if (currentBlock && currentBlock.items.length > 0) {
+    blocks.push(currentBlock);
+  }
+
+  var sortedBlockCount = 0;
+  var anyChanged = false;
+
+  // 각 블록별 날짜 오름차순 정렬 및 시트 반영
+  for (var b = 0; b < blocks.length; b++) {
+    var blk = blocks[b];
+    if (blk.items.length <= 1) continue; // 1개 행 이하는 정렬 불필요
+
+    // 정렬 필요 여부 확인: 이미 날짜 오름차순으로 정렬되어 있는지 검사
+    var isSorted = true;
+    for (var c = 0; c < blk.items.length - 1; c++) {
+      var curMs = blk.items[c].dateMs;
+      var nextMs = blk.items[c + 1].dateMs;
+      // 날짜가 있는 경우: 앞 날짜가 뒷 날짜보다 크면 정렬 필요!
+      if (curMs && nextMs && curMs > nextMs) {
+        isSorted = false;
+        break;
+      }
+      // 앞은 날짜가 없고 뒤는 날짜가 있으면 정렬 필요! (날짜 있는 것이 앞으로)
+      if (!curMs && nextMs) {
+        isSorted = false;
+        break;
+      }
+    }
+
+    if (isSorted) continue; // 이미 정렬되어 있으면 건너뜀
+
+    // Stable Sort 수행
+    var sortedItems = blk.items.slice();
+    sortedItems.sort(function(itemA, itemB) {
+      var aMs = itemA.dateMs || 0;
+      var bMs = itemB.dateMs || 0;
+
+      // 둘 다 날짜가 있는 경우: 날짜 빠른 순(오름차순)
+      if (aMs && bMs) {
+        if (aMs !== bMs) return aMs - bMs;
+      } else if (aMs) {
+        return -1; // a는 날짜 있고 b는 없으면 a가 앞
+      } else if (bMs) {
+        return 1;  // b는 날짜 있고 a는 없으면 b가 앞
+      }
+      // 날짜가 같거나 둘 다 없으면: 원래의 상대적 인덱스 순서 유지
+      return itemA.idx - itemB.idx;
+    });
+
+    // A열 현장명 보존 처리:
+    // 모든 행에 현장명이 적혀 있던 패턴이었다면 모든 행에 현장명 유지!
+    // 첫 행에만 적혀 있고 나머지가 빈칸인 아코디언 패턴이었다면 1번째 행에만 현장명 기입
+    for (var s = 0; s < sortedItems.length; s++) {
+      if (blk.hasExplicitSiteInAllRows) {
+        sortedItems[s].vals[0] = blk.siteName;
+      } else {
+        sortedItems[s].vals[0] = (s === 0) ? blk.siteName : "";
+      }
+    }
+
+    // values 및 backgrounds 배열에 정렬 결과 반영
+    for (var r = 0; r < blk.items.length; r++) {
+      var targetRowIdx = blk.items[r].idx; // 원래 행 위치
+      values[targetRowIdx] = sortedItems[r].vals;
+      backgrounds[targetRowIdx] = sortedItems[r].bg;
+    }
+
+    sortedBlockCount++;
+    anyChanged = true;
+  }
+
+  // 변경 사항이 있는 경우에만 시트에 1회 배치 쓰기
+  if (anyChanged) {
+    rangeAll.setValues(values);
+    rangeAll.setBackgrounds(backgrounds);
+    SpreadsheetApp.flush();
+    Logger.log("✅ 현장데이터 시트 날짜 정렬 완료: 총 " + sortedBlockCount + "개 현장 블록 재정렬");
+  }
+
+  if (!silent && sortedBlockCount > 0) {
+    try {
+      ss.toast("총 " + sortedBlockCount + "개 현장의 공정이 날짜 빠른 순으로 자동 정렬되었습니다.", "📅 날짜 순 정렬 완료", 3);
+    } catch(e) {}
+  }
+
+  return sortedBlockCount;
 }
 
 
@@ -604,6 +936,7 @@ function ensureRealtimeTriggerInstalledSilent() {
     var hasChangeTrigger = false;
     var hasPeriodicTrigger = false;
     var hasBriefingTrigger = false;
+    var hasHourlySortTrigger = false;
 
     for (var i = 0; i < triggers.length; i++) {
       var fn = triggers[i].getHandlerFunction();
@@ -611,6 +944,7 @@ function ensureRealtimeTriggerInstalledSilent() {
       if (fn === "handleSheetChangeTrigger") hasChangeTrigger = true;
       if (fn === "runPeriodicAutoSync" || fn === "runPeriodic1MinSync") hasPeriodicTrigger = true;
       if (fn === "sendDailySiteMorningBriefing") hasBriefingTrigger = true;
+      if (fn === "runHourlyAutoSortTrigger") hasHourlySortTrigger = true;
     }
 
     // 1. 시트 셀 수정 감지용 onEdit 트리거 설치
@@ -656,6 +990,15 @@ function ensureRealtimeTriggerInstalledSilent() {
     if (docProps.getProperty("DAILY_BRIEFING_ENABLED") === "true" && !hasBriefingTrigger) {
       scheduleNextDailyBriefingTrigger();
       Logger.log("☀️ 모닝 브리핑 소실 트리거 자동 복구 완료");
+    }
+
+    // 6. [신규] 1시간 주기 현장별 날짜 오름차순 자동 정렬 및 담당자 서식 동기화 트리거 설치
+    if (!hasHourlySortTrigger) {
+      ScriptApp.newTrigger("runHourlyAutoSortTrigger")
+        .timeBased()
+        .everyHours(1)
+        .create();
+      Logger.log("⏰ 1시간 주기 현장별 날짜 자동 정렬 트리거 설치 완료");
     }
   } catch(e) {
     Logger.log("트리거 자동 점검 건너뜀: " + e.toString());
@@ -2346,6 +2689,11 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
 
   // 실시간 트리거 백그라운드 자동 등록 보장
   ensureRealtimeTriggerInstalledSilent();
+
+  // 동기화 전 현장별 날짜 오름차순 자동 정돈 1회 실행
+  try {
+    sortSiteScheduleTasksByDate(ss, sheet, true);
+  } catch(eSort) {}
 
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) {
