@@ -1053,8 +1053,9 @@ const triggerCode = code.slice(code.indexOf('function handleCalendarEditTrigger(
 const has1MinSkipLogic = triggerCode.indexOf('if (syncMode === "REALTIME")') !== -1;
 assertTest('handleCalendarEditTrigger: 1MIN 모드 시 캘린더 API 호출 생략 (타이핑 렉 0% 보장)', has1MinSkipLogic);
 
-// 11-5: 상단 메뉴(⚡ 캘린더 연동 설정) 내 1분 주기 자동 동기화 등록 검증
-const menuCode = code.slice(code.indexOf('ui.createMenu("⚡ 캘린더 연동 설정")'), code.indexOf('ui.createMenu("📑 현장 데이터 편집/보기")'));
+// 11-5: 상단 메뉴(onOpen) 내 1분 주기 자동 동기화 등록 검증
+const onOpenStart = code.indexOf('function onOpen()');
+const menuCode = code.slice(onOpenStart, code.indexOf('function isSiteScheduleSheet(') !== -1 ? code.indexOf('function isSiteScheduleSheet(') : onOpenStart + 3500);
 const has1MinInMenu = menuCode.indexOf('enable1MinAutoSync') !== -1;
 assertTest('상단 메뉴(⚡ 캘린더 연동 설정) 내 1분 주기 자동 동기화 등록 여부', has1MinInMenu);
 
@@ -2785,6 +2786,75 @@ const todayRef = new Date(2026, 9, 16);
 const isDelayResult = sandbox.isScheduleDelayed(testDelayedTask, '예정', todayRef);
 assertTest('isScheduleDelayed: 오늘(10.16) 기준 어제(10.15) 예정 공정은 isDelayed === true (시트 #fff1f2 붉은색 하이라이트 정상 판정) 검증',
   isDelayResult === true
+);
+
+console.log('\n🧹 [Step 37: 지연 외 모든 정상/미래/완료 행 흰색 배경 자동 복구 & 상단 메뉴 최적화 QA]');
+
+// 37-1: cleanNonDelayedRowBackgroundsSilent 무음 일괄 청소 함수 탑재 검증
+assertTest('cleanNonDelayedRowBackgroundsSilent 함수 탑재 여부',
+  typeof sandbox.cleanNonDelayedRowBackgroundsSilent === 'function'
+);
+
+// 37-2: cleanNonDelayedRowBackgroundsSilent 동작 시뮬레이션: 미래(109행) 및 완료(107행) 복구, 진짜 지연(121행)만 하이라이트
+const mockSheetRows = [
+  // [현장명, 날짜, 공종, 협력업체, 공유, 비고, 담당자, 진행상태]
+  ['보경102동', '2026.08.10', '철거', '', true, '', '전예린', '완료'],      // 107행: 과거 완료 -> 흰색 복구 대상
+  ['보경102동', '2026.10.21', '상담', '', true, '1차 샘플링', '전예린', '예정'], // 109행: 미래 예정 -> 흰색 복구 대상!
+  ['보경102동', '2026.10.15', '타일', '', false, '', '전예린', '예정'],       // 121행: 마감 경과(지연) -> 붉은색 유지 대상!
+  ['보경102동', '2026.10.20', '타일', '', false, '', '전예린', '예정']        // 122행: 미래 예정 -> 흰색 유지 대상
+];
+const mockBackgrounds = [
+  ['#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2'], // 이전 분홍 잔여물
+  ['#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2'], // 이전 분홍 잔여물 (미래 일정인데 분홍색이었음)
+  ['#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2'], // 진짜 지연
+  ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']  // 정상 흰색
+];
+
+let updatedBg = null;
+const mockSheetObj = {
+  getLastRow: () => 5,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => mockSheetRows,
+    getBackgrounds: () => mockBackgrounds,
+    setBackgrounds: (bgs) => { updatedBg = bgs; }
+  })
+};
+
+sandbox.cleanNonDelayedRowBackgroundsSilent(mockSheetObj);
+assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 107행 완료 공정이 흰색(#ffffff)으로 자동 복구 검증',
+  updatedBg && updatedBg[0][0] === '#ffffff'
+);
+assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 109행 미래 일정(2026.10.21)이 흰색(#ffffff)으로 자동 복구 검증',
+  updatedBg && updatedBg[1][0] === '#ffffff'
+);
+assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 121행 진짜 마감 경과 지연 공정(2026.10.15 예정)은 붉은색(#fff1f2) 유지 검증',
+  updatedBg && updatedBg[2][0] === '#fff1f2'
+);
+
+// 37-3: onOpen 내 cleanNonDelayedRowBackgroundsSilent 무음 호출 탑재 검증
+assertTest('onOpen: 시트가 열릴 때 정상 행 배경색 자동 청소(cleanNonDelayedRowBackgroundsSilent) 1회 무음 실행 탑재 검증',
+  code.indexOf('function onOpen()') !== -1 &&
+  code.slice(code.indexOf('function onOpen()'), code.indexOf('function onOpen()') + 500).indexOf('cleanNonDelayedRowBackgroundsSilent(sheet)') !== -1
+);
+
+// 37-4: formatAllDatesInSheetToYYYYMMDD 내 cleanNonDelayedRowBackgroundsSilent 자동 연동 검증
+assertTest('formatAllDatesInSheetToYYYYMMDD: 날짜 변환 후 cleanNonDelayedRowBackgroundsSilent 자동 연동 검증',
+  code.slice(code.indexOf('function formatAllDatesInSheetToYYYYMMDD('), code.indexOf('function formatDateWithTime(')).indexOf('cleanNonDelayedRowBackgroundsSilent(sheet)') !== -1
+);
+
+// 37-5: syncRecentSiteSchedulesToGoogleCalendar 내 정상 행 #ffffff 복구 로직 탑재 검증
+assertTest('syncRecentSiteSchedulesToGoogleCalendar: 지연 아닌 정상 행(#ffffff) 복구 로직 탑재 검증',
+  code.indexOf('details.isDelayed') !== -1 &&
+  code.indexOf('sheet.getRange(row, 1, 1, 8).setBackground("#ffffff")') !== -1
+);
+
+// 37-6: 상단 메뉴 최상위에 3개 핵심 기능만 노출되고 나머지는 '고급 설정 & 시스템 관리'로 통합 검증
+const onOpenMenuSlice = code.slice(code.indexOf('function onOpen()'), code.indexOf('function isSiteScheduleSheet(') !== -1 ? code.indexOf('function isSiteScheduleSheet(') : code.indexOf('function onOpen()') + 2500);
+assertTest('상단 메뉴: 최상위 3개 핵심 항목(사이드바, 팝업, 캘린더 동기화) 외 모든 항목이 [고급 설정 & 시스템 관리] 하위로 일원화 배치 검증',
+  onOpenMenuSlice.indexOf('대시보드 사이드바 열기') !== -1 &&
+  onOpenMenuSlice.indexOf('대시보드 팝업 열기') !== -1 &&
+  onOpenMenuSlice.indexOf('📅 구글 캘린더 동기화') !== -1 &&
+  onOpenMenuSlice.indexOf('ui.createMenu("⚙️ 고급 설정 & 시스템 관리")') !== -1
 );
 
 console.log('\n========================================================');

@@ -305,61 +305,62 @@ function onOpen() {
     var activeSs = SpreadsheetApp.getActiveSpreadsheet();
     if (activeSs) {
       PropertiesService.getDocumentProperties().setProperty("SPREADSHEET_ID", activeSs.getId());
+      // 스프레드시트가 열릴 때 정상 행 배경색 자동 청소 1회 무음 실행 (미래 일정/완료 일정 흰색 복구)
+      var sheet = findSiteScheduleSheet(activeSs);
+      if (sheet) {
+        cleanNonDelayedRowBackgroundsSilent(sheet);
+      }
     }
   } catch(e) {}
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🚀 현장 관리")
-    // [자주 쓰는 핵심 3대 기능만 최상위 노출]
+    // [사용자 지정 최상위 3대 핵심 기능만 노출]
     .addItem("대시보드 사이드바 열기", "openSiteScheduleSidebar")
     .addItem("대시보드 팝업 열기", "openSiteScheduleModal")
     .addItem("📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)", "syncRecentSiteSchedulesToGoogleCalendar")
     .addSeparator()
 
-    // [서브메뉴 1: 모닝 브리핑 관리]
-    .addSubMenu(ui.createMenu("☀️ 모닝 브리핑 관리")
-      .addItem("✉️ 지금 즉시 테스트 발송", "sendDailyBriefingTestNow")
-      .addItem("⏰ 자동 발송 켜기 (정각 발송)", "enableDailyMorningBriefing")
-      .addItem("🔕 자동 발송 끄기", "disableDailyMorningBriefing")
-      .addItem("🕒 발송 시간 변경 (기본 08:00 정각)", "configureBriefingTime")
-      .addItem("📧 수신 이메일 변경", "configureBriefingEmail")
-    )
+    // [3개 제외 모든 설정 및 보조 기능은 '고급 설정 & 시스템 관리' 하위로 일원화 배치]
+    .addSubMenu(ui.createMenu("⚙️ 고급 설정 & 시스템 관리")
+      // 1. 색상 복구 및 날짜 일괄 정비
+      .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 즉시 복구/검사", "checkAndHighlightDelayedSchedules")
+      .addItem("📅 전체 날짜 2026.00.00 형식 일괄 변환", "formatAllDatesInSheetToYYYYMMDD")
+      .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
+      .addSeparator()
 
-    // [서브메뉴 2: 캘린더 연동 설정]
-    .addSubMenu(ui.createMenu("⚡ 캘린더 연동 설정")
+      // 2. 현장 데이터 편집 / 보기 편의 기능
+      .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
+      .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
+      .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
+      .addItem("🎯 오늘 날짜로 이동 (Today)", "goToToday")
+      .addSeparator()
+
+      // 3. 캘린더 연동 및 동기화 옵션
       .addItem("💡 스마트 디바운스 자동 동기화 켜기 (입력 완료 시 1회 자동 반영 - 최고 권장)", "enableDebouncedAutoSync")
       .addItem("⏰ 5분 주기 자동 동기화 켜기 (정기 순환 동기화)", "enable5MinAutoSync")
       .addItem("⏰ 1분 주기 자동 동기화 켜기 (초고속 테스트용)", "enable1MinAutoSync")
       .addItem("⚡ 완전 실시간 연동 켜기 (수정 시 즉시 반영)", "enableRealtimeCalendarSync")
       .addItem("❌ 모든 자동 연동 끄기 (수동 버튼 전용)", "disableAllAutoCalendarSync")
-      .addSeparator()
       .addItem("📥 캘린더 수정사항 가져오기 (수동 즉시 반영)", "syncFromCalendarToSheet")
-      .addSeparator()
       .addItem("📦 전체 일정 연속 동기화 (25건씩 자동 대기 연속 처리)", "syncAllSiteSchedulesToGoogleCalendar")
       .addItem("🧹 캘린더 중복 및 유령 일정 자동 정리", "cleanupDuplicateAndOrphanCalendarEvents")
       .addItem("🔕 캘린더 전날 알림 전체 끄기 (알림 폭탄 해제)", "removeAllSiteCalendarReminders")
-    )
-
-    // [서브메뉴 3: 현장 데이터 편집 / 보기 편의 기능]
-    .addSubMenu(ui.createMenu("📑 현장 데이터 편집/보기")
-      .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
-      .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
-      .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
-      .addItem("🎯 오늘 날짜로 이동 (Today)", "goToToday")
-    )
-    .addSeparator()
-
-    // [서브메뉴 4: 고급 설정 & 시스템 관리]
-    .addSubMenu(ui.createMenu("⚙️ 고급 설정 & 시스템 관리")
-      .addItem("📱 모바일 대시보드 URL 확인 및 안내", "showMobileDashboardUrl")
-      .addItem("🎨 캘린더 색상 & ⚠️ 지연 공정 일괄 검사", "checkAndHighlightDelayedSchedules")
-      .addItem("📅 전체 날짜 2026.00.00 형식 일괄 변환", "formatAllDatesInSheetToYYYYMMDD")
-      .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
       .addSeparator()
+
+      // 4. 모닝 브리핑 관리
+      .addItem("☀️ 모닝 브리핑 지금 즉시 테스트 발송", "sendDailyBriefingTestNow")
+      .addItem("⏰ 모닝 브리핑 자동 발송 켜기 (정각 발송)", "enableDailyMorningBriefing")
+      .addItem("🔕 모닝 브리핑 자동 발송 끄기", "disableDailyMorningBriefing")
+      .addItem("🕒 모닝 브리핑 발송 시간 변경 (기본 08:00 정각)", "configureBriefingTime")
+      .addItem("📧 모닝 브리핑 수신 이메일 변경", "configureBriefingEmail")
+      .addSeparator()
+
+      // 5. 시스템 유지보수 & 모바일 환경설정
+      .addItem("📱 모바일 대시보드 URL 확인 및 안내", "showMobileDashboardUrl")
+      .addItem("📱 모바일 상태변경 웹앱 배포 URL 설정", "configureWebAppUrl")
       .addItem("🔧 공종/담당자/상태 드롭다운 및 서식 전체 복구", "fixStatusDropdownValidation")
       .addItem("🧹 빈 행 유령 이력/ID 일괄 청소", "cleanupEmptyRowsMetadata")
-      .addItem("🧹 캘린더 중복 및 유령 일정 자동 정리", "cleanupDuplicateAndOrphanCalendarEvents")
       .addItem("⚙️ 연동 캘린더 변경 / 확인", "configureTargetCalendar")
-      .addItem("📱 모바일 상태변경 웹앱 배포 URL 설정", "configureWebAppUrl")
     )
     .addToUi();
 }
@@ -1598,9 +1599,17 @@ function formatAllDatesInSheetToYYYYMMDD() {
   if (updatedCount > 0) {
     range.setValues(values);
     SpreadsheetApp.flush();
-    SpreadsheetApp.getUi().alert("📅 날짜 형식 변환 완료", "총 " + updatedCount + "건의 날짜가 '2026.00.00' 형식으로 일괄 통일되었습니다.", SpreadsheetApp.getUi().ButtonSet.OK);
+    // 날짜 변경 후 지연/정상 상태 재계산 및 비지연 정상 행 배경색 즉시 복구
+    try {
+      cleanNonDelayedRowBackgroundsSilent(sheet);
+    } catch (eBg) {}
+    SpreadsheetApp.getUi().alert("📅 날짜 형식 변환 완료", "총 " + updatedCount + "건의 날짜가 '2026.00.00' 형식으로 일괄 통일되었으며, 일정 상태에 맞게 시트 배경색이 자동 복구되었습니다.", SpreadsheetApp.getUi().ButtonSet.OK);
   } else {
-    SpreadsheetApp.getUi().alert("📅 날짜 형식 확인", "모든 날짜가 이미 '2026.00.00' 표준 형식으로 작성되어 있습니다.", SpreadsheetApp.getUi().ButtonSet.OK);
+    // 날짜 변경이 없더라도 지연 아닌 정상 행 배경색 무음 복구 동기화
+    try {
+      cleanNonDelayedRowBackgroundsSilent(sheet);
+    } catch (eBg2) {}
+    SpreadsheetApp.getUi().alert("📅 날짜 형식 확인", "모든 날짜가 이미 '2026.00.00' 표준 형식입니다.\n(지연이 아닌 정상/완료/미래 일정의 시트 배경색 복구가 완료되었습니다)", SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
@@ -2727,15 +2736,23 @@ function syncSiteSchedulesBatchSafe(onlyRecent) {
       }
     }
 
-    // 지연 공정 시트 배경 하이라이트 반영 (지연 건만 선택 반영하여 API 호출 최소화)
+    // 지연 공정 시트 배경 하이라이트 반영 및 정상 행(#ffffff) 복구
     try {
       if (details.isDelayed) {
         sheet.getRange(row, 1, 1, 8).setBackground("#fff1f2");
+      } else {
+        var curBg = sheet.getRange(row, 1).getBackground();
+        if (curBg && (curBg === "#fff1f2" || curBg === "#fee2e2" || (curBg !== "#ffffff" && curBg !== "#FFFFFF"))) {
+          sheet.getRange(row, 1, 1, 8).setBackground("#ffffff");
+        }
       }
     } catch (e) {}
   }
 
-  // 4) [최종 정리]: 전체 동기화 종료 후 혹시 남았을 잉여 고아 중복 무음 정리 1회 수행
+  // 4) [최종 정리]: 전체 동기화 종료 후 비지연 정상 행 잔여 분홍색 일괄 무음 청소 & 잉여 고아 중복 무음 정리
+  try {
+    cleanNonDelayedRowBackgroundsSilent(sheet);
+  } catch (eCleanBg) {}
   try {
     cleanupDuplicateCalendarEventsSilent(cal, sheet);
   } catch (eCleanEnd) {}
@@ -5188,21 +5205,23 @@ function getCalendarColorForStatus(statusClean, isDelayed, isShared) {
 }
 
 /**
- * 현장데이터 시트의 전체 행 공정 지연 검사 및 배경 하이라이트 반영 (Feature 2)
+ * 현장데이터 시트의 전체 행 공정 지연 검사 및 배경 하이라이트/정상 복구 (무음 실행)
+ * - 지연 행: #fff1f2 연분홍색 하이라이트
+ * - 정상/미래/완료 행 및 빈 행의 과거 붉은색 잔여물: #ffffff 흰색으로 완벽 복구
+ * @param {Sheet} [targetSheet] 대상 시트 (생략 시 활성 시트)
+ * @returns {Array} 감지된 지연 항목 배열
  */
-function checkAndHighlightDelayedSchedules() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = findSiteScheduleSheet(ss);
+function cleanNonDelayedRowBackgroundsSilent(targetSheet) {
+  var sheet = targetSheet;
   if (!sheet) {
-    SpreadsheetApp.getUi().alert("현장데이터 시트를 찾을 수 없습니다.");
-    return;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    sheet = findSiteScheduleSheet(ss);
   }
+  if (!sheet) return [];
 
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    SpreadsheetApp.getUi().alert("검사할 현장 데이터가 없습니다.");
-    return;
-  }
+  if (lastRow < 2) return [];
 
   var today = new Date();
   var range = sheet.getRange(2, 1, lastRow - 1, 8);
@@ -5211,11 +5230,10 @@ function checkAndHighlightDelayedSchedules() {
   var delayedItems = [];
   var bgChanged = false;
   var startTime = Date.now();
-
   var lastKnownSite = "";
 
   for (var i = 0; i < values.length; i++) {
-    // 6분 타임아웃 절대 방어: 60초 초과 시 안전 루프 탈출
+    // 60초 타임아웃 안전 탈출 (6분 스크립트 강제 종료 방어)
     if (Date.now() - startTime > 60000) {
       break;
     }
@@ -5230,10 +5248,33 @@ function checkAndHighlightDelayedSchedules() {
     var status = String(values[i][7] || "").trim();
     var statusClean = status.replace(/\s+/g, "");
 
-    if (!siteName && !taskName) continue;
-    var parsed = parseScheduleDateRange(dateVal);
-    if (!parsed) continue;
+    // 1) 필수 데이터가 없는 빈 행인 경우: 과거 붉은색 잔여물이 있다면 깨끗하게 흰색으로 청소
+    if (!siteName && !taskName && !dateVal) {
+      var emptyBg = backgrounds[i][0];
+      if (emptyBg && (emptyBg === "#fff1f2" || emptyBg === "#fee2e2" || (emptyBg !== "#ffffff" && emptyBg !== "#FFFFFF"))) {
+        for (var ce = 0; ce < 8; ce++) {
+          backgrounds[i][ce] = "#ffffff";
+        }
+        bgChanged = true;
+      }
+      continue;
+    }
 
+    // 2) 날짜 파싱
+    var parsed = parseScheduleDateRange(dateVal);
+    if (!parsed) {
+      // 날짜가 없거나 유효하지 않은 경우 지연 대상이 아니므로 잔여 붉은색이 있다면 흰색 복구
+      var unparsedBg = backgrounds[i][0];
+      if (unparsedBg && (unparsedBg === "#fff1f2" || unparsedBg === "#fee2e2" || (unparsedBg !== "#ffffff" && unparsedBg !== "#FFFFFF"))) {
+        for (var cu = 0; cu < 8; cu++) {
+          backgrounds[i][cu] = "#ffffff";
+        }
+        bgChanged = true;
+      }
+      continue;
+    }
+
+    // 3) 지연 여부 판정
     if (isScheduleDelayed(parsed, statusClean, today)) {
       delayedItems.push({
         row: row,
@@ -5243,7 +5284,7 @@ function checkAndHighlightDelayedSchedules() {
         manager: manager,
         status: status
       });
-      // 지연 행 연한 붉은색 경고 하이라이트 (메모리 2D 배열 일괄 수정)
+      // 지연 행 연한 붉은색(#fff1f2) 경고 하이라이트
       if (backgrounds[i][0] !== "#fff1f2") {
         for (var c = 0; c < 8; c++) {
           backgrounds[i][c] = "#fff1f2";
@@ -5251,9 +5292,9 @@ function checkAndHighlightDelayedSchedules() {
         bgChanged = true;
       }
     } else {
-      // 정상 상태 복구: 지연이 아닌 모든 정상 행(완료되었거나 미래 일정)은 흰색(#ffffff)으로 완벽 복구!
+      // 4) 정상/미래/완료 행 복구: 지연이 아닌 모든 정상 행은 흰색(#ffffff)으로 완벽 복구!
       var currentBg = backgrounds[i][0];
-      if (currentBg && currentBg !== "#ffffff" && currentBg !== "#FFFFFF") {
+      if (currentBg && (currentBg === "#fff1f2" || currentBg === "#fee2e2" || (currentBg !== "#ffffff" && currentBg !== "#FFFFFF"))) {
         for (var c2 = 0; c2 < 8; c2++) {
           backgrounds[i][c2] = "#ffffff";
         }
@@ -5262,10 +5303,27 @@ function checkAndHighlightDelayedSchedules() {
     }
   }
 
-  // 1회 단일 호출로 전체 시트 배경색 즉시 커밋 (기존 개별 호출 대비 300배 가속 & API 절약)
+  // 1회 단일 호출로 전체 시트 배경색 즉시 커밋 (기존 대비 수백배 가속 & API 절약)
   if (bgChanged) {
     range.setBackgrounds(backgrounds);
   }
+
+  return delayedItems;
+}
+
+/**
+ * 현장데이터 시트의 전체 행 공정 지연 검사 및 배경 하이라이트 반영 (UI 알림 포함)
+ */
+function checkAndHighlightDelayedSchedules() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("현장데이터 시트를 찾을 수 없습니다.");
+    return;
+  }
+
+  var delayedItems = cleanNonDelayedRowBackgroundsSilent(sheet);
   SpreadsheetApp.flush();
 
   if (delayedItems.length > 0) {
@@ -5280,13 +5338,13 @@ function checkAndHighlightDelayedSchedules() {
       "⚠️ 공정 지연 현장 경고 (" + delayedItems.length + "건 감지)",
       "마감 예정일이 경과하였으나 미완료 상태인 공정이 발견되었습니다:\n\n" +
       msgList + "\n\n" +
-      "※ 해당 행은 시트에서 [연한 붉은색]으로 하이라이트 처리되었으며, 캘린더 동기화 시 [Tomato 빨간 블록] 및 [⚠️ 지연] 아이콘으로 자동 연동됩니다.",
+      "※ 지연된 행은 [연한 붉은색]으로 하이라이트되었으며, 완료되거나 미래 일정인 모든 정상 행은 [흰색]으로 깨끗하게 복구되었습니다.",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } else {
     SpreadsheetApp.getUi().alert(
       "✅ 공정 지연 검사 완료",
-      "지연된 현장 공정이 없습니다. 모든 일정이 예정대로 원활하게 진행 중입니다!",
+      "지연된 현장 공정이 없습니다. 모든 일정이 예정대로 진행 중이며, 시트의 모든 정상/미래/완료 행이 흰색으로 복구되었습니다!",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
