@@ -2050,6 +2050,48 @@ assertTest('doGet: 단일 일정 관리 화면 상단에 "← 📱 전체 대시
   doGetSingle && doGetSingle._content.indexOf('← 📱 전체 대시보드') !== -1
 );
 
+// ========================================================
+// 🎯 [Step 29: 오늘 날짜 정밀 필터링 & 상세화면 버튼 제거 및 저장버튼 100% 확장 QA]
+// ========================================================
+console.log('\n🎯 [Step 29: 오늘 날짜 정밀 필터링 & 상세화면 버튼 제거 및 저장버튼 100% 확장 QA]');
+
+// 29-1: 오늘(10.16) vs 내일(10.17) 정밀 분리 검증 (14시간 시차 오차 제거)
+const testTodayTomorrowData = [
+  ['신대방우성 5동 601호', '26.10.16', '양생1', '업체A', true, '', '송지은', '예정', '', 0, '', '', '', ''],
+  ['신대방우성 5동 601호', '26.10.17', '양생2', '업체B', true, '', '송지은', '예정', '', 0, '', '', '', '']
+];
+mockSidebarSheet.getRange = (r, c, nr, nc) => ({
+  getValues: () => testTodayTomorrowData
+});
+mockSidebarSheet.getLastRow = () => 3;
+sandbox.findSiteScheduleSheet = () => mockSidebarSheet;
+
+const dashTodayCheck = sandbox.getSidebarDashboardData();
+const todayTask = dashTodayCheck.sites[0].tasks.find(t => t.taskName === '양생1');
+const tomorrowTask = dashTodayCheck.sites[0].tasks.find(t => t.taskName === '양생2');
+
+assertTest('getSidebarDashboardData: 오늘 일정(26.10.16)은 isToday === true 검증',
+  todayTask && todayTask.isToday === true
+);
+assertTest('getSidebarDashboardData: 내일 일정(26.10.17)은 isToday === false (오늘 필터 배제) 검증',
+  tomorrowTask && tomorrowTask.isToday === false
+);
+assertTest('getSidebarDashboardData: 오늘 일정(26.10.16)은 지연(isDelayed) 오인 방어(false) 검증',
+  todayTask && todayTask.isDelayed === false
+);
+assertTest('getSidebarDashboardData: KPI 오늘 공정 수에 내일 일정이 섞이지 않고 정확히 1건 집계 검증',
+  dashTodayCheck.kpi.todayCount === 1
+);
+
+// 29-2: buildSidebarDashboardHtml 내 상세화면 버튼 제거 및 저장하기 버튼 100% 확장 검증
+const currentDashHtml = sandbox.buildSidebarDashboardHtml('mobile');
+assertTest('buildSidebarDashboardHtml: 차단 에러를 유발하던 "🔗 상세화면" 버튼 완전 제거 검증',
+  currentDashHtml.indexOf('상세화면') === -1 && currentDashHtml.indexOf('openSoloPage') === -1
+);
+assertTest('buildSidebarDashboardHtml: "💾 저장하기" 버튼 100% 전체 너비(width: 100%) 확장 검증',
+  currentDashHtml.indexOf('.sheet-save-btn { width: 100%;') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

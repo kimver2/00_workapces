@@ -5857,17 +5857,8 @@ function getSidebarDashboardData() {
     var dateDisplay = formatScheduleDateDisplay(dateVal);
 
     if (parsed && parsed.startDate) {
-      if (!parsed.isRange) {
-        if (isDateEqual(parsed.startDate, today)) isToday = true;
-        if (parsed.startDate.getTime() < nowMs && status !== "완료" && status !== "취소") {
-          isDelayed = true;
-        }
-      } else if (parsed.endDate) {
-        if (nowMs >= parsed.startDate.getTime() && nowMs <= parsed.endDate.getTime()) isToday = true;
-        if (parsed.endDate.getTime() < nowMs && status !== "완료" && status !== "취소") {
-          isDelayed = true;
-        }
-      }
+      isToday = isScheduleActiveToday(parsed, today);
+      isDelayed = isScheduleDelayed(parsed, status, today);
     }
 
     if (isToday) todayCount++;
@@ -6034,10 +6025,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '.sheet-share-btn.active-off { border-color: #ef4444; background: #fef2f2; color: #dc2626; font-weight: 800; }';
   html += '.sheet-memo-input { width: 100%; min-height: 60px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 12.5px; font-family: inherit; outline: none; margin-bottom: 14px; resize: vertical; }';
   html += '.sheet-memo-input:focus { border-color: #2563eb; }';
-  html += '.sheet-action-row { display: flex; gap: 8px; }';
-  html += '.sheet-save-btn { flex: 1; padding: 12px; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; font-weight: 700; border: none; cursor: pointer; }';
-  html += '.sheet-save-btn:disabled { background: #94a3b8; cursor: not-allowed; }';
-  html += '.sheet-solo-btn { flex: none; padding: 12px 14px; border-radius: 8px; background: #f1f5f9; color: #334155; font-size: 12.5px; font-weight: 700; border: 1px solid #cbd5e1; cursor: pointer; text-decoration: none; display: flex; align-items: center; }';
+  html += '.sheet-action-row { margin-top: 12px; }';
+  html += '.sheet-save-btn { width: 100%; height: 48px; border-radius: 12px; background: #2563eb; color: #fff; font-size: 15px; font-weight: 800; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25); transition: all 0.15s; }';
+  html += '.sheet-save-btn:active { background: #1d4ed8; transform: scale(0.99); }';
+  html += '.sheet-save-btn:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }';
 
   if (isModal) {
     html += '.content { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }';
@@ -6121,7 +6112,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <textarea id="sheetMemoInput" class="sheet-memo-input" placeholder="현장 특이사항이나 전달사항을 입력하세요..."></textarea>';
   html += '    <div class="sheet-action-row">';
   html += '      <button type="button" id="sheetSaveBtn" class="sheet-save-btn" onclick="saveSheetTask()">💾 저장하기</button>';
-  html += '      <button type="button" class="sheet-solo-btn" onclick="openSoloPage()">🔗 상세화면</button>';
   html += '    </div>';
   html += '  </div>';
   html += '</div>';
@@ -6353,12 +6343,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '      showToast("⚠️ 에러: " + (err.message || err));';
   html += '    })';
   html += '    .updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal);';
-  html += '}';
-
-  html += 'function openSoloPage() {';
-  html += '  if (!curTaskObj) return;';
-  html += '  const url = (webAppBaseUrl || window.location.href.split("?")[0]) + "?row=" + curTaskObj.row;';
-  html += '  window.location.href = url;';
   html += '}';
 
   html += 'function syncCalendar() {';
