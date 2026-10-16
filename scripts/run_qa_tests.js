@@ -2594,9 +2594,12 @@ if (scriptMatch34 && scriptMatch34[1]) {
 }
 assertTest('buildSidebarDashboardHtml: 달력 및 체크박스 로직 추가 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk34);
 
-// 34-8: 캘린더 구글 캘린더 스타일 알약 포맷(공유현황 + [공종명] 현장명) 및 더보기 버튼 제거 검증
-assertTest('buildSidebarDashboardHtml: 캘린더 이벤트 알약 구글 캘린더 형식(공유 뱃지 + [공종명] 현장명) 렌더링 검증',
-  dashHtml34.indexOf('shareIcon + "[" + escapeHtml(task.taskName) + "] " + escapeHtml(site.siteName)') !== -1
+// 34-8: 캘린더 이벤트 알약 전체 배경색 적용 및 초소형 공유 뱃지 + 공종명 노출 검증
+assertTest('buildSidebarDashboardHtml: 캘린더 이벤트 알약 전체 배경색 채움 및 초소형 뱃지(cal-sh-box) + 공종명(cal-pill-text) 렌더링 검증',
+  dashHtml34.indexOf('cal-sh-box') !== -1 &&
+  dashHtml34.indexOf('cal-pill-text') !== -1 &&
+  dashHtml34.indexOf('background-color:\' + bgCol + \';color:\' + txtCol') !== -1 &&
+  dashHtml34.indexOf('\'<span class="cal-sh-box \' + shClass + \'"></span><span class="cal-pill-text">\' + escapeHtml(task.taskName) + \'</span>\'') !== -1
 );
 assertTest('buildSidebarDashboardHtml: 일정이 많을 때 더보기 버튼 완전 배제 및 전체 리스트 노출 검증',
   dashHtml34.indexOf('cal-event-more') === -1 &&
