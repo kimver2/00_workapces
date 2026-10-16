@@ -3403,6 +3403,151 @@ try {
 }
 assertTest('buildSidebarDashboardHtml: 진척률 기능 탑재 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk43);
 
+// ========================================================
+// 🔄 Step 44: 상세 모달 같은 날 다중 일정 네비게이션(< > 버튼, 순번 인디케이터) QA
+// ========================================================
+console.log('\n🔄 [Step 44: 상세 모달 같은 날 다중 일정 네비게이션(< > 버튼) QA]');
+
+const step44Html = sandbox.buildSidebarDashboardHtml('mobile');
+const s44Start = step44Html.indexOf('<script>');
+const s44End = step44Html.lastIndexOf('</script>');
+const step44Script = step44Html.slice(s44Start + 8, s44End);
+
+// 44-1: CSS 내 sheet-day-nav 및 btn-sheet-nav 스타일 탑재 검증
+assertTest('buildSidebarDashboardHtml: .sheet-day-nav 및 .btn-sheet-nav CSS 스타일 탑재 검증',
+  step44Html.indexOf('.sheet-day-nav') !== -1 &&
+  step44Html.indexOf('.sheet-day-nav-label') !== -1 &&
+  step44Html.indexOf('.sheet-day-nav-counts') !== -1 &&
+  step44Html.indexOf('.sheet-day-nav-btns') !== -1 &&
+  step44Html.indexOf('.btn-sheet-nav') !== -1 &&
+  step44Html.indexOf('.btn-sheet-nav:disabled') !== -1
+);
+
+// 44-2: 바텀시트 HTML 내 sheetDayNav 컨테이너 및 ◀ / ▶ 버튼 마크업 검증
+assertTest('buildSidebarDashboardHtml: 바텀시트 내 #sheetDayNav, #sheetDayNavIdx, #btnSheetPrevDayTask, #btnSheetNextDayTask 마크업 검증',
+  step44Html.indexOf('id="sheetDayNav"') !== -1 &&
+  step44Html.indexOf('id="sheetDayNavIdx"') !== -1 &&
+  step44Html.indexOf('id="sheetDayNavTotal"') !== -1 &&
+  step44Html.indexOf('id="btnSheetPrevDayTask"') !== -1 &&
+  step44Html.indexOf('id="btnSheetNextDayTask"') !== -1 &&
+  step44Html.indexOf('onclick="navSameDayTask(-1)"') !== -1 &&
+  step44Html.indexOf('onclick="navSameDayTask(1)"') !== -1
+);
+
+// 44-3: 클라이언트 스크립트에 findSameDayTasks, updateSameDayNavUI, navSameDayTask 함수 탑재 검증
+assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 같은 날 일정 제어 함수 탑재 검증',
+  step44Script.indexOf('let sameDayTaskList = [];') !== -1 &&
+  step44Script.indexOf('let curSameDayIndex = 0;') !== -1 &&
+  step44Script.indexOf('function findSameDayTasks(') !== -1 &&
+  step44Script.indexOf('function updateSameDayNavUI()') !== -1 &&
+  step44Script.indexOf('function navSameDayTask(') !== -1
+);
+
+// 44-4: onCalDayClick 내 모바일 바텀시트 mList 전달 연동 검증
+assertTest('buildSidebarDashboardHtml: onCalDayClick 내 모바일 바텀시트 mList 다중 일정 전달 연동 검증',
+  step44Script.indexOf('openBottomSheet(mList[0].site, mList[0].task, mList, 0);') !== -1
+);
+
+// 44-5: 같은 날 다중 공정 검색 알고리즘 시뮬레이션
+const mockMultiSitesData = [
+  {
+    siteName: '보경102동',
+    tasks: [
+      { taskName: '철거', startDateStr: '2026-10-20', endDateStr: '2026-10-20', row: 2 },
+      { taskName: '양생', startDateStr: '2026-10-22', endDateStr: '2026-10-23', row: 3 }
+    ]
+  },
+  {
+    siteName: '신대방우성',
+    tasks: [
+      { taskName: '타일', startDateStr: '2026-10-20', endDateStr: '2026-10-20', row: 10 },
+      { taskName: '도배', startDateStr: '2026-10-20', endDateStr: '2026-10-21', row: 11 }
+    ]
+  }
+];
+
+function findSameDayTasksSim(sites, baseTask) {
+  if (!baseTask || !sites) return [];
+  const baseDStr = baseTask.startDateStr || "";
+  const list = [];
+  sites.forEach(site => {
+    site.tasks.forEach(t => {
+      const sStr = t.startDateStr || "";
+      const eStr = t.endDateStr || sStr;
+      if (sStr && sStr <= baseDStr && baseDStr <= eStr) {
+        list.push({ site: site.siteName, task: t });
+      }
+    });
+  });
+  return list;
+}
+
+const foundSameDay = findSameDayTasksSim(mockMultiSitesData, { startDateStr: '2026-10-20' });
+assertTest('같은 날 공정 탐색 시뮬레이션: 2026-10-20 기준 3개 공정(보경 철거, 우성 타일, 우성 도배) 정확 추출 검증',
+  foundSameDay.length === 3 &&
+  foundSameDay[0].task.taskName === '철거' &&
+  foundSameDay[1].task.taskName === '타일' &&
+  foundSameDay[2].task.taskName === '도배'
+);
+
+// 44-6: 같은 날 1개 공정인 날(2026-10-23) 단독 1건 추출 검증
+const foundSingle = findSameDayTasksSim(mockMultiSitesData, { startDateStr: '2026-10-23' });
+assertTest('같은 날 공정 탐색 시뮬레이션: 1건뿐인 날(2026-10-23)은 1건만 반환 검증',
+  foundSingle.length === 1 &&
+  foundSingle[0].task.taskName === '양생'
+);
+
+// 44-7: 이전 / 다음 네비게이션 상태 및 경계값 시뮬레이션
+class SameDayNavigatorSim {
+  constructor(list, initialIdx = 0) {
+    this.list = list;
+    this.idx = initialIdx;
+  }
+  get canPrev() { return this.idx > 0; }
+  get canNext() { return this.idx < this.list.length - 1; }
+  nav(delta) {
+    const next = this.idx + delta;
+    if (next >= 0 && next < this.list.length) {
+      this.idx = next;
+    }
+  }
+}
+
+const navSim = new SameDayNavigatorSim(foundSameDay, 0); // 3건 중 0번 시작
+assertTest('네비게이션 시뮬레이션: 첫 번째 일정(1/3)에서 ◀ 비활성화, ▶ 활성화 검증',
+  navSim.canPrev === false && navSim.canNext === true && navSim.idx === 0
+);
+
+navSim.nav(1); // 1번(가운데)으로 이동
+assertTest('네비게이션 시뮬레이션: 다음 이동 시 두 번째 일정(2/3)에서 ◀ 활성화, ▶ 활성화 검증',
+  navSim.canPrev === true && navSim.canNext === true && navSim.idx === 1
+);
+
+navSim.nav(1); // 2번(마지막)으로 이동
+assertTest('네비게이션 시뮬레이션: 세 번째 일정(3/3)에서 ◀ 활성화, ▶ 비활성화 검증',
+  navSim.canPrev === true && navSim.canNext === false && navSim.idx === 2
+);
+
+navSim.nav(1); // 경계 초과 시도
+assertTest('네비게이션 시뮬레이션: 마지막에서 추가 다음 클릭 시 인덱스 2 초과 방어 검증',
+  navSim.idx === 2
+);
+
+navSim.nav(-2); // 첫 번째로 되돌아가기
+assertTest('네비게이션 시뮬레이션: 이전 연속 클릭 시 첫 번째(0)로 정상 복귀 및 음수 인덱스 방어 검증',
+  navSim.idx === 0 && navSim.canPrev === false
+);
+
+// 44-8: 클라이언트 JS 구문 무결성(SyntaxError 0) 검증
+let clientSyntaxOk44 = false;
+try {
+  new vm.Script(step44Script);
+  clientSyntaxOk44 = true;
+} catch (err) {
+  console.error('Step 44 클라이언트 JS 구문 에러:', err);
+}
+assertTest('buildSidebarDashboardHtml: 같은 날 다중 일정 네비게이션 탑재 후 클라이언트 JS 무결성(SyntaxError 0) 검증', clientSyntaxOk44);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
