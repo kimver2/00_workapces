@@ -5435,11 +5435,12 @@ const beforeTasksLen60 = vm.runInContext('rawData.sites[0].tasks.length', client
 
 clientSandbox57.saveSheetTask();
 const afterTasksLen60 = vm.runInContext('rawData.sites[0].tasks.length', clientSandbox57);
-const addedOptTask60 = vm.runInContext('rawData.sites[0].tasks[rawData.sites[0].tasks.length - 1]', clientSandbox57);
+const addedOptTask60 = vm.runInContext('rawData.sites[0].tasks.find(t => t.taskName === "타일" && t.endDateStr === "2026-10-28")', clientSandbox57);
 
 assertTest('saveSheetTask(1번 Create Optimistic UI): 새 일정 저장 즉시 모달 닫힘 + 0.01초 로컬 리스트/캘린더 선반영 + 서버 호출 검증',
   mockElems57.sheetOverlay.classList.contains('show') === false &&
   afterTasksLen60 === beforeTasksLen60 + 1 &&
+  Boolean(addedOptTask60) &&
   addedOptTask60.taskName === '타일' &&
   addedOptTask60.endDateStr === '2026-10-28' &&
   addScheduleCalledArgs60 !== null &&
@@ -5644,6 +5645,69 @@ assertTest('addScheduleTaskFromWeb(현장 그룹 삽입): "신대방우성 5동 
   mockRows62[3][0] === '신대방우성 5동 601호' && mockRows62[3][1] === '2026.10.22' &&
   mockRows62[4][0] === '보경102동' &&
   mockRows62[5][0] === '보경102동'
+);
+
+// ========================================================
+// 63. [1시간 주기 현장 묶음/날짜 정렬 트리거 보장 & 모바일 기기 뒤로가기(popstate) 상세 팝업 닫기 QA]
+// ========================================================
+console.log('\n📱 [Step 63: 1시간 주기 현장 병합/날짜 정렬 & 모바일 뒤로가기(popstate) 상세 팝업 닫기 QA]');
+
+// 1) 분리 행 병합 시 담당자 미지정 행이 원래 현장의 기본 담당자를 자동 상속하는지 검증
+assertTest('consolidateSplitSiteRows(담당자 자동 상속): 분리된 10.18 테스트 행 병합 시 기존 현장 담당자("조항만") 자동 상속 검증',
+  mockRows62[2][2] === '테스트' && mockRows62[2][6] === '조항만'
+);
+
+// 2) addScheduleTaskFromWeb 호출 시 담당자를 빈칸("")으로 보내도 기존 현장의 담당자("조항만")를 자동 상속하는지 검증
+const addNoMgrRes63 = sandbox.addScheduleTaskFromWeb(
+  '신대방우성 5동 601호',
+  '도배',
+  '2026-10-19',
+  '',
+  '예정',
+  true,
+  '',
+  ''
+);
+assertTest('addScheduleTaskFromWeb(담당자 미선택 시 현장 담당자 자동 상속 & 날짜순 정렬): 10.19 도배 일정이 10.18 뒤(5행)에 삽입되고 담당자 "조항만" 자동 지정 검증',
+  addNoMgrRes63.success === true &&
+  addNoMgrRes63.manager === '조항만' &&
+  addNoMgrRes63.row === 5 &&
+  mockRows62[3][1] === '2026.10.19' && mockRows62[3][2] === '도배' && mockRows62[3][6] === '조항만'
+);
+
+// 3) runHourlyAutoSortTrigger 및 ensureHourlySortTriggerInstalled 존재 및 동작 검증
+assertTest('ensureHourlySortTriggerInstalled & runHourlyAutoSortTrigger: 1시간 주기 자동 병합/날짜정렬 트리거 보장 함수 존재 검증',
+  typeof sandbox.ensureHourlySortTriggerInstalled === 'function' &&
+  typeof sandbox.runHourlyAutoSortTrigger === 'function'
+);
+
+// 4) 모바일 하단 상세 팝업 기기 뒤로가기(popstate / postMessage) 닫기 동작 검증
+const dashHtml63 = sandbox.buildSidebarDashboardHtml('mobile');
+assertTest('buildSidebarDashboardHtml(뒤로가기 팝업 닫기): pushBottomSheetHistoryState / popBottomSheetHistoryStateIfNeeded / closeBottomSheetFromBack 및 popstate 리스너 탑재 검증',
+  dashHtml63.indexOf('function pushBottomSheetHistoryState()') !== -1 &&
+  dashHtml63.indexOf('function popBottomSheetHistoryStateIfNeeded()') !== -1 &&
+  dashHtml63.indexOf('function closeBottomSheetFromBack()') !== -1 &&
+  dashHtml63.indexOf('window.addEventListener("popstate"') !== -1 &&
+  dashHtml63.indexOf('ORCA_BACK_BUTTON') !== -1
+);
+
+const indexHtml63 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+assertTest('index.html(최상위 창 뒤로가기 브릿지): ORCA_SHEET_MODAL_OPEN / ORCA_SHEET_MODAL_CLOSED_BY_UI / ORCA_BACK_BUTTON 및 popstate 리스너 탑재 검증',
+  indexHtml63.indexOf('ORCA_SHEET_MODAL_OPEN') !== -1 &&
+  indexHtml63.indexOf('ORCA_SHEET_MODAL_CLOSED_BY_UI') !== -1 &&
+  indexHtml63.indexOf('ORCA_BACK_BUTTON') !== -1 &&
+  indexHtml63.indexOf("window.addEventListener('popstate'") !== -1
+);
+
+clientSandbox57.openNewTaskModal('신대방우성 5동 601호', '2026-10-20');
+const openBeforeBack63 = mockElems57.sheetOverlay.classList.contains('show') === true &&
+  vm.runInContext('isSheetModalHistoryActive', clientSandbox57) === true;
+clientSandbox57.closeBottomSheetFromBack();
+const closedAfterBack63 = mockElems57.sheetOverlay.classList.contains('show') === false &&
+  vm.runInContext('isSheetModalHistoryActive', clientSandbox57) === false &&
+  vm.runInContext('isCreateMode', clientSandbox57) === false;
+assertTest('closeBottomSheetFromBack(런타임 실행): 하단 상세 팝업 오픈 상태에서 기기 뒤로가기 동작 시 팝업이 즉시 닫히고 상태가 초기화되는지 검증',
+  openBeforeBack63 && closedAfterBack63
 );
 
 console.log('\n========================================================');

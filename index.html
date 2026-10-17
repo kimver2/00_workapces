@@ -104,6 +104,59 @@
     }
     // 최대 4초 후에는 로딩 화면 자동 해제
     setTimeout(hideLoading, 4000);
+
+    // 모바일 기기 뒤로가기 버튼(popstate) 연동 브릿지:
+    // 하단 상세 팝업이 열려 있을 때 기기 뒤로가기를 누르면 페이지 이탈 대신 팝업을 닫음
+    var orcaDashboardSource = null;
+    var orcaModalOpenInChild = false;
+    var ignoreNextTopPopstate = false;
+
+    window.addEventListener('message', function(ev) {
+      var data = ev && ev.data;
+      if (!data || typeof data !== 'object') return;
+      if (ev.source) {
+        orcaDashboardSource = ev.source;
+      }
+      if (data.type === 'ORCA_BRIDGE_PING') {
+        try {
+          if (ev.source) ev.source.postMessage({ type: 'ORCA_BRIDGE_PONG' }, '*');
+        } catch (ePong) {}
+      } else if (data.type === 'ORCA_SHEET_MODAL_OPEN') {
+        if (!orcaModalOpenInChild) {
+          orcaModalOpenInChild = true;
+          try {
+            if (window.history && typeof window.history.pushState === 'function') {
+              window.history.pushState({ orcaSheetModal: true }, '');
+            }
+          } catch (ePush) {}
+        }
+      } else if (data.type === 'ORCA_SHEET_MODAL_CLOSED_BY_UI') {
+        if (orcaModalOpenInChild) {
+          orcaModalOpenInChild = false;
+          try {
+            if (window.history && typeof window.history.back === 'function') {
+              ignoreNextTopPopstate = true;
+              window.history.back();
+            }
+          } catch (eBack) {}
+        }
+      }
+    });
+
+    window.addEventListener('popstate', function() {
+      if (ignoreNextTopPopstate) {
+        ignoreNextTopPopstate = false;
+        return;
+      }
+      if (orcaModalOpenInChild) {
+        orcaModalOpenInChild = false;
+        try {
+          if (orcaDashboardSource) {
+            orcaDashboardSource.postMessage({ type: 'ORCA_BACK_BUTTON' }, '*');
+          }
+        } catch (eNotify) {}
+      }
+    });
   </script>
 </body>
 </html>
