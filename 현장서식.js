@@ -127,7 +127,7 @@ function ensureTasksInValidation(sheet, newTasks) {
  */
 function getMemberNames(ss) {
   var members = [];
-  var EXCLUDED_MEMBERS = ["김종혁"];
+  var EXCLUDED_MEMBERS = ["김종혁", "영하"];
   try {
     if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) ss = getAppSpreadsheet();
@@ -166,18 +166,18 @@ function getMemberNames(ss) {
   }
 
   if (members.length === 0) {
-    members = ["조항만", "송지은", "전예린", "영하"];
+    members = ["조항만", "송지은", "전예린", "한송이", "인경호"];
   }
 
   return members.filter(function(m) { return EXCLUDED_MEMBERS.indexOf(m) === -1; });
 }
 
 /**
- * 담당자 드롭다운 목록 반환 (구성원 시트 연동 순수 개별 인원 명단, 김종혁 제외)
+ * 담당자 드롭다운 목록 반환 (구성원 시트 연동 순수 개별 인원 명단, 김종혁·영하 제외)
  */
 function getAvailableManagers(ss) {
   var baseManagers = getMemberNames(ss);
-  var EXCLUDED = ["김종혁"];
+  var EXCLUDED = ["김종혁", "영하"];
   var managers = [];
 
   for (var i = 0; i < baseManagers.length; i++) {
@@ -189,7 +189,7 @@ function getAvailableManagers(ss) {
 
   // 예외 폴백 (구성원 시트가 없거나 비어있는 경우)
   if (managers.length === 0) {
-    managers = ["조항만", "송지은", "전예린", "영하"];
+    managers = ["조항만", "송지은", "전예린", "한송이", "인경호"];
   }
 
   return managers;
@@ -239,7 +239,7 @@ function applySiteScheduleValidations(sheet, startRow, numRows) {
 
 /**
  * 담당자별 뱃지 색상 매핑 생성 (프리셋 + 신규 인원 동적 파스텔 팔레트 순환 배정)
- * - 한송이, 인경호 및 기존 4명 고유 색상 탑재
+ * - 주요 담당자 5명 고유 색상 탑재
  * - 나중에 새로 등록되는 모든 담당자도 파스텔 팔레트에서 자동으로 고유 색상 배정
  * @param {Spreadsheet} ss 
  * @param {Sheet} [sheet] 
@@ -252,8 +252,7 @@ function getManagerColorMap(ss, sheet) {
     "송지은": { bg: "#fce7f3", font: "#be185d" }, // 로즈핑크
     "한송이": { bg: "#ffedd5", font: "#c2410c" }, // 웜오렌지 / 피치
     "인경호": { bg: "#e0e7ff", font: "#4338ca" }, // 인디고 블루
-    "전예린": { bg: "#f3e8ff", font: "#7e22ce" }, // 퍼플
-    "영하":   { bg: "#ccfbf1", font: "#0f766e" }  // 민트 에메랄드
+    "전예린": { bg: "#f3e8ff", font: "#7e22ce" }  // 퍼플
   };
 
   // 2. 신규 등록 담당자를 위한 노션 스타일 프리미엄 소프트 파스텔 팔레트
@@ -7381,6 +7380,9 @@ function getSidebarDashboardData(forceRefresh) {
             if (cachedJson) {
               var parsedCache = JSON.parse(cachedJson);
               if (parsedCache && Array.isArray(parsedCache.sites)) {
+                if (Array.isArray(parsedCache.members)) {
+                  parsedCache.members = parsedCache.members.filter(function(m) { return m !== "김종혁" && m !== "영하"; });
+                }
                 return parsedCache;
               }
             }
@@ -7724,7 +7726,7 @@ function getSidebarDashboardData(forceRefresh) {
       error: "데이터 처리 중 오류 발생: " + (err.message || err),
       kpi: { totalSites: 0, activeSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
       todayStr: formatDateYYMMDD(new Date()),
-      members: ["조항만", "송지은", "전예린", "영하"],
+      members: ["조항만", "송지은", "전예린", "한송이", "인경호"],
       holidays: getKoreanHolidaysMap(null),
       sites: []
     };
@@ -8193,11 +8195,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div id="sheetCreateFields" class="sheet-create-box" style="display:none;">';
   html += '      <div class="sheet-field-row" style="margin-bottom:8px;">';
   html += '        <div class="sheet-field-col" style="flex:1;">';
-  html += '          <label class="sheet-field-label">🏠 현장 선택 / 입력</label>';
-  html += '          <select id="sheetSiteSelect" class="sheet-field-select" onchange="onSheetSiteSelect(this.value)">';
+  html += '          <label class="sheet-field-label">🏠 현장 선택</label>';
+  html += '          <select id="sheetSiteSelect" class="sheet-field-select">';
   html += '            <option value="">현장을 선택하세요</option>';
   html += '          </select>';
-  html += '          <input type="text" id="sheetSiteCustomInput" class="sheet-field-input" placeholder="새 현장명 직접 입력 (예: 반포 자이 102동)" style="display:none;margin-top:5px;">';
   html += '        </div>';
   html += '      </div>';
   html += '      <div class="sheet-field-row">';
@@ -9032,6 +9033,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  let tabsHtml = \'<div class="member-tab \' + (!selectedMember ? "active" : "") + \'" onclick="setMemberFilter(\\\'\\\')">👤 전체</div>\';';
   html += '  members.forEach(m => {';
   html += '    if (m === "김종혁" || m.indexOf("김종혁") !== -1) return;';
+  html += '    if (m === "영하" || m.indexOf("영하") !== -1) return;';
   html += '    const isAct = (selectedMember === m);';
   html += '    const mEnc = encodeURIComponent(m);';
   html += '    tabsHtml += \'<div class="member-tab \' + (isAct ? "active" : "") + \'" onclick="setMemberFilter(\\\'\' + mEnc + \'\\\')">\' + escapeHtml(m) + \'</div>\';';
@@ -9295,7 +9297,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '    html += \'      </div>\';';
   html += '    html += \'    </div>\';';
-  html += '    html += \'    <button type="button" class="btn-site-add-mini" onclick="event.stopPropagation();openNewTaskModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'), \\\'\\\')" title="이 현장에 새 공정 추가">+ 공정</button>\';';
+  html += '    if (!site.isAllCompleted && !site.isArchived) {';
+  html += '      html += \'    <button type="button" class="btn-site-add-mini" onclick="event.stopPropagation();openNewTaskModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'), \\\'\\\')" title="이 현장에 새 공정 추가">+ 공정</button>\';';
+  html += '    }';
   html += '    html += \'    <span class="site-toggle" style="margin-top:3px;">▼</span>\';';
   html += '    html += \'  </div>\';';
   html += '    const barColor = site.isAllCompleted ? "#10b981" : ((site.delayedTasksCount > 0) ? "#f59e0b" : (site.colorHex || "#2563eb"));';
@@ -9644,12 +9648,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (!sel || sel._populated) return;';
   html += '  sel._populated = true;';
   html += '  sel.innerHTML = \'<option value="">(선택 안함)</option>\';';
-  html += '  const defaultList = ["조항만", "송지은", "전예린", "한송이", "인경호", "영하"];';
+  html += '  const defaultList = ["조항만", "송지은", "전예린", "한송이", "인경호"];';
   html += '  const allList = [];';
   html += '  const seen = {};';
   html += '  (members || []).concat(defaultList).forEach(m => {';
   html += '    const name = String(m || "").trim();';
-  html += '    if (name && name !== "김종혁" && !seen[name]) {';
+  html += '    if (name && name !== "김종혁" && name !== "영하" && !seen[name]) {';
   html += '      seen[name] = true;';
   html += '      allList.push(name);';
   html += '    }';
@@ -9709,13 +9713,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function populateSiteSelectOptions(prefillSite) {';
   html += '  const sel = document.getElementById("sheetSiteSelect");';
-  html += '  const custom = document.getElementById("sheetSiteCustomInput");';
   html += '  if (!sel) return;';
   html += '  let optsHtml = \'<option value="">현장을 선택하세요</option>\';';
   html += '  const siteNames = [];';
   html += '  if (rawData && Array.isArray(rawData.sites)) {';
   html += '    rawData.sites.forEach(s => {';
-  html += '      if (s && s.siteName && siteNames.indexOf(s.siteName) === -1) {';
+  html += '      if (!s || !s.siteName || s.isArchived || s.isAllCompleted) return;';
+  html += '      const tasks = Array.isArray(s.tasks) ? s.tasks : [];';
+  html += '      if (tasks.length > 0) {';
+  html += '        const hasActive = tasks.some(t => {';
+  html += '          const st = String((t && t.status) || "").replace(/\\s+/g, "");';
+  html += '          return st.indexOf("완료") === -1 && st.indexOf("취소") === -1;';
+  html += '        });';
+  html += '        if (!hasActive) return;';
+  html += '      }';
+  html += '      if (siteNames.indexOf(s.siteName) === -1) {';
   html += '        siteNames.push(s.siteName);';
   html += '      }';
   html += '    });';
@@ -9723,34 +9735,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '  siteNames.forEach(name => {';
   html += '    optsHtml += \'<option value="\' + escapeHtml(name) + \'">\' + escapeHtml(name) + \'</option>\';';
   html += '  });';
-  html += '  optsHtml += \'<option value="__NEW_SITE__">➕ 새 현장 직접 입력...</option>\';';
   html += '  sel.innerHTML = optsHtml;';
-  html += '  if (prefillSite) {';
-  html += '    if (siteNames.indexOf(prefillSite) !== -1) {';
-  html += '      sel.value = prefillSite;';
-  html += '      if (custom) { custom.style.display = "none"; custom.value = ""; }';
-  html += '    } else {';
-  html += '      sel.value = "__NEW_SITE__";';
-  html += '      if (custom) { custom.style.display = "block"; custom.value = prefillSite; }';
-  html += '    }';
-  html += '  } else if (siteNames.length === 0) {';
-  html += '    sel.value = "__NEW_SITE__";';
-  html += '    if (custom) { custom.style.display = "block"; custom.value = ""; }';
+  html += '  if (prefillSite && siteNames.indexOf(prefillSite) !== -1) {';
+  html += '    sel.value = prefillSite;';
   html += '  } else {';
   html += '    sel.value = "";';
-  html += '    if (custom) { custom.style.display = "none"; custom.value = ""; }';
-  html += '  }';
-  html += '}';
-  html += '';
-  html += 'function onSheetSiteSelect(val) {';
-  html += '  const custom = document.getElementById("sheetSiteCustomInput");';
-  html += '  if (!custom) return;';
-  html += '  if (val === "__NEW_SITE__") {';
-  html += '    custom.style.display = "block";';
-  html += '    if (typeof custom.focus === "function") custom.focus();';
-  html += '  } else {';
-  html += '    custom.style.display = "none";';
-  html += '    custom.value = "";';
   html += '  }';
   html += '}';
   html += '';
@@ -10013,26 +10002,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  if (isCreateMode) {';
   html += '    const siteSel = document.getElementById("sheetSiteSelect");';
-  html += '    const siteCustom = document.getElementById("sheetSiteCustomInput");';
-  html += '    const siteVal = (siteSel && siteSel.value === "__NEW_SITE__") ? (siteCustom ? siteCustom.value.trim() : "") : (siteSel ? siteSel.value.trim() : "");';
+  html += '    const siteVal = siteSel ? siteSel.value.trim() : "";';
   html += '    const taskInp = document.getElementById("sheetTaskInput");';
   html += '    const taskVal = taskInp ? taskInp.value.trim() : "";';
   html += '    const partnerInp = document.getElementById("sheetPartnerInput");';
   html += '    const partnerVal = partnerInp ? partnerInp.value.trim() : "";';
-  html += '    if (!siteVal) { showToast("⚠️ 현장명을 선택하거나 입력해주세요."); return; }';
+  html += '    if (!siteVal) { showToast("⚠️ 현장을 선택해주세요."); return; }';
   html += '    if (!taskVal) { showToast("⚠️ 공종(작업내용)을 입력해주세요."); return; }';
   html += '    if (!dateVal) { showToast("⚠️ 일정(날짜)을 입력해주세요."); return; }';
   html += '    const tempTask = { row: 99999, taskName: taskVal, partner: partnerVal, manager: mgrVal, status: selectedStatus, isShared: selectedShare, memo: memoVal, dateDisplay: dateVal, startDateStr: "", endDateStr: "", dateMs: 0 };';
   html += '    let targetSiteObj = null;';
-  html += '    let createdNewSite = false;';
   html += '    if (rawData && Array.isArray(rawData.sites)) {';
-  html += '      targetSiteObj = rawData.sites.find(s => s.siteName === siteVal && !s.isArchived);';
-  html += '      if (!targetSiteObj) {';
-  html += '        targetSiteObj = { siteName: siteVal, colorCode: "9", colorHex: "#2563EB", tasks: [], progressRate: 0 };';
-  html += '        rawData.sites.unshift(targetSiteObj);';
-  html += '        createdNewSite = true;';
+  html += '      targetSiteObj = rawData.sites.find(s => s.siteName === siteVal && !s.isArchived && !s.isAllCompleted);';
+  html += '      if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
+  html += '        targetSiteObj.tasks.push(tempTask);';
   html += '      }';
-  html += '      targetSiteObj.tasks.push(tempTask);';
   html += '    }';
   html += '    applyOptimisticTaskUpdate(tempTask, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
   html += '    closeCustomDatePicker();';
@@ -10050,10 +10034,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '            const idx = targetSiteObj.tasks.indexOf(tempTask);';
   html += '            if (idx !== -1) targetSiteObj.tasks.splice(idx, 1);';
   html += '          }';
-  html += '          if (createdNewSite && rawData && Array.isArray(rawData.sites)) {';
-  html += '            const sIdx = rawData.sites.indexOf(targetSiteObj);';
-  html += '            if (sIdx !== -1) rawData.sites.splice(sIdx, 1);';
-  html += '          }';
   html += '          if (rawData) renderDashboardPayload(rawData);';
   html += '          showToast("⚠️ 일정 추가 실패: " + ((res && res.error) || "알 수 없는 오류"));';
   html += '        }';
@@ -10062,10 +10042,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '        if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
   html += '          const idx = targetSiteObj.tasks.indexOf(tempTask);';
   html += '          if (idx !== -1) targetSiteObj.tasks.splice(idx, 1);';
-  html += '        }';
-  html += '        if (createdNewSite && rawData && Array.isArray(rawData.sites)) {';
-  html += '          const sIdx = rawData.sites.indexOf(targetSiteObj);';
-  html += '          if (sIdx !== -1) rawData.sites.splice(sIdx, 1);';
   html += '        }';
   html += '        if (rawData) renderDashboardPayload(rawData);';
   html += '        showToast("⚠️ 에러: " + ((err && err.message) || err));';

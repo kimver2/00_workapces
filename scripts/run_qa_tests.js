@@ -2394,20 +2394,20 @@ const mockSSWithMembers = {
 };
 const extractedMembers = sandbox.getMemberNames(mockSSWithMembers);
 
-assertTest('getMemberNames: 03_구성원 시트 추출 시 "김종혁" 배제 및 복합 담당자 개별 분리 검증',
+assertTest('getMemberNames: 03_구성원 시트 추출 시 "김종혁"·"영하" 배제 및 복합 담당자 개별 분리 검증',
   Array.isArray(extractedMembers) &&
-  extractedMembers.length === 4 &&
+  extractedMembers.length === 3 &&
   !extractedMembers.includes('김종혁') &&
+  !extractedMembers.includes('영하') &&
   extractedMembers[0] === '조항만' &&
   extractedMembers[1] === '송지은' &&
-  extractedMembers[2] === '전예린' &&
-  extractedMembers[3] === '영하'
+  extractedMembers[2] === '전예린'
 );
 
 // 33-3: 시트 미존재 시 fallback 기본 구성원 반환 검증
 const fallbackMembers = sandbox.getMemberNames({ getSheets: () => [] });
-assertTest('getMemberNames: 구성원 시트 부재 시 fallback 기본 멤버 반환 및 김종혁 미포함 검증',
-  fallbackMembers.length === 4 && fallbackMembers.includes('조항만') && !fallbackMembers.includes('김종혁')
+assertTest('getMemberNames: 구성원 시트 부재 시 fallback 기본 멤버 반환 및 김종혁·영하 미포함 검증',
+  fallbackMembers.length === 5 && fallbackMembers.includes('조항만') && !fallbackMembers.includes('김종혁') && !fallbackMembers.includes('영하')
 );
 
 // 33-4: getSidebarDashboardData 반환값에 members 포함 검증
@@ -3598,14 +3598,14 @@ assertTest('getAvailableManagers: 반환 결과 배열 유효성 검증', Array.
 assertTest('getAvailableManagers: 복합 담당자 조합("조항만, 송지은") 일체 미포함 검증',
   mgrs1.every(m => m.indexOf(',') === -1)
 );
-assertTest('getAvailableManagers: "김종혁" 담당자 드롭다운 목록에서 완전 배제 검증',
-  mgrs1.indexOf('김종혁') === -1
+assertTest('getAvailableManagers: "김종혁"·"영하" 담당자 드롭다운 목록에서 완전 배제 검증',
+  mgrs1.indexOf('김종혁') === -1 && mgrs1.indexOf('영하') === -1
 );
-assertTest('getAvailableManagers: "조항만", "송지은", "전예린", "영하" 개별 인원 정확 포함 검증',
-  mgrs1.indexOf('조항만') !== -1 && mgrs1.indexOf('송지은') !== -1 && mgrs1.indexOf('전예린') !== -1 && mgrs1.indexOf('영하') !== -1
+assertTest('getAvailableManagers: "조항만", "송지은", "전예린" 개별 인원 정확 포함 검증',
+  mgrs1.indexOf('조항만') !== -1 && mgrs1.indexOf('송지은') !== -1 && mgrs1.indexOf('전예린') !== -1
 );
-assertTest('getAvailableManagers: 반환 인원 수 정확성 검증 (5명 중 김종혁 1명 제외 = 4명)',
-  mgrs1.length === 4
+assertTest('getAvailableManagers: 반환 인원 수 정확성 검증 (5명 중 김종혁·영하 2명 제외 = 3명)',
+  mgrs1.length === 3
 );
 
 // 45-3: 구성원 시트에 신규 인원 추가 시 자동 반영 시뮬레이션 검증
@@ -3616,11 +3616,11 @@ const mgrs2 = getAvailableManagersFn(mockSs2);
 assertTest('구성원 추가 시뮬레이션: 새로 추가된 "홍길동", "이순신"이 즉각 목록에 자동 반영 검증',
   mgrs2.indexOf('홍길동') !== -1 && mgrs2.indexOf('이순신') !== -1
 );
-assertTest('구성원 추가 시뮬레이션: 추가 후에도 "김종혁"은 철저히 배제 검증',
-  mgrs2.indexOf('김종혁') === -1
+assertTest('구성원 추가 시뮬레이션: 추가 후에도 "김종혁"·"영하"는 철저히 배제 검증',
+  mgrs2.indexOf('김종혁') === -1 && mgrs2.indexOf('영하') === -1
 );
-assertTest('구성원 추가 시뮬레이션: 총 6명(기존4 + 신규2) 정확 일치 검증',
-  mgrs2.length === 6
+assertTest('구성원 추가 시뮬레이션: 총 5명(기존3 + 신규2) 정확 일치 검증',
+  mgrs2.length === 5
 );
 
 // 45-4: 쉼표/슬래시 다중 입력, 공백, null 등 엣지 케이스 파싱 검증
@@ -5465,6 +5465,74 @@ assertTest('UI 버튼 렌더링(1번·5번): 현장 카드 "+ 공정" 버튼(.bt
   mockElems57.contentArea.innerHTML.indexOf('btn-site-add-mini') !== -1 &&
   mockElems57.calGrid.innerHTML.indexOf('cal-day-add-btn') !== -1 &&
   mockElems57.calWeekList.innerHTML.indexOf('cal-day-add-btn') !== -1
+);
+
+// ============================================================================
+// [Step 61] 일정 추가 시 완료 현장 및 새 현장 직접 입력 제거 + 담당자 '영하' 완전 삭제 QA 검증
+// ============================================================================
+console.log('\n--- [Step 61] 일정 추가 시 완료 현장/새 현장 제외 및 담당자 "영하" 완전 삭제 무결성 검증 ---');
+
+// 1) 코드단에서 sheetSiteCustomInput, onSheetSiteSelect, __NEW_SITE__, createdNewSite 완전 삭제 검증
+assertTest('buildSidebarDashboardHtml: 새 현장 직접 입력 UI(sheetSiteCustomInput, __NEW_SITE__, onSheetSiteSelect) 코드 완전 삭제 검증',
+  dashHtml57.indexOf('sheetSiteCustomInput') === -1 &&
+  dashHtml57.indexOf('__NEW_SITE__') === -1 &&
+  dashHtml57.indexOf('onSheetSiteSelect') === -1 &&
+  dashHtml57.indexOf('새 현장 직접 입력') === -1
+);
+
+// 2) 일정 추가 모달 현장 목록(populateSiteSelectOptions)에서 완료된 현장(isAllCompleted / isArchived / 전 공정 완료) 제외 검증
+vm.runInContext(`
+  rawData.sites = [
+    {
+      siteName: '신대방우성 5동 601호',
+      isAllCompleted: false,
+      isArchived: false,
+      tasks: [{ row: 2, taskName: '목공', status: '진행 중' }]
+    },
+    {
+      siteName: '보라매경남 102동 1104호',
+      isAllCompleted: true,
+      isArchived: false,
+      tasks: [{ row: 10, taskName: '청소', status: '완료' }]
+    },
+    {
+      siteName: '망원 경일빌라 201호',
+      isAllCompleted: false,
+      isArchived: true,
+      tasks: [{ row: 20, taskName: '도배', status: '완료' }]
+    },
+    {
+      siteName: '광명 하안주공 1221동 1404호',
+      isAllCompleted: false,
+      isArchived: false,
+      tasks: [{ row: 30, taskName: '마루', status: '완료' }, { row: 31, taskName: '타일', status: '취소' }]
+    }
+  ];
+`, clientSandbox57);
+clientSandbox57.populateSiteSelectOptions('');
+assertTest('populateSiteSelectOptions: 진행 중인 현장만 표시하고 완료/아카이브 현장 및 새 현장 옵션은 완전 배제 검증',
+  mockElems57.sheetSiteSelect.innerHTML.indexOf('신대방우성 5동 601호') !== -1 &&
+  mockElems57.sheetSiteSelect.innerHTML.indexOf('보라매경남 102동 1104호') === -1 &&
+  mockElems57.sheetSiteSelect.innerHTML.indexOf('망원 경일빌라 201호') === -1 &&
+  mockElems57.sheetSiteSelect.innerHTML.indexOf('광명 하안주공 1221동 1404호') === -1 &&
+  mockElems57.sheetSiteSelect.innerHTML.indexOf('__NEW_SITE__') === -1
+);
+
+// 3) 담당자 드롭다운(populateManagerSelectOptions) 및 상단 담당자 필터바(renderMemberFilterTabs)에서 '영하' 완전 배제 검증
+const appendedManagerOpts61 = [];
+mockElems57.sheetManagerSelect._populated = false;
+mockElems57.sheetManagerSelect.appendChild = function(opt) {
+  appendedManagerOpts61.push(opt.value);
+};
+clientSandbox57.populateManagerSelectOptions(['조항만', '송지은', '전예린', '한송이', '인경호', '영하']);
+clientSandbox57.renderMemberFilterTabs(['조항만', '송지은', '전예린', '한송이', '인경호', '영하']);
+
+assertTest('담당자 목록: populateManagerSelectOptions 및 renderMemberFilterTabs에서 "영하" 완전 삭제 검증',
+  appendedManagerOpts61.indexOf('영하') === -1 &&
+  appendedManagerOpts61.indexOf('조항만') !== -1 &&
+  appendedManagerOpts61.indexOf('한송이') !== -1 &&
+  appendedManagerOpts61.indexOf('인경호') !== -1 &&
+  mockElems57.memberFilterBar.innerHTML.indexOf('영하') === -1
 );
 
 console.log('\n========================================================');
