@@ -759,6 +759,7 @@ function consolidateSplitSiteRows(sheet) {
     }
     if (movedCount > 0) {
       SpreadsheetApp.flush();
+      invalidateDashboardServerCache();
     }
     return movedCount;
   }
@@ -803,6 +804,9 @@ function consolidateSplitSiteRows(sheet) {
     mergedValues.push(emptyRows[er]);
   }
   rangeAll.setValues(mergedValues);
+  if (movedCount > 0) {
+    invalidateDashboardServerCache();
+  }
   return movedCount;
 }
 
@@ -979,6 +983,10 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     Logger.log("✅ 현장데이터 시트 날짜 정렬 완료: 총 " + sortedBlockCount + "개 현장 블록 재정렬");
   }
 
+  if (anyChanged || consolidatedCount > 0) {
+    invalidateDashboardServerCache();
+  }
+
   if (!silent && sortedBlockCount > 0) {
     try {
       ss.toast("총 " + sortedBlockCount + "개 현장의 공정이 날짜 빠른 순으로 자동 정렬되었습니다.", "📅 날짜 순 정렬 완료", 3);
@@ -1026,6 +1034,7 @@ function onEdit(e) {
       if (siteSheet) {
         applySiteScheduleValidations(siteSheet);
       }
+      invalidateDashboardServerCache();
     } catch (eMem) {
       Logger.log("구성원 시트 편집 시 담당자 드롭다운 갱신 예외: " + eMem.toString());
     }
@@ -1034,7 +1043,8 @@ function onEdit(e) {
 
   // ③ [현장데이터 시트]
   // 설치형 트리거(handleCalendarEditTrigger)가 메타데이터 기록 및 대시보드 갱신을 단 1회 전담하므로,
-  // 단순 트리거(onEdit)에서는 이중 렌더링 방지를 위해 대시보드 갱신을 수행하지 않습니다.
+  // 단순 트리거(onEdit)에서는 이중 렌더링 방지를 위해 대시보드 갱신을 수행하지 않고 서버 캐시만 즉시 무효화합니다.
+  invalidateDashboardServerCache();
 }
 
 
@@ -5969,12 +5979,117 @@ function showMobileDashboardUrl() {
 }
 
 /**
+ * 정렬·병합·행 삽입/삭제 등으로 행 번호가 변경되었을 때
+ * 현장명(siteName), 공종명(taskName), 날짜(dateStr)를 기반으로 시트 내 실제 행 번호를 실시간 추적·보정
+ */
+function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
+  var rowNum = parseInt(rowNumber, 10) || -1;
+  if (!sheet) return rowNum;
+
+  var cleanSite = String(siteName || "").trim();
+  var cleanTask = String(taskName || "").trim();
+  if (!cleanSite && !cleanTask) return rowNum;
+
+  var lastRow = 0;
+  try {
+    lastRow = sheet.getLastRow();
+  } catch (eLr) {
+    return rowNum;
+  }
+  if (lastRow < 2) return rowNum;
+
+  var allVals = null;
+  try {
+    var rng = sheet.getRange(2, 1, lastRow - 1, 10);
+    if (rng && typeof rng.getValues === "function") {
+      allVals = rng.getValues();
+    }
+  } catch (eVals) {}
+  if (!Array.isArray(allVals) || allVals.length === 0) return rowNum;
+
+  var normTargetDate = "";
+  if (dateStr) {
+    try {
+      normTargetDate = normalizeDateStringToYYYYMMDD(String(dateStr).trim());
+    } catch (eNd) {}
+    if (!normTargetDate) normTargetDate = String(dateStr).trim();
+  }
+
+  var rowMeta = [];
+  var lastKnownSite = "";
+  for (var i = 0; i < allVals.length; i++) {
+    var r = allVals[i];
+    var rawS = String(r[0] || "").trim();
+    var rawD = r[1];
+    var rawT = String(r[2] || "").trim();
+    if (!rawS && !String(rawD || "").trim() && !rawT) {
+      lastKnownSite = "";
+      rowMeta.push({ row: i + 2, site: "", task: "", dateNorm: "" });
+      continue;
+    }
+    if (rawS) lastKnownSite = rawS;
+    var effS = rawS || lastKnownSite;
+    var dNorm = "";
+    if (rawD) {
+      try {
+        var dispD = formatScheduleDateDisplay(rawD) || String(rawD).trim();
+        dNorm = normalizeDateStringToYYYYMMDD(dispD) || dispD;
+      } catch (eRd) {
+        dNorm = String(rawD).trim();
+      }
+    }
+    rowMeta.push({
+      row: i + 2,
+      site: effS,
+      task: rawT,
+      dateNorm: dNorm
+    });
+  }
+
+  // 1) 전달받은 rowNum 위치가 이미 (cleanSite, cleanTask)와 일치하는지 확인
+  if (rowNum >= 2 && rowNum <= lastRow) {
+    var cur = rowMeta[rowNum - 2];
+    if (cur && (!cleanSite || cur.site === cleanSite) && (!cleanTask || cur.task === cleanTask)) {
+      if (!normTargetDate || !cur.dateNorm || cur.dateNorm === normTargetDate || cur.dateNorm.indexOf(normTargetDate) !== -1 || normTargetDate.indexOf(cur.dateNorm) !== -1) {
+        return rowNum;
+      }
+    }
+  }
+
+  // 2) 행 번호가 정렬 등으로 변경된 경우: (현장명 + 공종명) 일치 후보 탐색 후 날짜 일치 우선 선택
+  var siteTaskMatches = [];
+  for (var j = 0; j < rowMeta.length; j++) {
+    var m = rowMeta[j];
+    if (!m.site && !m.task) continue;
+    var siteOk = !cleanSite || m.site === cleanSite;
+    var taskOk = !cleanTask || m.task === cleanTask;
+    if (siteOk && taskOk) {
+      siteTaskMatches.push(m);
+    }
+  }
+
+  if (siteTaskMatches.length > 0) {
+    if (normTargetDate && siteTaskMatches.length > 1) {
+      for (var k = 0; k < siteTaskMatches.length; k++) {
+        var cand = siteTaskMatches[k];
+        if (cand.dateNorm && (cand.dateNorm === normTargetDate || cand.dateNorm.indexOf(normTargetDate) !== -1 || normTargetDate.indexOf(cand.dateNorm) !== -1)) {
+          return cand.row;
+        }
+      }
+    }
+    return siteTaskMatches[0].row;
+  }
+
+  return rowNum;
+}
+
+/**
  * 모바일 웹앱 상태 변경 서버 함수 (google.script.run 클라이언트 RPC 연동)
  * - [논블로킹 즉시 저장 아키텍처]:
  *   백그라운드 동기화나 타 작업의 락 점유 상태와 관계없이 시트 쓰기(H열 상태, E열 공유, F열 비고, J열 타임스탬프)를 100% 즉시 반영
  *   락 경합 타임아웃으로 인한 저장 실패(409/Lock timeout)를 원천 차단하고 0.1초 내 성공 응답 보장
  */
-function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchived) {
+function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchived, siteName, taskName) {
   var rowNum = parseInt(row, 10);
   if (!rowNum || rowNum < 2) {
     return { success: false, error: "유효하지 않은 행 번호입니다. (" + row + ")" };
@@ -5996,6 +6111,11 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     var sheet = (isArchived === true) ? findCompletedSitesSheet(ss, false) : findSiteScheduleSheet(ss);
     if (!sheet) {
       return { success: false, error: (isArchived === true ? "완료현장" : "현장데이터") + " 시트를 찾을 수 없습니다." };
+    }
+
+    // 0단계: 날짜 정렬 등으로 행 번호가 변경되었을 경우 실제 행 번호 자동 추적
+    if (siteName || taskName) {
+      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName, newDate);
     }
 
     // 1단계: 시트 셀 원자적 즉시 쓰기 (락 대기 없이 100% 즉시 저장 보장)
@@ -6065,7 +6185,8 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     }
 
     return { 
-      success: true, 
+      success: true,
+      row: rowNum,
       status: newStatus,
       shared: updatedShared,
       memo: updatedMemo,
@@ -6319,9 +6440,7 @@ function doGet(e) {
     ensureHourlySortTriggerInstalled();
     var movedCnt = sheet ? consolidateSplitSiteRows(sheet) : 0;
     var sortedCnt = (ss && sheet) ? sortSiteScheduleTasksByDate(ss, sheet, true) : 0;
-    if (movedCnt > 0 || sortedCnt > 0) {
-      invalidateDashboardServerCache();
-    }
+    invalidateDashboardServerCache();
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
       consolidatedCount: movedCnt,
@@ -8148,23 +8267,29 @@ function getSidebarDashboardData(forceRefresh) {
 /**
  * 대시보드에서 클릭 시 스프레드시트의 해당 행으로 포커스 이동
  */
-function focusSheetRow(rowNumber, isArchived) {
+function focusSheetRow(rowNumber, isArchived, siteName, taskName, dateStr) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) ss = getAppSpreadsheet();
     if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
     var sheet = (isArchived === true) ? findCompletedSitesSheet(ss, false) : findSiteScheduleSheet(ss);
-    if (sheet && rowNumber >= 2) {
-      if (typeof ss.setActiveSheet === "function") ss.setActiveSheet(sheet);
-      var range = sheet.getRange(rowNumber, 1, 1, 10);
-      if (typeof sheet.setActiveRange === "function") sheet.setActiveRange(range);
-      var sheetUrl = "";
-      try {
-        var ssId = ss.getId();
-        var gid = sheet.getSheetId();
-        sheetUrl = "https://docs.google.com/spreadsheets/d/" + ssId + "/edit#gid=" + gid + "&range=" + rowNumber + ":" + rowNumber;
-      } catch(eUrl) {}
-      return { success: true, row: rowNumber, sheetUrl: sheetUrl };
+    if (sheet) {
+      var actualRow = resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr);
+      if (actualRow >= 2) {
+        if (actualRow !== parseInt(rowNumber, 10)) {
+          invalidateDashboardServerCache();
+        }
+        if (typeof ss.setActiveSheet === "function") ss.setActiveSheet(sheet);
+        var range = sheet.getRange(actualRow, 1, 1, 10);
+        if (typeof sheet.setActiveRange === "function") sheet.setActiveRange(range);
+        var sheetUrl = "";
+        try {
+          var ssId = ss.getId();
+          var gid = sheet.getSheetId();
+          sheetUrl = "https://docs.google.com/spreadsheets/d/" + ssId + "/edit#gid=" + gid + "&range=" + actualRow + ":" + actualRow;
+        } catch(eUrl) {}
+        return { success: true, row: actualRow, sheetUrl: sheetUrl };
+      }
     }
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -9397,7 +9522,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const mList = dayTasks.map(item => ({ site: item.site.siteName, task: item.task }));';
   html += '  openBottomSheet(mList[0].site, mList[0].task, mList, 0);';
   html += '  if (!isMobileMode && mList[0].task && mList[0].task.row) {';
-  html += '    google.script.run.focusSheetRow(mList[0].task.row, !!mList[0].task.isArchived);';
+  html += '    google.script.run.focusSheetRow(mList[0].task.row, !!mList[0].task.isArchived, mList[0].site || "", mList[0].task.taskName || "", mList[0].task.dateDisplay || mList[0].task.startDateStr || "");';
   html += '  }';
   html += '  if (dayTasks.length > 1) {';
   html += '    showToast(datePrefix + " 일정 " + dayTasks.length + "건 (상세에서 ◀/▶ 이동 가능)");';
@@ -9485,6 +9610,15 @@ function buildSidebarDashboardHtml(mode) {
   html += 'function renderDashboardPayload(data) {';
   html += '  if (!data || data.error) return;';
   html += '  rawData = data;';
+  html += '  if (curTaskObj && curSiteName && Array.isArray(data.sites)) {';
+  html += '    const matchedSite = data.sites.find(s => s.siteName === curSiteName && !!s.isArchived === !!curTaskObj.isArchived);';
+  html += '    if (matchedSite && Array.isArray(matchedSite.tasks)) {';
+  html += '      const matchedTask = matchedSite.tasks.find(t => t.taskName === curTaskObj.taskName && (t.startDateStr || "") === (curTaskObj.startDateStr || "")) || matchedSite.tasks.find(t => t.taskName === curTaskObj.taskName);';
+  html += '      if (matchedTask && matchedTask.row) {';
+  html += '        curTaskObj.row = matchedTask.row;';
+  html += '      }';
+  html += '    }';
+  html += '  }';
   html += '  if (data.holidays && typeof data.holidays === "object") {';
   html += '    activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS, data.holidays);';
   html += '  }';
@@ -9537,7 +9671,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  google.script.run';
   html += '    .withSuccessHandler(onDataLoaded)';
   html += '    .withFailureHandler(function() {})';
-  html += '    .getSidebarDashboardData();';
+  html += '    .getSidebarDashboardData(true);';
   html += '}';
 
   html += 'function onError(err) {';
@@ -9802,7 +9936,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  openBottomSheet(site, task);';
   html += '  if (!isMobileMode && task && task.row) {';
-  html += '    google.script.run.focusSheetRow(task.row, !!task.isArchived);';
+  html += '    google.script.run.focusSheetRow(task.row, !!task.isArchived, site || "", task.taskName || "", task.dateDisplay || task.startDateStr || "");';
   html += '  }';
   html += '}';
 
@@ -10107,10 +10241,19 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  const targetRow = curTaskObj.row;';
   html += '  const isArch = !!curTaskObj.isArchived;';
-  html += '  showToast("📍 시트 " + targetRow + "행으로 이동 중...");';
+  html += '  const siteStr = curSiteName || "";';
+  html += '  const taskStr = (curTaskObj && curTaskObj.taskName) || "";';
+  html += '  const dateInputEl = document.getElementById("sheetDateInput");';
+  html += '  const dateStr = (dateInputEl && dateInputEl.value) ? dateInputEl.value.trim() : ((curTaskObj && (curTaskObj.dateDisplay || curTaskObj.startDateStr)) || "");';
+  html += '  showToast("📍 [" + (siteStr || "현장") + " - " + (taskStr || "공정") + "] 시트 행 위치로 이동 중...");';
   html += '  google.script.run';
   html += '    .withSuccessHandler(res => {';
-  html += '      showToast("✅ [" + (curSiteName || "현장") + " - " + ((curTaskObj && curTaskObj.taskName) || "공정") + "] " + targetRow + "행으로 이동했습니다!");';
+  html += '      const actualRow = (res && res.row) ? res.row : targetRow;';
+  html += '      if (curTaskObj) curTaskObj.row = actualRow;';
+  html += '      if (actualRow !== targetRow) {';
+  html += '        loadDataSilently();';
+  html += '      }';
+  html += '      showToast("✅ [" + (siteStr || "현장") + " - " + (taskStr || "공정") + "] " + actualRow + "행으로 이동했습니다!");';
   html += '      if (res && res.sheetUrl && isMobileMode) {';
   html += '        window.open(res.sheetUrl, "_blank");';
   html += '      }';
@@ -10118,7 +10261,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    .withFailureHandler(err => {';
   html += '      showToast("⚠️ 이동 실패: " + ((err && err.message) || err));';
   html += '    })';
-  html += '    .focusSheetRow(targetRow, isArch);';
+  html += '    .focusSheetRow(targetRow, isArch, siteStr, taskStr, dateStr);';
   html += '}';
   html += '';
   html += 'let isCreateMode = false;';
@@ -10615,11 +10758,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const overlayEl = document.getElementById("sheetOverlay");';
   html += '  if (overlayEl) overlayEl.classList.remove("show");';
   html += '  popBottomSheetHistoryStateIfNeeded();';
-  html += '  showToast("✅ [" + (targetTask.taskName || curTaskObj.taskName || "") + "] 일정/담당자/상태가 저장되었습니다!");';
+  html += '  const siteNameForSave = curSiteName || "";';
+  html += '  const taskNameForSave = (targetTask && targetTask.taskName) || (curTaskObj && curTaskObj.taskName) || "";';
+  html += '  showToast("✅ [" + taskNameForSave + "] 일정/담당자/상태가 저장되었습니다!");';
   html += '  const runner = google.script.run';
   html += '    .withSuccessHandler(res => {';
   html += '      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "💾 저장하기"; }';
   html += '      if (res && res.success) {';
+  html += '        if (res.row) targetTask.row = res.row;';
   html += '        loadDataSilently();';
   html += '      } else {';
   html += '        Object.assign(targetTask, prevSnapshot);';
@@ -10634,9 +10780,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      showToast("⚠️ 에러: " + (err.message || err));';
   html += '    });';
   html += '  if (curTaskObj.isArchived) {';
-  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true);';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true, siteNameForSave, taskNameForSave);';
   html += '  } else {';
-  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, false, siteNameForSave, taskNameForSave);';
   html += '  }';
   html += '}';
   html += '';

@@ -4535,7 +4535,7 @@ assertTest('buildSidebarDashboardHtml: 담당자 목록 옵션 구성기(populat
   dashHtml54.indexOf('function populateManagerSelectOptions(') !== -1
 );
 assertTest('buildSidebarDashboardHtml: saveSheetTask에서 dateVal 및 mgrVal 서버 전달 검증',
-  dashHtml54.indexOf('updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal)') !== -1
+  dashHtml54.indexOf('updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal') !== -1
 );
 
 // 4. ContentService 모킹 및 시트 환경 구성
@@ -5710,6 +5710,70 @@ assertTest('closeBottomSheetFromBack(런타임 실행): 하단 상세 팝업 오
   openBeforeBack63 && closedAfterBack63
 );
 
+// ========================================================
+// 64. [날짜 정렬/현장 병합 후 행 번호 변경 시(예: 125행 -> 26행) 실제 시트 행 추적 및 이동/저장 무결성 QA]
+// ========================================================
+console.log('\n📍 [Step 64: 날짜 정렬/현장 병합 후 행 번호 변경 시 실제 시트 행 자동 추적 및 포커스/저장 무결성 QA]');
+
+// 1) resolveActualSheetRow: 기존 캐시 행 번호(125행)로 요청하더라도 현장명("신대방우성 5동 601호") + 공종("테스트") + 날짜("2026.10.18")로 실제 이동된 행(4행)을 정확히 찾아내는지 검증
+const resolvedRow64 = sandbox.resolveActualSheetRow(
+  mockSheet62,
+  125,
+  '신대방우성 5동 601호',
+  '테스트',
+  '2026.10.18'
+);
+assertTest('resolveActualSheetRow(행 번호 역추적): 정렬 전 구 행번호(125행)를 전달해도 실제 정렬된 행(4행)을 정확히 반환하는지 검증',
+  resolvedRow64 === 4
+);
+
+// 2) focusSheetRow: 구 행번호(125행)로 호출 시 실제 행(4행)으로 포커스 및 URL(&range=4:4) 생성 검증
+let activeFocusedRow64 = 0;
+mockSheet62.getSheetId = () => 123456;
+mockSheet62.setActiveRange = (rng) => {};
+const origGetRange64 = mockSheet62.getRange;
+mockSheet62.getRange = function(r, c, nr, nc) {
+  if (c === 1 && nr === 1 && nc === 10) {
+    activeFocusedRow64 = r;
+  }
+  return origGetRange64.apply(this, arguments);
+};
+const focusRes64 = sandbox.focusSheetRow(125, false, '신대방우성 5동 601호', '테스트', '2026.10.18');
+assertTest('focusSheetRow(실제 행 포커스 & URL 생성): 구 행번호(125행) 요청 시 실제 행(4행)에 포커스되고 sheetUrl이 range=4:4로 생성되는지 검증',
+  focusRes64 &&
+  focusRes64.success === true &&
+  focusRes64.row === 4 &&
+  activeFocusedRow64 === 4 &&
+  focusRes64.sheetUrl.indexOf('&range=4:4') !== -1
+);
+
+// 3) updateScheduleStatusFromWeb: 구 행번호(125행)로 저장 요청 시 실제 행(4행)의 상태/메모를 안전하게 업데이트하는지 검증
+const updateMovedRes64 = sandbox.updateScheduleStatusFromWeb(
+  125,
+  '진행중',
+  true,
+  '정렬 후 실제행 업데이트 완료',
+  '2026.10.18',
+  '조항만',
+  false,
+  '신대방우성 5동 601호',
+  '테스트'
+);
+assertTest('updateScheduleStatusFromWeb(정렬 후 구 행번호로 저장 시 실제 행 자동 추적): 125행 요청이 실제 4행("신대방우성 5동 601호 - 테스트")에 반영되고 row: 4를 반환하는지 검증',
+  updateMovedRes64 &&
+  updateMovedRes64.success === true &&
+  updateMovedRes64.row === 4 &&
+  mockRows62[2][7] === '진행중' &&
+  mockRows62[2][5] === '정렬 후 실제행 업데이트 완료'
+);
+
+// 4) 클라이언트 goToCurrentTaskSheetRow: 구 행번호(125)가 아닌 서버가 반환한 실제 행번호(26)로 토스트 문구 및 curTaskObj.row를 갱신하는지 검증
+assertTest('buildSidebarDashboardHtml(goToCurrentTaskSheetRow): focusSheetRow에 현장명/공종/날짜를 전달하고 응답받은 actualRow로 문구 표시 및 curTaskObj.row 동기화 검증',
+  dashHtml63.indexOf('.focusSheetRow(targetRow, isArch, siteStr, taskStr, dateStr)') !== -1 &&
+  dashHtml63.indexOf('const actualRow = (res && res.row) ? res.row : targetRow;') !== -1 &&
+  dashHtml63.indexOf('if (curTaskObj) curTaskObj.row = actualRow;') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -5719,4 +5783,5 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
+
 
