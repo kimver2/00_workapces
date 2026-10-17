@@ -6200,6 +6200,139 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
 }
 
 /**
+ * 웹/모바일 대시보드 일정 삭제 서버 함수 (시트 행 삭제 & 구글 캘린더 연동 삭제)
+ * @param {number|string} row 시트 행 번호
+ * @param {string} siteName 현장명
+ * @param {string} taskName 공종명
+ * @param {string} eventId 캘린더 이벤트 ID
+ * @param {boolean} isArchived 완료현장 여부
+ * @return {object} { success: boolean, message?: string, error?: string }
+ */
+function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived) {
+  var rowNum = parseInt(row, 10);
+  if (!rowNum || rowNum < 2) {
+    return { success: false, error: "유효하지 않은 행 번호입니다. (" + row + ")" };
+  }
+
+  try {
+    var ss = getAppSpreadsheet();
+    if (!ss) {
+      return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    }
+    var sheet = (isArchived === true) ? findCompletedSitesSheet(ss, false) : findSiteScheduleSheet(ss);
+    if (!sheet) {
+      return { success: false, error: (isArchived === true ? "완료현장" : "현장데이터") + " 시트를 찾을 수 없습니다." };
+    }
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return { success: false, error: "삭제할 데이터가 없습니다." };
+    }
+
+    // 1단계: 행 번호 실시간 자동 보정 (정렬 또는 행 변동 대비)
+    if (siteName || taskName) {
+      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName);
+    }
+    if (rowNum < 2 || rowNum > sheet.getLastRow()) {
+      return { success: false, error: "삭제할 해당 일정을 시트에서 찾을 수 없습니다." };
+    }
+
+    // 2단계: 삭제 전 정보 추출 (캘린더 이벤트 ID, 현장명, 공종명, 날짜)
+    var rowVals = sheet.getRange(rowNum, 1, 1, 10).getValues()[0];
+    var actualSite = String(rowVals[0] || "").trim() || siteName;
+    var actualDate = rowVals[1];
+    var actualTask = String(rowVals[2] || "").trim() || taskName;
+    var actualEventId = String(rowVals[8] || "").trim() || eventId;
+
+    // 3단계: 구글 캘린더에서 해당 일정 삭제
+    var deletedFromCalendar = false;
+    try {
+      var cal = getAppCalendar();
+      if (cal) {
+        // 3-1. Event ID로 캘린더 일정 삭제
+        if (actualEventId) {
+          try {
+            var ev = cal.getEventById(actualEventId);
+            if (ev) {
+              ev.deleteEvent();
+              deletedFromCalendar = true;
+              Logger.log("✅ 캘린더 일정 삭제 성공 (Event ID: " + actualEventId + ")");
+            }
+          } catch (eEv) {
+            Logger.log("Event ID 삭제 실패, 날짜 검색 폴백: " + eEv.toString());
+          }
+        }
+
+        // 3-2. Event ID로 삭제되지 않았거나 없는 경우, 날짜 및 제목 매칭으로 폴백 삭제
+        if (!deletedFromCalendar && actualDate) {
+          try {
+            var p = parseScheduleDateRange(actualDate);
+            if (p && p.startDate) {
+              var sDate = new Date(p.startDate.getTime() - 24 * 60 * 60 * 1000);
+              var eDate = new Date((p.endDate || p.startDate).getTime() + 24 * 60 * 60 * 1000);
+              var candEvents = cal.getEvents(sDate, eDate);
+              for (var ce = 0; ce < candEvents.length; ce++) {
+                var cand = candEvents[ce];
+                var candTitle = cand.getTitle() || "";
+                if (isSystemSiteScheduleEvent(cand)) {
+                  if (candTitle.indexOf(actualTask) !== -1 && (!actualSite || candTitle.indexOf(actualSite) !== -1)) {
+                    cand.deleteEvent();
+                    deletedFromCalendar = true;
+                    Logger.log("✅ 캘린더 날짜/공종 매칭 삭제 성공: " + candTitle);
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (eFallback) {
+            Logger.log("캘린더 폴백 삭제 실패: " + eFallback.toString());
+          }
+        }
+      }
+    } catch (errCal) {
+      Logger.log("캘린더 삭제 처리 중 오류: " + errCal.toString());
+    }
+
+    // 4단계: 현장 블록 구조 보존 가드 (Data Integrity Guard)
+    // 삭제 대상 행의 Column A에 현장명이 적혀있고, 아래 행이 동일 현장 블록인데 Column A가 비어있다면
+    // 아래 행에 현장명을 복사해주어 하위 행들이 현장명을 잃어버리지 않도록 완벽 보존
+    var curLastRow = sheet.getLastRow();
+    var curRowSite = String(rowVals[0] || "").trim();
+    if (curRowSite && rowNum < curLastRow) {
+      var nextRowVals = sheet.getRange(rowNum + 1, 1, 1, 3).getValues()[0];
+      var nextRowSite = String(nextRowVals[0] || "").trim();
+      var nextRowHasDateOrTask = Boolean(String(nextRowVals[1] || "").trim() || String(nextRowVals[2] || "").trim());
+      if (!nextRowSite && nextRowHasDateOrTask) {
+        sheet.getRange(rowNum + 1, 1).setValue(curRowSite);
+      }
+    }
+
+    // 5단계: 스프레드시트에서 행 영구 삭제
+    sheet.deleteRow(rowNum);
+    SpreadsheetApp.flush();
+
+    // 6단계: 캐시 무효화 및 변경 타임스탬프 기록
+    invalidateDashboardServerCache();
+    try {
+      PropertiesService.getScriptProperties().setProperty("LAST_SHEET_CHANGE_TIME", String(new Date().getTime()));
+    } catch(eProp) {}
+
+    return {
+      success: true,
+      row: rowNum,
+      siteName: actualSite,
+      taskName: actualTask,
+      deletedFromCalendar: deletedFromCalendar,
+      message: "[" + actualSite + " - " + actualTask + "] 일정이 시트와 구글 캘린더에서 성공적으로 삭제되었습니다."
+    };
+  } catch (e) {
+    Logger.log("deleteScheduleTaskFromWeb 에러: " + e.toString());
+    return { success: false, error: e.toString() };
+  }
+}
+
+
+/**
  * 모바일/사이드바 대시보드에서 새 일정(공종) 빠른 추가
  */
 function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, isShared, memo, partner) {
@@ -6432,6 +6565,14 @@ function doGet(e) {
   if (action === "addScheduleTask") {
     var addRes = addScheduleTaskFromWeb(targetSite, targetTask, newDate, newManager, newStatus, newShared, newMemo, newPartner);
     return ContentService.createTextOutput(JSON.stringify(addRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0) 일정 삭제 요청 (action=deleteScheduleTask)
+  if (action === "deleteScheduleTask") {
+    var isArchBool = (p.isArchived === "true" || p.isArchived === true);
+    var delRes = deleteScheduleTaskFromWeb(row, targetSite, targetTask, targetId, isArchBool);
+    return ContentService.createTextOutput(JSON.stringify(delRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -8548,15 +8689,30 @@ function buildSidebarDashboardHtml(mode) {
   html += '.sheet-share-btn.active-off { border-color: #ef4444; background: #fef2f2; color: #dc2626; font-weight: 800; }';
   html += '.sheet-memo-input { width: 100%; min-height: 60px; padding: 8px 10px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-size: 12.5px; font-family: inherit; outline: none; margin-bottom: 14px; resize: vertical; }';
   html += '.sheet-memo-input:focus { border-color: #2563eb; }';
-  html += '.sheet-action-row { margin-top: 12px; display: flex; gap: 8px; }';
-  html += '.sheet-goto-btn { flex: 1; height: 48px; border-radius: 12px; background: #f1f5f9; color: #1e293b; border: 1.5px solid #cbd5e1; font-size: 13.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: all 0.15s; }';
-  html += '.sheet-goto-btn:hover { background: #e2e8f0; border-color: #94a3b8; }';
-  html += '.sheet-goto-btn:active { background: #cbd5e1; transform: scale(0.99); }';
-  html += '.btn-sheet-goto-mini { padding: 2px 7px; border-radius: 6px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: all 0.15s; }';
-  html += '.btn-sheet-goto-mini:hover { background: #dbeafe; border-color: #93c5fd; }';
-  html += '.sheet-save-btn { width: 100%; flex: 1.4; height: 48px; border-radius: 12px; background: #2563eb; color: #fff; font-size: 15px; font-weight: 800; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25); transition: all 0.15s; }';
+  html += '.sheet-action-row { margin-top: 14px; display: flex; gap: 8px; align-items: center; }';
+  html += '.sheet-delete-btn { flex: 3; height: 48px; border-radius: 12px; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; font-size: 14px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: all 0.15s; }';
+  html += '.sheet-delete-btn:hover { background: #fee2e2; border-color: #fca5a5; }';
+  html += '.sheet-delete-btn:active { background: #fca5a5; transform: scale(0.98); }';
+  html += '.sheet-delete-btn:disabled { opacity: 0.6; cursor: not-allowed; }';
+  html += '.sheet-save-btn { width: 100%; flex: 7; height: 48px; border-radius: 12px; background: #2563eb; color: #fff; font-size: 15px; font-weight: 800; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25); transition: all 0.15s; }';
   html += '.sheet-save-btn:active { background: #1d4ed8; transform: scale(0.99); }';
   html += '.sheet-save-btn:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }';
+  html += '.sheet-goto-btn { flex: 1; height: 48px; border-radius: 12px; background: #f1f5f9; color: #1e293b; border: 1.5px solid #cbd5e1; font-size: 13.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: all 0.15s; }';
+  html += '.btn-sheet-goto-mini { padding: 2px 7px; border-radius: 6px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: all 0.15s; }';
+  html += '.btn-sheet-goto-mini:hover { background: #dbeafe; border-color: #93c5fd; }';
+  html += '.delete-confirm-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(2px); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px; }';
+  html += '.delete-confirm-box { background: #ffffff; border-radius: 16px; width: 100%; max-width: 360px; padding: 22px 20px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.2); text-align: center; animation: confirmPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); }';
+  html += '@keyframes confirmPopIn { 0% { opacity: 0; transform: scale(0.92); } 100% { opacity: 1; transform: scale(1); } }';
+  html += '.delete-confirm-icon { font-size: 36px; line-height: 1; margin-bottom: 10px; }';
+  html += '.delete-confirm-title { font-size: 17px; font-weight: 800; color: #0f172a; margin-bottom: 8px; }';
+  html += '.delete-confirm-target { font-size: 13.5px; font-weight: 700; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 7px 10px; margin-bottom: 12px; word-break: break-all; }';
+  html += '.delete-confirm-desc { font-size: 12.5px; line-height: 1.5; color: #64748b; margin-bottom: 18px; }';
+  html += '.delete-confirm-actions { display: flex; gap: 10px; }';
+  html += '.btn-delete-cancel { flex: 1; height: 44px; border-radius: 10px; background: #f1f5f9; color: #475569; border: 1.5px solid #cbd5e1; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.15s; }';
+  html += '.btn-delete-cancel:hover { background: #e2e8f0; }';
+  html += '.btn-delete-confirm { flex: 1.2; height: 44px; border-radius: 10px; background: #dc2626; color: #ffffff; border: none; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25); transition: all 0.15s; }';
+  html += '.btn-delete-confirm:hover { background: #b91c1c; }';
+  html += '.btn-delete-confirm:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }';
   html += '.sheet-day-nav { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: #f1f5f9; border-radius: 8px; margin-bottom: 12px; border: 1px solid #e2e8f0; }';
   html += '.sheet-day-nav-label { font-size: 11.5px; font-weight: 700; color: #334155; display: flex; align-items: center; gap: 4px; }';
   html += '.sheet-day-nav-counts { color: #2563eb; font-weight: 800; }';
@@ -8822,8 +8978,24 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="sheet-sec-label">📝 현장 비고 / 특이사항</div>';
   html += '    <textarea id="sheetMemoInput" class="sheet-memo-input" placeholder="현장 특이사항이나 전달사항을 입력하세요..."></textarea>';
   html += '    <div class="sheet-action-row">';
-  html += '      <button type="button" id="sheetGoToRowBtn" class="sheet-goto-btn" onclick="goToCurrentTaskSheetRow()">📍 시트 행 이동</button>';
+  html += '      <button type="button" id="sheetDeleteBtn" class="sheet-delete-btn" onclick="openDeleteConfirmModal()">🗑️ 삭제</button>';
+  html += '      <button type="button" id="sheetGoToRowBtn" class="sheet-goto-btn" onclick="goToCurrentTaskSheetRow()" style="display:none;">📍 시트 행 이동</button>';
   html += '      <button type="button" id="sheetSaveBtn" class="sheet-save-btn" onclick="saveSheetTask()">💾 저장하기</button>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '</div>';
+  html += '';
+  html += '<div id="deleteConfirmOverlay" class="delete-confirm-overlay" style="display:none;" onclick="onDeleteOverlayClick(event)">';
+  html += '  <div class="delete-confirm-box" onclick="event.stopPropagation()">';
+  html += '    <div class="delete-confirm-icon">⚠️</div>';
+  html += '    <div class="delete-confirm-title">일정을 삭제하시겠습니까?</div>';
+  html += '    <div class="delete-confirm-target" id="deleteConfirmTarget">현장 - 공종</div>';
+  html += '    <div class="delete-confirm-desc">';
+  html += '      삭제하시면 <strong>구글 시트의 해당 행</strong>과 <strong>구글 캘린더 일정</strong>이 모두 영구 삭제됩니다. 이 작업은 되돌릴 수 없습니다.';
+  html += '    </div>';
+  html += '    <div class="delete-confirm-actions">';
+  html += '      <button type="button" class="btn-delete-cancel" onclick="closeDeleteConfirmModal()">취소</button>';
+  html += '      <button type="button" class="btn-delete-confirm" id="btnDoDeleteConfirm" onclick="confirmDeleteCurrentTask()">확인 (삭제)</button>';
   html += '    </div>';
   html += '  </div>';
   html += '</div>';
@@ -10445,6 +10617,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (taskNameEl) taskNameEl.innerText = prefillSite ? ("현장: " + prefillSite) : "현장·공종·날짜를 입력해 등록하세요";';
   html += '  const createBox = document.getElementById("sheetCreateFields");';
   html += '  if (createBox) createBox.style.display = "block";';
+  html += '  const delBtn = document.getElementById("sheetDeleteBtn");';
+  html += '  if (delBtn) delBtn.style.display = "none";';
   html += '  const gotoBtn = document.getElementById("sheetGoToRowBtn");';
   html += '  if (gotoBtn) gotoBtn.style.display = "none";';
   html += '  const miniGotoBtn = document.getElementById("sheetMiniGoToRowBtn");';
@@ -10500,6 +10674,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  curTaskObj = task;';
   html += '  const createBox = document.getElementById("sheetCreateFields");';
   html += '  if (createBox) createBox.style.display = "none";';
+  html += '  const delBtn = document.getElementById("sheetDeleteBtn");';
+  html += '  if (delBtn) delBtn.style.display = "";';
   html += '  const gotoBtn = document.getElementById("sheetGoToRowBtn");';
   html += '  if (gotoBtn) gotoBtn.style.display = "";';
   html += '  const miniGotoBtn = document.getElementById("sheetMiniGoToRowBtn");';
@@ -10783,6 +10959,95 @@ function buildSidebarDashboardHtml(mode) {
   html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true, siteNameForSave, taskNameForSave);';
   html += '  } else {';
   html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, false, siteNameForSave, taskNameForSave);';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function openDeleteConfirmModal() {';
+  html += '  if (!curTaskObj || !curTaskObj.row) {';
+  html += '    showToast("⚠️ 삭제할 일정 정보가 유효하지 않습니다.");';
+  html += '    return;';
+  html += '  }';
+  html += '  const modal = document.getElementById("deleteConfirmOverlay");';
+  html += '  const targetEl = document.getElementById("deleteConfirmTarget");';
+  html += '  const btn = document.getElementById("btnDoDeleteConfirm");';
+  html += '  if (targetEl) {';
+  html += '    const dateStr = curTaskObj.dateDisplay || curTaskObj.date || curTaskObj.startDateStr || "";';
+  html += '    targetEl.innerText = "[" + (curSiteName || "현장") + "] " + (curTaskObj.taskName || "공정") + (dateStr ? " (" + dateStr + ")" : "");';
+  html += '  }';
+  html += '  if (btn) {';
+  html += '    btn.disabled = false;';
+  html += '    btn.innerText = "확인 (삭제)";';
+  html += '  }';
+  html += '  if (modal) modal.style.display = "flex";';
+  html += '}';
+  html += '';
+  html += 'function closeDeleteConfirmModal() {';
+  html += '  const modal = document.getElementById("deleteConfirmOverlay");';
+  html += '  if (modal) modal.style.display = "none";';
+  html += '}';
+  html += '';
+  html += 'function onDeleteOverlayClick(e) {';
+  html += '  if (e.target && e.target.id === "deleteConfirmOverlay") {';
+  html += '    closeDeleteConfirmModal();';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function confirmDeleteCurrentTask() {';
+  html += '  if (!curTaskObj || !curTaskObj.row) {';
+  html += '    showToast("⚠️ 삭제할 일정 정보가 없습니다.");';
+  html += '    closeDeleteConfirmModal();';
+  html += '    return;';
+  html += '  }';
+  html += '  const btn = document.getElementById("btnDoDeleteConfirm");';
+  html += '  if (btn) {';
+  html += '    btn.disabled = true;';
+  html += '    btn.innerText = "삭제 중...";';
+  html += '  }';
+  html += '  const targetRow = curTaskObj.row;';
+  html += '  const site = curSiteName || "";';
+  html += '  const task = curTaskObj.taskName || "";';
+  html += '  const eid = curTaskObj.eventId || "";';
+  html += '  const isArchived = (curTaskObj.isArchived === true);';
+  html += '  showToast("🗑️ [" + site + " - " + task + "] 일정 삭제 중...");';
+  html += '  if (rawData && Array.isArray(rawData.sites)) {';
+  html += '    for (let si = 0; si < rawData.sites.length; si++) {';
+  html += '      const siteObj = rawData.sites[si];';
+  html += '      if (siteObj && Array.isArray(siteObj.tasks)) {';
+  html += '        const tIdx = siteObj.tasks.findIndex(t => t.row === targetRow && !!t.isArchived === isArchived);';
+  html += '        if (tIdx !== -1) {';
+  html += '          siteObj.tasks.splice(tIdx, 1);';
+  html += '          renderDashboardPayload(rawData);';
+  html += '          break;';
+  html += '        }';
+  html += '      }';
+  html += '    }';
+  html += '  }';
+  html += '  closeDeleteConfirmModal();';
+  html += '  closeBottomSheet();';
+  html += '  const onDone = function(res) {';
+  html += '    if (res && res.success) {';
+  html += '      showToast("✅ [" + (res.siteName || site) + " - " + (res.taskName || task) + "] 일정이 시트와 캘린더에서 삭제되었습니다!");';
+  html += '      loadDataSilently();';
+  html += '    } else {';
+  html += '      showToast("❌ 삭제 실패: " + ((res && res.error) || "알 수 없는 오류"));';
+  html += '      loadData();';
+  html += '    }';
+  html += '  };';
+  html += '  const onFail = function(err) {';
+  html += '    showToast("❌ 삭제 통신 오류: " + (err.message || err));';
+  html += '    loadData();';
+  html += '  };';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {';
+  html += '    google.script.run';
+  html += '      .withSuccessHandler(onDone)';
+  html += '      .withFailureHandler(onFail)';
+  html += '      .deleteScheduleTaskFromWeb(targetRow, site, task, eid, isArchived);';
+  html += '  } else {';
+  html += '    const apiUrl = (window.API_BASE_URL || window.location.pathname) + "?action=deleteScheduleTask&row=" + encodeURIComponent(targetRow) + "&site=" + encodeURIComponent(site) + "&task=" + encodeURIComponent(task) + "&id=" + encodeURIComponent(eid) + "&isArchived=" + (isArchived ? "true" : "false") + "&format=json";';
+  html += '    fetch(apiUrl)';
+  html += '      .then(function(r) { return r.json(); })';
+  html += '      .then(onDone)';
+  html += '      .catch(onFail);';
   html += '  }';
   html += '}';
   html += '';

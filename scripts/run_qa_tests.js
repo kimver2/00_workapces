@@ -5774,6 +5774,120 @@ assertTest('buildSidebarDashboardHtml(goToCurrentTaskSheetRow): focusSheetRow에
   dashHtml63.indexOf('if (curTaskObj) curTaskObj.row = actualRow;') !== -1
 );
 
+// ========================================================
+// 🗑️ Step 65: 일정 상세 삭제 버튼 (3:7 비율), 확인 팝업, 행 삭제 & 캘린더 동기화 QA
+// ========================================================
+console.log('\n🗑️ [Step 65: 일정 상세 삭제 버튼 (3:7 비율), 확인 팝업, 행 삭제 & 캘린더 동기화 QA]');
+
+// 1. deleteScheduleTaskFromWeb 함수 탑재 검증
+assertTest('deleteScheduleTaskFromWeb: 서버 함수 정의 및 로드 검증',
+  typeof sandbox.deleteScheduleTaskFromWeb === 'function'
+);
+
+// 2. buildSidebarDashboardHtml 내 삭제 UI 및 3:7 비율 마크업 검증
+const dashHtml65 = sandbox.buildSidebarDashboardHtml('mobile');
+assertTest('buildSidebarDashboardHtml: 하단 액션바 삭제 버튼(sheetDeleteBtn) 탑재 검증',
+  dashHtml65.indexOf('id="sheetDeleteBtn"') !== -1 && dashHtml65.indexOf('🗑️ 삭제') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 삭제(3) : 저장(7) 비율 CSS 탑재 검증',
+  dashHtml65.indexOf('.sheet-delete-btn { flex: 3;') !== -1 &&
+  dashHtml65.indexOf('.sheet-save-btn { width: 100%; flex: 7;') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 삭제 확인 모달(#deleteConfirmOverlay) 및 취소/확인 버튼 탑재 검증',
+  dashHtml65.indexOf('id="deleteConfirmOverlay"') !== -1 &&
+  dashHtml65.indexOf('btn-delete-cancel') !== -1 &&
+  dashHtml65.indexOf('btn-delete-confirm') !== -1 &&
+  dashHtml65.indexOf('일정을 삭제하시겠습니까?') !== -1
+);
+
+// 3. 클라이언트 제어 함수 탑재 검증
+assertTest('buildSidebarDashboardHtml: 삭제 모달 제어 함수(openDeleteConfirmModal, confirmDeleteCurrentTask) 탑재 검증',
+  dashHtml65.indexOf('function openDeleteConfirmModal()') !== -1 &&
+  dashHtml65.indexOf('function closeDeleteConfirmModal()') !== -1 &&
+  dashHtml65.indexOf('function confirmDeleteCurrentTask()') !== -1
+);
+
+// 4. deleteScheduleTaskFromWeb 시뮬레이션: 시트 행 삭제 및 캘린더 일정 연동 삭제 검증
+let deletedCalEventId = null;
+let deletedCalEventsCount = 0;
+let deletedSheetRowNum = -1;
+
+const mockCalEvent65 = {
+  getId: () => 'cal-event-to-delete-1029',
+  getTitle: () => '📅 🟥 [철거] 신대방우성 16동 1501호',
+  deleteEvent: () => {
+    deletedCalEventId = 'cal-event-to-delete-1029';
+    deletedCalEventsCount++;
+  }
+};
+
+const mockSheetRows65 = [
+  ['신대방우성 16동 1501호', '2026.10.29 ~ 2026.11.02', '철거', '인스', true, '특이사항', '조항만', '예정', 'cal-event-to-delete-1029', 1000],
+  ['', '2026.11.03', '목공', '박동연', true, '', '조항만', '예정', 'cal-event-keep-1103', 2000],
+  ['보경102동', '2026.11.05', '타일', '정소장', true, '', '전예린', '예정', 'cal-event-keep-1105', 3000]
+];
+
+const mockSheet65 = {
+  getLastRow: () => mockSheetRows65.length + 1,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => {
+      if (nr === 1 && nc === 10) return [mockSheetRows65[r - 2]];
+      if (nr === 1 && nc === 3) return [mockSheetRows65[r - 2].slice(0, 3)];
+      return mockSheetRows65.slice(r - 2, r - 2 + nr);
+    },
+    getValue: () => mockSheetRows65[r - 2][c - 1],
+    setValue: (val) => { mockSheetRows65[r - 2][c - 1] = val; }
+  }),
+  deleteRow: (r) => {
+    deletedSheetRowNum = r;
+    mockSheetRows65.splice(r - 2, 1);
+  }
+};
+
+sandbox.findSiteScheduleSheet = () => mockSheet65;
+sandbox.getAppCalendar = () => ({
+  getEventById: (id) => (id === 'cal-event-to-delete-1029' ? mockCalEvent65 : null),
+  getEvents: () => [mockCalEvent65]
+});
+
+const delRes65 = sandbox.deleteScheduleTaskFromWeb(
+  2,
+  '신대방우성 16동 1501호',
+  '철거',
+  'cal-event-to-delete-1029',
+  false
+);
+
+assertTest('deleteScheduleTaskFromWeb: 성공(success: true) 반환 검증',
+  delRes65 && delRes65.success === true
+);
+assertTest('deleteScheduleTaskFromWeb: 구글 캘린더 일정(cal-event-to-delete-1029) 연동 삭제 검증',
+  deletedCalEventId === 'cal-event-to-delete-1029' && deletedCalEventsCount === 1
+);
+assertTest('deleteScheduleTaskFromWeb: 스프레드시트 2행 영구 삭제(deleteRow) 실행 검증',
+  deletedSheetRowNum === 2
+);
+assertTest('deleteScheduleTaskFromWeb: 블록 첫 행 삭제 시 하위 행(목공)으로 현장명 자동 상속 보존 검증',
+  mockSheetRows65[0][0] === '신대방우성 16동 1501호' && mockSheetRows65[0][2] === '목공'
+);
+
+// 5. doGet: action=deleteScheduleTask 웹 엔드포인트 응답 검증
+const doGetDelRes = sandbox.doGet({
+  parameter: {
+    action: 'deleteScheduleTask',
+    row: 2,
+    site: '신대방우성 16동 1501호',
+    task: '목공',
+    id: 'cal-event-keep-1103',
+    format: 'json'
+  }
+});
+assertTest('doGet: action=deleteScheduleTask 호출 및 JSON 응답 반환 검증',
+  doGetDelRes && typeof doGetDelRes.getContent === 'function' &&
+  JSON.parse(doGetDelRes.getContent()).success === true
+);
+
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
