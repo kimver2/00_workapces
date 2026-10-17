@@ -4142,15 +4142,17 @@ function refreshDashboardCalendar(ss) {
     var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
     var prefixIcon = isShared ? "🟦 " : "🟥 ";
 
-    // 상태별 아이콘 (스타일 A: 예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
+    // 상태별 아이콘 (스타일 A: 예정='📅 ', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
     var statusClean = status.replace(/\s+/g, "");
-    var statusIcon = "";
+    var statusIcon = "📅 ";
     if (statusClean.indexOf("완료") !== -1 || statusClean.indexOf("✅") !== -1) {
       statusIcon = "✅ ";
     } else if (statusClean.indexOf("진행") !== -1 || statusClean.indexOf("▶") !== -1) {
       statusIcon = "▶️ ";
     } else if (statusClean.indexOf("AS") !== -1 || statusClean.indexOf("A/S") !== -1 || statusClean.indexOf("as") !== -1 || statusClean.indexOf("🛠") !== -1) {
       statusIcon = "🛠️ ";
+    } else if (statusClean.indexOf("예정") !== -1 || statusClean.indexOf("📅") !== -1 || statusClean === "") {
+      statusIcon = "📅 ";
     }
 
     // 공정 지연 자동 감지 (Feature 2)
@@ -7671,12 +7673,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '.cal-week-card-body { padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; background: #ffffff; }';
   html += '.cal-week-empty-text { font-size: 11px; color: #94a3b8; padding: 3px 0; text-align: center; }';
   html += '.cal-events-list { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; width: 100%; margin-top: 1px; }';
-  html += '.cal-event-pill { display: flex; align-items: center; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; border-radius: 3px; padding: 1.5px 3px; font-size: 9.5px; font-weight: 800; line-height: 1.25; cursor: pointer; color: #ffffff; overflow: hidden; margin-bottom: 1px; }';
+  html += '.cal-event-pill { display: flex; align-items: center; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; border-radius: 3px; padding: 1.5px 2.5px; font-size: 9.5px; font-weight: 800; line-height: 1.25; cursor: pointer; color: #ffffff; overflow: hidden; margin-bottom: 1px; }';
   html += '.cal-event-pill:hover { filter: brightness(0.92); }';
-  html += '.cal-event-pill.status-done { opacity: 0.5; text-decoration: line-through; }';
+  html += '.cal-event-pill.status-done { opacity: 0.6; text-decoration: line-through; }';
   html += '.cal-event-pill.status-delayed { background-color: #dc2626 !important; color: #ffffff !important; box-shadow: 0 1px 2px rgba(220,38,38,0.35); }';
-  html += '.cal-delay-warn-icon { font-size: 8.5px; line-height: 1; margin-right: 2px; flex-shrink: 0; display: inline-flex; align-items: center; }';
-  html += '.cal-sh-box { display: inline-block; width: 6.5px; height: 6.5px; border-radius: 1px; flex-shrink: 0; margin-right: 2.5px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.95); }';
+  html += '.cal-delay-warn-icon { font-size: 8px; line-height: 1; margin-right: 1.5px; flex-shrink: 0; display: inline-flex; align-items: center; }';
+  html += '.cal-status-icon { font-size: 8px; line-height: 1; margin-right: 1.5px; flex-shrink: 0; display: inline-flex; align-items: center; }';
+  html += '.cal-sh-box { display: inline-block; width: 6px; height: 6px; border-radius: 1px; flex-shrink: 0; margin-right: 2px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.95); }';
   html += '.cal-sh-box.blue { background-color: #38bdf8; }';
   html += '.cal-sh-box.red { background-color: #ef4444; }';
   html += '.cal-pill-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; font-weight: 800; -webkit-font-smoothing: antialiased; }';
@@ -7732,12 +7735,23 @@ function buildSidebarDashboardHtml(mode) {
   html += '.loading-text { text-align: center; color: #64748b; font-size: 13px; font-weight: 600; margin-top: 14px; }';
   html += '.spinner { border: 3.5px solid #e2e8f0; border-top: 3.5px solid #2563eb; border-radius: 50%; width: 32px; height: 32px; animation: spin 0.8s linear infinite; margin: 0 auto; }';
   html += '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+  html += '.refresh-loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.28); backdrop-filter: blur(1.5px); z-index: 2500; display: none; align-items: center; justify-content: center; padding: 20px; }';
+  html += '.refresh-loading-overlay.show { display: flex; }';
+  html += '.refresh-top-progress { position: fixed; top: 0; left: 0; right: 0; height: 3.5px; background: #dbeafe; overflow: hidden; z-index: 2510; }';
+  html += '.refresh-top-progress-bar { width: 45%; height: 100%; background: linear-gradient(90deg, #2563eb, #38bdf8, #2563eb); border-radius: 2px; animation: refreshProgressSlide 1.05s infinite ease-in-out; }';
+  html += '@keyframes refreshProgressSlide { 0% { transform: translateX(-110%); } 100% { transform: translateX(250%); } }';
+  html += '.refresh-loading-card { background: #ffffff; border-radius: 14px; padding: 18px 22px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22); border: 1px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 215px; max-width: 280px; text-align: center; animation: fadeInCal 0.15s ease-out; }';
+  html += '.refresh-loading-title { font-size: 13px; font-weight: 800; color: #0f172a; letter-spacing: -0.2px; }';
+  html += '.refresh-bar-track { width: 100%; height: 6px; background: #e2e8f0; border-radius: 999px; overflow: hidden; position: relative; }';
+  html += '.refresh-bar-fill { width: 50%; height: 100%; background: linear-gradient(90deg, #2563eb, #60a5fa); border-radius: 999px; animation: refreshBarMove 1.05s infinite ease-in-out; }';
+  html += '@keyframes refreshBarMove { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }';
   html += '.footer-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #ffffff; border-top: 1px solid #e2e8f0; padding: 10px 14px ' + (isMobile ? 'calc(10px + env(safe-area-inset-bottom, 0px))' : '10px') + '; display: flex; gap: 8px; box-shadow: 0 -2px 8px rgba(0,0,0,0.04); z-index: 30; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.btn { flex: 1; padding: 10px; border-radius: 8px; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid transparent; text-align: center; transition: all 0.15s; }';
   html += '.btn-primary { background: #2563eb; color: #ffffff; }';
   html += '.btn-primary:hover { background: #1d4ed8; }';
   html += '.btn-secondary { background: #ffffff; border-color: #cbd5e1; color: #334155; }';
   html += '.btn-secondary:hover { background: #f8fafc; }';
+  html += '.btn:disabled { opacity: 0.65; cursor: not-allowed; }';
   html += '.toast { position: fixed; bottom: 75px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #ffffff; padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 2000; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.18); }';
   html += '.toast.show { opacity: 1; }';
 
@@ -7826,6 +7840,16 @@ function buildSidebarDashboardHtml(mode) {
   }
   html += '</style></head><body>';
 
+  // 새로고침 글로벌 로딩바 및 오버레이 (목록 뷰 & 캘린더 뷰 공용)
+  html += '<div id="refreshLoadingOverlay" class="refresh-loading-overlay">';
+  html += '  <div class="refresh-top-progress"><div class="refresh-top-progress-bar"></div></div>';
+  html += '  <div class="refresh-loading-card">';
+  html += '    <div class="spinner" style="width:28px;height:28px;border-width:3px;"></div>';
+  html += '    <div class="refresh-loading-title">현장 데이터 새로고침 중...</div>';
+  html += '    <div class="refresh-bar-track"><div class="refresh-bar-fill"></div></div>';
+  html += '  </div>';
+  html += '</div>';
+
   // Body HTML
   html += '<div class="header">';
   html += '  <div class="title-row">';
@@ -7834,7 +7858,7 @@ function buildSidebarDashboardHtml(mode) {
   if (!isModal && !isMobile) {
     html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 8px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:3px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #93c5fd;" onclick="openWideModalView()" title="대시보드를 넓은 대형 팝업 창(1020px)으로 엽니다">⛶ 크게 보기</button>';
   }
-  html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData()">🔄 새로고침</button>';
+  html += '      <button type="button" class="btn btn-secondary btn-refresh-action" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData(true)">🔄 새로고침</button>';
   html += '    </div>';
   html += '  </div>';
 
@@ -7918,7 +7942,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '</div>';
 
   html += '<div class="footer-bar">';
-  html += '  <button class="btn btn-secondary" onclick="loadData()">🔄 새로고침</button>';
+  html += '  <button class="btn btn-secondary btn-refresh-action" onclick="loadData(true)">🔄 새로고침</button>';
   html += '  <button type="button" id="calendarToggleBtn" class="btn btn-primary" onclick="toggleCalendarView()">📅 캘린더 보기</button>';
   html += '</div>';
 
@@ -8063,11 +8087,21 @@ function buildSidebarDashboardHtml(mode) {
   html += 'let pickerStartStr = "";';
   html += 'let pickerEndStr = "";';
   html += 'let pickerRangePendingStart = "";';
+  html += 'let isManualRefreshPending = false;';
   html += 'const DEFAULT_KOREAN_HOLIDAYS = ' + JSON.stringify(getKoreanHolidaysMap(null)) + ';';
   html += 'let activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS);';
 
+  html += 'function getTaskStatusIcon(status) {';
+  html += '  const st = String(status || "").replace(/\\s+/g, "");';
+  html += '  if (st.indexOf("완료") !== -1 || st.indexOf("✅") !== -1) return "✅";';
+  html += '  if (st.indexOf("진행") !== -1 || st.indexOf("▶") !== -1) return "▶️";';
+  html += '  if (st.indexOf("AS") !== -1 || st.indexOf("A/S") !== -1 || st.indexOf("as") !== -1 || st.indexOf("🛠") !== -1) return "🛠️";';
+  html += '  return "📅";';
+  html += '}';
+
   html += 'function showToast(msg) {';
   html += '  const t = document.getElementById("toast");';
+  html += '  if (!t) return;';
   html += '  t.innerText = msg;';
   html += '  t.classList.add("show");';
   html += '  setTimeout(() => t.classList.remove("show"), 2200);';
@@ -8442,13 +8476,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '      const taskJson = encodeURIComponent(JSON.stringify(task));';
   html += '      const isDone = (task.status && (task.status.indexOf("완료") !== -1 || task.status.indexOf("취소") !== -1));';
   html += '      const isDelayed = (task.isDelayed === true && !isDone);';
+  html += '      const stIcon = getTaskStatusIcon(task.status);';
   html += '      const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1");';
   html += '      const shClass = isSh ? "blue" : "red";';
   html += '      const bgCol = isDelayed ? "#dc2626" : (site.colorHex || "#2563eb");';
   html += '      const isLight = !isDelayed && (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26");';
   html += '      const txtCol = isLight ? "#0f172a" : "#ffffff";';
   html += '      const txtShadow = isLight ? "none" : "0 1px 1px rgba(0,0,0,0.45)";';
-  html += '      const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
+  html += '      const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + stIcon + " [" + escapeHtml(task.status || "예정") + "] " + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
   html += '      const tLen = (task.taskName || "").length;';
   html += '      let fontStyle = "font-weight:800;";';
   html += '      if (tLen <= 2) {';
@@ -8465,6 +8500,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (isDelayed) {';
   html += '        gridHtml += \'<span class="cal-delay-warn-icon" title="⚠️ 공정 지연">⚠️</span>\';';
   html += '      }';
+  html += '      gridHtml += \'<span class="cal-status-icon" title="상태: \' + escapeHtml(task.status || "예정") + \'">\' + stIcon + \'</span>\';';
   html += '      gridHtml += \'<span class="cal-sh-box \' + shClass + \'"></span><span class="cal-pill-text" style="\' + fontStyle + \'">\' + escapeHtml(task.taskName) + \'</span>\';';
   html += '      gridHtml += \'</div>\';';
   html += '    });';
@@ -8596,20 +8632,22 @@ function buildSidebarDashboardHtml(mode) {
   html += '        const taskJson = encodeURIComponent(JSON.stringify(task));';
   html += '        const isDone = (task.status && (task.status.indexOf("완료") !== -1 || task.status.indexOf("취소") !== -1));';
   html += '        const isDelayed = (task.isDelayed === true && !isDone);';
+  html += '        const stIcon = getTaskStatusIcon(task.status);';
   html += '        const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1");';
   html += '        const shClass = isSh ? "blue" : "red";';
   html += '        const bgCol = isDelayed ? "#dc2626" : (site.colorHex || "#2563eb");';
   html += '        const isLight = !isDelayed && (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26");';
   html += '        const txtCol = isLight ? "#0f172a" : "#ffffff";';
   html += '        const txtShadow = isLight ? "none" : "0 1px 1px rgba(0,0,0,0.45)";';
-  html += '        const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
+  html += '        const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + stIcon + " [" + escapeHtml(task.status || "예정") + "] " + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
   html += '        listHtml += \'<div class="cal-event-pill \' + (isDelayed ? "status-delayed " : "") + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';padding:4px 6px;font-size:11px;\' + (txtShadow !== "none" ? "text-shadow:" + txtShadow + ";" : "") + \'" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
   html += '        const pRateTag = (typeof site.progressRate === "number") ? " " + site.progressRate + "%" : "";';
   html += '        if (isDelayed) {';
   html += '          listHtml += \'  <span class="cal-delay-warn-icon" style="font-size:10px;margin-right:3px;" title="⚠️ 공정 지연">⚠️</span>\';';
   html += '        }';
+  html += '        listHtml += \'  <span class="cal-status-icon" style="font-size:10px;margin-right:3px;" title="상태: \' + escapeHtml(task.status || "예정") + \'">\' + stIcon + \'</span>\';';
   html += '        listHtml += \'  <span class="cal-sh-box \' + shClass + \'" style="width:7.5px;height:7.5px;"></span>\';';
-  html += '        listHtml += \'  <span class="cal-pill-text" style="font-size:11px;font-weight:800;">[\' + escapeHtml(site.siteName) + pRateTag + \'] \' + escapeHtml(task.taskName) + (task.manager ? " (" + escapeHtml(task.manager) + ")" : "") + (task.status ? " - " + escapeHtml(task.status) : "") + \'</span>\';';
+  html += '        listHtml += \'  <span class="cal-pill-text" style="font-size:11px;font-weight:800;">[\' + escapeHtml(site.siteName) + pRateTag + \'] \' + escapeHtml(task.taskName) + (task.manager ? " (" + escapeHtml(task.manager) + ")" : "") + (task.status ? " - " + stIcon + " " + escapeHtml(task.status) : "") + \'</span>\';';
   html += '        listHtml += \'</div>\';';
   html += '      });';
   html += '    }';
@@ -8772,8 +8810,27 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (isCalendarMode) renderCurrentCalendarView(); else renderList();';
   html += '}';
 
-  html += 'function loadData() {';
-  html += '  document.getElementById("contentArea").innerHTML = \'<div class="loading-state"><div class="spinner"></div><p class="loading-text">현장 데이터 불러오는 중...</p></div>\';';
+  html += 'function setRefreshLoadingState(isLoading) {';
+  html += '  const ov = document.getElementById("refreshLoadingOverlay");';
+  html += '  if (ov) {';
+  html += '    if (isLoading) ov.classList.add("show");';
+  html += '    else ov.classList.remove("show");';
+  html += '  }';
+  html += '  if (typeof document.querySelectorAll === "function") {';
+  html += '    document.querySelectorAll(".btn-refresh-action").forEach(btn => {';
+  html += '      btn.disabled = !!isLoading;';
+  html += '      btn.innerHTML = isLoading ? "⏳ 갱신 중..." : "🔄 새로고침";';
+  html += '    });';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function loadData(isManual) {';
+  html += '  if (isManual === true) isManualRefreshPending = true;';
+  html += '  setRefreshLoadingState(true);';
+  html += '  if (!isCalendarMode && !rawData) {';
+  html += '    const ca = document.getElementById("contentArea");';
+  html += '    if (ca) ca.innerHTML = \'<div class="loading-state"><div class="spinner"></div><p class="loading-text">현장 데이터 불러오는 중...</p></div>\';';
+  html += '  }';
   html += '  google.script.run';
   html += '    .withSuccessHandler(onDataLoaded)';
   html += '    .withFailureHandler(onError)';
@@ -8781,10 +8838,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
 
   html += 'function onError(err) {';
-  html += '  document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.<br><small style="color:#ef4444;">\' + escapeHtml((err && err.message) || err || "") + \'</small></div>\';';
+  html += '  setRefreshLoadingState(false);';
+  html += '  isManualRefreshPending = false;';
+  html += '  const ca = document.getElementById("contentArea");';
+  html += '  if (ca) ca.innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.<br><small style="color:#ef4444;">\' + escapeHtml((err && err.message) || err || "") + \'</small></div>\';';
+  html += '  showToast("⚠️ 데이터 새로고침 실패: " + ((err && err.message) || err || ""));';
   html += '}';
 
   html += 'function onDataLoaded(data) {';
+  html += '  setRefreshLoadingState(false);';
+  html += '  const wasManual = isManualRefreshPending;';
+  html += '  isManualRefreshPending = false;';
   html += '  rawData = data;';
   html += '  if (!data) {';
   html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.</div>\';';
@@ -8806,6 +8870,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    updateCheckedStatusUI();';
   html += '    if (isCalendarMode) renderCurrentCalendarView(); else renderList();';
   html += '    loadWeatherData();';
+  html += '    if (wasManual) showToast("✅ 최신 현장 데이터로 새로고침되었습니다.");';
   html += '  } catch (renderErr) {';
   html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 대시보드 렌더링 오류: \' + escapeHtml(renderErr.message || renderErr) + \'</div>\';';
   html += '  }';
@@ -8988,7 +9053,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'    <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? " / " + escapeHtml(task.partner) : "") + \'</span>\';';
   html += '      html += \'    <div style="display:flex;align-items:center;gap:4px;">\';';
   html += '      html += \'      <span class="\' + shareTagClass + \'">\' + shareTagText + \'</span>\';';
-  html += '      html += \'      <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : escapeHtml(task.status)) + \'</span>\';';
+  html += '      html += \'      <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : (getTaskStatusIcon(task.status) + " " + escapeHtml(task.status || "예정"))) + \'</span>\';';
   html += '      html += \'    </div>\';';
   html += '      html += \'  </div>\';';
   html += '      if (task.memo) {';

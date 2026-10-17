@@ -4900,6 +4900,166 @@ assertTest('toggleCalendarView: 목록 보기 복귀 시 모달 그리드 레이
   dashHtml56.indexOf('if (contentArea) contentArea.style.display = "";') !== -1
 );
 
+console.log('\n🔄 [Step 57: 새로고침 글로벌 로딩바(오버레이) & 대시보드 캘린더 상태 아이콘(📅/▶️/✅/🛠️) 표시 QA]');
+
+const dashHtml57 = sandbox.buildSidebarDashboardHtml('sidebar');
+
+// 57-1: 새로고침 로딩바/오버레이 HTML & CSS 및 버튼 클래스 탑재 검증
+assertTest('buildSidebarDashboardHtml: #refreshLoadingOverlay 및 상단/카드 로딩바(.refresh-top-progress-bar, .refresh-bar-fill) 탑재 검증',
+  dashHtml57.indexOf('id="refreshLoadingOverlay"') !== -1 &&
+  dashHtml57.indexOf('refresh-top-progress-bar') !== -1 &&
+  dashHtml57.indexOf('refresh-bar-fill') !== -1 &&
+  dashHtml57.indexOf('btn-refresh-action') !== -1 &&
+  dashHtml57.indexOf('function setRefreshLoadingState(') !== -1
+);
+
+// 57-2: 대시보드 캘린더 상태 아이콘 헬퍼(getTaskStatusIcon) 및 .cal-status-icon 탑재 검증
+assertTest('buildSidebarDashboardHtml: getTaskStatusIcon 및 .cal-status-icon 렌더링 탑재 검증',
+  dashHtml57.indexOf('function getTaskStatusIcon(') !== -1 &&
+  dashHtml57.indexOf('cal-status-icon') !== -1
+);
+
+// 57-3: 클라이언트 샌드박스에서 새로고침 로딩바 동작 및 월간/주간 캘린더 상태 아이콘 렌더링 검증
+const scriptMatch57 = dashHtml57.match(/<script>([\s\S]*?)<\/script>/);
+const clientScript57 = scriptMatch57 ? scriptMatch57[1] : '';
+
+const refreshBtns57 = [
+  { disabled: false, innerHTML: '🔄 새로고침' },
+  { disabled: false, innerHTML: '🔄 새로고침' }
+];
+const mockElems57 = {
+  refreshLoadingOverlay: {
+    _classes: new Set(),
+    classList: {
+      add: function(c) { mockElems57.refreshLoadingOverlay._classes.add(c); },
+      remove: function(c) { mockElems57.refreshLoadingOverlay._classes.delete(c); },
+      contains: function(c) { return mockElems57.refreshLoadingOverlay._classes.has(c); }
+    }
+  },
+  contentArea: { innerHTML: '', style: {} },
+  calendarArea: { style: { display: 'block' }, addEventListener: function() {} },
+  calGrid: { innerHTML: '', classList: { remove: function() {}, add: function() {} }, offsetWidth: 100 },
+  calWeekList: { innerHTML: '', classList: { remove: function() {}, add: function() {} }, offsetWidth: 100, style: {} },
+  calMonthTitle: { innerText: '' },
+  calFilterNotice: { innerHTML: '', style: {} },
+  searchInput: { value: '' },
+  kpiSites: { innerText: '' },
+  kpiToday: { innerText: '' },
+  kpiDelay: { innerText: '' },
+  memberFilterBar: { innerHTML: '' },
+  checkedTab: { style: {} },
+  checkedTabCount: { innerText: '' },
+  checkedActionBar: { style: {} },
+  checkedCountMsg: { innerText: '' },
+  toast: { innerText: '', classList: { add: function() {}, remove: function() {} } }
+};
+
+let pendingSuccessCb57 = null;
+const clientSandbox57 = {
+  document: {
+    readyState: 'loading',
+    getElementById: (id) => mockElems57[id] || null,
+    querySelectorAll: (sel) => (sel === '.btn-refresh-action' ? refreshBtns57 : []),
+    addEventListener: () => {}
+  },
+  window: { addEventListener: () => {} },
+  setTimeout: () => {},
+  fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
+  google: {
+    script: {
+      run: {
+        withSuccessHandler: function(cb) {
+          pendingSuccessCb57 = cb;
+          return {
+            withFailureHandler: function() {
+              return {
+                getSidebarDashboardData: function() {}
+              };
+            }
+          };
+        }
+      }
+    }
+  },
+  Date: Date,
+  Math: Math,
+  Set: Set,
+  Object: Object,
+  Array: Array,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String
+};
+vm.createContext(clientSandbox57);
+vm.runInContext(clientScript57, clientSandbox57);
+
+// 1) getTaskStatusIcon 상태별 아이콘 반환 검증
+assertTest('getTaskStatusIcon: 예정(📅), 진행 중(▶️), 완료(✅), AS(🛠️) 4대 상태 아이콘 정확 반환 검증',
+  clientSandbox57.getTaskStatusIcon('예정') === '📅' &&
+  clientSandbox57.getTaskStatusIcon('') === '📅' &&
+  clientSandbox57.getTaskStatusIcon('진행 중') === '▶️' &&
+  clientSandbox57.getTaskStatusIcon('진행') === '▶️' &&
+  clientSandbox57.getTaskStatusIcon('완료') === '✅' &&
+  clientSandbox57.getTaskStatusIcon('AS') === '🛠️' &&
+  clientSandbox57.getTaskStatusIcon('A/S') === '🛠️'
+);
+
+// 2) 캘린더 모드에서 새로고침 클릭 시 로딩바 오버레이 즉시 표시 및 버튼 비활성화 검증
+vm.runInContext('isCalendarMode = true; calYear = 2026; calMonth = 10;', clientSandbox57);
+clientSandbox57.loadData(true);
+assertTest('loadData(true): 캘린더 보기 상태에서 새로고침 클릭 시 #refreshLoadingOverlay.show 활성 및 버튼 "⏳ 갱신 중..." 전환 검증',
+  mockElems57.refreshLoadingOverlay.classList.contains('show') === true &&
+  refreshBtns57[0].disabled === true &&
+  refreshBtns57[0].innerHTML.indexOf('⏳ 갱신 중...') !== -1
+);
+
+// 3) 데이터 로드 완료(onDataLoaded) 시 로딩바 해제 + 월간/주간 캘린더 내 상태 아이콘 렌더링 검증
+const mockDashPayload57 = {
+  kpi: { totalSites: 1, activeSites: 1, todayCount: 2, delayedCount: 1 },
+  members: ['조항만'],
+  holidays: {},
+  sites: [
+    {
+      siteName: '보라매 파크시티',
+      colorHex: '#2563EB',
+      progressRate: 50,
+      tasks: [
+        { row: 2, taskName: '철거', startDateStr: '2026-10-17', endDateStr: '2026-10-17', status: '완료', isShared: true, isDelayed: false, manager: '조항만' },
+        { row: 3, taskName: '목공', startDateStr: '2026-10-17', endDateStr: '2026-10-17', status: '진행 중', isShared: true, isDelayed: false, manager: '조항만' },
+        { row: 4, taskName: '도배', startDateStr: '2026-10-17', endDateStr: '2026-10-17', status: '예정', isShared: false, isDelayed: false, manager: '조항만' },
+        { row: 5, taskName: '마루보수', startDateStr: '2026-10-17', endDateStr: '2026-10-17', status: 'AS', isShared: true, isDelayed: false, manager: '조항만' }
+      ]
+    }
+  ]
+};
+pendingSuccessCb57(mockDashPayload57);
+
+assertTest('onDataLoaded: 데이터 수신 완료 시 #refreshLoadingOverlay 자동 숨김 및 버튼 "🔄 새로고침" 복원 + 완료 토스트 검증',
+  mockElems57.refreshLoadingOverlay.classList.contains('show') === false &&
+  refreshBtns57[0].disabled === false &&
+  refreshBtns57[0].innerHTML === '🔄 새로고침' &&
+  mockElems57.toast.innerText.indexOf('새로고침되었습니다') !== -1
+);
+
+assertTest('renderCalendar(월간 캘린더): 각 일정 알약(.cal-event-pill) 내부에 상태 아이콘(✅/▶️/📅/🛠️) 정상 표시 검증',
+  mockElems57.calGrid.innerHTML.indexOf('cal-status-icon') !== -1 &&
+  mockElems57.calGrid.innerHTML.indexOf('>✅</span>') !== -1 &&
+  mockElems57.calGrid.innerHTML.indexOf('>▶️</span>') !== -1 &&
+  mockElems57.calGrid.innerHTML.indexOf('>📅</span>') !== -1 &&
+  mockElems57.calGrid.innerHTML.indexOf('>🛠️</span>') !== -1
+);
+
+vm.runInContext('calWeekStartDate = new Date(2026, 9, 11); renderWeeklyCalendar();', clientSandbox57);
+assertTest('renderWeeklyCalendar(주간 캘린더): 주간 카드 일정 알약 내부에 상태 아이콘(✅/▶️/📅/🛠️) 정상 표시 검증',
+  mockElems57.calWeekList.innerHTML.indexOf('cal-status-icon') !== -1 &&
+  mockElems57.calWeekList.innerHTML.indexOf('>✅</span>') !== -1 &&
+  mockElems57.calWeekList.innerHTML.indexOf('>▶️</span>') !== -1 &&
+  mockElems57.calWeekList.innerHTML.indexOf('>📅</span>') !== -1 &&
+  mockElems57.calWeekList.innerHTML.indexOf('>🛠️</span>') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
