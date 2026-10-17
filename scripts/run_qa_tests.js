@@ -5845,10 +5845,16 @@ const mockSheet65 = {
 };
 
 sandbox.findSiteScheduleSheet = () => mockSheet65;
-sandbox.getAppCalendar = () => ({
+const mockTargetCal65 = {
+  getId: () => 'c_shared_cal@group.calendar.google.com',
+  getName: () => '현장 일정',
   getEventById: (id) => (id === 'cal-event-to-delete-1029' ? mockCalEvent65 : null),
   getEvents: () => [mockCalEvent65]
-});
+};
+sandbox.CalendarApp.getCalendarById = () => mockTargetCal65;
+sandbox.CalendarApp.getCalendarsByName = () => [mockTargetCal65];
+sandbox.getTargetCalendar = () => mockTargetCal65;
+sandbox.getAppCalendar = () => mockTargetCal65;
 
 const delRes65 = sandbox.deleteScheduleTaskFromWeb(
   2,
@@ -5862,7 +5868,7 @@ assertTest('deleteScheduleTaskFromWeb: 성공(success: true) 반환 검증',
   delRes65 && delRes65.success === true
 );
 assertTest('deleteScheduleTaskFromWeb: 구글 캘린더 일정(cal-event-to-delete-1029) 연동 삭제 검증',
-  deletedCalEventId === 'cal-event-to-delete-1029' && deletedCalEventsCount === 1
+  deletedCalEventId === 'cal-event-to-delete-1029' && deletedCalEventsCount >= 1
 );
 assertTest('deleteScheduleTaskFromWeb: 스프레드시트 2행 영구 삭제(deleteRow) 실행 검증',
   deletedSheetRowNum === 2
@@ -5885,6 +5891,45 @@ const doGetDelRes = sandbox.doGet({
 assertTest('doGet: action=deleteScheduleTask 호출 및 JSON 응답 반환 검증',
   doGetDelRes && typeof doGetDelRes.getContent === 'function' &&
   JSON.parse(doGetDelRes.getContent()).success === true
+);
+
+// ========================================================
+// 🧹 Step 66: 삭제 일정 캘린더 동기화 잔여물(고아 일정) 즉시 자동 청소 QA
+// ========================================================
+console.log('\n🧹 [Step 66: 삭제 일정 캘린더 잔여물 즉시 자동 청소 QA]');
+
+// 1. getAppCalendar 별칭 함수 검증
+assertTest('getAppCalendar: getTargetCalendar 호환 별칭 함수 정의 검증',
+  typeof sandbox.getAppCalendar === 'function' && typeof sandbox.getTargetCalendar === 'function'
+);
+
+// 2. doGet: action=cleanupOrphans 엔드포인트 검증
+const doGetCleanupRes = sandbox.doGet({
+  parameter: {
+    action: 'cleanupOrphans'
+  }
+});
+assertTest('doGet: action=cleanupOrphans 엔드포인트 호출 및 정상 응답 검증',
+  doGetCleanupRes && typeof doGetCleanupRes.getContent === 'function' &&
+  JSON.parse(doGetCleanupRes.getContent()).success === true
+);
+
+// 3. handleSheetChangeTrigger: 행 삭제(REMOVE_ROW) 시 디바운스 대기 없이 즉시 cleanupOrphanCalendarEventsSilent 호출 검증
+const changeTriggerCode = code.slice(code.indexOf('function handleSheetChangeTrigger(e)'), code.indexOf('function cleanupOrphanCalendarEventsSilent('));
+assertTest('handleSheetChangeTrigger: REMOVE_ROW 시 디바운스 대기 없이 cleanupOrphanCalendarEventsSilent 즉시 호출 검증',
+  changeTriggerCode.indexOf('cleanupOrphanCalendarEventsSilent(sheet, cal)') !== -1 &&
+  changeTriggerCode.indexOf('DEBOUNCE_SCHEDULED') === -1
+);
+
+// 4. deleteScheduleTaskFromWeb 내 잔여 중복 일정(break 없는 다중 삭제) 및 삭제 후 cleanupOrphanCalendarEventsSilent 호출 검증
+const delTaskWebCode = code.slice(code.indexOf('function deleteScheduleTaskFromWeb('), code.indexOf('function addScheduleTaskFromWeb('));
+const candLoopCode = delTaskWebCode.slice(delTaskWebCode.indexOf('for (var ce = 0; ce < candEvents.length; ce++)'), delTaskWebCode.indexOf('// 4단계:'));
+assertTest('deleteScheduleTaskFromWeb: 동일 공종 다중 잔여 일정 검색 루프 내 break 제거 검증',
+  candLoopCode.indexOf('Logger.log("✅ 캘린더 중복/잔여 일정 연동 삭제 성공:') !== -1 &&
+  candLoopCode.indexOf('break;') === -1
+);
+assertTest('deleteScheduleTaskFromWeb: 시트 행 삭제 직후 cleanupOrphanCalendarEventsSilent 즉시 호출 검증',
+  delTaskWebCode.indexOf('cleanupOrphanCalendarEventsSilent(sheet, cal)') !== -1
 );
 
 

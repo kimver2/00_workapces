@@ -1330,46 +1330,33 @@ function handleSheetChangeTrigger(e) {
     var ss = e.source || getAppSpreadsheet();
     if (!ss) return;
 
-      // 1) 삭제된 행이 대시보드 달력에서도 즉시 사라지도록 새로고침
-      refreshDashboardCalendar(ss);
+    // 1) 삭제된 행이 대시보드 달력에서도 즉시 사라지도록 새로고침
+    refreshDashboardCalendar(ss);
 
-      // 1-1) 구성원 시트 행 삭제 가능성 대비 현장데이터 담당자 드롭다운 유효성 검사 동기화
-      var siteSheetForVal = findSiteScheduleSheet(ss);
-      if (siteSheetForVal) {
-        applySiteScheduleValidations(siteSheetForVal);
-      }
-
-      var props = PropertiesService.getScriptProperties();
-      var syncMode = props.getProperty("SYNC_MODE") || "DEBOUNCE";
-      if (syncMode === "MANUAL") return;
-
-      // 2) 유령 일정 청소 필요 플래그 마킹
-      props.setProperty("NEEDS_ORPHAN_CLEANUP", "true");
-
-      if (syncMode === "REALTIME") {
-        // 실시간 모드면 즉시 캘린더 유령 일정 삭제 실행
-        var sheet = findSiteScheduleSheet(ss);
-        var cal = getTargetCalendar();
-        if (sheet && cal) {
-          cleanupOrphanCalendarEventsSilent(sheet, cal);
-          props.deleteProperty("NEEDS_ORPHAN_CLEANUP");
-        }
-      } else if (syncMode === "DEBOUNCE") {
-        // 디바운스 모드면 1분 뒤 백그라운드 동기화 시 일괄 삭제되도록 예약
-        props.setProperty("LAST_EDIT_MS", String(Date.now()));
-        if (props.getProperty("DEBOUNCE_SCHEDULED") !== "true") {
-          cleanupDebouncedTriggers();
-          ScriptApp.newTrigger("runDebouncedSync")
-            .timeBased()
-            .after(60 * 1000)
-            .create();
-          props.setProperty("DEBOUNCE_SCHEDULED", "true");
-        }
-      }
-    } catch (err) {
-      Logger.log("행 삭제 감지 트리거 에러: " + err.toString());
+    // 1-1) 구성원 시트 행 삭제 가능성 대비 현장데이터 담당자 드롭다운 유효성 검사 동기화
+    var siteSheetForVal = findSiteScheduleSheet(ss);
+    if (siteSheetForVal) {
+      applySiteScheduleValidations(siteSheetForVal);
     }
+
+    var syncMode = props ? (props.getProperty("SYNC_MODE") || "DEBOUNCE") : "DEBOUNCE";
+    if (syncMode === "MANUAL") return;
+
+    // 2) 행 삭제(REMOVE_ROW)는 사용자의 명시적인 삭제 작업이므로,
+    // 디바운스 대기 없이 즉시 캘린더 고아 일정을 무음 청소하여 잔여물이 남지 않도록 100% 즉시 보장!
+    var sheet = findSiteScheduleSheet(ss);
+    var cal = getTargetCalendar();
+    if (sheet && cal) {
+      cleanupOrphanCalendarEventsSilent(sheet, cal);
+      if (props) {
+        props.deleteProperty("NEEDS_ORPHAN_CLEANUP");
+        props.setProperty("LAST_ORPHAN_CLEANUP_MS", String(Date.now()));
+      }
+    }
+  } catch (err) {
+    Logger.log("행 삭제 감지 트리거 에러: " + err.toString());
   }
+}
 
 /**
  * [신규] 백그라운드 무음 유령(고아) 캘린더 일정 자동 청소기
@@ -2564,6 +2551,13 @@ function getTargetCalendar() {
   // 절대 개인 캘린더(getDefaultCalendar)에 대신 넣거나 새 캘린더(createCalendar)를 만들지 않고 null을 반환하여 오염을 막습니다!
   Logger.log("⚠️ 지정된 '현장 일정' 캘린더에 접근할 수 없습니다. (캘린더 공유 권한을 확인하세요)");
   return null;
+}
+
+/**
+ * getAppCalendar() 안전 호환 별칭 (getTargetCalendar와 100% 동일)
+ */
+function getAppCalendar() {
+  return getTargetCalendar();
 }
 
 /**
@@ -5184,9 +5178,27 @@ function getAppSpreadsheet() {
   try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch(e) {}
   if (!ss) {
     try {
-      var savedId = PropertiesService.getDocumentProperties().getProperty("SPREADSHEET_ID");
+      var savedId = null;
+      try {
+        var sp = PropertiesService.getScriptProperties();
+        if (sp) savedId = sp.getProperty("SPREADSHEET_ID");
+      } catch(eSp) {}
+      if (!savedId) {
+        try {
+          var dp = PropertiesService.getDocumentProperties();
+          if (dp) savedId = dp.getProperty("SPREADSHEET_ID");
+        } catch(eDp) {}
+      }
       if (savedId) ss = SpreadsheetApp.openById(savedId);
     } catch(e) {}
+  }
+  if (ss) {
+    try {
+      var sp2 = PropertiesService.getScriptProperties();
+      if (sp2 && !sp2.getProperty("SPREADSHEET_ID")) {
+        sp2.setProperty("SPREADSHEET_ID", ss.getId());
+      }
+    } catch(eSave) {}
   }
   return ss;
 }
@@ -6240,14 +6252,26 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
     // 2단계: 삭제 전 정보 추출 (캘린더 이벤트 ID, 현장명, 공종명, 날짜)
     var rowVals = sheet.getRange(rowNum, 1, 1, 10).getValues()[0];
     var actualSite = String(rowVals[0] || "").trim() || siteName;
+    if (!actualSite && rowNum > 2) {
+      try {
+        var prevSites = sheet.getRange(2, 1, rowNum - 2, 1).getValues();
+        for (var ps = prevSites.length - 1; ps >= 0; ps--) {
+          var pSite = String(prevSites[ps][0] || "").trim();
+          if (pSite) {
+            actualSite = pSite;
+            break;
+          }
+        }
+      } catch (eSiteFallback) {}
+    }
     var actualDate = rowVals[1];
     var actualTask = String(rowVals[2] || "").trim() || taskName;
     var actualEventId = String(rowVals[8] || "").trim() || eventId;
 
     // 3단계: 구글 캘린더에서 해당 일정 삭제
     var deletedFromCalendar = false;
+    var cal = (typeof getTargetCalendar === "function") ? getTargetCalendar() : (typeof getAppCalendar === "function" ? getAppCalendar() : null);
     try {
-      var cal = getAppCalendar();
       if (cal) {
         // 3-1. Event ID로 캘린더 일정 삭제
         if (actualEventId) {
@@ -6263,25 +6287,38 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
           }
         }
 
-        // 3-2. Event ID로 삭제되지 않았거나 없는 경우, 날짜 및 제목 매칭으로 폴백 삭제
-        if (!deletedFromCalendar && actualDate) {
+        // 3-2. 동일 날짜 및 공종의 중복/잔여 일정(예: ▶️, 🛠️ 등)을 모두 추적하여 전량 삭제!
+        if (actualTask) {
           try {
-            var p = parseScheduleDateRange(actualDate);
-            if (p && p.startDate) {
-              var sDate = new Date(p.startDate.getTime() - 24 * 60 * 60 * 1000);
-              var eDate = new Date((p.endDate || p.startDate).getTime() + 24 * 60 * 60 * 1000);
-              var candEvents = cal.getEvents(sDate, eDate);
-              for (var ce = 0; ce < candEvents.length; ce++) {
-                var cand = candEvents[ce];
-                var candTitle = cand.getTitle() || "";
-                if (isSystemSiteScheduleEvent(cand)) {
-                  if (candTitle.indexOf(actualTask) !== -1 && (!actualSite || candTitle.indexOf(actualSite) !== -1)) {
-                    cand.deleteEvent();
-                    deletedFromCalendar = true;
-                    Logger.log("✅ 캘린더 날짜/공종 매칭 삭제 성공: " + candTitle);
-                    break;
-                  }
-                }
+            var sDate = null;
+            var eDate = null;
+            if (actualDate) {
+              var p = parseScheduleDateRange(actualDate);
+              if (p && p.startDate) {
+                sDate = new Date(p.startDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+                eDate = new Date((p.endDate || p.startDate).getTime() + 3 * 24 * 60 * 60 * 1000);
+              }
+            }
+            if (!sDate) {
+              var nowD = new Date();
+              sDate = new Date(nowD.getTime() - 60 * 24 * 60 * 60 * 1000);
+              eDate = new Date(nowD.getTime() + 180 * 24 * 60 * 60 * 1000);
+            }
+
+            var candEvents = cal.getEvents(sDate, eDate);
+            for (var ce = 0; ce < candEvents.length; ce++) {
+              var cand = candEvents[ce];
+              if (!isSystemSiteScheduleEvent(cand)) continue; // 개인 일정 보호
+
+              var candTitle = cand.getTitle() || "";
+              var matchTask = candTitle.indexOf(actualTask) !== -1;
+              var matchSite = !actualSite || candTitle.indexOf(actualSite) !== -1;
+              if (matchTask && matchSite) {
+                try {
+                  cand.deleteEvent();
+                  deletedFromCalendar = true;
+                  Logger.log("✅ 캘린더 중복/잔여 일정 연동 삭제 성공: " + candTitle);
+                } catch (eCandDel) {}
               }
             }
           } catch (eFallback) {
@@ -6310,6 +6347,19 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
     // 5단계: 스프레드시트에서 행 영구 삭제
     sheet.deleteRow(rowNum);
     SpreadsheetApp.flush();
+
+    // 5-1단계: 시트에서 행이 삭제된 후, 캘린더 전체에서 남아있는 고아(유령) 일정 즉시 무음 청소!
+    try {
+      if (cal) {
+        var orphanCleaned = cleanupOrphanCalendarEventsSilent(sheet, cal);
+        if (orphanCleaned > 0) {
+          deletedFromCalendar = true;
+          Logger.log("✅ 캘린더 잔여 고아 일정 추가 청소 완료: " + orphanCleaned + "건");
+        }
+      }
+    } catch (eCleanOrphan) {
+      Logger.log("삭제 후 고아 일정 청소 에러: " + eCleanOrphan.toString());
+    }
 
     // 6단계: 캐시 무효화 및 변경 타임스탬프 기록
     invalidateDashboardServerCache();
@@ -6574,6 +6624,18 @@ function doGet(e) {
     var delRes = deleteScheduleTaskFromWeb(row, targetSite, targetTask, targetId, isArchBool);
     return ContentService.createTextOutput(JSON.stringify(delRes))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-1) 캘린더 고아/유령 일정 즉시 청소 요청 (action=cleanupOrphans)
+  if (action === "cleanupOrphans") {
+    var cleanCal = (typeof getTargetCalendar === "function") ? getTargetCalendar() : (typeof getAppCalendar === "function" ? getAppCalendar() : null);
+    var cleanCount = (sheet && cleanCal) ? cleanupOrphanCalendarEventsSilent(sheet, cleanCal) : 0;
+    invalidateDashboardServerCache();
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      cleanedCount: cleanCount,
+      message: cleanCount + "건의 캘린더 고아 일정이 정리되었습니다."
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 
   // 0-1) 현장별 병합 및 날짜 정렬 + 1시간 트리거 보장 요청 (action=consolidateAndSort)
@@ -8059,6 +8121,23 @@ function getSidebarDashboardData(forceRefresh) {
     if (!sheet) return { error: "현장데이터 시트를 찾을 수 없습니다." };
 
     ensureHourlySortTriggerInstalled();
+
+    // [유령/고아 일정 자동 치유]: 유령 청소 플래그 또는 강제 새로고침(forceRefresh) 또는 15분 경과 시 무음 자동 청소
+    try {
+      var props = PropertiesService.getScriptProperties();
+      var lastOrphanMs = parseInt((props && props.getProperty("LAST_ORPHAN_CLEANUP_MS")) || "0", 10);
+      var nowMs = Date.now();
+      if (forceRefresh === true || (props && props.getProperty("NEEDS_ORPHAN_CLEANUP") === "true") || (nowMs - lastOrphanMs > 15 * 60 * 1000)) {
+        var calForClean = (typeof getTargetCalendar === "function") ? getTargetCalendar() : (typeof getAppCalendar === "function" ? getAppCalendar() : null);
+        if (calForClean && sheet) {
+          cleanupOrphanCalendarEventsSilent(sheet, calForClean);
+          if (props) {
+            props.deleteProperty("NEEDS_ORPHAN_CLEANUP");
+            props.setProperty("LAST_ORPHAN_CLEANUP_MS", String(nowMs));
+          }
+        }
+      }
+    } catch (eOrphanSweep) {}
 
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) {
