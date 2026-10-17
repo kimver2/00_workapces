@@ -6115,10 +6115,10 @@ assertTest('Step 68-4: 미디어 쿼리 내 모바일 헤더/하단바/모바일
 );
 
 // 5. PC 캘린더 풀사이즈 및 세로 칸 확장 CSS 검증
-assertTest('Step 68-5: PC 캘린더 화면 전체 높이 및 일정 과다 시 세로 칸 확장 CSS (height: 100vh, grid-auto-rows: minmax(125px, auto)) 검증',
+assertTest('Step 68-5: PC 캘린더 화면 전체 높이 및 일정 과다 시 세로 칸 확장 CSS (height: 100vh, grid-auto-rows: minmax(max-content, 1fr)) 검증',
   dashHtml68.indexOf('height: 100vh !important;') !== -1 &&
   dashHtml68.indexOf('overflow: hidden !important;') !== -1 &&
-  dashHtml68.indexOf('grid-auto-rows: minmax(125px, auto);') !== -1
+  dashHtml68.indexOf('grid-auto-rows: minmax(max-content, 1fr);') !== -1
 );
 
 // 6. PC 클라이언트 스크립트 함수 탑재 검증
@@ -6149,11 +6149,11 @@ assertTest('Step 68-7: PC 접속 시 isCalendarMode = true 기본 활성화, pcM
 // ============================================================================
 console.log('\n[Step 69] PC 화면 4대 개선사항 무결성 검증...');
 
-// 1. 하루 일정 과다 시 세로 칸 자동 확장 및 잘림 방지 CSS 검증
-assertTest('Step 69-1: .cal-day-cell에 height: auto !important 및 overflow: visible !important 탑재로 일정 잘림 방지 검증',
-  dashHtml68.indexOf('.cal-day-cell { min-height: 125px !important; height: auto !important; overflow: visible !important;') !== -1 &&
-  dashHtml68.indexOf('.cal-events-list { gap: 3px; overflow: visible !important; }') !== -1 &&
-  dashHtml68.indexOf('#calGrid { flex: 1; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(125px, auto);') !== -1
+// 1. 하루 일정 과다 시 세로 칸 자동 확장 및 달력 배경 잘림 방지 CSS 검증
+assertTest('Step 69-1: .cal-day-cell에 height: 100% !important, #calGrid에 minmax(max-content, 1fr), .cal-events-list에 flex: 1 0 auto 탑재로 일정 과다 시 달력 배경 자동 확장 및 잘림 방지 검증',
+  dashHtml68.indexOf('.cal-day-cell { min-height: 125px !important; height: 100% !important; display: flex !important; flex-direction: column !important; overflow: visible !important;') !== -1 &&
+  dashHtml68.indexOf('.cal-events-list { gap: 3px; overflow: visible !important; flex: 1 0 auto !important; height: auto !important; min-height: min-content !important; }') !== -1 &&
+  dashHtml68.indexOf('#calGrid { flex: 1; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(max-content, 1fr);') !== -1
 );
 
 // 2. 진행현장 [전체보기] 우측에 [선택해제] 버튼 탑재 및 다중 선택 무결성 검증
@@ -6181,6 +6181,12 @@ assertTest('Step 69-4: 공정 상태 현황(pc-kpi-summary-grid)이 새 일정 �
   miniCalIndex !== -1 &&
   createBtnIndex < kpiGridIndex &&
   kpiGridIndex < miniCalIndex
+);
+// 5. 1200px 이상 와이드 데스크톱 및 이벤트 리스트 intrinsic height 보장 검증
+assertTest('Step 69-5: 1200px 이상 와이드 화면에서도 minmax(max-content, 1fr) 적용 및 cal-day-cell box-sizing 무결성 검증',
+  dashHtml68.indexOf('#calGrid { grid-auto-rows: minmax(max-content, 1fr); }') !== -1 &&
+  dashHtml68.indexOf('box-sizing: border-box;') !== -1 &&
+  dashHtml68.indexOf('min-height: min-content !important;') !== -1
 );
 
 

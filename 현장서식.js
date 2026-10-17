@@ -8971,14 +8971,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '  #contentArea { flex: 1; height: 100%; max-width: 100% !important; margin: 0 !important; padding: 20px 24px !important; overflow-y: auto; }';
   html += '  .cal-mode-bar, .cal-nav-bar { display: none !important; }';
   html += '  .cal-weekdays { font-size: 12.5px; font-weight: 800; padding: 8px 0; background: #f8fafc; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }';
-  html += '  #calGrid { flex: 1; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(125px, auto); background: #e2e8f0; gap: 1px; overflow-y: auto; }';
+  html += '  #calGrid { flex: 1; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(max-content, 1fr); background: #e2e8f0; gap: 1px; overflow-y: auto; }';
   html += '  #calWeekList { flex: 1; overflow-y: auto; padding: 16px 20px; }';
-  html += '  .cal-day-cell { min-height: 125px !important; height: auto !important; overflow: visible !important; padding: 5px 6px; }';
+  html += '  .cal-day-cell { min-height: 125px !important; height: 100% !important; display: flex !important; flex-direction: column !important; overflow: visible !important; padding: 5px 6px; box-sizing: border-box; }';
   html += '  .cal-day-header { font-size: 12px; margin-bottom: 4px; }';
   html += '  .cal-day-num { width: 22px; height: 22px; font-size: 12px; }';
   html += '  .cal-weather-badge { font-size: 9.5px; padding: 1px 4px; }';
   html += '  .cal-holiday-name { font-size: 9.5px; }';
-  html += '  .cal-events-list { gap: 3px; overflow: visible !important; }';
+  html += '  .cal-events-list { gap: 3px; overflow: visible !important; flex: 1 0 auto !important; height: auto !important; min-height: min-content !important; }';
   html += '  .cal-event-pill { padding: 3px 6px; font-size: 11px; line-height: 1.35; border-radius: 4px; margin-bottom: 2px; }';
   html += '  .cal-pill-text { font-size: 11px !important; letter-spacing: normal !important; }';
   html += '  .cal-sh-box { width: 8px; height: 8px; margin-right: 3px; }';
@@ -8988,7 +8988,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '@keyframes pcModalFadeIn { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }';
   html += '@media (min-width: 1200px) {';
-  html += '  #calGrid { grid-auto-rows: minmax(150px, auto); }';
+  html += '  #calGrid { grid-auto-rows: minmax(max-content, 1fr); }';
   html += '  .cal-day-cell { min-height: 150px !important; padding: 6px 8px; }';
   html += '  .cal-event-pill { padding: 4px 8px; font-size: 11.5px; }';
   html += '  .cal-pill-text { font-size: 11.5px !important; }';
