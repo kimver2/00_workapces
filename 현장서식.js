@@ -2646,13 +2646,23 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
   }
 
   if (event) {
-    try {
-      event.removeAllReminders(); // 🔕 구글 캘린더 기본 알림(전날 알림 등) 자동 차단
-    } catch(eRem) {}
-    // 동일한 유형 내에서의 속성 업데이트
-    event.setTitle(details.title);
-    event.setDescription(details.description);
-    event.setLocation(details.siteName);
+    // [Smart Diff Check: 실제 변경된 속성만 핀포인트 호출하여 모바일/단일 행 반영 속도 3배 가속]
+    var curTitle = "";
+    var curDesc = "";
+    var curLoc = "";
+    try { curTitle = event.getTitle(); } catch(eT) {}
+    try { curDesc = event.getDescription(); } catch(eD) {}
+    try { curLoc = event.getLocation(); } catch(eL) {}
+
+    if (curTitle !== details.title) {
+      event.setTitle(details.title);
+    }
+    if (curDesc !== details.description) {
+      event.setDescription(details.description);
+    }
+    if (curLoc !== details.siteName) {
+      event.setLocation(details.siteName);
+    }
     if (details.color) {
       try {
         if (event.getColor() !== details.color) {
@@ -2660,14 +2670,45 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
         }
       } catch (e) {}
     }
-    if (details.parsedDate.hasTime) {
-      event.setTime(details.parsedDate.startTime, details.parsedDate.endTime);
-    } else {
-      if (details.parsedDate.isRange) {
-        event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
-      } else {
-        event.setAllDayDate(details.parsedDate.startDate);
+
+    var dateAlreadyMatches = false;
+    try {
+      var isEvAllDay = event.isAllDayEvent();
+      var evStart = isEvAllDay ? event.getAllDayStartDate() : event.getStartTime();
+      var evEnd = isEvAllDay ? event.getAllDayEndDate() : event.getEndTime();
+      if (details.parsedDate.hasTime) {
+        if (!isEvAllDay && evStart && evEnd) {
+          dateAlreadyMatches = (evStart.getTime() === details.parsedDate.startTime.getTime() &&
+                                evEnd.getTime() === details.parsedDate.endTime.getTime());
+        }
+      } else if (isEvAllDay && evStart) {
+        if (details.parsedDate.isRange) {
+          dateAlreadyMatches = isDateEqual(evStart, details.parsedDate.startDate) && isDateEqual(evEnd, details.parsedDate.endDate);
+        } else {
+          dateAlreadyMatches = isDateEqual(evStart, details.parsedDate.startDate);
+        }
       }
+    } catch(eDt) {
+      dateAlreadyMatches = false;
+    }
+
+    if (!dateAlreadyMatches) {
+      if (details.parsedDate.hasTime) {
+        event.setTime(details.parsedDate.startTime, details.parsedDate.endTime);
+      } else {
+        if (details.parsedDate.isRange) {
+          event.setAllDayDates(details.parsedDate.startDate, details.parsedDate.endDate);
+        } else {
+          event.setAllDayDate(details.parsedDate.startDate);
+        }
+      }
+      try {
+        event.removeAllReminders(); // 🔕 날짜/시간 재설정 시 부활할 수 있는 기본 알림 차단
+      } catch(eRem) {}
+    } else if (!skipDashboardRefresh) {
+      try {
+        event.removeAllReminders(); // 🔕 구글 캘린더 기본 알림(전날 알림 등) 자동 차단
+      } catch(eRem2) {}
     }
     sheet.getRange(row, 10).setValue(Date.now());
   } else {
@@ -2732,7 +2773,8 @@ function syncSingleRowToCalendar(sheet, row, forceSheetToCal, skipDashboardRefre
   }
 
   // [신규 핵심] 해당 행의 캘린더 일정이 확정된 후, 동일 날짜에 존재하는 잉여 중복/유령 일정 자동 정리
-  if (event) {
+  // (모바일 빠른 저장 skipDashboardRefresh=true 시에는 전체 시트/캘린더 중복 스캔을 생략하고 백그라운드에 위임하여 응답속도 극대화)
+  if (event && !skipDashboardRefresh) {
     try {
       if (!allSheetIds) allSheetIds = getSheetCalendarIds(sheet);
       cleanDuplicateCalendarEventsOnDate(cal, details, event.getId(), allSheetIds);
@@ -5723,7 +5765,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     var lock = LockService.getScriptLock();
     var hasLock = false;
     try {
-      hasLock = lock.tryLock(2000); // 가볍게 2초만 시도
+      hasLock = lock.tryLock(300); // 0.3초 즉시 시도 (대기 지연 제거)
     } catch(eLock) {
       hasLock = false;
     }
@@ -5731,10 +5773,6 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     try {
       // 캘린더 및 대시보드 동기화 (forceSheetToCal = true, skipDashboardRefresh = true 모바일 반응속도 극대화)
       syncSingleRowToCalendar(sheet, rowNum, true, true);
-      if (!isArchived) {
-        try { cleanNonDelayedRowBackgroundsSilent(sheet); } catch(eBg) {}
-      }
-      SpreadsheetApp.flush();
     } catch(errCal) {
       Logger.log("캘린더 즉시 반영 지연 (타임스탬프 기반 백그라운드 동기화로 자동 처리): " + errCal.toString());
       try {
@@ -5779,8 +5817,10 @@ function doGet(e) {
   var newDate = p.date;
   var newManager = p.manager;
 
-  var ss = getAppSpreadsheet();
-  var sheet = findSiteScheduleSheet(ss);
+  // [초고속 초기 응답]: 대시보드 전체 화면 접속(!row && !action) 시 SpreadsheetApp.open 지연(1~1.5초) 완전 생략
+  var needSheet = (row >= 2 || !!action || !!targetId || !!targetSite || !!targetTask) && (view !== "dashboard" || !!action);
+  var ss = needSheet ? getAppSpreadsheet() : null;
+  var sheet = ss ? findSiteScheduleSheet(ss) : null;
 
   // [스마트 행 자동 보정 엔진]
   // 신규 현장 추가, 행 삭제, 정렬 등으로 인해 시트 행 번호가 밀린 경우 실시간 자동 재탐색
@@ -7576,7 +7616,7 @@ function buildSidebarDashboardHtml(mode) {
   var webAppUrl = getWebAppUrl();
   var html = "";
   html += '<!DOCTYPE html><html><head><meta charset="utf-8">';
-  html += '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>';
+  html += '<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>';
   if (isMobile) {
     html += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">';
     html += '<meta name="apple-mobile-web-app-capable" content="yes">';
@@ -8824,9 +8864,43 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
   html += '';
+  html += 'function renderDashboardPayload(data) {';
+  html += '  if (!data || data.error) return;';
+  html += '  rawData = data;';
+  html += '  if (data.holidays && typeof data.holidays === "object") {';
+  html += '    activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS, data.holidays);';
+  html += '  }';
+  html += '  const kpi = data.kpi || {};';
+  html += '  const elSites = document.getElementById("kpiSites");';
+  html += '  const elToday = document.getElementById("kpiToday");';
+  html += '  const elDelay = document.getElementById("kpiDelay");';
+  html += '  if (elSites) elSites.innerText = (kpi.activeSites !== undefined) ? kpi.activeSites : (kpi.totalSites || 0);';
+  html += '  if (elToday) elToday.innerText = kpi.todayCount || 0;';
+  html += '  if (elDelay) elDelay.innerText = kpi.delayedCount || 0;';
+  html += '  renderMemberFilterTabs(data.members || []);';
+  html += '  updateCheckedStatusUI();';
+  html += '  if (isCalendarMode) renderCurrentCalendarView(); else renderList();';
+  html += '  loadWeatherData();';
+  html += '}';
+  html += '';
   html += 'function loadData(isManual) {';
   html += '  if (isManual === true) isManualRefreshPending = true;';
-  html += '  setRefreshLoadingState(true);';
+  html += '  if (isManual !== true && !rawData) {';
+  html += '    try {';
+  html += '      if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") {';
+  html += '        const cachedStr = localStorage.getItem("ws_dashboard_cache_v1");';
+  html += '        if (cachedStr) {';
+  html += '          const cachedObj = JSON.parse(cachedStr);';
+  html += '          if (cachedObj && Array.isArray(cachedObj.sites)) {';
+  html += '            renderDashboardPayload(cachedObj);';
+  html += '          }';
+  html += '        }';
+  html += '      }';
+  html += '    } catch(eCache) {}';
+  html += '  }';
+  html += '  if (isManual === true || !rawData) {';
+  html += '    setRefreshLoadingState(true);';
+  html += '  }';
   html += '  if (!isCalendarMode && !rawData) {';
   html += '    const ca = document.getElementById("contentArea");';
   html += '    if (ca) ca.innerHTML = \'<div class="loading-state"><div class="spinner"></div><p class="loading-text">현장 데이터 불러오는 중...</p></div>\';';
@@ -8836,12 +8910,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '    .withFailureHandler(onError)';
   html += '    .getSidebarDashboardData();';
   html += '}';
+  html += '';
+  html += 'function loadDataSilently() {';
+  html += '  google.script.run';
+  html += '    .withSuccessHandler(onDataLoaded)';
+  html += '    .withFailureHandler(function() {})';
+  html += '    .getSidebarDashboardData();';
+  html += '}';
 
   html += 'function onError(err) {';
   html += '  setRefreshLoadingState(false);';
   html += '  isManualRefreshPending = false;';
-  html += '  const ca = document.getElementById("contentArea");';
-  html += '  if (ca) ca.innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.<br><small style="color:#ef4444;">\' + escapeHtml((err && err.message) || err || "") + \'</small></div>\';';
+  html += '  if (!rawData) {';
+  html += '    const ca = document.getElementById("contentArea");';
+  html += '    if (ca) ca.innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.<br><small style="color:#ef4444;">\' + escapeHtml((err && err.message) || err || "") + \'</small></div>\';';
+  html += '  }';
   html += '  showToast("⚠️ 데이터 새로고침 실패: " + ((err && err.message) || err || ""));';
   html += '}';
 
@@ -8849,27 +8932,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '  setRefreshLoadingState(false);';
   html += '  const wasManual = isManualRefreshPending;';
   html += '  isManualRefreshPending = false;';
-  html += '  rawData = data;';
   html += '  if (!data) {';
-  html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.</div>\';';
+  html += '    if (!rawData) document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 데이터를 불러오지 못했습니다.</div>\';';
   html += '    return;';
   html += '  }';
   html += '  if (data.error) {';
-  html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ \' + escapeHtml(data.error) + \'</div>\';';
+  html += '    if (!rawData) document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ \' + escapeHtml(data.error) + \'</div>\';';
   html += '    return;';
   html += '  }';
   html += '  try {';
-  html += '    if (data.holidays && typeof data.holidays === "object") {';
-  html += '      activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS, data.holidays);';
-  html += '    }';
-  html += '    const kpi = data.kpi || {};';
-  html += '    document.getElementById("kpiSites").innerText = (kpi.activeSites !== undefined) ? kpi.activeSites : (kpi.totalSites || 0);';
-  html += '    document.getElementById("kpiToday").innerText = kpi.todayCount || 0;';
-  html += '    document.getElementById("kpiDelay").innerText = kpi.delayedCount || 0;';
-  html += '    renderMemberFilterTabs(data.members || []);';
-  html += '    updateCheckedStatusUI();';
-  html += '    if (isCalendarMode) renderCurrentCalendarView(); else renderList();';
-  html += '    loadWeatherData();';
+  html += '    renderDashboardPayload(data);';
+  html += '    try {';
+  html += '      if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.setItem === "function") {';
+  html += '        localStorage.setItem("ws_dashboard_cache_v1", JSON.stringify(data));';
+  html += '      }';
+  html += '    } catch(eSaveCache) {}';
   html += '    if (wasManual) showToast("✅ 최신 현장 데이터로 새로고침되었습니다.");';
   html += '  } catch (renderErr) {';
   html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 대시보드 렌더링 오류: \' + escapeHtml(renderErr.message || renderErr) + \'</div>\';';
@@ -9505,6 +9582,82 @@ function buildSidebarDashboardHtml(mode) {
   html += '  document.getElementById("sheetShareOff").classList.toggle("active-off", !selectedShare);';
   html += '}';
   html += '';
+  html += 'function applyOptimisticTaskUpdate(taskObj, newStatus, newShare, newMemo, newDateStr, newMgr) {';
+  html += '  if (!taskObj) return;';
+  html += '  taskObj.status = newStatus;';
+  html += '  taskObj.isShared = !!newShare;';
+  html += '  taskObj.memo = newMemo;';
+  html += '  taskObj.manager = newMgr;';
+  html += '  const now = new Date();';
+  html += '  const ty = now.getFullYear(), tm = now.getMonth() + 1, td = now.getDate();';
+  html += '  const todayIso = ty + "-" + (tm < 10 ? "0" + tm : tm) + "-" + (td < 10 ? "0" + td : td);';
+  html += '  if (newDateStr) {';
+  html += '    taskObj.dateDisplay = newDateStr;';
+  html += '    const matches = [];';
+  html += '    const re = /(\\d{2,4})[-./]\\s*(\\d{1,2})[-./]\\s*(\\d{1,2})/g;';
+  html += '    let m;';
+  html += '    while ((m = re.exec(newDateStr)) !== null) {';
+  html += '      let y = parseInt(m[1], 10);';
+  html += '      if (y < 100) y += 2000;';
+  html += '      const mo = parseInt(m[2], 10);';
+  html += '      const da = parseInt(m[3], 10);';
+  html += '      matches.push({ iso: y + "-" + (mo < 10 ? "0" + mo : mo) + "-" + (da < 10 ? "0" + da : da), ms: new Date(y, mo - 1, da).getTime() });';
+  html += '    }';
+  html += '    if (matches.length > 0) {';
+  html += '      taskObj.startDateStr = matches[0].iso;';
+  html += '      taskObj.endDateStr = (matches.length > 1) ? matches[1].iso : matches[0].iso;';
+  html += '      taskObj.dateMs = matches[0].ms;';
+  html += '    }';
+  html += '  }';
+  html += '  const stClean = String(newStatus || "").replace(/\\s+/g, "");';
+  html += '  const isDone = (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1);';
+  html += '  if (taskObj.startDateStr) {';
+  html += '    const eIso = taskObj.endDateStr || taskObj.startDateStr;';
+  html += '    taskObj.isToday = (taskObj.startDateStr <= todayIso && todayIso <= eIso);';
+  html += '    taskObj.isDelayed = (!isDone && !taskObj.isArchived && eIso < todayIso);';
+  html += '  } else if (isDone) {';
+  html += '    taskObj.isDelayed = false;';
+  html += '  }';
+  html += '  if (rawData && Array.isArray(rawData.sites)) {';
+  html += '    let activeSitesCnt = 0, todayCnt = 0, delayCnt = 0;';
+  html += '    rawData.sites.forEach(s => {';
+  html += '      let comp = 0, canc = 0, prog = 0, del = 0, act = 0;';
+  html += '      (s.tasks || []).forEach(t => {';
+  html += '        const sc = String(t.status || "").replace(/\\s+/g, "");';
+  html += '        if (sc.indexOf("완료") !== -1) comp++;';
+  html += '        else if (sc.indexOf("취소") !== -1) canc++;';
+  html += '        else {';
+  html += '          act++;';
+  html += '          if (sc.indexOf("진행") !== -1) prog++;';
+  html += '        }';
+  html += '        if (t.isDelayed) del++;';
+  html += '        if (!t.isArchived) {';
+  html += '          if (t.isToday) todayCnt++;';
+  html += '          if (t.isDelayed) delayCnt++;';
+  html += '        }';
+  html += '      });';
+  html += '      const totalT = (s.tasks || []).length;';
+  html += '      const validT = totalT - canc;';
+  html += '      const allDone = (totalT > 0 && act === 0);';
+  html += '      s.completedTasksCount = comp;';
+  html += '      s.canceledTasksCount = canc;';
+  html += '      s.inProgressTasksCount = prog;';
+  html += '      s.delayedTasksCount = del;';
+  html += '      s.activeTasksCount = act;';
+  html += '      s.validTasksCount = validT;';
+  html += '      s.isAllCompleted = allDone;';
+  html += '      s.progressRate = (validT > 0) ? (allDone ? 100 : Math.min(100, Math.max(0, Math.round((comp / validT) * 100)))) : 0;';
+  html += '      if (!allDone) activeSitesCnt++;';
+  html += '    });';
+  html += '    if (rawData.kpi) {';
+  html += '      rawData.kpi.activeSites = activeSitesCnt;';
+  html += '      rawData.kpi.todayCount = todayCnt;';
+  html += '      rawData.kpi.delayedCount = delayCnt;';
+  html += '    }';
+  html += '    renderDashboardPayload(rawData);';
+  html += '  }';
+  html += '}';
+  html += '';
   html += 'function saveSheetTask() {';
   html += '  if (!curTaskObj) return;';
   html += '  const saveBtn = document.getElementById("sheetSaveBtn");';
@@ -9517,24 +9670,34 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (mgrSelect) {';
   html += '    mgrVal = (mgrSelect.value === "__CUSTOM__") ? (mgrCustom ? mgrCustom.value.trim() : "") : mgrSelect.value.trim();';
   html += '  }';
-  html += '  saveBtn.disabled = true;';
-  html += '  saveBtn.innerText = "저장 중...";';
+  html += '  let targetTask = curTaskObj;';
+  html += '  if (rawData && Array.isArray(rawData.sites)) {';
+  html += '    for (let si = 0; si < rawData.sites.length; si++) {';
+  html += '      const found = (rawData.sites[si].tasks || []).find(t => t.row === curTaskObj.row && !!t.isArchived === !!curTaskObj.isArchived);';
+  html += '      if (found) { targetTask = found; break; }';
+  html += '    }';
+  html += '  }';
+  html += '  const prevSnapshot = Object.assign({}, targetTask);';
+  html += '  applyOptimisticTaskUpdate(targetTask, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
+  html += '  closeCustomDatePicker();';
+  html += '  const overlayEl = document.getElementById("sheetOverlay");';
+  html += '  if (overlayEl) overlayEl.classList.remove("show");';
+  html += '  showToast("✅ [" + (targetTask.taskName || curTaskObj.taskName || "") + "] 일정/담당자/상태가 저장되었습니다!");';
   html += '  const runner = google.script.run';
   html += '    .withSuccessHandler(res => {';
-  html += '      saveBtn.disabled = false;';
-  html += '      saveBtn.innerText = "💾 저장하기";';
+  html += '      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "💾 저장하기"; }';
   html += '      if (res && res.success) {';
-  html += '        closeCustomDatePicker();';
-  html += '        document.getElementById("sheetOverlay").classList.remove("show");';
-  html += '        showToast("✅ [" + curTaskObj.taskName + "] 일정/담당자/상태가 저장되었습니다!");';
-  html += '        loadData();';
+  html += '        loadDataSilently();';
   html += '      } else {';
+  html += '        Object.assign(targetTask, prevSnapshot);';
+  html += '        applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "");';
   html += '        showToast("⚠️ 저장 실패: " + ((res && res.error) || "알 수 없는 오류"));';
   html += '      }';
   html += '    })';
   html += '    .withFailureHandler(err => {';
-  html += '      saveBtn.disabled = false;';
-  html += '      saveBtn.innerText = "💾 저장하기";';
+  html += '      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "💾 저장하기"; }';
+  html += '      Object.assign(targetTask, prevSnapshot);';
+  html += '      applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "");';
   html += '      showToast("⚠️ 에러: " + (err.message || err));';
   html += '    });';
   html += '  if (curTaskObj.isArchived) {';
@@ -9554,11 +9717,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '    .replace(/\'/g, "&#39;");';
   html += '}';
 
+  html += 'let hasInitialLoadTriggered = false;';
+  html += 'function triggerInitialLoadOnce() {';
+  html += '  if (hasInitialLoadTriggered) return;';
+  html += '  hasInitialLoadTriggered = true;';
+  html += '  loadData();';
+  html += '}';
   html += 'if (document.readyState === "complete" || document.readyState === "interactive") {';
-  html += '  setTimeout(loadData, 10);';
+  html += '  setTimeout(triggerInitialLoadOnce, 10);';
   html += '} else {';
-  html += '  window.addEventListener("DOMContentLoaded", loadData);';
-  html += '  window.addEventListener("load", loadData);';
+  html += '  window.addEventListener("DOMContentLoaded", triggerInitialLoadOnce);';
+  html += '  window.addEventListener("load", triggerInitialLoadOnce);';
   html += '}';
   html += '</script>';
   html += '</body></html>';

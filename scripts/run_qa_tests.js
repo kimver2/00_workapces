@@ -5060,6 +5060,167 @@ assertTest('renderWeeklyCalendar(주간 캘린더): 주간 카드 일정 알약 
   mockElems57.calWeekList.innerHTML.indexOf('>🛠️</span>') !== -1
 );
 
+// ============================================================================
+// [Step 58] 모바일 로딩 및 수정 속도 초고속화 QA 검증
+// ============================================================================
+console.log('\n--- [Step 58] 모바일 로딩 및 수정 속도 초고속화 QA 검증 ---');
+
+// 1) html2canvas defer 및 triggerInitialLoadOnce 적용 검증
+assertTest('buildSidebarDashboardHtml: html2canvas 스크립트 defer 적용 및 triggerInitialLoadOnce 중복 실행 방지 가드 포함 검증',
+  dashHtml57.indexOf('<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>') !== -1 &&
+  dashHtml57.indexOf('function triggerInitialLoadOnce()') !== -1
+);
+
+// 2) doGet(e) 모바일 대시보드 진입 시 Lazy Spreadsheet 오픈 (시트 I/O 0회) 검증
+const origGetAppSs58 = sandbox.getAppSpreadsheet;
+let getAppSsCalls58 = 0;
+sandbox.getAppSpreadsheet = function() {
+  getAppSsCalls58++;
+  return origGetAppSs58.apply(this, arguments);
+};
+sandbox.doGet({ parameter: {} });
+sandbox.doGet({ parameter: { view: 'dashboard' } });
+assertTest('doGet: 모바일 대시보드 초기 접속 시 불필요한 SpreadsheetApp.openById 호출 완전 생략 (0회) 검증',
+  getAppSsCalls58 === 0
+);
+sandbox.getAppSpreadsheet = origGetAppSs58;
+
+// 3) syncSingleRowToCalendar 스마트 Diff 체크 검증 (동일 속성일 때 불필요한 Calendar API set* 호출 0회)
+let calSetCalls58 = 0;
+const mockExistingEvent58 = {
+  getId: () => 'evt-fast-58@google.com',
+  getTitle: () => '⚡ [진행] 보라매 파크시티 - 목공 (조항만)',
+  setTitle: () => { calSetCalls58++; },
+  getDescription: () => '현장명: 보라매 파크시티\n작업내용: 목공\n상태: 진행 중\n담당자: 조항만\n비고: 기존메모\n\n📱 상태 변경 및 일정 관리 대시보드:\nhttps://script.google.com/macros/s/test/exec?view=dashboard&id=ID-FAST-58&row=3',
+  setDescription: () => { calSetCalls58++; },
+  getLocation: () => '서울 동작구',
+  setLocation: () => { calSetCalls58++; },
+  getColor: () => '9',
+  setColor: () => { calSetCalls58++; },
+  isAllDayEvent: () => true,
+  getAllDayStartDate: () => new Date(2026, 9, 17),
+  getAllDayEndDate: () => new Date(2026, 9, 18),
+  setAllDayDate: () => { calSetCalls58++; },
+  setAllDayDates: () => { calSetCalls58++; },
+  setTime: () => { calSetCalls58++; },
+  removeAllReminders: () => {}
+};
+const origGetCalById58 = sandbox.CalendarApp.getCalendarById;
+const origCleanDup58 = sandbox.cleanDuplicateCalendarEventsOnDate;
+let cleanDupCalled58 = false;
+sandbox.cleanDuplicateCalendarEventsOnDate = function() {
+  cleanDupCalled58 = true;
+};
+sandbox.CalendarApp.getCalendarById = () => ({
+  getEventById: () => mockExistingEvent58
+});
+const mockSheet58 = {
+  getLastRow: () => 3,
+  getRange: (r, c, numR, numC) => ({
+    getValues: () => [[
+      'ID-FAST-58', true, '보라매 파크시티', '서울 동작구', '목공',
+      new Date(2026, 9, 17), new Date(2026, 9, 17), '진행 중', '조항만', '기존메모', 'evt-fast-58@google.com', '09:00', '9'
+    ]],
+    getValue: () => 'evt-fast-58@google.com',
+    setValue: () => {},
+    setFontColor: () => {},
+    setBackground: () => {}
+  })
+};
+const origScriptAppGetService58 = sandbox.ScriptApp.getService;
+sandbox.ScriptApp.getService = () => ({ getUrl: () => 'https://script.google.com/macros/s/test/exec' });
+sandbox.syncSingleRowToCalendar(mockSheet58, 3, true);
+assertTest('syncSingleRowToCalendar(skipDashboardRefresh=true): 변경 없는 속성에 대한 Calendar API set* 호출 0회 및 중복 전체 스캔 생략 검증',
+  calSetCalls58 === 0 && cleanDupCalled58 === false
+);
+sandbox.CalendarApp.getCalendarById = origGetCalById58;
+sandbox.cleanDuplicateCalendarEventsOnDate = origCleanDup58;
+sandbox.ScriptApp.getService = origScriptAppGetService58;
+
+// 4) 클라이언트 로컬 캐시(Stale-While-Revalidate) 및 낙관적 UI(Optimistic Update) 검증
+const mockStorage58 = {};
+let savedFailureCb58 = null;
+let savedSuccessCb58 = null;
+let silentLoadCalled58 = false;
+
+mockElems57.sheetManagerSelect = { value: '조항만', innerHTML: '' };
+mockElems57.sheetDateInput = { value: '2026-10-17 ~ 2026-10-18' };
+mockElems57.sheetMemoInput = { value: '모바일 즉시 수정 메모' };
+mockElems57.sheetSaveBtn = { disabled: false, innerText: '💾 저장하기' };
+mockElems57.sheetOverlay = {
+  classList: {
+    _set: new Set(['show']),
+    add: function(c) { this._set.add(c); },
+    remove: function(c) { this._set.delete(c); },
+    contains: function(c) { return this._set.has(c); }
+  }
+};
+
+clientSandbox57.localStorage = {
+  getItem: (k) => mockStorage58[k] || null,
+  setItem: (k, v) => { mockStorage58[k] = String(v); },
+  removeItem: (k) => { delete mockStorage58[k]; }
+};
+clientSandbox57.google.script.run = {
+  withSuccessHandler: function(cb) {
+    savedSuccessCb58 = cb;
+    return {
+      withFailureHandler: function(errCb) {
+        savedFailureCb58 = errCb;
+        return {
+          getSidebarDashboardData: function() { silentLoadCalled58 = true; },
+          updateScheduleStatusFromWeb: function() {}
+        };
+      }
+    };
+  }
+};
+
+// 먼저 캐시에 데이터가 저장되는지 확인
+clientSandbox57.onDataLoaded(mockDashPayload57);
+assertTest('localStorage 캐시 저장: onDataLoaded 호출 시 ws_dashboard_cache_v1 로컬 캐시 자동 저장 검증',
+  typeof mockStorage58['ws_dashboard_cache_v1'] === 'string' &&
+  mockStorage58['ws_dashboard_cache_v1'].indexOf('보라매 파크시티') !== -1
+);
+
+// 초기 구동(loadData(false)) 시 캐시로 즉시 렌더링 + 백그라운드 무음 동기화 호출 검증
+silentLoadCalled58 = false;
+vm.runInContext('rawData = null;', clientSandbox57);
+clientSandbox57.loadData(false);
+assertTest('Stale-While-Revalidate: 초기 loadData(false) 시 로컬 캐시 즉시 렌더링 및 백그라운드 무음 갱신 트리거 검증',
+  silentLoadCalled58 === true &&
+  mockElems57.kpiSites.innerText === 1 &&
+  vm.runInContext('rawData && rawData.sites.length', clientSandbox57) === 1
+);
+
+// 모바일 바텀시트에서 작업 수정 저장 시 서버 응답 전에 즉시(0.01초) UI 및 진행률 업데이트 + 모달 닫힘 검증
+vm.runInContext(`
+  curTaskObj = { row: 3, siteName: '보라매 파크시티' };
+  selectedStatus = '완료';
+  selectedShare = false;
+`, clientSandbox57);
+clientSandbox57.saveSheetTask();
+const rawDataAfterOpt58 = vm.runInContext('rawData', clientSandbox57);
+const updatedTask58 = rawDataAfterOpt58.sites[0].tasks.find(t => t.row === 3);
+assertTest('saveSheetTask(Optimistic UI): 저장 버튼 클릭 즉시 바텀시트 닫힘 + 상태/진행률/메모/날짜 0.01초 선반영 검증',
+  mockElems57.sheetOverlay.classList.contains('show') === false &&
+  updatedTask58.status === '완료' &&
+  updatedTask58.isShared === false &&
+  updatedTask58.memo === '모바일 즉시 수정 메모' &&
+  updatedTask58.endDateStr === '2026-10-18' &&
+  rawDataAfterOpt58.sites[0].progressRate === 50
+);
+
+// 만약 서버 통신 실패 시 이전 스냅샷으로 안전하게 자동 롤백되는지 검증
+savedFailureCb58({ message: '네트워크 일시 오류' });
+const rawDataAfterRollback58 = vm.runInContext('rawData', clientSandbox57);
+const rolledBackTask58 = rawDataAfterRollback58.sites[0].tasks.find(t => t.row === 3);
+assertTest('saveSheetTask(Rollback): 서버 저장 실패 시 낙관적 업데이트 자동 롤백 및 원본 상태(진행 중, 25%) 복원 검증',
+  rolledBackTask58.status === '진행 중' &&
+  rolledBackTask58.isShared === true &&
+  rawDataAfterRollback58.sites[0].progressRate === 25
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -5069,3 +5230,4 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
+
