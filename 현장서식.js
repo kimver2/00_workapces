@@ -6381,6 +6381,74 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
   }
 }
 
+/**
+ * 웹/모바일 캘린더 드래그 앤 드롭 일정 날짜 변경 서버 함수 (시트 B열 & 구글 캘린더 동시 연동)
+ * @param {number|string} row 시트 행 번호
+ * @param {string} siteName 현장명
+ * @param {string} taskName 공종명
+ * @param {string} newDate 새로운 날짜 문자열 (YYYY.MM.DD 또는 YYYY.MM.DD ~ YYYY.MM.DD)
+ * @param {boolean} isArchived 완료현장 여부
+ * @return {object} { success: boolean, row: number, newDate: string, error?: string }
+ */
+function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchived) {
+  var rowNum = parseInt(row, 10);
+  if (!rowNum || rowNum < 2) {
+    return { success: false, error: "유효하지 않은 행 번호입니다. (" + row + ")" };
+  }
+  if (!newDate || !String(newDate).trim()) {
+    return { success: false, error: "이동할 날짜가 지정되지 않았습니다." };
+  }
+
+  try {
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var sheet = (isArchived === true) ? findCompletedSitesSheet(ss, false) : findSiteScheduleSheet(ss);
+    if (!sheet) return { success: false, error: (isArchived === true ? "완료현장" : "현장데이터") + " 시트를 찾을 수 없습니다." };
+
+    if (siteName || taskName) {
+      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName);
+    }
+    if (rowNum < 2 || rowNum > sheet.getLastRow()) {
+      return { success: false, error: "이동할 해당 일정을 시트에서 찾을 수 없습니다." };
+    }
+
+    var cleanNewDate = String(newDate).trim();
+    var normalized = "";
+    try {
+      normalized = normalizeDateStringToYYYYMMDD(cleanNewDate);
+    } catch(eNorm) {}
+    var finalDate = normalized || cleanNewDate;
+
+    // B열(2열) 날짜 업데이트 & J열 타임스탬프
+    sheet.getRange(rowNum, 2).setValue(finalDate);
+    sheet.getRange(rowNum, 10).setValue(Date.now());
+    SpreadsheetApp.flush();
+    invalidateDashboardServerCache();
+
+    // 캘린더 동기화
+    var calUpdated = false;
+    try {
+      syncSingleRowToCalendar(sheet, rowNum, true, true);
+      calUpdated = true;
+    } catch(eCal) {
+      Logger.log("드래그 이동 캘린더 동기화 경고: " + eCal.toString());
+      try { triggerDebouncedSync(); } catch(eTrig) {}
+    }
+
+    return {
+      success: true,
+      row: rowNum,
+      siteName: siteName,
+      taskName: taskName,
+      newDate: finalDate,
+      calUpdated: calUpdated,
+      message: "[" + (siteName || "현장") + " - " + (taskName || "공종") + "] 일정이 " + finalDate + "(으)로 변경되었습니다."
+    };
+  } catch (err) {
+    Logger.log("moveScheduleTaskDateFromWeb 에러: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
 
 /**
  * 모바일/사이드바 대시보드에서 새 일정(공종) 빠른 추가
@@ -6636,6 +6704,14 @@ function doGet(e) {
       cleanedCount: cleanCount,
       message: cleanCount + "건의 캘린더 고아 일정이 정리되었습니다."
     })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-2) 캘린더 드래그 앤 드롭 일정 날짜 이동 요청 (action=moveScheduleTaskDate)
+  if (action === "moveScheduleTaskDate" || action === "moveTaskDate") {
+    var isArchBool = (p.isArchived === "true" || p.isArchived === true);
+    var moveRes = moveScheduleTaskDateFromWeb(row, targetSite, targetTask, newDate, isArchBool);
+    return ContentService.createTextOutput(JSON.stringify(moveRes))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   // 0-1) 현장별 병합 및 날짜 정렬 + 1시간 트리거 보장 요청 (action=consolidateAndSort)
@@ -8813,6 +8889,44 @@ function buildSidebarDashboardHtml(mode) {
   html += '.task-quick-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }';
   html += '.task-chip { padding: 3px 8px; font-size: 10.5px; font-weight: 700; color: #1e293b; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 999px; cursor: pointer; }';
   html += '.task-chip:hover, .task-chip:active { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }';
+
+  // 드래그 앤 드롭 및 PC 브라우저 전용 와이드 구글 캘린더 스타일 반응형
+  html += '.cal-day-cell.drag-over { background: #eff6ff !important; outline: 2.5px dashed #2563eb !important; outline-offset: -2px; }';
+  html += '.cal-event-pill { cursor: grab; user-select: none; -webkit-user-drag: element; }';
+  html += '.cal-event-pill:active { cursor: grabbing; }';
+  html += '.cal-event-pill.is-dragging { opacity: 0.35; transform: scale(0.96); }';
+
+  html += '@media (min-width: 768px) {';
+  html += '  body { padding-bottom: 40px; background: #f1f5f9; }';
+  html += '  .header { max-width: 1440px !important; margin: 0 auto; padding: 16px 24px; border-radius: 0 0 16px 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.04); }';
+  html += '  .content { max-width: 1440px !important; margin: 0 auto; padding: 18px 24px; }';
+  html += '  .bottom-nav { max-width: 1440px !important; left: 50% !important; transform: translateX(-50%) !important; border-radius: 16px 16px 0 0; }';
+  html += '  .kpi-grid { gap: 12px; }';
+  html += '  .kpi-card { padding: 10px 14px; border-radius: 10px; }';
+  html += '  .kpi-num { font-size: 20px; }';
+  html += '  .kpi-label { font-size: 12px; }';
+  html += '  .cal-nav-bar { padding: 12px 24px; }';
+  html += '  .cal-month-title { font-size: 18px; font-weight: 800; }';
+  html += '  .cal-weekdays { font-size: 13px; font-weight: 800; padding: 10px 0; }';
+  html += '  .cal-day-cell { min-height: 125px; padding: 5px 6px; }';
+  html += '  .cal-day-header { font-size: 12px; margin-bottom: 4px; }';
+  html += '  .cal-day-num { width: 22px; height: 22px; font-size: 12px; }';
+  html += '  .cal-weather-badge { font-size: 9.5px; padding: 1px 4px; }';
+  html += '  .cal-holiday-name { font-size: 9.5px; }';
+  html += '  .cal-events-list { gap: 3px; }';
+  html += '  .cal-event-pill { padding: 3px 6px; font-size: 11px; line-height: 1.35; border-radius: 4px; margin-bottom: 2px; }';
+  html += '  .cal-pill-text { font-size: 11px !important; letter-spacing: normal !important; }';
+  html += '  .cal-sh-box { width: 8px; height: 8px; margin-right: 3px; }';
+  html += '  .cal-status-icon, .cal-delay-warn-icon { font-size: 11px; margin-right: 2px; }';
+  html += '  .sheet-overlay { align-items: center; justify-content: center; padding: 20px; }';
+  html += '  .bottom-sheet { border-radius: 20px !important; max-height: 88vh !important; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25) !important; animation: pcModalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important; }';
+  html += '}';
+  html += '@keyframes pcModalFadeIn { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }';
+  html += '@media (min-width: 1200px) {';
+  html += '  .cal-day-cell { min-height: 150px; padding: 6px 8px; }';
+  html += '  .cal-event-pill { padding: 4px 8px; font-size: 11.5px; }';
+  html += '  .cal-pill-text { font-size: 11.5px !important; }';
+  html += '}';
   html += '</style></head><body>';
 
   // 새로고침 글로벌 로딩바 및 오버레이 (목록 뷰 & 캘린더 뷰 공용)
@@ -9058,7 +9172,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <textarea id="sheetMemoInput" class="sheet-memo-input" placeholder="현장 특이사항이나 전달사항을 입력하세요..."></textarea>';
   html += '    <div class="sheet-action-row">';
   html += '      <button type="button" id="sheetDeleteBtn" class="sheet-delete-btn" onclick="openDeleteConfirmModal()">🗑️ 삭제</button>';
-  html += '      <button type="button" id="sheetGoToRowBtn" class="sheet-goto-btn" onclick="goToCurrentTaskSheetRow()" style="display:none;">📍 시트 행 이동</button>';
   html += '      <button type="button" id="sheetSaveBtn" class="sheet-save-btn" onclick="saveSheetTask()">💾 저장하기</button>';
   html += '    </div>';
   html += '  </div>';
@@ -9471,7 +9584,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (prevM < 1) { prevM = 12; prevY--; }';
   html += '    const pStr = prevY + "-" + (prevM < 10 ? "0" + prevM : prevM) + "-" + (dayNum < 10 ? "0" + dayNum : dayNum);';
   html += '    const pHoliday = (typeof activeHolidays !== "undefined" && activeHolidays[pStr]) ? activeHolidays[pStr] : "";';
-  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + dayNum + \'</span>\' + (pHoliday ? \'<span class="cal-holiday-name" title="\' + escapeHtml(pHoliday) + \'">\' + escapeHtml(pHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
+  html += '    gridHtml += \'<div class="cal-day-cell other-month" data-date="\' + pStr + \'" ondragover="onCalDayDragOver(event)" ondragleave="onCalDayDragLeave(event)" ondrop="onCalDayDrop(event, \\\'\' + pStr + \'\\\')"><div class="cal-day-header"><span class="cal-day-num">\' + dayNum + \'</span>\' + (pHoliday ? \'<span class="cal-holiday-name" title="\' + escapeHtml(pHoliday) + \'">\' + escapeHtml(pHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
   html += '  }';
   html += '  for (let d = 1; d <= totalDays; d++) {';
   html += '    const dStr = calYear + "-" + (calMonth < 10 ? "0" + calMonth : calMonth) + "-" + (d < 10 ? "0" + d : d);';
@@ -9487,7 +9600,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '    if (dStr === todayStr) dayClass += " today";';
   html += '    const dayTasks = dayTasksMap[dStr] || [];';
-  html += '    gridHtml += \'<div class="\' + dayClass + \'" onclick="onCalDayClick(\\\'\' + dStr + \'\\\')">\';';
+  html += '    gridHtml += \'<div class="\' + dayClass + \'" data-date="\' + dStr + \'" onclick="onCalDayClick(\\\'\' + dStr + \'\\\')" ondragover="onCalDayDragOver(event)" ondragleave="onCalDayDragLeave(event)" ondrop="onCalDayDrop(event, \\\'\' + dStr + \'\\\')">\';';
   html += '    const weatherObj = activeWeatherData[dStr];';
   html += '    let weatherBadgeHtml = "";';
   html += '    if (weatherObj) {';
@@ -9523,7 +9636,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (txtShadow !== "none") {';
   html += '        fontStyle += "text-shadow:" + txtShadow + ";";';
   html += '      }';
-  html += '      gridHtml += \'<div class="cal-event-pill \' + (isDelayed ? "status-delayed " : "") + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
+  html += '      gridHtml += \'<div class="cal-event-pill \' + (isDelayed ? "status-delayed " : "") + (isDone ? "status-done" : "") + \'" draggable="true" ondragstart="onCalTaskDragStart(event, \' + task.row + \', \\\'\' + siteEnc + \'\\\', \\\'\' + encodeURIComponent(task.taskName) + \'\\\', \\\'\' + (task.startDateStr || dStr) + \'\\\', \\\'\' + (task.endDateStr || task.startDateStr || dStr) + \'\\\', \' + (!!task.isArchived) + \')" ondragend="onCalTaskDragEnd(event)" style="background-color:\' + bgCol + \';color:\' + txtCol + \';" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
   html += '      if (isDelayed) {';
   html += '        gridHtml += \'<span class="cal-delay-warn-icon" title="⚠️ 공정 지연">⚠️</span>\';';
   html += '      }';
@@ -9543,7 +9656,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (nextM > 12) { nextM = 1; nextY++; }';
   html += '    const nStr = nextY + "-" + (nextM < 10 ? "0" + nextM : nextM) + "-" + (n < 10 ? "0" + n : n);';
   html += '    const nHoliday = (typeof activeHolidays !== "undefined" && activeHolidays[nStr]) ? activeHolidays[nStr] : "";';
-  html += '    gridHtml += \'<div class="cal-day-cell other-month"><div class="cal-day-header"><span class="cal-day-num">\' + n + \'</span>\' + (nHoliday ? \'<span class="cal-holiday-name" title="\' + escapeHtml(nHoliday) + \'">\' + escapeHtml(nHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
+  html += '    gridHtml += \'<div class="cal-day-cell other-month" data-date="\' + nStr + \'" ondragover="onCalDayDragOver(event)" ondragleave="onCalDayDragLeave(event)" ondrop="onCalDayDrop(event, \\\'\' + nStr + \'\\\')"><div class="cal-day-header"><span class="cal-day-num">\' + n + \'</span>\' + (nHoliday ? \'<span class="cal-holiday-name" title="\' + escapeHtml(nHoliday) + \'">\' + escapeHtml(nHoliday) + \'</span>\' : \'\') + \'</div></div>\';';
   html += '  }';
   html += '  grid.innerHTML = gridHtml;';
   html += '  if (direction) {';
@@ -9640,7 +9753,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (isSun || holidayName) dayTagClass += " sun";';
   html += '    else if (isSat) dayTagClass += " sat";';
   html += '    const dayTasks = dayTasksMap[curStr] || [];';
-  html += '    listHtml += \'<div class="cal-week-card\' + (isToday ? " today" : "") + \'">\';';
+  html += '    listHtml += \'<div class="cal-week-card\' + (isToday ? " today" : "") + \'" data-date="\' + curStr + \'" ondragover="onCalDayDragOver(event)" ondragleave="onCalDayDragLeave(event)" ondrop="onCalDayDrop(event, \\\'\' + curStr + \'\\\')">\';';
   html += '    listHtml += \'  <div class="cal-week-card-header" onclick="onCalDayClick(\\\'\' + curStr + \'\\\')">\';';
   html += '    listHtml += \'    <div class="cal-week-card-left">\';';
   html += '    listHtml += \'      <span class="\' + dayTagClass + \'">\' + (m < 10 ? "0" + m : m) + "." + (d < 10 ? "0" + d : d) + " (" + dayNames[dayOfWeek] + ")</span>";';
@@ -9670,7 +9783,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        const txtCol = isLight ? "#0f172a" : "#ffffff";';
   html += '        const txtShadow = isLight ? "none" : "0 1px 1px rgba(0,0,0,0.45)";';
   html += '        const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + (stIcon ? stIcon + " " : "") + "[" + escapeHtml(task.status || "예정") + "] " + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
-  html += '        listHtml += \'<div class="cal-event-pill \' + (isDelayed ? "status-delayed " : "") + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';padding:4px 6px;font-size:11px;\' + (txtShadow !== "none" ? "text-shadow:" + txtShadow + ";" : "") + \'" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
+  html += '        listHtml += \'<div class="cal-event-pill \' + (isDelayed ? "status-delayed " : "") + (isDone ? "status-done" : "") + \'" draggable="true" ondragstart="onCalTaskDragStart(event, \' + task.row + \', \\\'\' + siteEnc + \'\\\', \\\'\' + encodeURIComponent(task.taskName) + \'\\\', \\\'\' + (task.startDateStr || curStr) + \'\\\', \\\'\' + (task.endDateStr || task.startDateStr || curStr) + \'\\\', \' + (!!task.isArchived) + \')" ondragend="onCalTaskDragEnd(event)" style="background-color:\' + bgCol + \';color:\' + txtCol + \';padding:4px 6px;font-size:11px;\' + (txtShadow !== "none" ? "text-shadow:" + txtShadow + ";" : "") + \'" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
   html += '        const pRateTag = (typeof site.progressRate === "number") ? " " + site.progressRate + "%" : "";';
   html += '        if (isDelayed) {';
   html += '          listHtml += \'  <span class="cal-delay-warn-icon" style="font-size:10px;margin-right:3px;" title="⚠️ 공정 지연">⚠️</span>\';';
@@ -9694,6 +9807,151 @@ function buildSidebarDashboardHtml(mode) {
   html += '    else if (direction === "prev") weekList.classList.add("cal-slide-prev");';
   html += '  }';
   html += '  setupCalendarSwipe();';
+  html += '}';
+  html += '';
+  html += 'let draggedTaskData = null;';
+  html += 'let wasJustDragging = false;';
+  html += '';
+  html += 'function onCalTaskDragStart(e, row, siteNameEnc, taskNameEnc, startDateStr, endDateStr, isArchived) {';
+  html += '  try {';
+  html += '    draggedTaskData = {';
+  html += '      row: parseInt(row, 10),';
+  html += '      siteName: decodeURIComponent(siteNameEnc || ""),';
+  html += '      taskName: decodeURIComponent(taskNameEnc || ""),';
+  html += '      startDateStr: startDateStr || "",';
+  html += '      endDateStr: endDateStr || startDateStr || "",';
+  html += '      isArchived: !!isArchived';
+  html += '    };';
+  html += '    if (e.dataTransfer) {';
+  html += '      e.dataTransfer.effectAllowed = "move";';
+  html += '      e.dataTransfer.setData("text/plain", JSON.stringify(draggedTaskData));';
+  html += '    }';
+  html += '    if (e.currentTarget) e.currentTarget.classList.add("is-dragging");';
+  html += '  } catch (err) { console.error("dragStart err", err); }';
+  html += '}';
+  html += '';
+  html += 'function onCalTaskDragEnd(e) {';
+  html += '  wasJustDragging = true;';
+  html += '  setTimeout(function() { wasJustDragging = false; }, 200);';
+  html += '  if (e && e.currentTarget) e.currentTarget.classList.remove("is-dragging");';
+  html += '  document.querySelectorAll(".cal-day-cell.drag-over, .cal-week-card.drag-over").forEach(function(el) {';
+  html += '    el.classList.remove("drag-over");';
+  html += '  });';
+  html += '}';
+  html += '';
+  html += 'function onCalDayDragOver(e) {';
+  html += '  e.preventDefault();';
+  html += '  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";';
+  html += '  const cell = e.currentTarget;';
+  html += '  if (cell && !cell.classList.contains("drag-over")) {';
+  html += '    cell.classList.add("drag-over");';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onCalDayDragLeave(e) {';
+  html += '  const cell = e.currentTarget;';
+  html += '  if (cell && e.relatedTarget && !cell.contains(e.relatedTarget)) {';
+  html += '    cell.classList.remove("drag-over");';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onCalDayDrop(e, targetDateStr) {';
+  html += '  e.preventDefault();';
+  html += '  e.stopPropagation();';
+  html += '  wasJustDragging = true;';
+  html += '  setTimeout(function() { wasJustDragging = false; }, 250);';
+  html += '  const cell = e.currentTarget;';
+  html += '  if (cell) cell.classList.remove("drag-over");';
+  html += '  let data = draggedTaskData;';
+  html += '  if (!data && e.dataTransfer) {';
+  html += '    try { data = JSON.parse(e.dataTransfer.getData("text/plain")); } catch(err) {}';
+  html += '  }';
+  html += '  if (!data || !data.row || !targetDateStr) return;';
+  html += '  if (data.startDateStr === targetDateStr) return;';
+  html += '  let newStartFormatted = targetDateStr.replace(/-/g, ".");';
+  html += '  let newEndFormatted = newStartFormatted;';
+  html += '  let newEndDateStr = targetDateStr;';
+  html += '  let finalDateParam = newStartFormatted;';
+  html += '  const sIso = (data.startDateStr || "").replace(/\\./g, "-");';
+  html += '  const eIso = (data.endDateStr || "").replace(/\\./g, "-");';
+  html += '  if (sIso && eIso && sIso !== eIso) {';
+  html += '    const sParts = sIso.split("-").map(Number);';
+  html += '    const eParts = eIso.split("-").map(Number);';
+  html += '    const sDate = new Date(sParts[0], sParts[1] - 1, sParts[2]);';
+  html += '    const eDate = new Date(eParts[0], eParts[1] - 1, eParts[2]);';
+  html += '    const diffDays = Math.round((eDate.getTime() - sDate.getTime()) / (24 * 60 * 60 * 1000));';
+  html += '    if (diffDays > 0) {';
+  html += '      const tParts = targetDateStr.split("-").map(Number);';
+  html += '      const newEndObj = new Date(tParts[0], tParts[1] - 1, tParts[2] + diffDays);';
+  html += '      const neY = newEndObj.getFullYear();';
+  html += '      const neM = (newEndObj.getMonth() + 1 < 10 ? "0" : "") + (newEndObj.getMonth() + 1);';
+  html += '      const neD = (newEndObj.getDate() < 10 ? "0" : "") + newEndObj.getDate();';
+  html += '      newEndDateStr = neY + "-" + neM + "-" + neD;';
+  html += '      newEndFormatted = neY + "." + neM + "." + neD;';
+  html += '      finalDateParam = newStartFormatted + " ~ " + newEndFormatted;';
+  html += '    }';
+  html += '  }';
+  html += '  let targetTask = null;';
+  html += '  let oldStartStr = data.startDateStr;';
+  html += '  let oldEndStr = data.endDateStr;';
+  html += '  let oldDateDisplay = "";';
+  html += '  if (rawData && Array.isArray(rawData.sites)) {';
+  html += '    for (let si = 0; si < rawData.sites.length; si++) {';
+  html += '      const s = rawData.sites[si];';
+  html += '      if (s.siteName === data.siteName) {';
+  html += '        const found = (s.tasks || []).find(t => t.row === data.row && !!t.isArchived === !!data.isArchived);';
+  html += '        if (found) {';
+  html += '          targetTask = found;';
+  html += '          oldDateDisplay = found.dateDisplay || "";';
+  html += '          break;';
+  html += '        }';
+  html += '      }';
+  html += '    }';
+  html += '  }';
+  html += '  if (targetTask) {';
+  html += '    targetTask.startDateStr = targetDateStr;';
+  html += '    targetTask.endDateStr = newEndDateStr;';
+  html += '    targetTask.dateDisplay = finalDateParam;';
+  html += '    const tParts = targetDateStr.split("-").map(Number);';
+  html += '    targetTask.dateMs = new Date(tParts[0], tParts[1] - 1, tParts[2]).getTime();';
+  html += '    renderCurrentCalendarView();';
+  html += '  }';
+  html += '  showToast("📅 [" + (data.siteName || "현장") + " - " + (data.taskName || "공정") + "] 일정이 " + finalDateParam + "(으)로 이동되었습니다.");';
+  html += '  const onMoveDone = function(res) {';
+  html += '    if (res && res.success) {';
+  html += '      if (targetTask && res.row) targetTask.row = res.row;';
+  html += '      loadDataSilently();';
+  html += '    } else {';
+  html += '      showToast("⚠️ 일정 이동 실패: " + ((res && res.error) || "알 수 없는 오류"));';
+  html += '      if (targetTask) {';
+  html += '        targetTask.startDateStr = oldStartStr;';
+  html += '        targetTask.endDateStr = oldEndStr;';
+  html += '        targetTask.dateDisplay = oldDateDisplay;';
+  html += '        renderCurrentCalendarView();';
+  html += '      }';
+  html += '    }';
+  html += '  };';
+  html += '  const onMoveFail = function(err) {';
+  html += '    showToast("⚠️ 일정 이동 통신 오류: " + (err.message || err));';
+  html += '    if (targetTask) {';
+  html += '      targetTask.startDateStr = oldStartStr;';
+  html += '      targetTask.endDateStr = oldEndStr;';
+  html += '      targetTask.dateDisplay = oldDateDisplay;';
+  html += '      renderCurrentCalendarView();';
+  html += '    }';
+  html += '  };';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {';
+  html += '    google.script.run';
+  html += '      .withSuccessHandler(onMoveDone)';
+  html += '      .withFailureHandler(onMoveFail)';
+  html += '      .moveScheduleTaskDateFromWeb(data.row, data.siteName, data.taskName, finalDateParam, data.isArchived);';
+  html += '  } else {';
+  html += '    const apiUrl = (window.API_BASE_URL || window.location.pathname) + "?action=moveScheduleTaskDate&row=" + encodeURIComponent(data.row) + "&site=" + encodeURIComponent(data.siteName) + "&task=" + encodeURIComponent(data.taskName) + "&date=" + encodeURIComponent(finalDateParam) + "&isArchived=" + (data.isArchived ? "true" : "false") + "&format=json";';
+  html += '    fetch(apiUrl)';
+  html += '      .then(function(r) { return r.json(); })';
+  html += '      .then(onMoveDone)';
+  html += '      .catch(onMoveFail);';
+  html += '  }';
   html += '}';
   html += '';
   html += 'function setupCalendarSwipe() {';
@@ -10171,6 +10429,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
 
   html += 'function onTaskClick(arg1, arg2, arg3) {';
+  html += '  if (typeof wasJustDragging !== "undefined" && wasJustDragging) return;';
   html += '  var site = "";';
   html += '  var task = null;';
   html += '  if (typeof arg1 === "number" || /^[0-9]+$/.test(String(arg1))) {';
@@ -10698,8 +10957,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (createBox) createBox.style.display = "block";';
   html += '  const delBtn = document.getElementById("sheetDeleteBtn");';
   html += '  if (delBtn) delBtn.style.display = "none";';
-  html += '  const gotoBtn = document.getElementById("sheetGoToRowBtn");';
-  html += '  if (gotoBtn) gotoBtn.style.display = "none";';
   html += '  const miniGotoBtn = document.getElementById("sheetMiniGoToRowBtn");';
   html += '  if (miniGotoBtn) miniGotoBtn.style.display = "none";';
   html += '  const addSameBtn = document.getElementById("sheetAddSameDateBtn");';
@@ -10755,8 +11012,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (createBox) createBox.style.display = "none";';
   html += '  const delBtn = document.getElementById("sheetDeleteBtn");';
   html += '  if (delBtn) delBtn.style.display = "";';
-  html += '  const gotoBtn = document.getElementById("sheetGoToRowBtn");';
-  html += '  if (gotoBtn) gotoBtn.style.display = "";';
   html += '  const miniGotoBtn = document.getElementById("sheetMiniGoToRowBtn");';
   html += '  if (miniGotoBtn) miniGotoBtn.style.display = "";';
   html += '  const addSameBtn = document.getElementById("sheetAddSameDateBtn");';

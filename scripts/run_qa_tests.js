@@ -4503,8 +4503,8 @@ assertTest('buildSidebarDashboardHtml: 담당자 선택 드롭다운(sheetManage
 assertTest('buildSidebarDashboardHtml: 담당자 직접 입력 필드(sheetManagerCustomInput) 탑재 검증',
   dashHtml54.indexOf('id="sheetManagerCustomInput"') !== -1
 );
-assertTest('buildSidebarDashboardHtml: 하단 액션바 시트 행 이동 버튼(sheetGoToRowBtn) 탑재 검증',
-  dashHtml54.indexOf('id="sheetGoToRowBtn"') !== -1 && dashHtml54.indexOf('📍 시트 행 이동') !== -1
+assertTest('buildSidebarDashboardHtml: 하단 액션바 시트 행 이동 버튼(sheetGoToRowBtn) 제거 및 상단 미니 버튼 보존 검증',
+  dashHtml54.indexOf('id="sheetGoToRowBtn"') === -1 && dashHtml54.indexOf('class="btn-sheet-goto-mini"') !== -1
 );
 assertTest('buildSidebarDashboardHtml: 상단 타이틀바 미니 시트 행 이동 버튼(btn-sheet-goto-mini) 탑재 검증',
   dashHtml54.indexOf('class="btn-sheet-goto-mini"') !== -1
@@ -5930,6 +5930,142 @@ assertTest('deleteScheduleTaskFromWeb: 동일 공종 다중 잔여 일정 검색
 );
 assertTest('deleteScheduleTaskFromWeb: 시트 행 삭제 직후 cleanupOrphanCalendarEventsSilent 즉시 호출 검증',
   delTaskWebCode.indexOf('cleanupOrphanCalendarEventsSilent(sheet, cal)') !== -1
+);
+
+// ========================================================
+// 📅 Step 67: PC 와이드 구글 캘린더 뷰 및 마우스 드래그 앤 드롭 일정 이동 QA
+// ========================================================
+console.log('\n📅 [Step 67: PC 와이드 구글 캘린더 뷰 및 마우스 드래그 앤 드롭 일정 이동 QA]');
+
+// 1. moveScheduleTaskDateFromWeb 서버 함수 정의 및 경계값 검증
+assertTest('moveScheduleTaskDateFromWeb: 서버 함수 정의 검증',
+  typeof sandbox.moveScheduleTaskDateFromWeb === 'function'
+);
+
+const moveResInvalidRow = sandbox.moveScheduleTaskDateFromWeb(1, '신대방우성', '도배', '2026.10.25', false);
+assertTest('moveScheduleTaskDateFromWeb(경계값): 유효하지 않은 행 번호(<2) 차단 검증',
+  moveResInvalidRow && moveResInvalidRow.success === false &&
+  moveResInvalidRow.error.indexOf('유효하지 않은 행 번호') !== -1
+);
+
+const moveResEmptyDate = sandbox.moveScheduleTaskDateFromWeb(2, '신대방우성', '도배', '', false);
+assertTest('moveScheduleTaskDateFromWeb(경계값): 빈 날짜 차단 검증',
+  moveResEmptyDate && moveResEmptyDate.success === false &&
+  moveResEmptyDate.error.indexOf('이동할 날짜가 지정되지 않았습니다') !== -1
+);
+
+// 2. moveScheduleTaskDateFromWeb 정상 실행 검증
+let testMoveCellVal = '';
+let testMoveTsVal = 0;
+let testFlushCalled = false;
+let testSyncSingleCalled = false;
+
+const mockMoveSheet = {
+  getLastRow: () => 10,
+  getRange: (r, c) => ({
+    setValue: (val) => {
+      if (c === 2) testMoveCellVal = val;
+      if (c === 10) testMoveTsVal = val;
+    },
+    getValue: () => (c === 2 ? testMoveCellVal : '')
+  })
+};
+
+sandbox.getAppSpreadsheet = () => ({});
+sandbox.findSiteScheduleSheet = () => mockMoveSheet;
+sandbox.resolveActualSheetRow = (s, r, site, task) => r;
+sandbox.SpreadsheetApp.flush = () => { testFlushCalled = true; };
+sandbox.invalidateDashboardServerCache = () => {};
+sandbox.syncSingleRowToCalendar = (sheet, r) => { testSyncSingleCalled = true; };
+
+const moveResSuccess = sandbox.moveScheduleTaskDateFromWeb(3, '신대방우성', '목공', '2026.10.27', false);
+assertTest('moveScheduleTaskDateFromWeb: B열 날짜 갱신(2026.10.27) 검증',
+  moveResSuccess && moveResSuccess.success === true &&
+  testMoveCellVal === '2026.10.27'
+);
+assertTest('moveScheduleTaskDateFromWeb: J열 타임스탬프 기록 검증',
+  testMoveTsVal > 0
+);
+assertTest('moveScheduleTaskDateFromWeb: SpreadsheetApp.flush 및 syncSingleRowToCalendar 호출 검증',
+  testFlushCalled === true && testSyncSingleCalled === true
+);
+
+// 3. doGet action=moveScheduleTaskDate 엔드포인트 검증
+const doGetMoveRes = sandbox.doGet({
+  parameter: {
+    action: 'moveScheduleTaskDate',
+    row: 3,
+    site: '신대방우성',
+    task: '목공',
+    date: '2026.10.28',
+    isArchived: 'false'
+  }
+});
+assertTest('doGet: action=moveScheduleTaskDate 엔드포인트 호출 및 정상 응답 검증',
+  doGetMoveRes && typeof doGetMoveRes.getContent === 'function' &&
+  JSON.parse(doGetMoveRes.getContent()).success === true
+);
+
+// 4. buildSidebarDashboardHtml 내 PC 반응형 스타일 검증
+const dashHtml67 = sandbox.buildSidebarDashboardHtml('mobile');
+assertTest('buildSidebarDashboardHtml: PC 와이드 뷰(@media min-width: 768px, max-width: 1440px) 탑재 검증',
+  dashHtml67.indexOf('@media (min-width: 768px)') !== -1 &&
+  dashHtml67.indexOf('max-width: 1440px') !== -1
+);
+assertTest('buildSidebarDashboardHtml: PC 달력 날짜 셀 높이 확장(min-height: 125px, 150px) 탑재 검증',
+  dashHtml67.indexOf('min-height: 125px') !== -1 &&
+  dashHtml67.indexOf('min-height: 150px') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 드래그 앤 드롭 시각 스타일(.cal-day-cell.drag-over, cursor: grab) 탑재 검증',
+  dashHtml67.indexOf('.cal-day-cell.drag-over') !== -1 &&
+  dashHtml67.indexOf('cursor: grab') !== -1 &&
+  dashHtml67.indexOf('.cal-event-pill.is-dragging') !== -1
+);
+
+// 5. 클라이언트 드래그 앤 드롭 이벤트 핸들러 및 속성 탑재 검증
+assertTest('buildSidebarDashboardHtml: 드래그 앤 드롭 제어 함수(onCalTaskDragStart, onCalTaskDragEnd, onCalDayDrop 등) 탑재 검증',
+  dashHtml67.indexOf('function onCalTaskDragStart') !== -1 &&
+  dashHtml67.indexOf('function onCalTaskDragEnd') !== -1 &&
+  dashHtml67.indexOf('function onCalDayDragOver') !== -1 &&
+  dashHtml67.indexOf('function onCalDayDragLeave') !== -1 &&
+  dashHtml67.indexOf('function onCalDayDrop') !== -1
+);
+assertTest('buildSidebarDashboardHtml: onTaskClick 내 wasJustDragging 드래그 직후 상세 팝업 방어 가드 탑재 검증',
+  dashHtml67.indexOf('if (typeof wasJustDragging !== "undefined" && wasJustDragging) return;') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 월간 캘린더 셀 및 알약 드래그 속성(draggable, ondragstart, ondrop) 탑재 검증',
+  dashHtml67.indexOf('ondragover="onCalDayDragOver(event)"') !== -1 &&
+  dashHtml67.indexOf('ondrop="onCalDayDrop(event,') !== -1 &&
+  dashHtml67.indexOf('draggable="true" ondragstart="onCalTaskDragStart') !== -1
+);
+assertTest('buildSidebarDashboardHtml: 주간 캘린더 카드 및 알약 드래그 속성 탑재 검증',
+  dashHtml67.indexOf('cal-week-card') !== -1 &&
+  dashHtml67.indexOf('ondrop="onCalDayDrop(event, \\\'\' + curStr + \'\\\')">') !== -1
+);
+
+// 6. 기간 일정 드래그 앤 드롭 시 기간 간격(diffDays) 보존 알고리즘 시뮬레이션 검증
+const simData = {
+  startDateStr: '2026-10-15',
+  endDateStr: '2026-10-18', // 3일 기간
+};
+const simTargetDateStr = '2026-10-22';
+const sParts = simData.startDateStr.split('-').map(Number);
+const eParts = simData.endDateStr.split('-').map(Number);
+const sDate = new Date(sParts[0], sParts[1] - 1, sParts[2]);
+const eDate = new Date(eParts[0], eParts[1] - 1, eParts[2]);
+const diffDays = Math.round((eDate.getTime() - sDate.getTime()) / (24 * 60 * 60 * 1000));
+const tParts = simTargetDateStr.split('-').map(Number);
+const newEndObj = new Date(tParts[0], tParts[1] - 1, tParts[2] + diffDays);
+const neY = newEndObj.getFullYear();
+const neM = (newEndObj.getMonth() + 1 < 10 ? '0' : '') + (newEndObj.getMonth() + 1);
+const neD = (newEndObj.getDate() < 10 ? '0' : '') + newEndObj.getDate();
+const calculatedNewEndDate = `${neY}-${neM}-${neD}`;
+const calculatedNewDateDisplay = `${simTargetDateStr.replace(/-/g, '.')} ~ ${neY}.${neM}.${neD}`;
+
+assertTest('기간 일정 드래그 앤 드롭: 3일 기간 일정 이동 시 3일 간격 자동 연장(2026.10.22 ~ 2026.10.25) 계산 검증',
+  diffDays === 3 &&
+  calculatedNewEndDate === '2026-10-25' &&
+  calculatedNewDateDisplay === '2026.10.22 ~ 2026.10.25'
 );
 
 
