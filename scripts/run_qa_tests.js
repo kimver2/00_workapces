@@ -229,17 +229,17 @@ rowAsSlash[7] = 'A/S';
 const resAsSlash = buildDetailsFn(rowAsSlash, 171);
 assertTest('상태 "A/S"(슬래시 포함) 시 캘린더 제목에 "🛠️ " 아이콘 정상 부여', resAsSlash && resAsSlash.title.startsWith('🛠️ 🟦'));
 
-// 4. 상태 '예정' 런타임 호출 테스트
+// 4. 상태 '예정' 런타임 호출 테스트 (예정 상태는 상태 아이콘 생략)
 const rowPlan = [...baseMockRow];
 rowPlan[7] = '예정';
 const resPlan = buildDetailsFn(rowPlan, 18);
-assertTest('상태 "예정" 시 캘린더 제목 맨 앞에 한눈에 알아볼 수 있는 "📅 " 아이콘 정상 부여', resPlan && resPlan.title.startsWith('📅 🟦'));
+assertTest('상태 "예정" 시 캘린더 제목 맨 앞에 상태 아이콘 없이 "🟦 " 공유 아이콘만 깔끔하게 부여', resPlan && resPlan.title.startsWith('🟦'));
 
 // 5. 상태 미입력(빈문자열, null, undefined) 런타임 안전성 테스트
 const rowEmpty = [...baseMockRow];
 rowEmpty[7] = '';
 const resEmpty = buildDetailsFn(rowEmpty, 19);
-assertTest('진행상태가 빈 문자열일 때 ReferenceError 없이 기본 "📅 🟦" 안전 처리', resEmpty !== null && resEmpty.title.startsWith('📅 🟦'));
+assertTest('진행상태가 빈 문자열일 때 ReferenceError 없이 기본 "🟦" 안전 처리', resEmpty !== null && resEmpty.title.startsWith('🟦'));
 
 // 6. 모바일 웹앱 링크 Description 포함 여부 테스트
 assertTest('일정 설명(Description)에 모바일 웹앱 링크(?row=15) 정상 삽입', resDone && resDone.description.indexOf('?row=15') !== -1);
@@ -4640,11 +4640,11 @@ assertTest('doGet: 담당자 "인경호" 시트 G열 반영 검증', mockSheetDa
 // ========================================================
 console.log('\n🎯 [Step 55: 상태 아이콘(📅 예정), 🟪 중복 일정 치유, 완료현장 접기, 대시보드 가로 확장 QA]');
 
-// 1. 상태별 제목 맨 앞 아이콘 검증
+// 1. 상태별 제목 맨 앞 아이콘 검증 (예정은 상태 아이콘 생략)
 const testRowPlan55 = ['신대방우성 16동 902호', '2026.11.26', '가구', '우성', true, '', '전예린', '예정', 'ev-55-1', Date.now()];
 const detailsPlan55 = sandbox.buildEventDetails(testRowPlan55, 2, null, mockSheet54);
-assertTest('buildEventDetails: 예정 상태 시 제목 맨 앞에 "📅 🟦" 아이콘 부여 검증',
-  detailsPlan55 && detailsPlan55.title.startsWith('📅 🟦 [가구] 신대방우성 16동 902호')
+assertTest('buildEventDetails: 예정 상태 시 제목 맨 앞에 상태 아이콘 없이 "🟦" 부여 검증',
+  detailsPlan55 && detailsPlan55.title.startsWith('🟦 [가구] 신대방우성 16동 902호')
 );
 
 const testRowProg55 = ['신대방우성 16동 902호', '2026.11.26', '가구', '우성', true, '', '전예린', '진행 중', 'ev-55-2', Date.now()];
@@ -4995,10 +4995,10 @@ const clientSandbox57 = {
 vm.createContext(clientSandbox57);
 vm.runInContext(clientScript57, clientSandbox57);
 
-// 1) getTaskStatusIcon 상태별 아이콘 반환 검증
-assertTest('getTaskStatusIcon: 예정(📅), 진행 중(▶️), 완료(✅), AS(🛠️) 4대 상태 아이콘 정확 반환 검증',
-  clientSandbox57.getTaskStatusIcon('예정') === '📅' &&
-  clientSandbox57.getTaskStatusIcon('') === '📅' &&
+// 1) getTaskStatusIcon 상태별 아이콘 반환 검증 (예정은 아이콘 생략 '')
+assertTest('getTaskStatusIcon: 예정(""), 진행 중(▶️), 완료(✅), AS(🛠️) 상태 아이콘 정확 반환 검증',
+  clientSandbox57.getTaskStatusIcon('예정') === '' &&
+  clientSandbox57.getTaskStatusIcon('') === '' &&
   clientSandbox57.getTaskStatusIcon('진행 중') === '▶️' &&
   clientSandbox57.getTaskStatusIcon('진행') === '▶️' &&
   clientSandbox57.getTaskStatusIcon('완료') === '✅' &&
@@ -5043,21 +5043,21 @@ assertTest('onDataLoaded: 데이터 수신 완료 시 #refreshLoadingOverlay 자
   mockElems57.toast.innerText.indexOf('새로고침되었습니다') !== -1
 );
 
-assertTest('renderCalendar(월간 캘린더): 각 일정 알약(.cal-event-pill) 내부에 상태 아이콘(✅/▶️/📅/🛠️) 정상 표시 검증',
+assertTest('renderCalendar(월간 캘린더): 완료(✅)/진행(▶️)/AS(🛠️) 상태 아이콘 표시 및 예정 상태 아이콘 생략 검증',
   mockElems57.calGrid.innerHTML.indexOf('cal-status-icon') !== -1 &&
   mockElems57.calGrid.innerHTML.indexOf('>✅</span>') !== -1 &&
   mockElems57.calGrid.innerHTML.indexOf('>▶️</span>') !== -1 &&
-  mockElems57.calGrid.innerHTML.indexOf('>📅</span>') !== -1 &&
-  mockElems57.calGrid.innerHTML.indexOf('>🛠️</span>') !== -1
+  mockElems57.calGrid.innerHTML.indexOf('>🛠️</span>') !== -1 &&
+  mockElems57.calGrid.innerHTML.indexOf('>📅</span>') === -1
 );
 
 vm.runInContext('calWeekStartDate = new Date(2026, 9, 11); renderWeeklyCalendar();', clientSandbox57);
-assertTest('renderWeeklyCalendar(주간 캘린더): 주간 카드 일정 알약 내부에 상태 아이콘(✅/▶️/📅/🛠️) 정상 표시 검증',
+assertTest('renderWeeklyCalendar(주간 캘린더): 완료(✅)/진행(▶️)/AS(🛠️) 상태 아이콘 표시 및 예정 상태 아이콘 생략 검증',
   mockElems57.calWeekList.innerHTML.indexOf('cal-status-icon') !== -1 &&
   mockElems57.calWeekList.innerHTML.indexOf('>✅</span>') !== -1 &&
   mockElems57.calWeekList.innerHTML.indexOf('>▶️</span>') !== -1 &&
-  mockElems57.calWeekList.innerHTML.indexOf('>📅</span>') !== -1 &&
-  mockElems57.calWeekList.innerHTML.indexOf('>🛠️</span>') !== -1
+  mockElems57.calWeekList.innerHTML.indexOf('>🛠️</span>') !== -1 &&
+  mockElems57.calWeekList.innerHTML.indexOf('>📅</span>') === -1
 );
 
 // ============================================================================

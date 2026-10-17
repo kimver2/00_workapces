@@ -2357,16 +2357,14 @@ function buildEventDetails(rowValues, rowNumber, refDate, targetSheet) {
   var status = String(rowValues[7] || "").trim();   // H열: 진행상태 (인덱스 7)
   var statusClean = status.replace(/\s+/g, "");
 
-  // 상태별 아이콘 (스타일 A: 예정='📅 ', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
-  var statusIcon = "📅 ";
+  // 상태별 아이콘 (예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
+  var statusIcon = "";
   if (statusClean.indexOf("완료") !== -1 || statusClean.indexOf("✅") !== -1) {
     statusIcon = "✅ ";
   } else if (statusClean.indexOf("진행") !== -1 || statusClean.indexOf("▶") !== -1) {
     statusIcon = "▶️ ";
   } else if (statusClean.indexOf("AS") !== -1 || statusClean.indexOf("A/S") !== -1 || statusClean.indexOf("as") !== -1 || statusClean.indexOf("🛠") !== -1) {
     statusIcon = "🛠️ ";
-  } else if (statusClean.indexOf("예정") !== -1 || statusClean.indexOf("📅") !== -1 || statusClean === "") {
-    statusIcon = "📅 ";
   }
 
 
@@ -4184,17 +4182,15 @@ function refreshDashboardCalendar(ss) {
     var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
     var prefixIcon = isShared ? "🟦 " : "🟥 ";
 
-    // 상태별 아이콘 (스타일 A: 예정='📅 ', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
+    // 상태별 아이콘 (예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
     var statusClean = status.replace(/\s+/g, "");
-    var statusIcon = "📅 ";
+    var statusIcon = "";
     if (statusClean.indexOf("완료") !== -1 || statusClean.indexOf("✅") !== -1) {
       statusIcon = "✅ ";
     } else if (statusClean.indexOf("진행") !== -1 || statusClean.indexOf("▶") !== -1) {
       statusIcon = "▶️ ";
     } else if (statusClean.indexOf("AS") !== -1 || statusClean.indexOf("A/S") !== -1 || statusClean.indexOf("as") !== -1 || statusClean.indexOf("🛠") !== -1) {
       statusIcon = "🛠️ ";
-    } else if (statusClean.indexOf("예정") !== -1 || statusClean.indexOf("📅") !== -1 || statusClean === "") {
-      statusIcon = "📅 ";
     }
 
     // 공정 지연 자동 감지 (Feature 2)
@@ -6079,7 +6075,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "    </div>" +
     "    <div class='section-label'>⚡ 진행 상태 설정</div>" +
     "    <div class='btn-grid'>" +
-    "      <button type='button' class='status-btn btn-plan " + (currentStatus === "예정" ? "active" : "") + "' onclick='selectStatus(\"예정\")'>📅 예정</button>" +
+    "      <button type='button' class='status-btn btn-plan " + (currentStatus === "예정" ? "active" : "") + "' onclick='selectStatus(\"예정\")'>예정</button>" +
     "      <button type='button' class='status-btn btn-progress " + (currentStatus.indexOf("진행") !== -1 ? "active" : "") + "' onclick='selectStatus(\"진행 중\")'>▶️ 진행 중</button>" +
     "      <button type='button' class='status-btn btn-done " + (currentStatus === "완료" ? "active" : "") + "' onclick='selectStatus(\"완료\")'>✅ 완료</button>" +
     "      <button type='button' class='status-btn btn-as " + (currentStatus === "AS" ? "active" : "") + "' onclick='selectStatus(\"AS\")'>🛠️ AS</button>" +
@@ -8073,7 +8069,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    </div>';
   html += '    <div class="sheet-sec-label">⚡ 진행 상태 변경</div>';
   html += '    <div class="sheet-status-grid">';
-  html += '      <button type="button" class="sheet-status-btn" data-status="예정" onclick="selectSheetStatus(\'예정\')">📅 예정</button>';
+  html += '      <button type="button" class="sheet-status-btn" data-status="예정" onclick="selectSheetStatus(\'예정\')">예정</button>';
   html += '      <button type="button" class="sheet-status-btn" data-status="진행 중" onclick="selectSheetStatus(\'진행 중\')">▶️ 진행 중</button>';
   html += '      <button type="button" class="sheet-status-btn" data-status="완료" onclick="selectSheetStatus(\'완료\')">✅ 완료</button>';
   html += '      <button type="button" class="sheet-status-btn" data-status="AS" onclick="selectSheetStatus(\'AS\')">🛠️ AS</button>';
@@ -8136,7 +8132,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (st.indexOf("완료") !== -1 || st.indexOf("✅") !== -1) return "✅";';
   html += '  if (st.indexOf("진행") !== -1 || st.indexOf("▶") !== -1) return "▶️";';
   html += '  if (st.indexOf("AS") !== -1 || st.indexOf("A/S") !== -1 || st.indexOf("as") !== -1 || st.indexOf("🛠") !== -1) return "🛠️";';
-  html += '  return "📅";';
+  html += '  return "";';
   html += '}';
 
   html += 'function showToast(msg) {';
@@ -8523,7 +8519,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      const isLight = !isDelayed && (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26");';
   html += '      const txtCol = isLight ? "#0f172a" : "#ffffff";';
   html += '      const txtShadow = isLight ? "none" : "0 1px 1px rgba(0,0,0,0.45)";';
-  html += '      const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + stIcon + " [" + escapeHtml(task.status || "예정") + "] " + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
+  html += '      const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + (stIcon ? stIcon + " " : "") + "[" + escapeHtml(task.status || "예정") + "] " + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
   html += '      const tLen = (task.taskName || "").length;';
   html += '      let fontStyle = "font-weight:800;";';
   html += '      if (tLen <= 2) {';
@@ -8540,7 +8536,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (isDelayed) {';
   html += '        gridHtml += \'<span class="cal-delay-warn-icon" title="⚠️ 공정 지연">⚠️</span>\';';
   html += '      }';
-  html += '      gridHtml += \'<span class="cal-status-icon" title="상태: \' + escapeHtml(task.status || "예정") + \'">\' + stIcon + \'</span>\';';
+  html += '      if (stIcon) {';
+  html += '        gridHtml += \'<span class="cal-status-icon" title="상태: \' + escapeHtml(task.status || "예정") + \'">\' + stIcon + \'</span>\';';
+  html += '      }';
   html += '      gridHtml += \'<span class="cal-sh-box \' + shClass + \'"></span><span class="cal-pill-text" style="\' + fontStyle + \'">\' + escapeHtml(task.taskName) + \'</span>\';';
   html += '      gridHtml += \'</div>\';';
   html += '    });';
@@ -8679,15 +8677,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '        const isLight = !isDelayed && (bgCol === "#F6BF26" || bgCol.toUpperCase() === "#F6BF26");';
   html += '        const txtCol = isLight ? "#0f172a" : "#ffffff";';
   html += '        const txtShadow = isLight ? "none" : "0 1px 1px rgba(0,0,0,0.45)";';
-  html += '        const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + stIcon + " [" + escapeHtml(task.status || "예정") + "] " + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
+  html += '        const fullTitle = (isDelayed ? "⚠️ [공정 지연] " : "") + (stIcon ? stIcon + " " : "") + "[" + escapeHtml(task.status || "예정") + "] " + escapeHtml(site.siteName) + " - " + escapeHtml(task.taskName) + " (" + (isSh ? "공유" : "미공유") + (task.manager ? ", 담당: " + task.manager : "") + ")";';
   html += '        listHtml += \'<div class="cal-event-pill \' + (isDelayed ? "status-delayed " : "") + (isDone ? "status-done" : "") + \'" style="background-color:\' + bgCol + \';color:\' + txtCol + \';padding:4px 6px;font-size:11px;\' + (txtShadow !== "none" ? "text-shadow:" + txtShadow + ";" : "") + \'" onclick="event.stopPropagation();onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')" title="\' + fullTitle + \'">\';';
   html += '        const pRateTag = (typeof site.progressRate === "number") ? " " + site.progressRate + "%" : "";';
   html += '        if (isDelayed) {';
   html += '          listHtml += \'  <span class="cal-delay-warn-icon" style="font-size:10px;margin-right:3px;" title="⚠️ 공정 지연">⚠️</span>\';';
   html += '        }';
-  html += '        listHtml += \'  <span class="cal-status-icon" style="font-size:10px;margin-right:3px;" title="상태: \' + escapeHtml(task.status || "예정") + \'">\' + stIcon + \'</span>\';';
+  html += '        if (stIcon) {';
+  html += '          listHtml += \'  <span class="cal-status-icon" style="font-size:10px;margin-right:3px;" title="상태: \' + escapeHtml(task.status || "예정") + \'">\' + stIcon + \'</span>\';';
+  html += '        }';
   html += '        listHtml += \'  <span class="cal-sh-box \' + shClass + \'" style="width:7.5px;height:7.5px;"></span>\';';
-  html += '        listHtml += \'  <span class="cal-pill-text" style="font-size:11px;font-weight:800;">[\' + escapeHtml(site.siteName) + pRateTag + \'] \' + escapeHtml(task.taskName) + (task.manager ? " (" + escapeHtml(task.manager) + ")" : "") + (task.status ? " - " + stIcon + " " + escapeHtml(task.status) : "") + \'</span>\';';
+  html += '        listHtml += \'  <span class="cal-pill-text" style="font-size:11px;font-weight:800;">[\' + escapeHtml(site.siteName) + pRateTag + \'] \' + escapeHtml(task.taskName) + (task.manager ? " (" + escapeHtml(task.manager) + ")" : "") + (task.status ? " - " + (stIcon ? stIcon + " " : "") + escapeHtml(task.status) : "") + \'</span>\';';
   html += '        listHtml += \'</div>\';';
   html += '      });';
   html += '    }';
@@ -9130,7 +9130,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'    <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? " / " + escapeHtml(task.partner) : "") + \'</span>\';';
   html += '      html += \'    <div style="display:flex;align-items:center;gap:4px;">\';';
   html += '      html += \'      <span class="\' + shareTagClass + \'">\' + shareTagText + \'</span>\';';
-  html += '      html += \'      <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : (getTaskStatusIcon(task.status) + " " + escapeHtml(task.status || "예정"))) + \'</span>\';';
+  html += '      const stIcon = getTaskStatusIcon(task.status);';
+  html += '      html += \'      <span class="status-tag \' + statusClass + \'">\' + (task.isDelayed ? "⚠️ 지연" : ((stIcon ? stIcon + " " : "") + escapeHtml(task.status || "예정"))) + \'</span>\';';
   html += '      html += \'    </div>\';';
   html += '      html += \'  </div>\';';
   html += '      if (task.memo) {';
