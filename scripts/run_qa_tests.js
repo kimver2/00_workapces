@@ -6069,6 +6069,81 @@ assertTest('기간 일정 드래그 앤 드롭: 3일 기간 일정 이동 시 3�
 );
 
 
+// ============================================================================
+// [Step 68] PC Google Calendar 2-Column Desktop Native View 검증
+// ============================================================================
+console.log('\n[Step 68] PC 구글 캘린더 스타일 2-Column 데스크톱 네이티브 뷰 무결성 검증...');
+
+const dashHtml68 = sandbox.buildSidebarDashboardHtml('web');
+
+// 1. PC 데스크톱 레이아웃 마크업 검증 (TopBar, Sidebar, Main Workspace)
+assertTest('Step 68-1: PC 전용 상단 헤더바(pc-topbar) 및 워크스페이스(pc-workspace, pc-sidebar, pc-main-content) 마크업 검증',
+  dashHtml68.indexOf('<header class="pc-topbar">') !== -1 &&
+  dashHtml68.indexOf('<div class="pc-workspace">') !== -1 &&
+  dashHtml68.indexOf('<aside class="pc-sidebar">') !== -1 &&
+  dashHtml68.indexOf('<main class="pc-main-content">') !== -1
+);
+
+// 2. PC 상단 헤더바(pc-topbar) 핵심 컨트롤 검증
+assertTest('Step 68-2: pc-topbar 내 로고, [오늘][◀][▶] 날짜 타이틀, Alt+S 검색창, 3가지 뷰 전환 탭([월간][주간][카드]), 캡쳐/새로고침 버튼 탑재 검증',
+  dashHtml68.indexOf('id="pcMonthTitle"') !== -1 &&
+  dashHtml68.indexOf('id="pcSearchInput"') !== -1 &&
+  dashHtml68.indexOf("switchToPcView('month')") !== -1 &&
+  dashHtml68.indexOf("switchToPcView('week')") !== -1 &&
+  dashHtml68.indexOf("switchToPcView('list')") !== -1 &&
+  dashHtml68.indexOf('captureCalendarScreen()') !== -1
+);
+
+// 3. PC 좌측 사이드바(pc-sidebar) 위젯 검증
+assertTest('Step 68-3: pc-sidebar 내 [새 일정 등록] 버튼, 미니 캘린더, 진행현장 체크박스 필터, 담당자 라디오 필터, KPI 요약 카드 탑재 검증',
+  dashHtml68.indexOf('class="pc-btn-create-event"') !== -1 &&
+  dashHtml68.indexOf('id="pcMiniCalendarArea"') !== -1 &&
+  dashHtml68.indexOf('id="pcSidebarSiteList"') !== -1 &&
+  dashHtml68.indexOf('id="pcSidebarMemberList"') !== -1 &&
+  dashHtml68.indexOf('id="pcKpiToday"') !== -1 &&
+  dashHtml68.indexOf('id="pcKpiDelay"') !== -1
+);
+
+// 4. PC 미디어 쿼리(>= 768px) 모바일 요소 완전 은폐 및 데스크톱 풀스크린 스타일 검증
+assertTest('Step 68-4: 미디어 쿼리 내 모바일 헤더/하단바/모바일 캘린더 네비 은폐(display:none !important) 및 PC 탑바/사이드바 flex 노출 검증',
+  dashHtml68.indexOf('@media (min-width: 768px)') !== -1 &&
+  dashHtml68.indexOf('.pc-topbar { display: flex !important;') !== -1 &&
+  dashHtml68.indexOf('.pc-sidebar { display: flex !important;') !== -1 &&
+  dashHtml68.indexOf('.footer-bar { display: none !important; }') !== -1 &&
+  dashHtml68.indexOf('.header { display: none !important;') !== -1 &&
+  dashHtml68.indexOf('.cal-mode-bar, .cal-nav-bar { display: none !important; }') !== -1
+);
+
+// 5. PC 캘린더 풀사이즈 높이 확장(100vh) CSS 검증
+assertTest('Step 68-5: PC 캘린더 화면 전체 높이 활용 CSS (height: 100vh, flex: 1, grid-auto-rows: 1fr) 검증',
+  dashHtml68.indexOf('height: 100vh !important;') !== -1 &&
+  dashHtml68.indexOf('overflow: hidden !important;') !== -1 &&
+  dashHtml68.indexOf('grid-auto-rows: 1fr;') !== -1
+);
+
+// 6. PC 클라이언트 스크립트 함수 탑재 검증
+assertTest('Step 68-6: PC 전용 제어 함수(switchToPcView, renderMiniCalendar, onMiniDayClick, renderPcSidebarSites, renderPcSidebarMembers, updatePcSidebarKPIs) 탑재 검증',
+  dashHtml68.indexOf('function switchToPcView(view)') !== -1 &&
+  dashHtml68.indexOf('function onPcSearchInput(val)') !== -1 &&
+  dashHtml68.indexOf('function clearPcSearch()') !== -1 &&
+  dashHtml68.indexOf('function renderMiniCalendar(') !== -1 &&
+  dashHtml68.indexOf('function onMiniDayClick(y, m, d)') !== -1 &&
+  dashHtml68.indexOf('function renderPcSidebarSites()') !== -1 &&
+  dashHtml68.indexOf('function onPcSiteCheckChange(e, siteEnc)') !== -1 &&
+  dashHtml68.indexOf('function clearAllPcSites()') !== -1 &&
+  dashHtml68.indexOf('function renderPcSidebarMembers(members)') !== -1 &&
+  dashHtml68.indexOf('function updatePcSidebarKPIs()') !== -1
+);
+
+// 7. PC 진입 시 월간 캘린더 기본 활성화 및 pcMonthTitle 실시간 동기화 검증
+assertTest('Step 68-7: PC 접속 시 isCalendarMode = true 기본 활성화, pcMonthTitle 동기화 및 Alt+S 단축키 등록 검증',
+  dashHtml68.indexOf('isCalendarMode = (typeof window !== "undefined" && window.innerWidth >= 768);') !== -1 &&
+  dashHtml68.indexOf('if (pcTitle) pcTitle.innerText = calYear + "년 " + calMonth + "월";') !== -1 &&
+  dashHtml68.indexOf('if (pcTitle) pcTitle.innerText = weekTitleText;') !== -1 &&
+  dashHtml68.indexOf('e.altKey && (e.key === "s" || e.key === "S"') !== -1
+);
+
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
