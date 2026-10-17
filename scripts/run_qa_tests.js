@@ -5535,6 +5535,117 @@ assertTest('담당자 목록: populateManagerSelectOptions 및 renderMemberFilte
   mockElems57.memberFilterBar.innerHTML.indexOf('영하') === -1
 );
 
+// ============================================================================
+// [Step 62] 이메일 모바일 빠른 관리 링크 변경 + 일정 추가 시 동일 현장 그룹 병합 및 날짜순 정렬 QA 검증
+// ============================================================================
+console.log('\n--- [Step 62] 이메일 모바일 빠른 관리 링크 및 현장별 그룹 병합/날짜순 정렬 무결성 검증 ---');
+
+// 1) 이메일 모닝 브리핑 '📱 모바일 빠른 관리' 링크 URL 검증
+const emailRes62 = sandbox.buildMorningBriefingEmailContent(
+  '2026-10-17',
+  '토',
+  [{ siteName: '신대방우성 5동 601호', taskName: '목공', status: '진행 중', dateStr: '2026.10.17', manager: '조항만', memo: '' }],
+  [],
+  'https://docs.google.com/spreadsheets/d/test',
+  'https://script.google.com/macros/s/old-url/exec'
+);
+assertTest('buildMorningBriefingEmailContent: 이메일 내 "📱 모바일 빠른 관리" 링크가 https://kimver2.github.io/00_workapces/ 로 정확히 설정 검증',
+  emailRes62.htmlBody.indexOf('href="https://kimver2.github.io/00_workapces/"') !== -1 &&
+  emailRes62.plainText.indexOf('https://kimver2.github.io/00_workapces/') !== -1
+);
+
+// 2) 시트 맨 아래(125행 등)에 분리되어 들어간 동일 현장 행 자동 병합(consolidateSplitSiteRows) 및 날짜순 정렬 검증
+const mockRows62 = [
+  ['신대방우성 5동 601호', '2026.10.15', '철거', '', true, '', '조항만', '완료', 'ev-1', 100],
+  ['신대방우성 5동 601호', '2026.10.22', '목공', '', true, '', '조항만', '예정', 'ev-2', 200],
+  ['보경102동', '2026.10.15', '타일', '', false, '', '전예린', '예정', 'ev-3', 300],
+  ['보경102동', '2026.11.10', '입주', '', true, '', '전예린', '예정', 'ev-4', 400],
+  ['신대방우성 5동 601호', '2026.10.18', '테스트', '', true, '', '', '예정', 'ev-5', 500]
+];
+const mockSheet62 = {
+  getName: () => '현장데이터',
+  getSheetId: () => 626262,
+  getLastRow: () => mockRows62.length + 1,
+  getLastColumn: () => 10,
+  insertRowAfter: (afterRow) => {
+    const idx = afterRow - 1; // 2행이 index 0이므로 afterRow 뒤는 index (afterRow - 1)
+    mockRows62.splice(idx, 0, ['', '', '', '', false, '', '', '예정', '', 0]);
+  },
+  deleteRow: (rowNum) => {
+    mockRows62.splice(rowNum - 2, 1);
+  },
+  getRange: (r, c, nr, nc) => {
+    if (nr && nc) {
+      return {
+        getValues: () => mockRows62.slice(r - 2, r - 2 + nr).map(row => row.slice()),
+        getBackgrounds: () => mockRows62.slice(r - 2, r - 2 + nr).map(() => new Array(nc).fill('#ffffff')),
+        setValues: (vals) => {
+          for (let i = 0; i < vals.length; i++) {
+            mockRows62[r - 2 + i] = vals[i].slice();
+          }
+        },
+        setBackgrounds: () => {},
+        setVerticalAlignment: () => {},
+        setHorizontalAlignment: () => {},
+        setBorder: () => {},
+        setDataValidation: () => {},
+        insertCheckboxes: function() { return this; }
+      };
+    }
+    return {
+      setValue: (val) => {
+        if (!mockRows62[r - 2]) mockRows62[r - 2] = [];
+        mockRows62[r - 2][c - 1] = val;
+      },
+      getValue: () => (mockRows62[r - 2] ? mockRows62[r - 2][c - 1] : ''),
+      insertCheckboxes: function() { return this; },
+      setHorizontalAlignment: function() { return this; }
+    };
+  },
+  getParent: () => mockSs62
+};
+const mockSs62 = {
+  getId: () => 'test-sheet-id-62',
+  setActiveSheet: () => {},
+  getSheetByName: (n) => (n === '현장데이터' ? mockSheet62 : null),
+  getSheets: () => [mockSheet62]
+};
+sandbox.SpreadsheetApp.getActiveSpreadsheet = () => mockSs62;
+sandbox.getAppSpreadsheet = () => mockSs62;
+sandbox.findSiteScheduleSheet = () => mockSheet62;
+
+sandbox.sortSiteScheduleTasksByDate(mockSs62, mockSheet62, true);
+assertTest('consolidateSplitSiteRows + sortSiteScheduleTasksByDate: 맨 아래 분리된 "신대방우성 5동 601호 (10.18 테스트)" 행이 원래 현장 블록 안(10.15와 10.22 사이)으로 병합·정렬 검증',
+  mockRows62.length === 5 &&
+  mockRows62[0][0] === '신대방우성 5동 601호' && mockRows62[0][1] === '2026.10.15' &&
+  mockRows62[1][0] === '신대방우성 5동 601호' && mockRows62[1][1] === '2026.10.18' && mockRows62[1][2] === '테스트' &&
+  mockRows62[2][0] === '신대방우성 5동 601호' && mockRows62[2][1] === '2026.10.22' &&
+  mockRows62[3][0] === '보경102동' &&
+  mockRows62[4][0] === '보경102동'
+);
+
+// 3) addScheduleTaskFromWeb 호출 시 시트 맨 끝이 아니라 해당 현장 블록 내부로 즉시 삽입 및 날짜 오름차순 정렬 검증
+const addGroupedRes62 = sandbox.addScheduleTaskFromWeb(
+  '신대방우성 5동 601호',
+  '전기',
+  '2026-10-17',
+  '조항만',
+  '예정',
+  true,
+  '배선 작업',
+  ''
+);
+assertTest('addScheduleTaskFromWeb(현장 그룹 삽입): "신대방우성 5동 601호"에 10.17 일정 추가 시 시트 맨 끝이 아닌 해당 현장 블록 내 3행(10.15 다음, 10.18 앞)으로 정확히 삽입 검증',
+  addGroupedRes62.success === true &&
+  addGroupedRes62.row === 3 &&
+  mockRows62[0][0] === '신대방우성 5동 601호' && mockRows62[0][1] === '2026.10.15' &&
+  mockRows62[1][0] === '신대방우성 5동 601호' && mockRows62[1][1] === '2026.10.17' && mockRows62[1][2] === '전기' &&
+  mockRows62[2][0] === '신대방우성 5동 601호' && mockRows62[2][1] === '2026.10.18' && mockRows62[2][2] === '테스트' &&
+  mockRows62[3][0] === '신대방우성 5동 601호' && mockRows62[3][1] === '2026.10.22' &&
+  mockRows62[4][0] === '보경102동' &&
+  mockRows62[5][0] === '보경102동'
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

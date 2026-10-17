@@ -532,6 +532,203 @@ function runHourlyAutoSortTrigger() {
  * @param {boolean} [silent=false] UI 알림 표시 여부
  * @return {number} 정렬된 현장 블록 개수
  */
+function formatInsertedScheduleRow(sheet, rowNum, isSharedBool) {
+  if (!sheet || rowNum < 2) return;
+  try {
+    var rowRange = sheet.getRange(rowNum, 1, 1, 10);
+    if (rowRange && typeof rowRange.setVerticalAlignment === "function") {
+      rowRange.setVerticalAlignment("middle");
+    }
+  } catch (eVa) {}
+  try {
+    [1, 2, 3, 5, 7, 8].forEach(function(col) {
+      var cr = sheet.getRange(rowNum, col, 1, 1);
+      if (cr && typeof cr.setHorizontalAlignment === "function") cr.setHorizontalAlignment("center");
+    });
+    [4, 6].forEach(function(col) {
+      var lr = sheet.getRange(rowNum, col, 1, 1);
+      if (lr && typeof lr.setHorizontalAlignment === "function") lr.setHorizontalAlignment("left");
+    });
+  } catch (eHa) {}
+  try {
+    var borderRange = sheet.getRange(rowNum, 1, 1, 8);
+    if (borderRange && typeof borderRange.setBorder === "function" && typeof SpreadsheetApp !== "undefined" && SpreadsheetApp.BorderStyle) {
+      borderRange.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+    }
+  } catch (eBd) {}
+  try {
+    var shareCell = sheet.getRange(rowNum, 5);
+    if (shareCell) {
+      if (typeof shareCell.insertCheckboxes === "function") shareCell.insertCheckboxes();
+      if (typeof shareCell.setValue === "function") shareCell.setValue(Boolean(isSharedBool));
+    }
+  } catch (eCb) {}
+  try {
+    applySiteScheduleValidations(sheet, rowNum, 1);
+  } catch (eVal) {}
+}
+
+/**
+ * 시트 하단 등에 떨어져 추가된 동일 현장의 분리된 행을 원래 현장 블록 내부로 자동 병합
+ */
+function consolidateSplitSiteRows(sheet) {
+  if (!sheet) return 0;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 3) return 0;
+
+  var rangeAll = sheet.getRange(2, 1, lastRow - 1, 10);
+  if (!rangeAll || typeof rangeAll.getValues !== "function") return 0;
+  var values = rangeAll.getValues();
+  if (!Array.isArray(values) || values.length < 2) return 0;
+
+  var firstBlockEndBySite = {};
+  var firstBlockClosedBySite = {};
+  var firstBlockExplicitBySite = {};
+  var currentSite = "";
+  var prevSite = "";
+  var hasSplit = false;
+
+  for (var i = 0; i < values.length; i++) {
+    var rVals = values[i];
+    var rawS = String(rVals[0] || "").trim();
+    var hasDT = Boolean(String(rVals[1] || "").trim() || String(rVals[2] || "").trim());
+    if (!rawS && !hasDT) {
+      if (prevSite && firstBlockEndBySite[prevSite] !== undefined) {
+        firstBlockClosedBySite[prevSite] = true;
+      }
+      prevSite = "";
+      continue;
+    }
+    var effS = rawS || currentSite;
+    if (rawS) currentSite = rawS;
+    if (!effS) continue;
+
+    if (firstBlockEndBySite[effS] === undefined) {
+      firstBlockEndBySite[effS] = i + 2;
+      firstBlockExplicitBySite[effS] = Boolean(rawS);
+    } else if (prevSite === effS && !firstBlockClosedBySite[effS]) {
+      firstBlockEndBySite[effS] = i + 2;
+      if (!rawS) firstBlockExplicitBySite[effS] = false;
+    } else {
+      hasSplit = true;
+    }
+
+    if (prevSite && prevSite !== effS && firstBlockEndBySite[prevSite] !== undefined) {
+      firstBlockClosedBySite[prevSite] = true;
+    }
+    prevSite = effS;
+  }
+
+  if (!hasSplit) return 0;
+
+  var movedCount = 0;
+  if (typeof sheet.insertRowAfter === "function" && typeof sheet.deleteRow === "function") {
+    var safetyLimit = 30;
+    while (safetyLimit-- > 0) {
+      var curLast = sheet.getLastRow();
+      if (curLast < 3) break;
+      var curValues = sheet.getRange(2, 1, curLast - 1, 10).getValues();
+      var siteEndMap = {};
+      var siteClosedMap = {};
+      var siteExplicitMap = {};
+      var lastS = "";
+      var prvS = "";
+      var splitRowNum = -1;
+      var splitSiteName = "";
+      var splitRowVals = null;
+
+      for (var k = 0; k < curValues.length; k++) {
+        var rv = curValues[k];
+        var rs = String(rv[0] || "").trim();
+        var hdt = Boolean(String(rv[1] || "").trim() || String(rv[2] || "").trim());
+        if (!rs && !hdt) {
+          if (prvS && siteEndMap[prvS] !== undefined) siteClosedMap[prvS] = true;
+          prvS = "";
+          continue;
+        }
+        var es = rs || lastS;
+        if (rs) lastS = rs;
+        if (!es) continue;
+
+        if (siteEndMap[es] === undefined) {
+          siteEndMap[es] = k + 2;
+          siteExplicitMap[es] = Boolean(rs);
+        } else if (prvS === es && !siteClosedMap[es]) {
+          siteEndMap[es] = k + 2;
+          if (!rs) siteExplicitMap[es] = false;
+        } else {
+          splitRowNum = k + 2;
+          splitSiteName = es;
+          splitRowVals = rv.slice();
+          break;
+        }
+        if (prvS && prvS !== es && siteEndMap[prvS] !== undefined) {
+          siteClosedMap[prvS] = true;
+        }
+        prvS = es;
+      }
+
+      if (splitRowNum === -1 || !splitSiteName) break;
+
+      var targetAfterRow = siteEndMap[splitSiteName];
+      var isExplicit = siteExplicitMap[splitSiteName] !== false;
+      splitRowVals[0] = isExplicit ? splitSiteName : "";
+
+      sheet.insertRowAfter(targetAfterRow);
+      var insertedRow = targetAfterRow + 1;
+      sheet.getRange(insertedRow, 1, 1, 10).setValues([splitRowVals]);
+      formatInsertedScheduleRow(sheet, insertedRow, splitRowVals[4] === true || String(splitRowVals[4]).toUpperCase() === "TRUE");
+
+      var rowToDelete = (targetAfterRow < splitRowNum) ? (splitRowNum + 1) : splitRowNum;
+      sheet.deleteRow(rowToDelete);
+      movedCount++;
+    }
+    if (movedCount > 0) {
+      SpreadsheetApp.flush();
+    }
+    return movedCount;
+  }
+
+  // 폴백 (모의 테스트 환경 등 insertRowAfter 미지원 시): 메모리 배열 병합 후 일괄 setValues
+  var groupedOrder = [];
+  var groupedMap = {};
+  var emptyRows = [];
+  var curS = "";
+  for (var m = 0; m < values.length; m++) {
+    var rowV = values[m].slice();
+    var rSite = String(rowV[0] || "").trim();
+    var hasContent = Boolean(String(rowV[1] || "").trim() || String(rowV[2] || "").trim());
+    if (!rSite && !hasContent) {
+      emptyRows.push(rowV);
+      continue;
+    }
+    var eSite = rSite || curS;
+    if (rSite) curS = rSite;
+    if (!groupedMap[eSite]) {
+      groupedMap[eSite] = [];
+      groupedOrder.push(eSite);
+    } else {
+      movedCount++;
+    }
+    groupedMap[eSite].push(rowV);
+  }
+  var mergedValues = [];
+  for (var g = 0; g < groupedOrder.length; g++) {
+    var sKey = groupedOrder[g];
+    var sRows = groupedMap[sKey];
+    var explicitAll = firstBlockExplicitBySite[sKey] !== false;
+    for (var sr = 0; sr < sRows.length; sr++) {
+      sRows[sr][0] = explicitAll ? sKey : (sr === 0 ? sKey : "");
+      mergedValues.push(sRows[sr]);
+    }
+  }
+  for (var er = 0; er < emptyRows.length; er++) {
+    mergedValues.push(emptyRows[er]);
+  }
+  rangeAll.setValues(mergedValues);
+  return movedCount;
+}
+
 function sortSiteScheduleTasksByDate(ss, sheet, silent) {
   if (!ss) ss = getAppSpreadsheet();
   if (!ss) return 0;
@@ -540,6 +737,14 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
 
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return 0;
+
+  var consolidatedCount = 0;
+  try {
+    consolidatedCount = consolidateSplitSiteRows(sheet);
+    if (consolidatedCount > 0) {
+      lastRow = sheet.getLastRow();
+    }
+  } catch (eCons) {}
 
   // 전체 데이터 읽기 (1~10열: A~J열)
   var totalRows = lastRow - 1;
@@ -5830,25 +6035,109 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     var cleanStatus = String(status || "예정").trim() || "예정";
     var nowMs = Date.now();
 
-    var lastRow = sheet.getLastRow();
-    var newRow = Math.max(2, lastRow + 1);
-    var newRowValues = [cleanSite, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, cleanManager, cleanStatus, "", nowMs];
+    try {
+      consolidateSplitSiteRows(sheet);
+    } catch (eConsPre) {}
 
-    var targetRange = sheet.getRange(newRow, 1, 1, 10);
-    if (targetRange && typeof targetRange.setValues === "function") {
-      targetRange.setValues([newRowValues]);
-    } else {
-      for (var c = 0; c < newRowValues.length; c++) {
-        sheet.getRange(newRow, c + 1).setValue(newRowValues[c]);
+    var lastRow = sheet.getLastRow();
+    var siteStartRow = -1;
+    var siteEndRow = -1;
+    var hasExplicitSiteInAllRows = true;
+
+    if (lastRow >= 2) {
+      var existingVals = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+      var lastKnown = "";
+      for (var rIdx = 0; rIdx < existingVals.length; rIdx++) {
+        var rRow = existingVals[rIdx];
+        var rSite = String(rRow[0] || "").trim();
+        var hasContent = Boolean(String(rRow[1] || "").trim() || String(rRow[2] || "").trim());
+        if (!rSite && !hasContent) {
+          if (siteStartRow !== -1) break;
+          lastKnown = "";
+          continue;
+        }
+        var effSite = rSite || lastKnown;
+        if (rSite) lastKnown = rSite;
+        if (effSite === cleanSite) {
+          if (siteStartRow === -1) {
+            siteStartRow = rIdx + 2;
+          }
+          siteEndRow = rIdx + 2;
+          if (!rSite) hasExplicitSiteInAllRows = false;
+        } else if (siteStartRow !== -1) {
+          break;
+        }
       }
     }
-    try {
-      var shareCell = sheet.getRange(newRow, 5);
-      if (shareCell && typeof shareCell.insertCheckboxes === "function") {
-        shareCell.insertCheckboxes();
-        shareCell.setValue(isSharedBool);
+
+    var siteColVal = (siteStartRow !== -1 && !hasExplicitSiteInAllRows) ? "" : cleanSite;
+    var newRowValues = [siteColVal, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, cleanManager, cleanStatus, "", nowMs];
+    var newRow = Math.max(2, lastRow + 1);
+
+    if (siteEndRow >= 2) {
+      if (typeof sheet.insertRowAfter === "function") {
+        sheet.insertRowAfter(siteEndRow);
+        newRow = siteEndRow + 1;
+        var insRange = sheet.getRange(newRow, 1, 1, 10);
+        if (insRange && typeof insRange.setValues === "function") {
+          insRange.setValues([newRowValues]);
+        } else {
+          for (var c1 = 0; c1 < newRowValues.length; c1++) {
+            sheet.getRange(newRow, c1 + 1).setValue(newRowValues[c1]);
+          }
+        }
+        formatInsertedScheduleRow(sheet, newRow, isSharedBool);
+        if (siteStartRow === siteEndRow) {
+          try {
+            sheet.getRange(newRow + ":" + newRow).shiftRowGroupDepth(1);
+          } catch (eGrp) {}
+        }
+      } else if (siteEndRow < lastRow) {
+        var allRows = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+        allRows.splice(siteEndRow - 1, 0, newRowValues);
+        newRow = siteEndRow + 1;
+        var fullRange = sheet.getRange(2, 1, allRows.length, 10);
+        if (fullRange && typeof fullRange.setValues === "function") {
+          fullRange.setValues(allRows);
+        }
+        formatInsertedScheduleRow(sheet, newRow, isSharedBool);
+      } else {
+        newRow = lastRow + 1;
+        var endRange = sheet.getRange(newRow, 1, 1, 10);
+        if (endRange && typeof endRange.setValues === "function") {
+          endRange.setValues([newRowValues]);
+        } else {
+          for (var c2 = 0; c2 < newRowValues.length; c2++) {
+            sheet.getRange(newRow, c2 + 1).setValue(newRowValues[c2]);
+          }
+        }
+        formatInsertedScheduleRow(sheet, newRow, isSharedBool);
       }
-    } catch (eCb) {}
+    } else {
+      var targetRange = sheet.getRange(newRow, 1, 1, 10);
+      if (targetRange && typeof targetRange.setValues === "function") {
+        targetRange.setValues([newRowValues]);
+      } else {
+        for (var c = 0; c < newRowValues.length; c++) {
+          sheet.getRange(newRow, c + 1).setValue(newRowValues[c]);
+        }
+      }
+      formatInsertedScheduleRow(sheet, newRow, isSharedBool);
+    }
+
+    try {
+      sortSiteScheduleTasksByDate(ss, sheet, true);
+      var afterLastRow = sheet.getLastRow();
+      if (afterLastRow >= 2) {
+        var afterVals = sheet.getRange(2, 1, afterLastRow - 1, 10).getValues();
+        for (var fIdx = 0; fIdx < afterVals.length; fIdx++) {
+          if (afterVals[fIdx][9] === nowMs && String(afterVals[fIdx][2] || "").trim() === cleanTask) {
+            newRow = fIdx + 2;
+            break;
+          }
+        }
+      }
+    } catch (eSortAfterAdd) {}
 
     SpreadsheetApp.flush();
     invalidateDashboardServerCache();
@@ -7012,7 +7301,7 @@ function sendDailySiteMorningBriefing(isManualTest) {
 
     var sheetUrl = "";
     try { sheetUrl = ss.getUrl(); } catch(e) {}
-    var webAppUrl = getWebAppUrl();
+    var webAppUrl = "https://kimver2.github.io/00_workapces/";
 
     var emailPayload = buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, delayedTasks, sheetUrl, webAppUrl);
 
@@ -7057,6 +7346,7 @@ function sendDailySiteMorningBriefing(isManualTest) {
 function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, delayedTasks, sheetUrl, webAppUrl) {
   var delayedCount = delayedTasks ? delayedTasks.length : 0;
   var todayCount = todayTasks ? todayTasks.length : 0;
+  var mobileQuickUrl = "https://kimver2.github.io/00_workapces/";
 
   // 1. Plain text 버전
   var plainLines = [];
@@ -7089,9 +7379,7 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
   if (sheetUrl) {
     plainLines.push("📊 스프레드시트 바로가기: " + sheetUrl);
   }
-  if (webAppUrl) {
-    plainLines.push("📱 모바일 상태변경 페이지: " + webAppUrl);
-  }
+  plainLines.push("📱 모바일 상태변경 페이지: " + mobileQuickUrl);
 
   // 2. HTML 버전 (인라인 스타일 모던 템플릿)
   var html = "";
@@ -7216,9 +7504,7 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
   if (sheetUrl) {
     html += '  <a href="' + sheetUrl + '" class="btn btn-primary" target="_blank" style="display:inline-block;background-color:#1d4ed8;color:#ffffff !important;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none !important;margin:6px;box-shadow:0 2px 6px rgba(29,78,216,0.25);border:1px solid #1e40af;"><span style="color:#ffffff !important;text-decoration:none !important;font-weight:700;font-size:14px;">📊 스프레드시트 전체 보기</span></a>';
   }
-  if (webAppUrl) {
-    html += '  <a href="' + webAppUrl + '" class="btn btn-secondary" target="_blank" style="display:inline-block;background-color:#ffffff;color:#0f172a !important;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none !important;margin:6px;border:1px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,0.05);"><span style="color:#0f172a !important;text-decoration:none !important;font-weight:700;font-size:14px;">📱 모바일 빠른 관리</span></a>';
-  }
+  html += '  <a href="' + mobileQuickUrl + '" class="btn btn-secondary" target="_blank" style="display:inline-block;background-color:#ffffff;color:#0f172a !important;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none !important;margin:6px;border:1px solid #cbd5e1;box-shadow:0 1px 3px rgba(0,0,0,0.05);"><span style="color:#0f172a !important;text-decoration:none !important;font-weight:700;font-size:14px;">📱 모바일 빠른 관리</span></a>';
   html += '</div>';
 
   // Footer
@@ -7406,6 +7692,14 @@ function getSidebarDashboardData(forceRefresh) {
         sites: []
       };
     }
+
+    try {
+      var movedSplitRows = consolidateSplitSiteRows(sheet);
+      if (movedSplitRows > 0) {
+        sortSiteScheduleTasksByDate(ss, sheet, true);
+        lastRow = sheet.getLastRow();
+      }
+    } catch (eAutoHealSplit) {}
 
     var values = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
     var today = new Date();
