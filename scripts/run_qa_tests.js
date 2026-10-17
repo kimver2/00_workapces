@@ -6095,11 +6095,11 @@ assertTest('Step 68-2: pc-topbar 내 로고, [오늘][◀][▶] 날짜 타이틀
 );
 
 // 3. PC 좌측 사이드바(pc-sidebar) 위젯 검증
-assertTest('Step 68-3: pc-sidebar 내 [새 일정 등록] 버튼, 미니 캘린더, 진행현장 체크박스 필터, 담당자 라디오 필터, KPI 요약 카드 탑재 검증',
+assertTest('Step 68-3: pc-sidebar 내 [새 일정 등록] 버튼, 미니 캘린더, 진행현장 체크박스 필터, 담당자 셀렉트박스, KPI 요약 카드 탑재 검증',
   dashHtml68.indexOf('class="pc-btn-create-event"') !== -1 &&
   dashHtml68.indexOf('id="pcMiniCalendarArea"') !== -1 &&
   dashHtml68.indexOf('id="pcSidebarSiteList"') !== -1 &&
-  dashHtml68.indexOf('id="pcSidebarMemberList"') !== -1 &&
+  dashHtml68.indexOf('id="pcMemberSelect"') !== -1 &&
   dashHtml68.indexOf('id="pcKpiToday"') !== -1 &&
   dashHtml68.indexOf('id="pcKpiDelay"') !== -1
 );
@@ -6114,15 +6114,15 @@ assertTest('Step 68-4: 미디어 쿼리 내 모바일 헤더/하단바/모바일
   dashHtml68.indexOf('.cal-mode-bar, .cal-nav-bar { display: none !important; }') !== -1
 );
 
-// 5. PC 캘린더 풀사이즈 높이 확장(100vh) CSS 검증
-assertTest('Step 68-5: PC 캘린더 화면 전체 높이 활용 CSS (height: 100vh, flex: 1, grid-auto-rows: 1fr) 검증',
+// 5. PC 캘린더 풀사이즈 및 세로 칸 확장 CSS 검증
+assertTest('Step 68-5: PC 캘린더 화면 전체 높이 및 일정 과다 시 세로 칸 확장 CSS (height: 100vh, grid-auto-rows: minmax(125px, auto)) 검증',
   dashHtml68.indexOf('height: 100vh !important;') !== -1 &&
   dashHtml68.indexOf('overflow: hidden !important;') !== -1 &&
-  dashHtml68.indexOf('grid-auto-rows: 1fr;') !== -1
+  dashHtml68.indexOf('grid-auto-rows: minmax(125px, auto);') !== -1
 );
 
 // 6. PC 클라이언트 스크립트 함수 탑재 검증
-assertTest('Step 68-6: PC 전용 제어 함수(switchToPcView, renderMiniCalendar, onMiniDayClick, renderPcSidebarSites, renderPcSidebarMembers, updatePcSidebarKPIs) 탑재 검증',
+assertTest('Step 68-6: PC 전용 제어 함수(switchToPcView, renderMiniCalendar, onMiniDayClick, renderPcSidebarSites, selectAllPcSites, deselectAllPcSites, renderPcSidebarMembers, updatePcSidebarKPIs) 탑재 검증',
   dashHtml68.indexOf('function switchToPcView(view)') !== -1 &&
   dashHtml68.indexOf('function onPcSearchInput(val)') !== -1 &&
   dashHtml68.indexOf('function clearPcSearch()') !== -1 &&
@@ -6130,7 +6130,8 @@ assertTest('Step 68-6: PC 전용 제어 함수(switchToPcView, renderMiniCalenda
   dashHtml68.indexOf('function onMiniDayClick(y, m, d)') !== -1 &&
   dashHtml68.indexOf('function renderPcSidebarSites()') !== -1 &&
   dashHtml68.indexOf('function onPcSiteCheckChange(e, siteEnc)') !== -1 &&
-  dashHtml68.indexOf('function clearAllPcSites()') !== -1 &&
+  dashHtml68.indexOf('function selectAllPcSites()') !== -1 &&
+  dashHtml68.indexOf('function deselectAllPcSites()') !== -1 &&
   dashHtml68.indexOf('function renderPcSidebarMembers(members)') !== -1 &&
   dashHtml68.indexOf('function updatePcSidebarKPIs()') !== -1
 );
@@ -6141,6 +6142,45 @@ assertTest('Step 68-7: PC 접속 시 isCalendarMode = true 기본 활성화, pcM
   dashHtml68.indexOf('if (pcTitle) pcTitle.innerText = calYear + "년 " + calMonth + "월";') !== -1 &&
   dashHtml68.indexOf('if (pcTitle) pcTitle.innerText = weekTitleText;') !== -1 &&
   dashHtml68.indexOf('e.altKey && (e.key === "s" || e.key === "S"') !== -1
+);
+
+// ============================================================================
+// [Step 69] PC 화면 4대 개선사항 (세로확장, 선택해제, 담당자 셀렉트박스, KPI 재배치) 무결성 검증
+// ============================================================================
+console.log('\n[Step 69] PC 화면 4대 개선사항 무결성 검증...');
+
+// 1. 하루 일정 과다 시 세로 칸 자동 확장 및 잘림 방지 CSS 검증
+assertTest('Step 69-1: .cal-day-cell에 height: auto !important 및 overflow: visible !important 탑재로 일정 잘림 방지 검증',
+  dashHtml68.indexOf('.cal-day-cell { min-height: 125px !important; height: auto !important; overflow: visible !important;') !== -1 &&
+  dashHtml68.indexOf('.cal-events-list { gap: 3px; overflow: visible !important; }') !== -1 &&
+  dashHtml68.indexOf('#calGrid { flex: 1; height: 100%; min-height: 0; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(125px, auto);') !== -1
+);
+
+// 2. 진행현장 [전체보기] 우측에 [선택해제] 버튼 탑재 및 다중 선택 무결성 검증
+assertTest('Step 69-2: 진행현장 섹션 타이틀에 [전체보기] 및 [선택해제] 버튼 배치 및 deselectAllPcSites 함수 검증',
+  dashHtml68.indexOf('onclick="selectAllPcSites()">전체보기</span>') !== -1 &&
+  dashHtml68.indexOf('onclick="deselectAllPcSites()">선택해제</span>') !== -1 &&
+  dashHtml68.indexOf('function deselectAllPcSites()') !== -1 &&
+  dashHtml68.indexOf('checkedSites.add("__NONE__");') !== -1
+);
+
+// 3. 담당자 라디오버튼 -> 셀렉트박스 변경 및 '담당자' 타이틀 문구 검증
+assertTest('Step 69-3: "담당자 필터" -> "담당자" 문구 변경 및 pcMemberSelect 셀렉트박스 탑재 검증',
+  dashHtml68.indexOf('<span>담당자</span>') !== -1 &&
+  dashHtml68.indexOf('<select id="pcMemberSelect" class="pc-member-select"') !== -1 &&
+  dashHtml68.indexOf('function setPcMemberSelect(val)') !== -1
+);
+
+// 4. 공정 상태 현황 KPI가 [새 일정 등록] 바로 밑으로 재배치되었는지 DOM 순서 검증
+const createBtnIndex = dashHtml68.indexOf('class="pc-btn-create-event"');
+const kpiGridIndex = dashHtml68.indexOf('class="pc-kpi-summary-grid"');
+const miniCalIndex = dashHtml68.indexOf('id="pcMiniCalendarArea"');
+assertTest('Step 69-4: 공정 상태 현황(pc-kpi-summary-grid)이 새 일정 등록 바로 아래, 미니 달력 위에 위치하는 순서 검증',
+  createBtnIndex !== -1 &&
+  kpiGridIndex !== -1 &&
+  miniCalIndex !== -1 &&
+  createBtnIndex < kpiGridIndex &&
+  kpiGridIndex < miniCalIndex
 );
 
 
