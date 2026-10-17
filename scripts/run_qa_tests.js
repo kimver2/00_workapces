@@ -5221,6 +5221,252 @@ assertTest('saveSheetTask(Rollback): 서버 저장 실패 시 낙관적 업데�
   rawDataAfterRollback58.sites[0].progressRate === 25
 );
 
+// ============================================================================
+// [Step 60] 1번(모바일 새 일정 빠른 추가) + 4번(서버 CacheService 캐시) + 5번(캘린더 날짜 클릭 즉시 등록) QA 검증
+// ============================================================================
+console.log('\n--- [Step 60] 1번(새 일정 추가), 4번(서버 CacheService), 5번(캘린더 날짜 클릭 등록) 무결성 검증 ---');
+
+// 1) 4번: 서버단 CacheService 동작 및 수정/추가 시 즉시 캐시 무효화 검증
+const mockSheetData60 = [
+  ['보라매 파크시티', '2026.10.17', '철거', '철거팀', true, '', '조항만', '완료', 'ev-60-1', 1000]
+];
+const mockSheet60 = {
+  getName: () => '현장데이터',
+  getSheetId: () => 606060,
+  getLastRow: () => mockSheetData60.length + 1,
+  getLastColumn: () => 10,
+  getRange: (r, c, nr, nc) => {
+    if (nr && nc) {
+      return {
+        getValues: () => mockSheetData60.slice(r - 2, r - 2 + nr),
+        setValues: (vals) => {
+          for (let i = 0; i < vals.length; i++) {
+            mockSheetData60[r - 2 + i] = vals[i].slice();
+          }
+        }
+      };
+    }
+    return {
+      setValue: (val) => {
+        if (!mockSheetData60[r - 2]) mockSheetData60[r - 2] = [];
+        mockSheetData60[r - 2][c - 1] = val;
+      },
+      getValue: () => (mockSheetData60[r - 2] ? mockSheetData60[r - 2][c - 1] : ''),
+      insertCheckboxes: () => {}
+    };
+  },
+  getParent: () => mockSs60
+};
+const mockSs60 = {
+  getId: () => 'test-sheet-id-60',
+  setActiveSheet: () => {},
+  getSheetByName: (n) => (n === '현장데이터' ? mockSheet60 : null),
+  getSheets: () => [mockSheet60]
+};
+sandbox.SpreadsheetApp.getActiveSpreadsheet = () => mockSs60;
+sandbox.getAppSpreadsheet = () => mockSs60;
+sandbox.findSiteScheduleSheet = () => mockSheet60;
+
+const mockServerCacheStore60 = {};
+let cacheGetCount60 = 0;
+let cachePutCount60 = 0;
+let cacheRemoveCount60 = 0;
+sandbox.CacheService = {
+  getScriptCache: () => ({
+    get: (k) => {
+      cacheGetCount60++;
+      return Object.prototype.hasOwnProperty.call(mockServerCacheStore60, k) ? mockServerCacheStore60[k] : null;
+    },
+    put: (k, v, ttl) => {
+      cachePutCount60++;
+      mockServerCacheStore60[k] = String(v);
+    },
+    remove: (k) => {
+      cacheRemoveCount60++;
+      delete mockServerCacheStore60[k];
+    }
+  })
+};
+
+const firstDashRes60 = sandbox.getSidebarDashboardData(false);
+assertTest('CacheService(4번): 최초 getSidebarDashboardData(false) 호출 시 스크립트 캐시(WS_DASHBOARD_DATA_CACHE_V1) 자동 저장 검증',
+  Array.isArray(firstDashRes60.sites) &&
+  cachePutCount60 === 1 &&
+  typeof mockServerCacheStore60['WS_DASHBOARD_DATA_CACHE_V1'] === 'string'
+);
+
+// 캐시된 데이터를 임의로 마킹하여 두 번째 호출이 시트 재조회 없이 캐시에서 즉시 반환되는지 검증
+const cachedObj60 = JSON.parse(mockServerCacheStore60['WS_DASHBOARD_DATA_CACHE_V1']);
+cachedObj60._fromCacheTestMarker = true;
+mockServerCacheStore60['WS_DASHBOARD_DATA_CACHE_V1'] = JSON.stringify(cachedObj60);
+
+const secondDashRes60 = sandbox.getSidebarDashboardData(false);
+assertTest('CacheService(4번): 재호출 시 시트 파싱 없이 0.05초 캐시 히트(_fromCacheTestMarker) 즉시 반환 검증',
+  Array.isArray(secondDashRes60.sites) &&
+  secondDashRes60._fromCacheTestMarker === true
+);
+
+const forcedDashRes60 = sandbox.getSidebarDashboardData(true);
+assertTest('CacheService(4번): 수동 새로고침 getSidebarDashboardData(true) 호출 시 캐시 우회 및 최신 시트 데이터 재저장 검증',
+  Array.isArray(forcedDashRes60.sites) &&
+  forcedDashRes60._fromCacheTestMarker === undefined &&
+  cachePutCount60 === 2
+);
+
+// 2) 1번: 서버단 addScheduleTaskFromWeb 새 일정(공종) 추가 및 캐시 자동 무효화 + doGet 연동 검증
+const errEmptyTask60 = sandbox.addScheduleTaskFromWeb('', '목공', '2026-10-25', '김소장', '예정', true, '', '');
+assertTest('addScheduleTaskFromWeb(경계값): 현장명 또는 작업명 누락 시 안전하게 에러 반환 검증',
+  errEmptyTask60.success === false && errEmptyTask60.error.indexOf('현장명을 입력') !== -1
+);
+
+const beforeRowCount60 = mockSheet60.getLastRow();
+const addRes60 = sandbox.addScheduleTaskFromWeb(
+  '보라매 파크시티',
+  '필름',
+  '2026-10-25 (일)',
+  '박실장',
+  '예정',
+  true,
+  '문틀 필름 시공',
+  '한솔필름'
+);
+assertTest('addScheduleTaskFromWeb(1번): 새 일정 추가 시 시트 하단 행 추가, 날짜 정규화(YYYY.MM.DD), 캐시 즉시 무효화 검증',
+  addRes60.success === true &&
+  addRes60.row === beforeRowCount60 + 1 &&
+  addRes60.siteName === '보라매 파크시티' &&
+  addRes60.taskName === '필름' &&
+  addRes60.date === '2026.10.25' &&
+  mockServerCacheStore60['WS_DASHBOARD_DATA_CACHE_V1'] === undefined
+);
+
+const doGetAddRes60 = JSON.parse(sandbox.doGet({
+  parameter: {
+    action: 'addScheduleTask',
+    siteName: '신규 테스트 현장',
+    taskName: '철거',
+    date: '2026-10-26',
+    manager: '이소장',
+    status: '예정',
+    shared: 'true',
+    memo: '전체 철거',
+    partner: '번개철거'
+  }
+}).getContent());
+assertTest('doGet(addScheduleTask): 웹앱 엔드포인트에서도 새 현장/공종 추가 정상 동작 검증',
+  doGetAddRes60.success === true &&
+  doGetAddRes60.siteName === '신규 테스트 현장' &&
+  doGetAddRes60.taskName === '철거'
+);
+
+// 이후 호출에 영향이 없도록 sandbox.CacheService 정리
+delete sandbox.CacheService;
+
+// 3) 1번 & 5번 클라이언트 UI/인터랙션 검증 (모달 엘리먼트 목업 보강)
+clientSandbox57.document.createElement = () => ({ value: '', innerText: '' });
+mockElems57.sheetManagerSelect.appendChild = function() {};
+[
+  'sheetCreateFields', 'sheetSiteSelect', 'sheetSiteCustomInput', 'sheetTaskInput',
+  'sheetPartnerInput', 'sheetAddSameDateBtn', 'btnOpenAddTask', 'sheetSiteName',
+  'sheetTaskName', 'sheetGoToRowBtn', 'sheetMiniGoToRowBtn', 'sheetDayNav',
+  'sheetNativeDatePicker', 'sheetManagerCustomInput', 'sheetShareOn', 'sheetShareOff',
+  'sheetCustomCalPopover'
+].forEach(id => {
+  if (!mockElems57[id]) {
+    mockElems57[id] = {
+      style: {},
+      value: '',
+      innerText: '',
+      innerHTML: '',
+      options: [],
+      focus: function() {},
+      classList: {
+        _set: new Set(),
+        add: function(c) { this._set.add(c); },
+        remove: function(c) { this._set.delete(c); },
+        toggle: function(c, cond) { if (cond) this._set.add(c); else this._set.delete(c); },
+        contains: function(c) { return this._set.has(c); }
+      }
+    };
+  }
+});
+
+let addScheduleCalledArgs60 = null;
+let addScheduleSuccessCb60 = null;
+let addScheduleFailureCb60 = null;
+clientSandbox57.google.script.run = {
+  withSuccessHandler: function(cb) {
+    addScheduleSuccessCb60 = cb;
+    return {
+      withFailureHandler: function(errCb) {
+        addScheduleFailureCb60 = errCb;
+        return {
+          getSidebarDashboardData: function() {},
+          updateScheduleStatusFromWeb: function() {},
+          addScheduleTaskFromWeb: function(site, task, dStr, mgr, st, sh, memo, pt) {
+            addScheduleCalledArgs60 = { site, task, dStr, mgr, st, sh, memo, pt };
+          }
+        };
+      }
+    };
+  }
+};
+
+// 5번: 캘린더에서 빈 날짜('2026-10-28') 클릭 시 자동으로 새 일정 추가 모달이 해당 날짜로 열리는지 검증
+clientSandbox57.onCalDayClick('2026-10-28');
+assertTest('onCalDayClick(5번): 캘린더 빈 날짜 클릭 시 해당 날짜(2026.10.28)가 자동 세팅된 새 일정 등록 모달 즉시 오픈 검증',
+  vm.runInContext('isCreateMode', clientSandbox57) === true &&
+  mockElems57.sheetOverlay.classList.contains('show') === true &&
+  mockElems57.sheetCreateFields.style.display === 'block' &&
+  mockElems57.sheetDateInput.value.indexOf('2026.10.28') === 0
+);
+
+// 1번: 빠른 공종 칩 클릭 시 작업명 입력창에 즉시 세팅되는지 검증
+clientSandbox57.pickQuickTaskName('타일');
+assertTest('pickQuickTaskName(1번): 빠른 공종 칩 선택 시 작업명 입력란에 즉시 반영 검증',
+  mockElems57.sheetTaskInput.value === '타일'
+);
+
+// 1번: 새 일정 저장 시 0.01초 낙관적 UI(Optimistic UI) 즉시 반영 + 서버 addScheduleTaskFromWeb 호출 검증
+mockElems57.sheetSiteSelect.value = '보라매 파크시티';
+mockElems57.sheetManagerSelect.value = '최소장';
+mockElems57.sheetPartnerInput.value = '대림타일';
+mockElems57.sheetMemoInput.value = '주방 타일 시공';
+const beforeTasksLen60 = vm.runInContext('rawData.sites[0].tasks.length', clientSandbox57);
+
+clientSandbox57.saveSheetTask();
+const afterTasksLen60 = vm.runInContext('rawData.sites[0].tasks.length', clientSandbox57);
+const addedOptTask60 = vm.runInContext('rawData.sites[0].tasks[rawData.sites[0].tasks.length - 1]', clientSandbox57);
+
+assertTest('saveSheetTask(1번 Create Optimistic UI): 새 일정 저장 즉시 모달 닫힘 + 0.01초 로컬 리스트/캘린더 선반영 + 서버 호출 검증',
+  mockElems57.sheetOverlay.classList.contains('show') === false &&
+  afterTasksLen60 === beforeTasksLen60 + 1 &&
+  addedOptTask60.taskName === '타일' &&
+  addedOptTask60.endDateStr === '2026-10-28' &&
+  addScheduleCalledArgs60 !== null &&
+  addScheduleCalledArgs60.site === '보라매 파크시티' &&
+  addScheduleCalledArgs60.task === '타일'
+);
+
+// 서버 응답 성공 시 임시 행 번호(99999)가 실제 시트 행 번호(99)로 정식 교체되는지 검증
+addScheduleSuccessCb60({
+  success: true,
+  row: 99
+});
+const confirmedTask60 = vm.runInContext('rawData.sites[0].tasks.find(t => t.taskName === "타일" && t.endDateStr === "2026-10-28")', clientSandbox57);
+assertTest('saveSheetTask(1번 Create 확정): 서버 저장 성공 시 임시 행 번호가 실제 시트 행 번호(99)로 교체 검증',
+  Boolean(confirmedTask60 && confirmedTask60.row === 99)
+);
+
+// 5번: 월간 및 주간 캘린더 날짜 셀에 '+ / + 추가' 버튼(.cal-day-add-btn) 및 리스트 뷰 현장 헤더에 '+ 공정' 버튼(.btn-site-add-mini) 렌더링 검증
+clientSandbox57.renderList();
+clientSandbox57.renderCalendar();
+clientSandbox57.renderWeeklyCalendar();
+assertTest('UI 버튼 렌더링(1번·5번): 현장 카드 "+ 공정" 버튼(.btn-site-add-mini) 및 월간/주간 캘린더 날짜 셀 "+" 버튼(.cal-day-add-btn) 포함 검증',
+  mockElems57.contentArea.innerHTML.indexOf('btn-site-add-mini') !== -1 &&
+  mockElems57.calGrid.innerHTML.indexOf('cal-day-add-btn') !== -1 &&
+  mockElems57.calWeekList.innerHTML.indexOf('cal-day-add-btn') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

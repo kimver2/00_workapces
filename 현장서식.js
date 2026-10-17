@@ -5756,6 +5756,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     var now = new Date();
     sheet.getRange(rowNum, 10).setValue(now.getTime()); // J열 타임스탬프 업데이트
     SpreadsheetApp.flush(); // 시트에 영구 커밋
+    invalidateDashboardServerCache();
 
     // 2단계: 캘린더 즉시 동기화 시도 (Non-Blocking: 경합 발생 시에도 시트 저장은 이미 성공한 상태로 백그라운드 위임)
     var lock = LockService.getScriptLock();
@@ -5797,26 +5798,132 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
 }
 
 /**
+ * 모바일/사이드바 대시보드에서 새 일정(공종) 빠른 추가
+ */
+function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, isShared, memo, partner) {
+  try {
+    var cleanSite = String(siteName || "").trim();
+    var cleanTask = String(taskName || "").trim();
+    var rawDateStr = String(dateStr || "").trim();
+    if (!cleanSite) return { success: false, error: "현장명을 입력해주세요." };
+    if (!cleanTask) return { success: false, error: "공종(작업내용)을 입력해주세요." };
+    if (!rawDateStr) return { success: false, error: "일정(날짜)을 입력해주세요." };
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트에 연결할 수 없습니다." };
+
+    var sheet = findSiteScheduleSheet(ss);
+    if (!sheet) return { success: false, error: "현장데이터 시트를 찾을 수 없습니다." };
+
+    var normalizedDate = "";
+    try {
+      normalizedDate = normalizeDateStringToYYYYMMDD(rawDateStr);
+    } catch (eNorm) {}
+    var finalDate = normalizedDate || rawDateStr;
+
+    var cleanPartner = String(partner || "").trim();
+    var isSharedBool = (isShared === undefined || isShared === null)
+      ? true
+      : (isShared === true || String(isShared).trim().toLowerCase() === "true" || String(isShared).trim() === "1");
+    var cleanMemo = String(memo || "").trim();
+    var cleanManager = String(manager || "").trim();
+    var cleanStatus = String(status || "예정").trim() || "예정";
+    var nowMs = Date.now();
+
+    var lastRow = sheet.getLastRow();
+    var newRow = Math.max(2, lastRow + 1);
+    var newRowValues = [cleanSite, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, cleanManager, cleanStatus, "", nowMs];
+
+    var targetRange = sheet.getRange(newRow, 1, 1, 10);
+    if (targetRange && typeof targetRange.setValues === "function") {
+      targetRange.setValues([newRowValues]);
+    } else {
+      for (var c = 0; c < newRowValues.length; c++) {
+        sheet.getRange(newRow, c + 1).setValue(newRowValues[c]);
+      }
+    }
+    try {
+      var shareCell = sheet.getRange(newRow, 5);
+      if (shareCell && typeof shareCell.insertCheckboxes === "function") {
+        shareCell.insertCheckboxes();
+        shareCell.setValue(isSharedBool);
+      }
+    } catch (eCb) {}
+
+    SpreadsheetApp.flush();
+    invalidateDashboardServerCache();
+
+    var lock = LockService.getScriptLock();
+    var hasLock = false;
+    try {
+      hasLock = lock.tryLock(300);
+    } catch (eLock) {
+      hasLock = false;
+    }
+
+    try {
+      syncSingleRowToCalendar(sheet, newRow, true, true);
+    } catch (errCal) {
+      Logger.log("신규 일정 캘린더 즉시 반영 지연: " + errCal.toString());
+      try {
+        triggerDebouncedSync();
+      } catch (eTrig) {}
+    } finally {
+      if (hasLock) {
+        try {
+          lock.releaseLock();
+        } catch (eRel) {}
+      }
+    }
+
+    return {
+      success: true,
+      row: newRow,
+      siteName: cleanSite,
+      taskName: cleanTask,
+      date: finalDate,
+      partner: cleanPartner,
+      shared: isSharedBool,
+      memo: cleanMemo,
+      manager: cleanManager,
+      status: cleanStatus
+    };
+  } catch (err) {
+    Logger.log("addScheduleTaskFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
  * 모바일 웹 드롭다운 상태 변경 화면 (doGet)
  */
 function doGet(e) {
   var p = (e && e.parameter) ? e.parameter : {};
   var row = parseInt(p.row, 10);
   var view = p.view ? String(p.view).toLowerCase().trim() : "";
-  var targetSite = p.site ? String(p.site).trim() : "";
-  var targetTask = p.task ? String(p.task).trim() : "";
+  var targetSite = (p.site || p.siteName) ? String(p.site || p.siteName).trim() : "";
+  var targetTask = (p.task || p.taskName) ? String(p.task || p.taskName).trim() : "";
   var targetId = p.id ? String(p.id).trim() : "";
   var action = p.action;
   var newStatus = p.status;
-  var newShared = p.shared;
+  var newShared = (p.shared !== undefined) ? p.shared : p.isShared;
   var newMemo = p.memo;
-  var newDate = p.date;
+  var newDate = p.date || p.dateStr;
   var newManager = p.manager;
+  var newPartner = p.partner;
 
   // [초고속 초기 응답]: 대시보드 전체 화면 접속(!row && !action) 시 SpreadsheetApp.open 지연(1~1.5초) 완전 생략
   var needSheet = (row >= 2 || !!action || !!targetId || !!targetSite || !!targetTask) && (view !== "dashboard" || !!action);
   var ss = needSheet ? getAppSpreadsheet() : null;
   var sheet = ss ? findSiteScheduleSheet(ss) : null;
+
+  // 0) 신규 일정 추가 요청 (action=addScheduleTask)
+  if (action === "addScheduleTask") {
+    var addRes = addScheduleTaskFromWeb(targetSite, targetTask, newDate, newManager, newStatus, newShared, newMemo, newPartner);
+    return ContentService.createTextOutput(JSON.stringify(addRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 
   // [스마트 행 자동 보정 엔진]
   // 신규 현장 추가, 행 삭제, 정렬 등으로 인해 시트 행 번호가 밀린 경우 실시간 자동 재탐색
@@ -7243,11 +7350,45 @@ function getKoreanHolidaysMap(ss) {
   return holidayMap;
 }
 
+var DASHBOARD_SERVER_CACHE_KEY = "WS_DASHBOARD_DATA_CACHE_V1";
+var DASHBOARD_SERVER_CACHE_TTL = 60;
+
+/**
+ * 서버단 대시보드 데이터 캐시 무효화 (시트/웹 수정 시 즉시 호출)
+ */
+function invalidateDashboardServerCache() {
+  try {
+    if (typeof CacheService !== "undefined" && CacheService && typeof CacheService.getScriptCache === "function") {
+      var cache = CacheService.getScriptCache();
+      if (cache && typeof cache.remove === "function") {
+        cache.remove(DASHBOARD_SERVER_CACHE_KEY);
+      }
+    }
+  } catch (eCacheInv) {}
+}
+
 /**
  * 사이드바/모달 대시보드용 실시간 데이터 집계 API
  */
-function getSidebarDashboardData() {
+function getSidebarDashboardData(forceRefresh) {
   try {
+    if (forceRefresh !== true) {
+      try {
+        if (typeof CacheService !== "undefined" && CacheService && typeof CacheService.getScriptCache === "function") {
+          var cache = CacheService.getScriptCache();
+          if (cache && typeof cache.get === "function") {
+            var cachedJson = cache.get(DASHBOARD_SERVER_CACHE_KEY);
+            if (cachedJson) {
+              var parsedCache = JSON.parse(cachedJson);
+              if (parsedCache && Array.isArray(parsedCache.sites)) {
+                return parsedCache;
+              }
+            }
+          }
+        }
+      } catch (eCacheRead) {}
+    }
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) ss = getAppSpreadsheet();
     var sheet = findSiteScheduleSheet(ss);
@@ -7551,7 +7692,7 @@ function getSidebarDashboardData() {
       return a.initialOrder - b.initialOrder;
     });
 
-    return {
+    var resultPayload = {
       kpi: {
         totalSites: siteOrder.length,
         activeSites: activeSitesCount,
@@ -7564,6 +7705,20 @@ function getSidebarDashboardData() {
       holidays: getKoreanHolidaysMap(ss),
       sites: sitesList
     };
+
+    try {
+      if (typeof CacheService !== "undefined" && CacheService && typeof CacheService.getScriptCache === "function") {
+        var cacheW = CacheService.getScriptCache();
+        if (cacheW && typeof cacheW.put === "function") {
+          var jsonStr = JSON.stringify(resultPayload);
+          if (jsonStr.length < 95000) {
+            cacheW.put(DASHBOARD_SERVER_CACHE_KEY, jsonStr, DASHBOARD_SERVER_CACHE_TTL);
+          }
+        }
+      }
+    } catch (eCacheWrite) {}
+
+    return resultPayload;
   } catch (err) {
     return {
       error: "데이터 처리 중 오류 발생: " + (err.message || err),
@@ -7874,6 +8029,16 @@ function buildSidebarDashboardHtml(mode) {
   if (isModal) {
     html += '.content { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }';
   }
+  html += '.btn-add-action { background: #10b981; color: #ffffff; border: none; font-weight: 800; box-shadow: 0 2px 6px rgba(16,185,129,0.28); }';
+  html += '.btn-add-action:hover { background: #059669; }';
+  html += '.btn-site-add-mini { padding: 2px 7px; font-size: 10px; font-weight: 800; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; cursor: pointer; flex-shrink: 0; margin-right: 4px; }';
+  html += '.btn-site-add-mini:hover { background: #d1fae5; }';
+  html += '.cal-day-add-btn { width: 15px; height: 15px; border-radius: 4px; border: 1px solid #cbd5e1; background: #f8fafc; color: #475569; font-size: 10px; font-weight: 900; line-height: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; opacity: 0.78; }';
+  html += '.cal-day-add-btn:hover { background: #eff6ff; color: #2563eb; border-color: #93c5fd; opacity: 1; }';
+  html += '.sheet-create-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 10px; margin-bottom: 10px; }';
+  html += '.task-quick-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }';
+  html += '.task-chip { padding: 3px 8px; font-size: 10.5px; font-weight: 700; color: #1e293b; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 999px; cursor: pointer; }';
+  html += '.task-chip:hover, .task-chip:active { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }';
   html += '</style></head><body>';
 
   // 새로고침 글로벌 로딩바 및 오버레이 (목록 뷰 & 캘린더 뷰 공용)
@@ -7979,6 +8144,7 @@ function buildSidebarDashboardHtml(mode) {
 
   html += '<div class="footer-bar">';
   html += '  <button class="btn btn-secondary btn-refresh-action" onclick="loadData(true)">🔄 새로고침</button>';
+  html += '  <button type="button" id="btnOpenAddTask" class="btn btn-add-action" onclick="openNewTaskModal()">➕ 일정 추가</button>';
   html += '  <button type="button" id="calendarToggleBtn" class="btn btn-primary" onclick="toggleCalendarView()">📅 캘린더 보기</button>';
   html += '</div>';
 
@@ -8002,15 +8168,16 @@ function buildSidebarDashboardHtml(mode) {
   html += '  </div>';
   html += '</div>';
 
-  // 모바일 바텀시트 모달 컨테이너
+  // 모바일 바텀시트 모달 컨테이너 (상세 수정 & 신규 일정 등록 공용)
   html += '<div id="sheetOverlay" class="sheet-overlay" onclick="closeBottomSheet(event)">';
   html += '  <div class="bottom-sheet" onclick="event.stopPropagation()">';
   html += '    <div class="sheet-handle"></div>';
   html += '    <div class="sheet-title-row">';
   html += '      <div>';
-  html += '        <div style="display:flex;align-items:center;gap:6px;">';
+  html += '        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
   html += '          <div class="sheet-site" id="sheetSiteName">-</div>';
-  html += '          <button type="button" class="btn-sheet-goto-mini" onclick="goToCurrentTaskSheetRow()" title="현장데이터 시트에서 해당 행으로 이동">📍 시트 행 이동</button>';
+  html += '          <button type="button" id="sheetMiniGoToRowBtn" class="btn-sheet-goto-mini" onclick="goToCurrentTaskSheetRow()" title="현장데이터 시트에서 해당 행으로 이동">📍 시트 행 이동</button>';
+  html += '          <button type="button" id="sheetAddSameDateBtn" class="btn-sheet-goto-mini" style="background:#ecfdf5;color:#047857;border-color:#a7f3d0;" onclick="openNewTaskOnCurrentDate()" title="이 날짜에 새 공정 일정 추가">➕ 같은 날 추가</button>';
   html += '        </div>';
   html += '        <div class="sheet-task" id="sheetTaskName">-</div>';
   html += '      </div>';
@@ -8021,6 +8188,41 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div class="sheet-day-nav-btns">';
   html += '        <button type="button" class="btn-sheet-nav" id="btnSheetPrevDayTask" onclick="navSameDayTask(-1)" title="이전 일정">◀</button>';
   html += '        <button type="button" class="btn-sheet-nav" id="btnSheetNextDayTask" onclick="navSameDayTask(1)" title="다음 일정">▶</button>';
+  html += '      </div>';
+  html += '    </div>';
+  html += '    <div id="sheetCreateFields" class="sheet-create-box" style="display:none;">';
+  html += '      <div class="sheet-field-row" style="margin-bottom:8px;">';
+  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '          <label class="sheet-field-label">🏠 현장 선택 / 입력</label>';
+  html += '          <select id="sheetSiteSelect" class="sheet-field-select" onchange="onSheetSiteSelect(this.value)">';
+  html += '            <option value="">현장을 선택하세요</option>';
+  html += '          </select>';
+  html += '          <input type="text" id="sheetSiteCustomInput" class="sheet-field-input" placeholder="새 현장명 직접 입력 (예: 반포 자이 102동)" style="display:none;margin-top:5px;">';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div class="sheet-field-row">';
+  html += '        <div class="sheet-field-col" style="flex:1.2;">';
+  html += '          <label class="sheet-field-label">🔨 공종 (작업내용)</label>';
+  html += '          <input type="text" id="sheetTaskInput" class="sheet-field-input" placeholder="공종 입력 또는 아래 버튼 선택">';
+  html += '        </div>';
+  html += '        <div class="sheet-field-col" style="flex:0.8;">';
+  html += '          <label class="sheet-field-label">🤝 협력업체 (선택)</label>';
+  html += '          <input type="text" id="sheetPartnerInput" class="sheet-field-input" placeholder="업체명">';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div class="task-quick-chips">';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'철거\')">철거</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'목공\')">목공</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'전기\')">전기</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'설비\')">설비</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'타일\')">타일</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'필름\')">필름</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'도장\')">도장</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'도배\')">도배</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'마루\')">마루</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'가구\')">가구</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'청소\')">청소</button>';
+  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'AS\')">AS</button>';
   html += '      </div>';
   html += '    </div>';
   html += '    <div class="sheet-edit-box">';
@@ -8503,7 +8705,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      const wClass = weatherObj.isRain ? " rain" : (weatherObj.isSnow ? " snow" : "");';
   html += '      weatherBadgeHtml = \'<span class="cal-weather-badge\' + wClass + \'" title="\' + escapeHtml(weatherObj.fullText) + \'">\' + escapeHtml(weatherObj.badgeText) + \'</span>\';';
   html += '    }';
-  html += '    gridHtml += \'  <div class="cal-day-header"><div class="cal-day-top-row"><span class="cal-day-num">\' + d + \'</span>\' + weatherBadgeHtml + \'</div>\' + (holidayName ? \'<span class="cal-holiday-name" title="\' + escapeHtml(holidayName) + \'">\' + escapeHtml(holidayName) + \'</span>\' : \'\') + \'</div>\';';
+  html += '    gridHtml += \'  <div class="cal-day-header"><div class="cal-day-top-row"><span class="cal-day-num">\' + d + \'</span><div style="display:inline-flex;align-items:center;gap:3px;">\' + weatherBadgeHtml + \'<button type="button" class="cal-day-add-btn" onclick="event.stopPropagation();openNewTaskModal(\\\'\\\', \\\'\' + dStr + \'\\\')" title="\' + dStr + \' 새 일정 추가">+</button></div></div>\' + (holidayName ? \'<span class="cal-holiday-name" title="\' + escapeHtml(holidayName) + \'">\' + escapeHtml(holidayName) + \'</span>\' : \'\') + \'</div>\';';
   html += '    gridHtml += \'  <div class="cal-events-list">\';';
   html += '    dayTasks.forEach(item => {';
   html += '      const site = item.site;';
@@ -8658,6 +8860,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    listHtml += \'    </div>\';';
   html += '    listHtml += \'    <div class="cal-week-card-right">\';';
   html += '    if (weatherObj) listHtml += \' <span class="cal-week-weather-info\' + (weatherObj.isRain ? " rain" : "") + \'">\' + escapeHtml(weatherObj.fullText) + \'</span>\';';
+  html += '    listHtml += \' <button type="button" class="cal-day-add-btn" style="width:auto;padding:2px 6px;font-size:10px;margin-left:4px;" onclick="event.stopPropagation();openNewTaskModal(\\\'\\\', \\\'\' + curStr + \'\\\')" title="\' + curStr + \' 새 일정 추가">+ 추가</button>\';';
   html += '    listHtml += \'    </div>\';';
   html += '    listHtml += \'  </div>\';';
   html += '    listHtml += \'  <div class="cal-week-card-body">\';';
@@ -8774,7 +8977,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '    });';
   html += '  });';
   html += '  if (dayTasks.length === 0) {';
-  html += '    showToast(datePrefix + ": 등록된 일정이 없습니다.");';
+  html += '    showToast(datePrefix + ": 등록된 일정이 없습니다. 새 일정을 추가합니다.");';
+  html += '    openNewTaskModal("", dStr);';
   html += '    return;';
   html += '  }';
   html += '  const mList = dayTasks.map(item => ({ site: item.site.siteName, task: item.task }));';
@@ -8905,10 +9109,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const ca = document.getElementById("contentArea");';
   html += '    if (ca) ca.innerHTML = \'<div class="loading-state"><div class="spinner"></div><p class="loading-text">현장 데이터 불러오는 중...</p></div>\';';
   html += '  }';
-  html += '  google.script.run';
+  html += '  const runner = google.script.run';
   html += '    .withSuccessHandler(onDataLoaded)';
-  html += '    .withFailureHandler(onError)';
-  html += '    .getSidebarDashboardData();';
+  html += '    .withFailureHandler(onError);';
+  html += '  if (isManual === true) {';
+  html += '    runner.getSidebarDashboardData(true);';
+  html += '  } else {';
+  html += '    runner.getSidebarDashboardData();';
+  html += '  }';
   html += '}';
   html += '';
   html += 'function loadDataSilently() {';
@@ -9087,6 +9295,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '    html += \'      </div>\';';
   html += '    html += \'    </div>\';';
+  html += '    html += \'    <button type="button" class="btn-site-add-mini" onclick="event.stopPropagation();openNewTaskModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'), \\\'\\\')" title="이 현장에 새 공정 추가">+ 공정</button>\';';
   html += '    html += \'    <span class="site-toggle" style="margin-top:3px;">▼</span>\';';
   html += '    html += \'  </div>\';';
   html += '    const barColor = site.isAllCompleted ? "#10b981" : ((site.delayedTasksCount > 0) ? "#f59e0b" : (site.colorHex || "#2563eb"));';
@@ -9496,10 +9705,141 @@ function buildSidebarDashboardHtml(mode) {
   html += '    .focusSheetRow(targetRow, isArch);';
   html += '}';
   html += '';
+  html += 'let isCreateMode = false;';
+  html += '';
+  html += 'function populateSiteSelectOptions(prefillSite) {';
+  html += '  const sel = document.getElementById("sheetSiteSelect");';
+  html += '  const custom = document.getElementById("sheetSiteCustomInput");';
+  html += '  if (!sel) return;';
+  html += '  let optsHtml = \'<option value="">현장을 선택하세요</option>\';';
+  html += '  const siteNames = [];';
+  html += '  if (rawData && Array.isArray(rawData.sites)) {';
+  html += '    rawData.sites.forEach(s => {';
+  html += '      if (s && s.siteName && siteNames.indexOf(s.siteName) === -1) {';
+  html += '        siteNames.push(s.siteName);';
+  html += '      }';
+  html += '    });';
+  html += '  }';
+  html += '  siteNames.forEach(name => {';
+  html += '    optsHtml += \'<option value="\' + escapeHtml(name) + \'">\' + escapeHtml(name) + \'</option>\';';
+  html += '  });';
+  html += '  optsHtml += \'<option value="__NEW_SITE__">➕ 새 현장 직접 입력...</option>\';';
+  html += '  sel.innerHTML = optsHtml;';
+  html += '  if (prefillSite) {';
+  html += '    if (siteNames.indexOf(prefillSite) !== -1) {';
+  html += '      sel.value = prefillSite;';
+  html += '      if (custom) { custom.style.display = "none"; custom.value = ""; }';
+  html += '    } else {';
+  html += '      sel.value = "__NEW_SITE__";';
+  html += '      if (custom) { custom.style.display = "block"; custom.value = prefillSite; }';
+  html += '    }';
+  html += '  } else if (siteNames.length === 0) {';
+  html += '    sel.value = "__NEW_SITE__";';
+  html += '    if (custom) { custom.style.display = "block"; custom.value = ""; }';
+  html += '  } else {';
+  html += '    sel.value = "";';
+  html += '    if (custom) { custom.style.display = "none"; custom.value = ""; }';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onSheetSiteSelect(val) {';
+  html += '  const custom = document.getElementById("sheetSiteCustomInput");';
+  html += '  if (!custom) return;';
+  html += '  if (val === "__NEW_SITE__") {';
+  html += '    custom.style.display = "block";';
+  html += '    if (typeof custom.focus === "function") custom.focus();';
+  html += '  } else {';
+  html += '    custom.style.display = "none";';
+  html += '    custom.value = "";';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function pickQuickTaskName(name) {';
+  html += '  const inp = document.getElementById("sheetTaskInput");';
+  html += '  if (inp) inp.value = name;';
+  html += '  if (name === "AS") selectSheetStatus("AS");';
+  html += '}';
+  html += '';
+  html += 'function openNewTaskOnCurrentDate() {';
+  html += '  const dateInput = document.getElementById("sheetDateInput");';
+  html += '  const curDate = (dateInput && dateInput.value) ? dateInput.value.trim() : ((curTaskObj && curTaskObj.startDateStr) || "");';
+  html += '  openNewTaskModal(curSiteName || "", curDate);';
+  html += '}';
+  html += '';
+  html += 'function openNewTaskModal(prefillSite, prefillDate) {';
+  html += '  closeCustomDatePicker();';
+  html += '  isCreateMode = true;';
+  html += '  curSiteName = prefillSite || "";';
+  html += '  curTaskObj = null;';
+  html += '  selectedStatus = "예정";';
+  html += '  selectedShare = true;';
+  html += '  const siteNameEl = document.getElementById("sheetSiteName");';
+  html += '  const taskNameEl = document.getElementById("sheetTaskName");';
+  html += '  if (siteNameEl) siteNameEl.innerText = "➕ 새 공정 일정 등록";';
+  html += '  if (taskNameEl) taskNameEl.innerText = prefillSite ? ("현장: " + prefillSite) : "현장·공종·날짜를 입력해 등록하세요";';
+  html += '  const createBox = document.getElementById("sheetCreateFields");';
+  html += '  if (createBox) createBox.style.display = "block";';
+  html += '  const gotoBtn = document.getElementById("sheetGoToRowBtn");';
+  html += '  if (gotoBtn) gotoBtn.style.display = "none";';
+  html += '  const miniGotoBtn = document.getElementById("sheetMiniGoToRowBtn");';
+  html += '  if (miniGotoBtn) miniGotoBtn.style.display = "none";';
+  html += '  const addSameBtn = document.getElementById("sheetAddSameDateBtn");';
+  html += '  if (addSameBtn) addSameBtn.style.display = "none";';
+  html += '  const dayNav = document.getElementById("sheetDayNav");';
+  html += '  if (dayNav) dayNav.style.display = "none";';
+  html += '  const saveBtn = document.getElementById("sheetSaveBtn");';
+  html += '  if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "➕ 일정 등록하기"; }';
+  html += '  populateSiteSelectOptions(prefillSite || "");';
+  html += '  const taskInput = document.getElementById("sheetTaskInput");';
+  html += '  if (taskInput) taskInput.value = "";';
+  html += '  const partnerInput = document.getElementById("sheetPartnerInput");';
+  html += '  if (partnerInput) partnerInput.value = "";';
+  html += '  const dateInput = document.getElementById("sheetDateInput");';
+  html += '  const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
+  html += '  let targetIso = "";';
+  html += '  if (prefillDate && /^\\d{4}-\\d{2}-\\d{2}$/.test(prefillDate)) {';
+  html += '    targetIso = prefillDate;';
+  html += '  } else if (!prefillDate) {';
+  html += '    const now = new Date();';
+  html += '    const y = now.getFullYear(), m = now.getMonth() + 1, d = now.getDate();';
+  html += '    targetIso = y + "-" + (m < 10 ? "0" + m : m) + "-" + (d < 10 ? "0" + d : d);';
+  html += '  }';
+  html += '  if (dateInput) {';
+  html += '    dateInput.value = targetIso ? formatYmdToDisplayWithDow(targetIso) : (prefillDate || "");';
+  html += '  }';
+  html += '  if (hiddenPicker && targetIso) {';
+  html += '    hiddenPicker.value = targetIso;';
+  html += '  }';
+  html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
+  html += '  const mgrCustom = document.getElementById("sheetManagerCustomInput");';
+  html += '  if (mgrSelect) {';
+  html += '    populateManagerSelectOptions(rawData ? rawData.members : []);';
+  html += '    mgrSelect.value = selectedMember && selectedMember !== "__NONE__" ? selectedMember : "";';
+  html += '    if (mgrCustom) { mgrCustom.value = ""; mgrCustom.style.display = "none"; }';
+  html += '  }';
+  html += '  const memoInput = document.getElementById("sheetMemoInput");';
+  html += '  if (memoInput) memoInput.value = "";';
+  html += '  updateSheetStatusBtns();';
+  html += '  updateSheetShareBtns();';
+  html += '  const overlayEl = document.getElementById("sheetOverlay");';
+  html += '  if (overlayEl) overlayEl.classList.add("show");';
+  html += '}';
+  html += '';
   html += 'function openBottomSheet(site, task, explicitList, explicitIndex) {';
   html += '  closeCustomDatePicker();';
+  html += '  isCreateMode = false;';
   html += '  curSiteName = site;';
   html += '  curTaskObj = task;';
+  html += '  const createBox = document.getElementById("sheetCreateFields");';
+  html += '  if (createBox) createBox.style.display = "none";';
+  html += '  const gotoBtn = document.getElementById("sheetGoToRowBtn");';
+  html += '  if (gotoBtn) gotoBtn.style.display = "";';
+  html += '  const miniGotoBtn = document.getElementById("sheetMiniGoToRowBtn");';
+  html += '  if (miniGotoBtn) miniGotoBtn.style.display = "";';
+  html += '  const addSameBtn = document.getElementById("sheetAddSameDateBtn");';
+  html += '  if (addSameBtn) addSameBtn.style.display = "";';
+  html += '  const saveBtn = document.getElementById("sheetSaveBtn");';
+  html += '  if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "💾 저장하기"; }';
   html += '  selectedStatus = task.status || "예정";';
   html += '  if (selectedStatus === "지연") selectedStatus = "진행 중";';
   html += '  selectedShare = (task.isShared === true);';
@@ -9660,9 +10000,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function saveSheetTask() {';
-  html += '  if (!curTaskObj) return;';
   html += '  const saveBtn = document.getElementById("sheetSaveBtn");';
-  html += '  const memoVal = document.getElementById("sheetMemoInput").value.trim();';
+  html += '  const memoEl = document.getElementById("sheetMemoInput");';
+  html += '  const memoVal = memoEl ? memoEl.value.trim() : "";';
   html += '  const dateInput = document.getElementById("sheetDateInput");';
   html += '  const dateVal = dateInput ? dateInput.value.trim() : "";';
   html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
@@ -9671,6 +10011,69 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (mgrSelect) {';
   html += '    mgrVal = (mgrSelect.value === "__CUSTOM__") ? (mgrCustom ? mgrCustom.value.trim() : "") : mgrSelect.value.trim();';
   html += '  }';
+  html += '  if (isCreateMode) {';
+  html += '    const siteSel = document.getElementById("sheetSiteSelect");';
+  html += '    const siteCustom = document.getElementById("sheetSiteCustomInput");';
+  html += '    const siteVal = (siteSel && siteSel.value === "__NEW_SITE__") ? (siteCustom ? siteCustom.value.trim() : "") : (siteSel ? siteSel.value.trim() : "");';
+  html += '    const taskInp = document.getElementById("sheetTaskInput");';
+  html += '    const taskVal = taskInp ? taskInp.value.trim() : "";';
+  html += '    const partnerInp = document.getElementById("sheetPartnerInput");';
+  html += '    const partnerVal = partnerInp ? partnerInp.value.trim() : "";';
+  html += '    if (!siteVal) { showToast("⚠️ 현장명을 선택하거나 입력해주세요."); return; }';
+  html += '    if (!taskVal) { showToast("⚠️ 공종(작업내용)을 입력해주세요."); return; }';
+  html += '    if (!dateVal) { showToast("⚠️ 일정(날짜)을 입력해주세요."); return; }';
+  html += '    const tempTask = { row: 99999, taskName: taskVal, partner: partnerVal, manager: mgrVal, status: selectedStatus, isShared: selectedShare, memo: memoVal, dateDisplay: dateVal, startDateStr: "", endDateStr: "", dateMs: 0 };';
+  html += '    let targetSiteObj = null;';
+  html += '    let createdNewSite = false;';
+  html += '    if (rawData && Array.isArray(rawData.sites)) {';
+  html += '      targetSiteObj = rawData.sites.find(s => s.siteName === siteVal && !s.isArchived);';
+  html += '      if (!targetSiteObj) {';
+  html += '        targetSiteObj = { siteName: siteVal, colorCode: "9", colorHex: "#2563EB", tasks: [], progressRate: 0 };';
+  html += '        rawData.sites.unshift(targetSiteObj);';
+  html += '        createdNewSite = true;';
+  html += '      }';
+  html += '      targetSiteObj.tasks.push(tempTask);';
+  html += '    }';
+  html += '    applyOptimisticTaskUpdate(tempTask, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
+  html += '    closeCustomDatePicker();';
+  html += '    const overlayEl = document.getElementById("sheetOverlay");';
+  html += '    if (overlayEl) overlayEl.classList.remove("show");';
+  html += '    isCreateMode = false;';
+  html += '    showToast("✅ [" + siteVal + " - " + taskVal + "] 새 일정이 등록되었습니다!");';
+  html += '    google.script.run';
+  html += '      .withSuccessHandler(res => {';
+  html += '        if (res && res.success) {';
+  html += '          if (res.row) tempTask.row = res.row;';
+  html += '          loadDataSilently();';
+  html += '        } else {';
+  html += '          if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
+  html += '            const idx = targetSiteObj.tasks.indexOf(tempTask);';
+  html += '            if (idx !== -1) targetSiteObj.tasks.splice(idx, 1);';
+  html += '          }';
+  html += '          if (createdNewSite && rawData && Array.isArray(rawData.sites)) {';
+  html += '            const sIdx = rawData.sites.indexOf(targetSiteObj);';
+  html += '            if (sIdx !== -1) rawData.sites.splice(sIdx, 1);';
+  html += '          }';
+  html += '          if (rawData) renderDashboardPayload(rawData);';
+  html += '          showToast("⚠️ 일정 추가 실패: " + ((res && res.error) || "알 수 없는 오류"));';
+  html += '        }';
+  html += '      })';
+  html += '      .withFailureHandler(err => {';
+  html += '        if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
+  html += '          const idx = targetSiteObj.tasks.indexOf(tempTask);';
+  html += '          if (idx !== -1) targetSiteObj.tasks.splice(idx, 1);';
+  html += '        }';
+  html += '        if (createdNewSite && rawData && Array.isArray(rawData.sites)) {';
+  html += '          const sIdx = rawData.sites.indexOf(targetSiteObj);';
+  html += '          if (sIdx !== -1) rawData.sites.splice(sIdx, 1);';
+  html += '        }';
+  html += '        if (rawData) renderDashboardPayload(rawData);';
+  html += '        showToast("⚠️ 에러: " + ((err && err.message) || err));';
+  html += '      })';
+  html += '      .addScheduleTaskFromWeb(siteVal, taskVal, dateVal, mgrVal, selectedStatus, selectedShare, memoVal, partnerVal);';
+  html += '    return;';
+  html += '  }';
+  html += '  if (!curTaskObj) return;';
   html += '  let targetTask = curTaskObj;';
   html += '  if (rawData && Array.isArray(rawData.sites)) {';
   html += '    for (let si = 0; si < rawData.sites.length; si++) {';
