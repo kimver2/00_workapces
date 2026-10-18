@@ -6618,7 +6618,7 @@ const dashHtml77 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), '
 assertTest('Step 77-1: 캐러셀 트랙 세로 바(.pc-carousel-bar-nav) 네비게이션 버튼 CSS 및 DOM 구조 검증',
   dashHtml77.indexOf('.pc-carousel-track-wrapper { display: flex; align-items: stretch; gap: 6px;') !== -1 &&
   dashHtml77.indexOf('.pc-carousel-bar-nav { width: 26px; border-radius: 8px; border: 1.5px solid #e2e8f0;') !== -1 &&
-  dashHtml77.indexOf('.pc-carousel-bar-nav:disabled, .pc-carousel-bar-nav.disabled { opacity: 0.22; cursor: not-allowed; pointer-events: none;') !== -1 &&
+  dashHtml77.indexOf('.pc-carousel-bar-nav:disabled, .pc-carousel-bar-nav.disabled { opacity: 0 !important; visibility: hidden !important;') !== -1 &&
   dashHtml77.indexOf('id="btnCarouselPrev" class="pc-carousel-bar-nav prev"') !== -1 &&
   dashHtml77.indexOf('id="btnCarouselNext" class="pc-carousel-bar-nav next"') !== -1 &&
   dashHtml77.indexOf('class="pc-carousel-nav"') === -1
@@ -6631,7 +6631,7 @@ assertTest('Step 77-2: updateCarouselNavButtons 함수 정의 및 scrollLeft/max
   dashHtml77.indexOf('const maxS = Math.max(0, track.scrollWidth - track.clientWidth);') !== -1 &&
   dashHtml77.indexOf('prevBtn.disabled = !canScrollPrev;') !== -1 &&
   dashHtml77.indexOf('nextBtn.disabled = !canScrollNext;') !== -1 &&
-  dashHtml77.indexOf('newTrack.addEventListener("scroll", updateCarouselNavButtons);') !== -1 &&
+  dashHtml77.indexOf('newTrack.addEventListener("scroll", updateCarouselNavButtons') !== -1 &&
   dashHtml77.indexOf('window.addEventListener("resize", updateCarouselNavButtons);') !== -1
 );
 
@@ -6685,6 +6685,44 @@ assertTest('Step 78-3: showCaptureModal 내 captureModalTitle 및 현장명 포�
 assertTest('Step 78-4: 캡쳐 모달 다이얼로그 max-width: 680px 및 max-height: 65vh; object-fit: contain 검증',
   dashHtml78.indexOf('max-width:680px;') !== -1 &&
   dashHtml78.indexOf('max-height:65vh; object-fit:contain;') !== -1
+);
+
+// ========================================================
+// 79. [캐러셀 버튼 포커스 해제 및 다중 시점 은폐, 클릭 가능한 KPI 타일, 완료 현장 세그먼트/사이드바 QA]
+// ========================================================
+console.log('\n🌟 [Step 79: 캐러셀 경계 은폐 및 블러, KPI 타일 필터 연동, 진행/완료 현장 탭 및 사이드바 QA]');
+
+const dashHtml79 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 79-1: 캐러셀 바 버튼 클릭 시 즉시 blur() 및 다중 시점(40, 120, 200, 320, 450, 600, 800ms) 경계 감지 검증
+assertTest('Step 79-1: scrollPcSiteCarousel 클릭 시 blur() 및 다중 시점 updateCarouselNavButtons 호출 검증',
+  dashHtml79.indexOf('if (document.activeElement && typeof document.activeElement.blur === "function")') !== -1 &&
+  dashHtml79.indexOf('[40, 120, 200, 320, 450, 600, 800].forEach(ms => setTimeout(updateCarouselNavButtons, ms));') !== -1 &&
+  dashHtml79.indexOf('.pc-carousel-bar-nav:disabled, .pc-carousel-bar-nav.disabled { opacity: 0 !important; visibility: hidden !important;') !== -1
+);
+
+// 79-2: PC KPI 4대 지표 카드(전체/완료/진행/지연) 클릭 시 setPcSiteDetailFilter 연동 및 active 클래스 검증
+assertTest('Step 79-2: PC KPI 메트릭 타일 클릭 시 setPcSiteDetailFilter 연동 및 cursor:pointer/active 검증',
+  dashHtml79.indexOf('onclick="setPcSiteDetailFilter') !== -1 &&
+  dashHtml79.indexOf('.pc-metric-tile { background: #f8fafc; border: 1.5px solid #f1f5f9; border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; cursor: pointer;') !== -1 &&
+  dashHtml79.indexOf('.pc-metric-tile.active { background: #eff6ff; border-color: #2563eb;') !== -1 &&
+  dashHtml79.indexOf('.pc-metric-tile.delay.active { background: #fef2f2; border-color: #ef4444;') !== -1
+);
+
+// 79-3: 캐러셀 헤더 [🏗️ 진행 현장] / [✅ 완료 현장] 세그먼트 탭 탑재 및 setPcSiteStatusFilter 검증
+assertTest('Step 79-3: 캐러셀 헤더 진행/완료 현장 세그먼트 탭 및 setPcSiteStatusFilter 검증',
+  dashHtml79.indexOf('class="pc-carousel-status-tabs"') !== -1 &&
+  dashHtml79.indexOf('onclick="setPcSiteStatusFilter') !== -1 &&
+  dashHtml79.indexOf('function setPcSiteStatusFilter(status) {') !== -1 &&
+  dashHtml79.indexOf('currentFilter = (status === "done") ? "done" : "all";') !== -1
+);
+
+// 79-4: PC 좌측 사이드바 완료 현장 접기/펼치기 및 현장 상세 연결 검증
+assertTest('Step 79-4: PC 좌측 사이드바 완료 현장 목록, togglePcSidebarDoneList 및 onPcSidebarDoneSiteClick 검증',
+  dashHtml79.indexOf('function togglePcSidebarDoneList() {') !== -1 &&
+  dashHtml79.indexOf('function onPcSidebarDoneSiteClick(e, siteEnc) {') !== -1 &&
+  dashHtml79.indexOf('let pcSidebarDoneOpen = false;') !== -1 &&
+  dashHtml79.indexOf('id="pcSidebarDoneList"') !== -1
 );
 
 console.log('\n========================================================');
