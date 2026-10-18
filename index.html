@@ -87,7 +87,7 @@
   <!-- 전체화면 무배너 웹앱 프레임 -->
   <iframe
     id="appFrame"
-    src="https://script.google.com/macros/s/AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg/exec?v=73"
+    src="https://script.google.com/macros/s/AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg/exec?v=74"
     allow="clipboard-write; camera; geolocation"
     onload="hideLoading()">
   </iframe>
@@ -143,6 +143,14 @@
       }
     });
 
+    // 앱 초기 로드 시 메인 화면 진입 상태를 히스토리에 푸시하여
+    // 뒤로가기 시 GAS iframe 리다이렉트 체인으로 역주행(무한 로딩바)하는 것을 원천 차단
+    try {
+      if (window.history && typeof window.history.pushState === 'function') {
+        window.history.pushState({ page: 'home' }, '');
+      }
+    } catch (eInitPush) {}
+
     window.addEventListener('popstate', function() {
       if (ignoreNextTopPopstate) {
         ignoreNextTopPopstate = false;
@@ -155,6 +163,27 @@
             orcaDashboardSource.postMessage({ type: 'ORCA_BACK_BUTTON' }, '*');
           }
         } catch (eNotify) {}
+        return;
+      }
+      // 메인 화면 상태에서 뒤로가기 발생 시:
+      // 브라우저가 iframe 리다이렉트 체인으로 빠져 로딩바가 무한 반복되는 현상을 원천 차단하고
+      // 사용자에게 명확한 종료 확인 창 제공
+      var doExit = confirm("우성아이디 대시보드를 종료하시겠습니까?");
+      if (doExit) {
+        window.close();
+        setTimeout(function() {
+          document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:24px;text-align:center;">' +
+            '<div style="font-size:48px;margin-bottom:16px;">👋</div>' +
+            '<h2 style="color:#1e293b;margin-bottom:8px;font-size:18px;font-weight:800;">우성아이디 대시보드가 종료되었습니다</h2>' +
+            '<p style="color:#64748b;font-size:14px;line-height:1.6;">브라우저 창(탭)을 닫아주세요.</p>' +
+            '<button onclick="location.reload()" style="margin-top:20px;padding:10px 22px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;">다시 시작하기</button>' +
+            '</div>';
+        }, 150);
+      } else {
+        // 취소 시: 현재 메인화면 상태를 재등록하여 로딩바 루프 없이 화면 유지
+        try {
+          window.history.pushState({ page: 'home' }, '');
+        } catch (eStay) {}
       }
     });
   </script>

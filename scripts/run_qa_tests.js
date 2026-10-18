@@ -6741,7 +6741,7 @@ assertTest('Step 80-2: html2canvas 옵션에 width, height, windowWidth, windowH
   dashHtml80.indexOf('width: captureFullWidth,') !== -1 &&
   dashHtml80.indexOf('height: captureFullHeight,') !== -1 &&
   dashHtml80.indexOf('windowWidth: captureFullWidth + 100,') !== -1 &&
-  dashHtml80.indexOf('windowHeight: captureFullHeight + 300,') !== -1 &&
+  dashHtml80.indexOf('windowHeight: captureFullHeight + 500,') !== -1 &&
   dashHtml80.indexOf('scrollX: 0,') !== -1 &&
   dashHtml80.indexOf('scrollY: 0,') !== -1
 );
@@ -6815,7 +6815,7 @@ assertTest('Step 82-3: captureCalendarScreen 내 캘린더 전체 높이(calGrid
   dashHtml82.indexOf('else if (captureType === "calendar") {') !== -1 &&
   dashHtml82.indexOf('const calGrid = target.querySelector("#calGrid");') !== -1 &&
   dashHtml82.indexOf('gridH = Math.max(gridH, sumRows);') !== -1 &&
-  dashHtml82.indexOf('captureFullHeight = Math.max(captureFullHeight, headerH + gridH + 30);') !== -1
+  dashHtml82.indexOf('captureFullHeight = Math.max(captureFullHeight, headerH + gridH + 120);') !== -1
 );
 
 // 82-4: html2canvas onclone 핸들러 내 calendarArea, .calendar-view, #calGrid 오버플로우/높이 클리핑 해제 검증
@@ -6825,6 +6825,95 @@ assertTest('Step 82-4: html2canvas onclone 핸들러 내 캘린더 컨테이너 
   dashHtml82.indexOf('clonedGrid.style.overflow = "visible";') !== -1 &&
   dashHtml82.indexOf('clonedGrid.style.flex = "none";') !== -1 &&
   dashHtml82.indexOf('clonedCalView.style.minHeight = captureFullHeight + "px";') !== -1
+);
+
+console.log('\n🔢 [Step 83: 캘린더 알약 셀 풀 높이 캡쳐 및 조항만 대표 단일 모닝 브리핑 발송 가드 QA]');
+
+// 83-1: 캘린더 캡쳐 시 알약 개수(pillCount) 및 neededH 기반 셀 높이 동적 계산 검증
+assertTest('Step 83-1: 캘린더 캡쳐 시 알약 개수(pillCount) 및 neededH 기반 셀 높이 동적 계산 검증',
+  dashHtml82.indexOf('const pills = cell.querySelectorAll(".cal-event-pill");') !== -1 &&
+  dashHtml82.indexOf('const pillH = 28 + (pillCount * 24) + 16;') !== -1 &&
+  dashHtml82.indexOf('const neededH = Math.max(cell.scrollHeight || 0, cell.offsetHeight || 0, evH, pillH, 76);') !== -1
+);
+
+// 83-2: onclone 핸들러 내 clonedCells 및 clonedEvLists의 overflow: visible/height: auto 해제 검증
+assertTest('Step 83-2: onclone 핸들러 내 clonedCells 및 clonedEvLists의 overflow: visible/height: auto 해제 검증',
+  dashHtml82.indexOf('clonedCells[i].style.overflow = "visible";') !== -1 &&
+  dashHtml82.indexOf('clonedEvLists[i].style.overflow = "visible";') !== -1
+);
+
+// 83-3: isBriefingAuthorizedSender 함수 및 조항만 대표 이메일(joehm037@gmail.com) 검증
+assertTest('Step 83-3: isBriefingAuthorizedSender 함수 및 조항만 대표 계정(joehm037@gmail.com) 검증',
+  typeof sandbox.isBriefingAuthorizedSender === 'function'
+);
+
+// 83-4: sendDailySiteMorningBriefing 내 조항만 대표 단일 발송 및 당일 1회 발송 락 검증
+const rawCode83 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+assertTest('Step 83-4: sendDailySiteMorningBriefing 내 비대표 실행 차단 및 우성아이디 조항만 대표 명의 발송 검증',
+  rawCode83.indexOf('if (!isManual && !isBriefingAuthorizedSender(ss))') !== -1 &&
+  rawCode83.indexOf('name: "우성아이디 조항만 대표"') !== -1 &&
+  rawCode83.indexOf('docProps.setProperty("LAST_BRIEFING_SENT_DATE", todayStr);') !== -1
+);
+
+// 83-5: ensureRealtimeTriggerInstalledSilent 내 비대표 계정의 브리핑 트리거 자동 정리 검증
+assertTest('Step 83-5: ensureRealtimeTriggerInstalledSilent 내 비대표 계정의 브리핑 트리거 자동 삭제 검증',
+  rawCode83.indexOf('if (!isAuthSender && hasBriefingTrigger)') !== -1 &&
+  rawCode83.indexOf('triggers[k].getHandlerFunction() === "sendDailySiteMorningBriefing"') !== -1
+);
+
+console.log('\n🔢 [Step 84: 상단 바 라인 일치 & 날짜 재배치, 우성아이디 리프레시, 협력업체 노출, 모바일 종료 알럿 QA]');
+
+const dashHtml84 = sandbox.buildSidebarDashboardHtml("WEB_DESKTOP");
+const rawCode84 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+const indexHtml84 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 84-1: PC 상단 바 좌측 사이드바 너비(260px) 및 세로 구분선(border-right: 1px solid #e2e8f0) 수직 정렬 검증
+assertTest('Step 84-1: PC 상단 바 좌측 너비(260px) 및 구분선(border-right) 사이드바 수직 일치 검증',
+  dashHtml84.indexOf('.pc-top-left { display: flex; align-items: center; width: 260px; height: 100%; border-right: 1px solid #e2e8f0;') !== -1 &&
+  dashHtml84.indexOf('.pc-sidebar { display: flex !important; flex-direction: column; width: 260px;') !== -1
+);
+
+// 84-2: 상단 바 날짜 네비게이션 배치 순서([년도월] [ < ] [ > ] [오늘]) 재배치 검증
+assertTest('Step 84-2: 상단 바 날짜 네비게이션 배치 순서([년도월] [ < ] [ > ] [오늘]) 재배치 검증',
+  dashHtml84.indexOf('<span class="pc-current-date-title" id="pcMonthTitle">') !== -1 &&
+  dashHtml84.indexOf('onclick="navPrevPeriod()"') !== -1 &&
+  dashHtml84.indexOf('onclick="navNextPeriod()"') !== -1 &&
+  dashHtml84.indexOf('onclick="navTodayPeriod()"') !== -1 &&
+  dashHtml84.indexOf('pcMonthTitle') < dashHtml84.indexOf('navPrevPeriod()') &&
+  dashHtml84.indexOf('navPrevPeriod()') < dashHtml84.indexOf('navNextPeriod()') &&
+  dashHtml84.indexOf('navNextPeriod()') < dashHtml84.indexOf('navTodayPeriod()')
+);
+
+// 84-3: 좌측 상단 '우성아이디' 로고/타이틀 클릭 시 onLogoClick 호출 및 초기 월간 화면 리프레시 검증
+assertTest('Step 84-3: 좌측 상단 로고/타이틀 클릭 시 onLogoClick 호출 및 초기 월간 화면 리프레시 검증',
+  dashHtml84.indexOf('class="pc-logo-badge" onclick="onLogoClick()"') !== -1 &&
+  dashHtml84.indexOf('id="pageTitle" onclick="onLogoClick()"') !== -1 &&
+  dashHtml84.indexOf('function onLogoClick()') !== -1 &&
+  dashHtml84.indexOf('switchToPcView("month")') !== -1 &&
+  dashHtml84.indexOf('loadData(true)') !== -1
+);
+
+// 84-4: PC 공종 테이블 <th>협력업체</th> 및 행 내 task.partner 뱃지 노출 검증
+assertTest('Step 84-4: PC 공종 테이블 <th>협력업체</th> 및 행 내 task.partner 뱃지 노출 검증',
+  dashHtml84.indexOf('<th style="width:120px;">협력업체</th>') !== -1 &&
+  dashHtml84.indexOf('colspan="7"') !== -1 &&
+  dashHtml84.indexOf('task.partner') !== -1 &&
+  dashHtml84.indexOf('🤝 \' + escapeHtml(task.partner)') !== -1
+);
+
+// 84-5: 일정 수정 모달 내 sheetTaskPartnerBadge 및 sheetEditPartnerInput 입력/노출, 서버 updateScheduleStatusFromWeb D열 협력업체 저장 검증
+assertTest('Step 84-5: 일정 수정 모달 내 협력업체 뱃지/입력란 및 서버 D열 협력업체 저장 검증',
+  dashHtml84.indexOf('id="sheetTaskPartnerBadge"') !== -1 &&
+  dashHtml84.indexOf('id="sheetEditPartnerInput"') !== -1 &&
+  rawCode84.indexOf('function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchived, siteName, taskName, newPartner)') !== -1 &&
+  rawCode84.indexOf('sheet.getRange(rowNum, 4).setValue(cleanPartner); // D열(4열) 협력업체 업데이트') !== -1
+);
+
+// 84-6: 모바일 메인 화면 뒤로가기 시 GAS iframe 무한 로딩 리다이렉트 방지 및 종료 확인 알럿(confirm) 브릿지 검증
+assertTest('Step 84-6: 모바일 메인 화면 뒤로가기 시 무한 로딩 방지 및 종료 확인 알럿(confirm) 브릿지 검증',
+  indexHtml84.indexOf('window.history.pushState({ page: \'home\' }, \'\');') !== -1 &&
+  indexHtml84.indexOf('confirm("우성아이디 대시보드를 종료하시겠습니까?")') !== -1 &&
+  dashHtml84.indexOf('confirm("우성아이디 대시보드를 종료하시겠습니까?")') !== -1
 );
 
 console.log('\n========================================================');

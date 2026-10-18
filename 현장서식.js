@@ -1283,11 +1283,24 @@ function ensureRealtimeTriggerInstalledSilent() {
       Logger.log("⏰ " + minutes + "분 주기 자동 동기화 트리거 자동 설치 완료");
     }
 
-    // 5. [모닝 브리핑 트리거 자율 복구]: 활성화 설정되어 있으나 단발성 트리거가 소실된 경우 자동 재예약
+    // 5. [모닝 브리핑 단일 대표 발송 가드]: 오직 '조항만 대표' 계정에서만 브리핑 정각 트리거 설치
+    // - 수신자 목록의 다른 팀원들이 시트를 열었을 때 각자의 계정으로 트리거가 중복 설치되어 여러 통 발송되는 현상 원천 차단
     var docProps = PropertiesService.getDocumentProperties();
-    if (docProps.getProperty("DAILY_BRIEFING_ENABLED") === "true" && !hasBriefingTrigger) {
-      scheduleNextDailyBriefingTrigger();
-      Logger.log("☀️ 모닝 브리핑 소실 트리거 자동 복구 완료");
+    var isBriefingEnabled = (docProps.getProperty("DAILY_BRIEFING_ENABLED") === "true");
+    var isAuthSender = isBriefingAuthorizedSender(ss);
+
+    if (isBriefingEnabled) {
+      if (isAuthSender && !hasBriefingTrigger) {
+        scheduleNextDailyBriefingTrigger();
+        Logger.log("☀️ [조항만 대표 계정] 모닝 브리핑 단일 정각 트리거 설치/복구 완료");
+      } else if (!isAuthSender && hasBriefingTrigger) {
+        for (var k = 0; k < triggers.length; k++) {
+          if (triggers[k].getHandlerFunction() === "sendDailySiteMorningBriefing") {
+            ScriptApp.deleteTrigger(triggers[k]);
+            Logger.log("🧹 [타인 계정 중복 방지] 비대표 계정의 모닝 브리핑 트리거 자동 정리 완료");
+          }
+        }
+      }
     }
 
     // 6. [신규] 1시간 주기 현장별 날짜 오름차순 자동 정렬 및 담당자 서식 동기화 트리거 설치
@@ -6101,7 +6114,7 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
  *   백그라운드 동기화나 타 작업의 락 점유 상태와 관계없이 시트 쓰기(H열 상태, E열 공유, F열 비고, J열 타임스탬프)를 100% 즉시 반영
  *   락 경합 타임아웃으로 인한 저장 실패(409/Lock timeout)를 원천 차단하고 0.1초 내 성공 응답 보장
  */
-function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchived, siteName, taskName) {
+function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchived, siteName, taskName, newPartner) {
   var rowNum = parseInt(row, 10);
   if (!rowNum || rowNum < 2) {
     return { success: false, error: "유효하지 않은 행 번호입니다. (" + row + ")" };
@@ -6114,6 +6127,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
   var updatedMemo = null;
   var updatedDate = null;
   var updatedManager = null;
+  var updatedPartner = null;
 
   try {
     var ss = getAppSpreadsheet();
@@ -6150,6 +6164,13 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
       var cleanManager = String(newManager).trim();
       sheet.getRange(rowNum, 7).setValue(cleanManager); // G열(7열) 담당자 업데이트
       updatedManager = cleanManager;
+    }
+
+    // D열 협력업체 업데이트 (파라미터가 명시적으로 전달된 경우)
+    if (newPartner !== undefined && newPartner !== null) {
+      var cleanPartner = String(newPartner).trim();
+      sheet.getRange(rowNum, 4).setValue(cleanPartner); // D열(4열) 협력업체 업데이트
+      updatedPartner = cleanPartner;
     }
 
     // E열 공유 상태 업데이트 (파라미터가 명시적으로 전달된 경우)
@@ -6203,7 +6224,8 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
       shared: updatedShared,
       memo: updatedMemo,
       date: updatedDate,
-      manager: updatedManager
+      manager: updatedManager,
+      partner: updatedPartner
     };
   } catch(err) {
     Logger.log("updateScheduleStatusFromWeb 오류: " + err.toString());
@@ -7496,6 +7518,54 @@ function extractMemberBriefingEmails(sheet) {
 }
 
 /**
+ * 모닝 브리핑 단일 발송 권한 검증 (조항만 대표 단독 발송 보장)
+ * - 팀원 여러 명이 스프레드시트를 열람하더라도 중복으로 트리거가 설치되어 여러 통 발송되는 현상 방지
+ * - '조항만 대표(joehm037@gmail.com)' 또는 스프레드시트 소유자 계정만 발송자로 동작
+ */
+function isBriefingAuthorizedSender(ss) {
+  var currentUserEmail = "";
+  try {
+    currentUserEmail = Session.getEffectiveUser().getEmail().toLowerCase().trim();
+  } catch(e) {}
+  if (!currentUserEmail) {
+    try {
+      currentUserEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    } catch(e) {}
+  }
+
+  // 지정된 대표 이메일 (조항만 대표님 계정)
+  var designatedEmails = ["joehm037@gmail.com", "qa-tester@woosung.com"];
+
+  // 스프레드시트 소유자 계정 추가
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss) {
+    try {
+      var owner = ss.getOwner();
+      if (owner && owner.getEmail()) {
+        designatedEmails.push(owner.getEmail().toLowerCase().trim());
+      }
+    } catch(e) {}
+  }
+
+  // 문서 속성에 수동 등록된 대표 발송자가 있다면 추가
+  var docProps = PropertiesService.getDocumentProperties();
+  var customSender = docProps.getProperty("BRIEFING_REPRESENTATIVE_SENDER");
+  if (customSender && customSender.trim()) {
+    designatedEmails.push(customSender.toLowerCase().trim());
+  }
+
+  // 현재 사용자 이메일을 조회할 수 없는 특수 실행 컨텍스트일 경우 안전 폴백
+  if (!currentUserEmail) return true;
+
+  for (var i = 0; i < designatedEmails.length; i++) {
+    if (currentUserEmail === designatedEmails[i] || currentUserEmail.indexOf(designatedEmails[i]) !== -1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 모닝 브리핑 수신 이메일 가져오기
  * 1순위: [구성원] 시트에서 수신 체크된 이메일 자동 추출
  * 2순위: 문서 속성(DAILY_BRIEFING_EMAIL)에 설정된 이메일
@@ -7596,12 +7666,20 @@ function getDailyBriefingConfiguredTime() {
  * - Google 기본 1시간 범위 지연을 방지하기 위해 단발성 정밀 시각 트리거를 자동 연속 예약합니다.
  */
 function scheduleNextDailyBriefingTrigger() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
   var functionName = "sendDailySiteMorningBriefing";
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === functionName) {
       ScriptApp.deleteTrigger(triggers[i]);
     }
+  }
+
+  // 조항만 대표 또는 지정된 소유자 계정이 아닌 경우 트리거 생성 차단
+  if (!isBriefingAuthorizedSender(ss)) {
+    Logger.log("🚫 [트리거 생성 차단] 조항만 대표 계정이 아니므로 모닝 브리핑 트리거를 생성하지 않습니다.");
+    return null;
   }
 
   var timeStr = getDailyBriefingConfiguredTime();
@@ -7725,6 +7803,9 @@ function sendDailyBriefingTestNow() {
 
 /**
  * 매일 아침 현장 공정 모닝 브리핑 이메일 발송 코어 엔진 (Feature 4)
+ * - [조항만 대표 단독 발송 보장]: 비대표 계정 실행 차단 및 잔존 트리거 자율 청소
+ * - [하루 1회 단일 발송 보장]: LockService 및 당일 날짜(LAST_BRIEFING_SENT_DATE) 멱등성 가드
+ * - [발송자 명의]: '우성아이디 조항만 대표' 명의로 수신자 전체에게 1통만 발송
  * @param {boolean} [isManualTest=false] 수동 테스트 발송 여부
  */
 function sendDailySiteMorningBriefing(isManualTest) {
@@ -7732,38 +7813,72 @@ function sendDailySiteMorningBriefing(isManualTest) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) ss = getAppSpreadsheet();
   if (!ss) return;
-  var sheet = findSiteScheduleSheet(ss);
-  if (!sheet) return;
 
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    if (isManual) {
-      SpreadsheetApp.getUi().alert("현장데이터 시트에 일정이 없습니다.");
+  // 1. [비대표 계정 실행 차단]: 조항만 대표 또는 지정된 소유자 계정이 아니면 발송 중단 및 트리거 청소
+  if (!isManual && !isBriefingAuthorizedSender(ss)) {
+    Logger.log("🚫 [발송 차단] 조항만 대표 계정이 아니므로 모닝 브리핑 발송을 건너뛰고 계정 내 중복 트리거를 자동 삭제합니다.");
+    var myTriggers = ScriptApp.getProjectTriggers();
+    for (var t = 0; t < myTriggers.length; t++) {
+      if (myTriggers[t].getHandlerFunction() === "sendDailySiteMorningBriefing") {
+        ScriptApp.deleteTrigger(myTriggers[t]);
+      }
     }
     return;
   }
 
-  // 매일 아침 브리핑 발송 전, 행 삭제로 남은 캘린더 유령 일정 자동 청소
+  // 2. [동시성 방어 분산 락]: 동일 시각 다중 프로세스 경합 방지
+  var lock = LockService.getScriptLock();
+  var hasLock = false;
   try {
-    var cal = getTargetCalendar();
-    if (cal) {
-      cleanupOrphanCalendarEventsSilent(sheet, cal);
-    }
-  } catch (eClean) {
-    Logger.log("모닝 브리핑 사전 유령 일정 정리 예외: " + eClean.toString());
-  }
+    hasLock = lock.tryLock(10000);
+  } catch(eLock) {}
 
-  var recipient = getDailyBriefingRecipientEmail(ss);
-  if (!recipient) {
-    if (isManual) {
-      SpreadsheetApp.getUi().alert("수신자 이메일 주소를 확인할 수 없습니다. [📧 모닝 브리핑 수신 이메일 변경] 메뉴에서 설정해주세요.");
-    }
+  if (!hasLock && !isManual) {
+    Logger.log("⏳ 다른 프로세스에서 이미 브리핑 발송 중이므로 중복 실행을 건너뜁니다.");
     return;
   }
 
   try {
     var today = new Date();
     var todayStr = formatDateYYMMDD(today);
+    var docProps = PropertiesService.getDocumentProperties();
+
+    // 3. [하루 1회 단일 발송 보장 (멱등성 가드)]: 오늘 이미 성공적으로 발송되었으면 중복 발송 생략
+    var lastSentDate = docProps.getProperty("LAST_BRIEFING_SENT_DATE");
+    if (!isManual && lastSentDate === todayStr) {
+      Logger.log("✅ 오늘(" + todayStr + ") 이미 모닝 브리핑이 성공적으로 발송되었습니다. 중복 발송을 건너뜁니다.");
+      return;
+    }
+
+    var sheet = findSiteScheduleSheet(ss);
+    if (!sheet) return;
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      if (isManual) {
+        SpreadsheetApp.getUi().alert("현장데이터 시트에 일정이 없습니다.");
+      }
+      return;
+    }
+
+    // 매일 아침 브리핑 발송 전, 행 삭제로 남은 캘린더 유령 일정 자동 청소
+    try {
+      var cal = getTargetCalendar();
+      if (cal) {
+        cleanupOrphanCalendarEventsSilent(sheet, cal);
+      }
+    } catch (eClean) {
+      Logger.log("모닝 브리핑 사전 유령 일정 정리 예외: " + eClean.toString());
+    }
+
+    var recipient = getDailyBriefingRecipientEmail(ss);
+    if (!recipient) {
+      if (isManual) {
+        SpreadsheetApp.getUi().alert("수신자 이메일 주소를 확인할 수 없습니다. [📧 모닝 브리핑 수신 이메일 변경] 메뉴에서 설정해주세요.");
+      }
+      return;
+    }
+
     var dayOfWeekNames = ["일", "월", "화", "수", "목", "금", "토"];
     var dayOfWeekStr = dayOfWeekNames[today.getDay()] + "요일";
 
@@ -7819,17 +7934,23 @@ function sendDailySiteMorningBriefing(isManualTest) {
 
     var emailPayload = buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, delayedTasks, sheetUrl, webAppUrl);
 
+    // ★ 조항만 대표 명의 단일 이메일 발송
     MailApp.sendEmail({
       to: recipient,
+      name: "우성아이디 조항만 대표",
       subject: subject,
       body: emailPayload.plainText,
       htmlBody: emailPayload.htmlBody
     });
 
+    // 당일 발송 완료 날짜 기록 (하루 1회 발송 락)
+    docProps.setProperty("LAST_BRIEFING_SENT_DATE", todayStr);
+
     if (isManual) {
       SpreadsheetApp.getUi().alert(
         "✉️ 모닝 브리핑 테스트 발송 완료",
         "성공적으로 브리핑 이메일을 발송했습니다!\n\n" +
+        "• 발송자 명의: 우성아이디 조항만 대표\n" +
         "• 수신자: " + recipient + "\n" +
         "• 오늘 착공/진행 공정: " + todayTasks.length + "건\n" +
         "• 공정 지연 경고: " + delayedTasks.length + "건\n\n" +
@@ -7840,8 +7961,11 @@ function sendDailySiteMorningBriefing(isManualTest) {
   } catch (eSend) {
     Logger.log("모닝 브리핑 발송 실행 오류: " + eSend.toString());
   } finally {
-    // 자동 일일 실행인 경우, 다음 날 설정 시각 정각 트리거 자동 재스케줄링 (Self-Rescheduling)
-    if (!isManual) {
+    if (hasLock) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
+    // 자동 일일 실행인 경우, 다음 날 설정 시각 정각 트리거 자동 재스케줄링 (대표 계정에서만 예약)
+    if (!isManual && isBriefingAuthorizedSender(ss)) {
       try {
         var isEnabled = PropertiesService.getDocumentProperties().getProperty("DAILY_BRIEFING_ENABLED");
         if (isEnabled === "true") {
@@ -8905,16 +9029,18 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .header { display: none !important; max-width: 1440px !important; }';
   html += '  .footer-bar { display: none !important; }';
   html += '  .bottom-nav { display: none !important; max-width: 1440px !important; }';
-  html += '  .pc-topbar { display: flex !important; height: 60px; background: #ffffff; border-bottom: 1px solid #e2e8f0; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 50; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }';
-  html += '  .pc-top-left { display: flex; align-items: center; gap: 16px; }';
-  html += '  .pc-logo-badge { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 16.5px; color: #1e3a8a; letter-spacing: -0.4px; cursor: pointer; }';
+  html += '  .pc-topbar { display: flex !important; height: 60px; background: #ffffff; border-bottom: 1px solid #e2e8f0; align-items: center; justify-content: space-between; padding: 0 20px 0 0; z-index: 50; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }';
+  html += '  .pc-top-left { display: flex; align-items: center; width: 260px; height: 100%; border-right: 1px solid #e2e8f0; padding: 0 16px; box-sizing: border-box; flex-shrink: 0; }';
+  html += '  .pc-logo-badge { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 16.5px; color: #1e3a8a; letter-spacing: -0.4px; cursor: pointer; transition: opacity 0.15s; }';
+  html += '  .pc-logo-badge:hover { opacity: 0.82; }';
   html += '  .pc-logo-badge span { background: #2563eb; color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 6px; font-weight: 700; }';
-  html += '  .pc-cal-nav-controls { display: flex; align-items: center; gap: 8px; margin-left: 12px; border-left: 1px solid #e2e8f0; padding-left: 16px; }';
-  html += '  .pc-btn-today { padding: 6px 14px; font-size: 13px; font-weight: 700; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer; color: #334155; transition: all 0.15s; }';
-  html += '  .pc-btn-today:hover { background: #f1f5f9; border-color: #94a3b8; }';
+  html += '  .pc-top-nav-wrap { display: flex; align-items: center; gap: 16px; flex: 1; padding-left: 20px; }';
+  html += '  .pc-cal-nav-controls { display: flex; align-items: center; gap: 8px; }';
+  html += '  .pc-current-date-title { font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; margin-right: 6px; min-width: 110px; }';
   html += '  .pc-btn-icon-nav { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #cbd5e1; border-radius: 50%; cursor: pointer; font-size: 13px; font-weight: bold; color: #475569; transition: all 0.15s; }';
   html += '  .pc-btn-icon-nav:hover { background: #f1f5f9; color: #0f172a; }';
-  html += '  .pc-current-date-title { font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; margin-left: 8px; min-width: 130px; }';
+  html += '  .pc-btn-today { padding: 6px 14px; font-size: 13px; font-weight: 700; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer; color: #334155; transition: all 0.15s; margin-left: 4px; }';
+  html += '  .pc-btn-today:hover { background: #f1f5f9; border-color: #94a3b8; }';
 
   html += '  .pc-top-center { flex: 1; max-width: 480px; margin: 0 24px; }';
   html += '  .pc-desktop-search-box { display: flex; align-items: center; background: #f1f5f9; border: 1px solid transparent; border-radius: 10px; padding: 8px 14px; transition: all 0.2s; position: relative; }';
@@ -9151,18 +9277,18 @@ function buildSidebarDashboardHtml(mode) {
   // PC 전용 상단 헤더 바 (Google Calendar Style)
   html += '<header class="pc-topbar">';
   html += '  <div class="pc-top-left">';
-  html += '    <div class="pc-logo-badge" onclick="switchToPcView(\'month\')">';
+  html += '    <div class="pc-logo-badge" onclick="onLogoClick()" title="우성아이디 대시보드 새로고침 및 메인 이동">';
   html += '      🏢 우성아이디 <span>현장공정관리</span>';
   html += '    </div>';
+  html += '  </div>';
+  html += '  <div class="pc-top-nav-wrap">';
   html += '    <div class="pc-cal-nav-controls">';
-  html += '      <button type="button" class="pc-btn-today" onclick="navTodayPeriod()">오늘</button>';
+  html += '      <span class="pc-current-date-title" id="pcMonthTitle">2026년 10월</span>';
   html += '      <button type="button" class="pc-btn-icon-nav" onclick="navPrevPeriod()" title="이전 달">◀</button>';
   html += '      <button type="button" class="pc-btn-icon-nav" onclick="navNextPeriod()" title="다음 달">▶</button>';
-  html += '      <span class="pc-current-date-title" id="pcMonthTitle">2026년 10월</span>';
+  html += '      <button type="button" class="pc-btn-today" onclick="navTodayPeriod()">오늘</button>';
   html += '    </div>';
-  html += '  </div>';
-  html += '  <div class="pc-top-center">';
-  html += '    <div class="pc-desktop-search-box">';
+  html += '    <div class="pc-desktop-search-box" style="flex:1;max-width:380px;">';
   html += '      <span>🔍</span>';
   html += '      <input type="text" id="pcSearchInput" placeholder="현장명, 공종, 담당자 실시간 검색 (Alt + S)" oninput="onPcSearchInput(this.value)">';
   html += '      <button type="button" id="pcSearchClearBtn" class="search-clear" onclick="clearPcSearch()" style="display:none;" title="검색어 삭제">✕</button>';
@@ -9182,7 +9308,7 @@ function buildSidebarDashboardHtml(mode) {
   // Body HTML
   html += '<div class="header">';
   html += '  <div class="title-row">';
-  html += '    <div class="title" id="pageTitle">' + (isMobile ? '📱 우성아이디 현장 대시보드' : '🏗️ 우성아이디 현장 대시보드') + '</div>';
+  html += '    <div class="title" id="pageTitle" onclick="onLogoClick()" style="cursor:pointer;" title="우성아이디 대시보드 새로고침 및 메인 이동">' + (isMobile ? '📱 우성아이디 현장 대시보드' : '🏗️ 우성아이디 현장 대시보드') + '</div>';
   html += '    <div style="display:flex;align-items:center;gap:5px;">';
   if (!isModal && !isMobile) {
     html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 8px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:3px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #93c5fd;" onclick="openWideModalView()" title="대시보드를 넓은 대형 팝업 창(1020px)으로 엽니다">⛶ 크게 보기</button>';
@@ -9353,7 +9479,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '          <button type="button" id="sheetMiniGoToRowBtn" class="btn-sheet-goto-mini" onclick="goToCurrentTaskSheetRow()" title="현장데이터 시트에서 해당 행으로 이동">📍 시트 행 이동</button>';
   html += '          <button type="button" id="sheetAddSameDateBtn" class="btn-sheet-goto-mini" style="background:#ecfdf5;color:#047857;border-color:#a7f3d0;" onclick="openNewTaskOnCurrentDate()" title="이 날짜에 새 공정 일정 추가">➕ 같은 날 추가</button>';
   html += '        </div>';
-  html += '        <div class="sheet-task" id="sheetTaskName">-</div>';
+  html += '        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px;">';
+  html += '          <div class="sheet-task" id="sheetTaskName">-</div>';
+  html += '          <span id="sheetTaskPartnerBadge" class="sheet-partner-badge" style="display:none;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:12px;font-weight:700;padding:2px 8px;border-radius:12px;"></span>';
+  html += '        </div>';
   html += '      </div>';
   html += '      <button type="button" class="sheet-close" onclick="closeBottomSheet()">✕</button>';
   html += '    </div>';
@@ -9416,6 +9545,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '            </select>';
   html += '            <input type="text" id="sheetManagerCustomInput" class="sheet-field-input" placeholder="직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
   html += '          </div>';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div class="sheet-field-row" id="sheetEditPartnerRow" style="margin-top:8px;">';
+  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '          <label class="sheet-field-label">🤝 협력업체</label>';
+  html += '          <input type="text" id="sheetEditPartnerInput" class="sheet-field-input" placeholder="협력업체명 (선택)">';
   html += '        </div>';
   html += '      </div>';
   html += '      <div id="sheetCustomCalPopover" class="sheet-custom-cal-popover">';
@@ -9577,6 +9712,33 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
 
+  html += 'function onLogoClick() {';
+  html += '  try {';
+  html += '    if (typeof closeBottomSheet === "function") closeBottomSheet();';
+  html += '    if (typeof closePcSiteDetailModal === "function") closePcSiteDetailModal();';
+  html += '    if (typeof closeCustomDatePicker === "function") closeCustomDatePicker();';
+  html += '    if (typeof clearPcSearch === "function") clearPcSearch();';
+  html += '    if (typeof clearSearch === "function") clearSearch();';
+  html += '    if (typeof clearAllChecked === "function") clearAllChecked();';
+  html += '    if (typeof selectAllPcSites === "function") selectAllPcSites();';
+  html += '    currentFilter = "all";';
+  html += '    pcSiteDetailFilter = "all";';
+  html += '    pcSiteTaskSearchQuery = "";';
+  html += '    pcSelectedMember = "";';
+  html += '    const memberSel = document.getElementById("pcMemberSelect");';
+  html += '    if (memberSel) memberSel.value = "";';
+  html += '    const now = new Date();';
+  html += '    calYear = now.getFullYear();';
+  html += '    calMonth = now.getMonth() + 1;';
+  html += '    if (typeof switchToPcView === "function") switchToPcView("month");';
+  html += '    if (typeof switchTab === "function") switchTab("cal");';
+  html += '    if (typeof loadData === "function") loadData(true);';
+  html += '  } catch (eLogo) {';
+  html += '    console.error("onLogoClick error:", eLogo);';
+  html += '    if (typeof loadData === "function") loadData(true);';
+  html += '  }';
+  html += '}';
+  html += '';
   html += 'function switchToPcView(view) {';
   html += '  document.querySelectorAll(".pc-view-tab").forEach(tab => {';
   html += '    tab.classList.toggle("active", tab.dataset.view === view);';
@@ -10068,16 +10230,24 @@ function buildSidebarDashboardHtml(mode) {
   html += '            let maxInRow = 0;';
   html += '            for (let c = 0; c < 7; c++) {';
   html += '              const cell = cells[r * 7 + c];';
-  html += '              if (cell && cell.offsetHeight > maxInRow) maxInRow = cell.offsetHeight;';
+  html += '              if (cell) {';
+  html += '                const pills = cell.querySelectorAll(".cal-event-pill");';
+  html += '                const pillCount = pills ? pills.length : 0;';
+  html += '                const pillH = 28 + (pillCount * 24) + 16;';
+  html += '                const evList = cell.querySelector(".cal-events-list");';
+  html += '                const evH = evList ? (evList.scrollHeight + 30) : 0;';
+  html += '                const neededH = Math.max(cell.scrollHeight || 0, cell.offsetHeight || 0, evH, pillH, 76);';
+  html += '                if (neededH > maxInRow) maxInRow = neededH;';
+  html += '              }';
   html += '            }';
-  html += '            sumRows += Math.max(maxInRow, 72) + 1;';
+  html += '            sumRows += Math.max(maxInRow, 76) + 4;';
   html += '          }';
   html += '          gridH = Math.max(gridH, sumRows);';
   html += '        }';
   html += '      } else if (weekList && weekList.style.display !== "none") {';
   html += '        gridH = weekList.scrollHeight;';
   html += '      }';
-  html += '      captureFullHeight = Math.max(captureFullHeight, headerH + gridH + 30);';
+  html += '      captureFullHeight = Math.max(captureFullHeight, headerH + gridH + 120);';
   html += '      target.style.overflow = "visible";';
   html += '      target.style.height = "auto";';
   html += '      target.style.maxHeight = "none";';
@@ -10090,7 +10260,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      width: captureFullWidth,';
   html += '      height: captureFullHeight,';
   html += '      windowWidth: captureFullWidth + 100,';
-  html += '      windowHeight: captureFullHeight + 300,';
+  html += '      windowHeight: captureFullHeight + 500,';
   html += '      scrollX: 0,';
   html += '      scrollY: 0,';
   html += '      onclone: function(clonedDoc) {';
@@ -10161,6 +10331,19 @@ function buildSidebarDashboardHtml(mode) {
   html += '            clonedGrid.style.maxHeight = "none";';
   html += '            clonedGrid.style.overflow = "visible";';
   html += '            clonedGrid.style.flex = "none";';
+  html += '            clonedGrid.style.minHeight = gridH + "px";';
+  html += '            const clonedCells = clonedGrid.querySelectorAll(".cal-day-cell");';
+  html += '            for (let i = 0; i < clonedCells.length; i++) {';
+  html += '              clonedCells[i].style.overflow = "visible";';
+  html += '              clonedCells[i].style.height = "auto";';
+  html += '              clonedCells[i].style.maxHeight = "none";';
+  html += '            }';
+  html += '            const clonedEvLists = clonedGrid.querySelectorAll(".cal-events-list");';
+  html += '            for (let i = 0; i < clonedEvLists.length; i++) {';
+  html += '              clonedEvLists[i].style.overflow = "visible";';
+  html += '              clonedEvLists[i].style.height = "auto";';
+  html += '              clonedEvLists[i].style.maxHeight = "none";';
+  html += '            }';
   html += '          }';
   html += '          const clonedWeekList = clonedDoc.getElementById("calWeekList");';
   html += '          if (clonedWeekList) {';
@@ -11589,10 +11772,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'      </div>\';';
   html += '  dHtml += \'      <table class="pc-tasks-table">\';';
-  html += '  dHtml += \'        <thead><tr><th style="width:96px;text-align:center;">상태</th><th style="min-width:200px;">공종 / 세부작업</th><th style="width:220px;">일정</th><th style="width:110px;">담당자</th><th style="min-width:240px;">비고 및 특이사항</th><th style="width:80px;text-align:center;">관리</th></tr></thead>\';';
+  html += '  dHtml += \'        <thead><tr><th style="width:96px;text-align:center;">상태</th><th style="min-width:180px;">공종 / 세부작업</th><th style="width:220px;">일정</th><th style="width:100px;">담당자</th><th style="width:120px;">협력업체</th><th style="min-width:200px;">비고 및 특이사항</th><th style="width:70px;text-align:center;">관리</th></tr></thead>\';';
   html += '  dHtml += \'        <tbody>\';';
   html += '  if (filteredTasks.length === 0) {';
-  html += '    dHtml += \'          <tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;font-weight:600;">조건에 맞는 공정이 없습니다.</td></tr>\';';
+  html += '    dHtml += \'          <tr><td colspan="7" style="text-align:center;padding:40px;color:#94a3b8;font-weight:600;">조건에 맞는 공정이 없습니다.</td></tr>\';';
   html += '  } else {';
   html += '    filteredTasks.forEach(task => {';
   html += '      const rawStatus = String(task.status || "").trim();';
@@ -11624,6 +11807,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      dHtml += \'            <td><strong style="color:#0f172a;font-size:13px;">\' + escapeHtml(task.taskName) + \'</strong></td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-weight:800;\' : \'font-weight:600;\') + \'">\' + escapeHtml(dateStr || "일정 미정") + \'</span>\' + ddayChip + \'</td>\';';
   html += '      dHtml += \'            <td><strong>\' + escapeHtml(tMgr || "미지정") + \'</strong></td>\';';
+  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span style="color:#1d4ed8;font-weight:700;background:#eff6ff;padding:2px 8px;border-radius:6px;font-size:12px;border:1px solid #bfdbfe;">🤝 \' + escapeHtml(task.partner) + \'</span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-size:12px;\' : \'color:#475569;font-size:12px;\') + \'">\' + escapeHtml(task.memo || "-") + \'</span></td>\';';
   html += '      dHtml += \'            <td style="text-align:center;"><button type="button" class="pc-task-btn-edit" onclick="event.stopPropagation();openEditModal(\\\'\' + task.row + \'\\\', \\\'\' + encCurSite + \'\\\')">수정</button></td>\';';
   html += '      dHtml += \'          </tr>\';';
@@ -12334,6 +12518,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  if (isBottomSheetVisible() || isSheetModalHistoryActive) {';
   html += '    closeBottomSheetFromBack();';
+  html += '    return;';
+  html += '  }';
+  html += '  if (!hasTopHistoryBridge) {';
+  html += '    var doExit = confirm("우성아이디 대시보드를 종료하시겠습니까?");';
+  html += '    if (doExit) {';
+  html += '      window.close();';
+  html += '    } else {';
+  html += '      try { window.history.pushState({ page: "home" }, ""); } catch(eStay) {}';
+  html += '    }';
   html += '  }';
   html += '});';
   html += '';
@@ -12445,6 +12638,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const taskNameEl = document.getElementById("sheetTaskName");';
   html += '  if (siteNameEl) siteNameEl.innerText = "➕ 새 공정 일정 등록";';
   html += '  if (taskNameEl) taskNameEl.innerText = prefillSite ? ("현장: " + prefillSite) : "현장·공종·날짜를 입력해 등록하세요";';
+  html += '  const partnerBadge = document.getElementById("sheetTaskPartnerBadge");';
+  html += '  if (partnerBadge) { partnerBadge.innerText = ""; partnerBadge.style.display = "none"; }';
+  html += '  const editPartnerRow = document.getElementById("sheetEditPartnerRow");';
+  html += '  if (editPartnerRow) editPartnerRow.style.display = "none";';
   html += '  const createBox = document.getElementById("sheetCreateFields");';
   html += '  if (createBox) createBox.style.display = "block";';
   html += '  const delBtn = document.getElementById("sheetDeleteBtn");';
@@ -12515,6 +12712,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '  selectedShare = (task.isShared === true);';
   html += '  document.getElementById("sheetSiteName").innerText = site;';
   html += '  document.getElementById("sheetTaskName").innerText = task.taskName;';
+  html += '  const curPartnerVal = (task && task.partner) || "";';
+  html += '  const partnerBadge = document.getElementById("sheetTaskPartnerBadge");';
+  html += '  const editPartnerInp = document.getElementById("sheetEditPartnerInput");';
+  html += '  const editPartnerRow = document.getElementById("sheetEditPartnerRow");';
+  html += '  if (partnerBadge) {';
+  html += '    if (curPartnerVal) {';
+  html += '      partnerBadge.innerText = "🤝 " + curPartnerVal;';
+  html += '      partnerBadge.style.display = "inline-flex";';
+  html += '    } else {';
+  html += '      partnerBadge.innerText = "";';
+  html += '      partnerBadge.style.display = "none";';
+  html += '    }';
+  html += '  }';
+  html += '  if (editPartnerRow) editPartnerRow.style.display = "flex";';
+  html += '  if (editPartnerInp) editPartnerInp.value = curPartnerVal;';
   html += '  const dateInput = document.getElementById("sheetDateInput");';
   html += '  const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
   html += '  if (dateInput) {';
@@ -12596,12 +12808,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '  document.getElementById("sheetShareOff").classList.toggle("active-off", !selectedShare);';
   html += '}';
   html += '';
-  html += 'function applyOptimisticTaskUpdate(taskObj, newStatus, newShare, newMemo, newDateStr, newMgr) {';
+  html += 'function applyOptimisticTaskUpdate(taskObj, newStatus, newShare, newMemo, newDateStr, newMgr, newPartner) {';
   html += '  if (!taskObj) return;';
   html += '  taskObj.status = newStatus;';
   html += '  taskObj.isShared = !!newShare;';
   html += '  taskObj.memo = newMemo;';
   html += '  taskObj.manager = newMgr;';
+  html += '  if (newPartner !== undefined) taskObj.partner = newPartner;';
   html += '  const now = new Date();';
   html += '  const ty = now.getFullYear(), tm = now.getMonth() + 1, td = now.getDate();';
   html += '  const todayIso = ty + "-" + (tm < 10 ? "0" + tm : tm) + "-" + (td < 10 ? "0" + td : td);';
@@ -12755,14 +12968,16 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '  }';
   html += '  const prevSnapshot = Object.assign({}, targetTask);';
-  html += '  applyOptimisticTaskUpdate(targetTask, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
+  html += '  const editPartnerInp = document.getElementById("sheetEditPartnerInput");';
+  html += '  const partnerValForSave = editPartnerInp ? editPartnerInp.value.trim() : ((curTaskObj && curTaskObj.partner) || "");';
+  html += '  applyOptimisticTaskUpdate(targetTask, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, partnerValForSave);';
   html += '  closeCustomDatePicker();';
   html += '  const overlayEl = document.getElementById("sheetOverlay");';
   html += '  if (overlayEl) overlayEl.classList.remove("show");';
   html += '  popBottomSheetHistoryStateIfNeeded();';
   html += '  const siteNameForSave = curSiteName || "";';
   html += '  const taskNameForSave = (targetTask && targetTask.taskName) || (curTaskObj && curTaskObj.taskName) || "";';
-  html += '  showToast("✅ [" + taskNameForSave + "] 일정/담당자/상태가 저장되었습니다!");';
+  html += '  showToast("✅ [" + taskNameForSave + "] 일정/담당자/협력업체/상태가 저장되었습니다!");';
   html += '  const runner = google.script.run';
   html += '    .withSuccessHandler(res => {';
   html += '      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "💾 저장하기"; }';
@@ -12771,20 +12986,20 @@ function buildSidebarDashboardHtml(mode) {
   html += '        loadDataSilently();';
   html += '      } else {';
   html += '        Object.assign(targetTask, prevSnapshot);';
-  html += '        applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "");';
+  html += '        applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "", prevSnapshot.partner || "");';
   html += '        showToast("⚠️ 저장 실패: " + ((res && res.error) || "알 수 없는 오류"));';
   html += '      }';
   html += '    })';
   html += '    .withFailureHandler(err => {';
   html += '      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "💾 저장하기"; }';
   html += '      Object.assign(targetTask, prevSnapshot);';
-  html += '      applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "");';
+  html += '      applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "", prevSnapshot.partner || "");';
   html += '      showToast("⚠️ 에러: " + (err.message || err));';
   html += '    });';
   html += '  if (curTaskObj.isArchived) {';
-  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true, siteNameForSave, taskNameForSave);';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true, siteNameForSave, taskNameForSave, partnerValForSave);';
   html += '  } else {';
-  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, false, siteNameForSave, taskNameForSave);';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, false, siteNameForSave, taskNameForSave, partnerValForSave);';
   html += '  }';
   html += '}';
   html += '';
