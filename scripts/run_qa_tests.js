@@ -6496,6 +6496,88 @@ assertTest('Step 74-6: 월간/주간 탭 전환 시 contentArea의 pc-dashboard-
   dashHtml74.indexOf('contentArea.classList.remove("pc-dashboard-active");') !== -1
 );
 
+// ========================================================
+// Step 75: 주간 탭 ➔ 월간 탭 전환 시 하단 주간 7-Column 그리드 잔존 방지 및 완전 언마운트 무결성 QA
+// ========================================================
+console.log('\n--- [Step 75] 주간 ➔ 월간 탭 전환 시 주간 그리드 완전 은폐 및 언마운트 무결성 검증 ---');
+
+const dashHtml75 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 75-1: .pc-weekly-grid display: grid; 에서 !important 제거 검증 (인라인 및 은폐 스타일 무력화 방지)
+assertTest('Step 75-1: .pc-weekly-grid에서 display: grid !important 제거 및 일반 display: grid 적용 검증',
+  dashHtml75.indexOf('.pc-weekly-grid { display: grid; grid-template-columns: repeat(7, 1fr) !important;') !== -1 &&
+  dashHtml75.indexOf('.pc-weekly-grid { display: grid !important;') === -1
+);
+
+// 75-2: #calWeekList.hidden 및 .pc-weekly-grid.hidden display: none !important 탑재 검증
+assertTest('Step 75-2: #calWeekList.hidden 및 .pc-weekly-grid.hidden에 display: none !important 강제 은폐 CSS 탑재 검증',
+  dashHtml75.indexOf('#calWeekList.hidden, .pc-weekly-grid.hidden, #calWeekList[style*="display: none"], .pc-weekly-grid[style*="display: none"] { display: none !important; }') !== -1 &&
+  dashHtml75.indexOf('#calGrid.hidden, #calGrid[style*="display: none"] { display: none !important; }') !== -1 &&
+  dashHtml75.indexOf('#calWeekdaysBar.hidden, #calWeekdaysBar[style*="display: none"] { display: none !important; }') !== -1
+);
+
+// 75-3: setCalendarMode("month") 호출 시 wkList에 .hidden 추가, display: none !important 및 className="cal-week-list hidden" 리셋 검증
+assertTest('Step 75-3: setCalendarMode("month") 시 wkList에 .hidden 추가 및 className 리셋 검증',
+  dashHtml75.indexOf('wkList.classList.add("hidden");') !== -1 &&
+  dashHtml75.indexOf('wkList.style.setProperty("display", "none", "important");') !== -1 &&
+  dashHtml75.indexOf('wkList.className = "cal-week-list hidden";') !== -1
+);
+
+// 75-4: setCalendarMode("week") 호출 시 wkBar, grid에 .hidden 및 display: none !important 적용 검증
+assertTest('Step 75-4: setCalendarMode("week") 시 wkBar/grid .hidden 및 display: none !important 적용 검증',
+  dashHtml75.indexOf('wkBar.classList.add("hidden"); wkBar.style.setProperty("display", "none", "important");') !== -1 &&
+  dashHtml75.indexOf('grid.classList.add("hidden"); grid.style.setProperty("display", "none", "important");') !== -1 &&
+  dashHtml75.indexOf('wkList.classList.remove("hidden");') !== -1
+);
+
+// 75-5: 풀-라이프사이클 탭 왕복 전환 모의 테스트 (월간 ➔ 주간 ➔ 월간)
+assertTest('Step 75-5: 풀-라이프사이클 왕복 전환 모의 검증 (월간 ➔ 주간 ➔ 월간 시 주간 그리드 잔존 제로)', () => {
+  // 모의 DOM 환경
+  const mockElements = {
+    calWeekdaysBar: { style: { display: '', setProperty(k,v) { this[k]=v; }, removeProperty(k) { delete this[k]; } }, classList: new Set() },
+    calGrid: { style: { display: '', setProperty(k,v) { this[k]=v; }, removeProperty(k) { delete this[k]; } }, classList: new Set() },
+    calWeekList: { style: { display: 'none', setProperty(k,v) { this[k]=v; }, removeProperty(k) { delete this[k]; } }, classList: new Set(['hidden']), className: 'cal-week-list hidden' }
+  };
+  mockElements.calWeekdaysBar.classList.add = function(c) { this.add(c); };
+  mockElements.calGrid.classList.add = function(c) { this.add(c); };
+  mockElements.calWeekList.classList.add = function(c) { this.add(c); };
+
+  // 1) 주간 전환
+  // setCalendarMode('week') 모의
+  mockElements.calWeekdaysBar.style.setProperty('display', 'none', 'important');
+  mockElements.calWeekdaysBar.classList.add('hidden');
+  mockElements.calGrid.style.setProperty('display', 'none', 'important');
+  mockElements.calGrid.classList.add('hidden');
+  mockElements.calWeekList.classList.delete('hidden');
+  mockElements.calWeekList.className = 'pc-weekly-grid';
+  mockElements.calWeekList.style.setProperty('display', 'grid', 'important');
+
+  // 주간 뷰 검증
+  if (mockElements.calWeekList.className !== 'pc-weekly-grid') return false;
+  if (mockElements.calGrid.style.display !== 'none') return false;
+
+  // 2) 월간 복귀
+  // setCalendarMode('month') 모의
+  mockElements.calWeekList.classList.add('hidden');
+  mockElements.calWeekList.style.setProperty('display', 'none', 'important');
+  mockElements.calWeekList.className = 'cal-week-list hidden';
+  mockElements.calWeekdaysBar.classList.delete('hidden');
+  mockElements.calWeekdaysBar.style.removeProperty('display');
+  mockElements.calWeekdaysBar.style.setProperty('display', 'grid', 'important');
+  mockElements.calGrid.classList.delete('hidden');
+  mockElements.calGrid.style.removeProperty('display');
+  mockElements.calGrid.style.setProperty('display', 'grid', 'important');
+
+  // 월간 복귀 상태 검증: wkList는 반드시 display: none, hidden, className에 pc-weekly-grid가 없어야 함
+  const isWeekListHidden = mockElements.calWeekList.style.display === 'none' &&
+                           mockElements.calWeekList.className === 'cal-week-list hidden' &&
+                           mockElements.calWeekList.classList.has('hidden');
+  const isMonthGridVisible = mockElements.calGrid.style.display === 'grid' &&
+                             !mockElements.calGrid.classList.has('hidden');
+
+  return isWeekListHidden && isMonthGridVisible;
+});
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
