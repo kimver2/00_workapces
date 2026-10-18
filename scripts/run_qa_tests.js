@@ -6384,6 +6384,71 @@ assertTest('Step 72-6: 잔여/경과 일수 계산 시 !isNaN(diffDays) 방어 �
   dashHtml72.indexOf('cleanLatest = String(latestDateStr).replace(/\\\\./g, "-").trim();') !== -1
 );
 
+// ========================================================
+// Step 73: PC 현장 캐러셀 활성 카드 자동 포커스 및 부드러운 중앙 스크롤 무결성 QA
+// ========================================================
+console.log('\n--- [Step 73] PC 현장 캐러셀 활성 카드 자동 포커스 및 중앙 스크롤 무결성 검증 ---');
+
+const dashHtml73 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 73-1: scrollActivePcCardIntoView 함수 정의 및 중앙 정렬 스크롤 계산 로직 검증
+assertTest('Step 73-1: scrollActivePcCardIntoView 함수 및 중앙 정렬 스크롤(clampedTarget) 계산 로직 검증',
+  dashHtml73.indexOf('function scrollActivePcCardIntoView(isSmooth)') !== -1 &&
+  dashHtml73.indexOf('const relativeCardLeft = (cardRect.left - trackRect.left) + track.scrollLeft;') !== -1 &&
+  dashHtml73.indexOf('const targetScrollLeft = relativeCardLeft - (track.clientWidth / 2) + (activeCard.offsetWidth / 2);') !== -1 &&
+  dashHtml73.indexOf('track.scrollTo({ left: clampedTarget, behavior: isSmooth ? "smooth" : "auto" });') !== -1
+);
+
+// 73-2: renderPcSiteDashboard 내 prevScrollLeft 보존 및 자동 스크롤 검증
+assertTest('Step 73-2: renderPcSiteDashboard 내 렌더링 전 scrollLeft 보존 및 리셋 방지 검증',
+  dashHtml73.indexOf('const prevTrack = document.getElementById("pcSiteCarouselTrack");') !== -1 &&
+  dashHtml73.indexOf('const prevScrollLeft = prevTrack ? prevTrack.scrollLeft : null;') !== -1 &&
+  dashHtml73.indexOf('if (newTrack && prevScrollLeft !== null) {') !== -1 &&
+  dashHtml73.indexOf('newTrack.scrollLeft = prevScrollLeft;') !== -1 &&
+  dashHtml73.indexOf('scrollActivePcCardIntoView(prevScrollLeft !== null);') !== -1
+);
+
+// 73-3: selectPcSite 및 onPcSidebarSiteLabelClick 내 활성 카드 자동 중앙 스크롤 연동 검증
+assertTest('Step 73-3: selectPcSite 및 onPcSidebarSiteLabelClick 내 scrollActivePcCardIntoView(true) 연동 검증',
+  dashHtml73.indexOf('function selectPcSite(siteName) {') !== -1 &&
+  dashHtml73.indexOf('function onPcSidebarSiteLabelClick(e, siteEnc) {') !== -1
+);
+
+// 73-4: .pc-carousel-track CSS에서 scroll-behavior: smooth 제거하여 JS scrollTo 제어권 확보 검증
+assertTest('Step 73-4: .pc-carousel-track CSS 내 scroll-behavior: smooth 제거(자바스크립트 완전 제어권 확보) 검증',
+  dashHtml73.indexOf('.pc-carousel-track { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 6px 2px; }') !== -1 &&
+  dashHtml73.indexOf('.pc-carousel-track { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 6px 2px; scroll-behavior: smooth; }') === -1
+);
+
+// 73-5: onPcSiteCheckChange에서 !isCalendarMode(현장 뷰)일 때 renderList 호출 분기 검증
+assertTest('Step 73-5: onPcSiteCheckChange 내 !isCalendarMode 시 renderList 호출 분기 검증',
+  dashHtml73.indexOf('if (isCalendarMode) {') !== -1 &&
+  dashHtml73.indexOf('renderCurrentCalendarView();') !== -1 &&
+  dashHtml73.indexOf('renderList();') !== -1
+);
+
+// 73-6: 마지막 현장 선택 시 활성 카드 뷰포트 중앙 가시 영역 내 진입 수학적 정합성 검증
+{
+  const trackWidth = 1084;
+  const cardLeft = 1352;
+  const cardWidth = 260;
+  const currentScrollLeft = 0;
+  const scrollWidth = 1614;
+
+  const relativeCardLeft = cardLeft + currentScrollLeft;
+  const targetScrollLeft = relativeCardLeft - (trackWidth / 2) + (cardWidth / 2);
+  const maxScroll = Math.max(0, scrollWidth - trackWidth);
+  const clampedTarget = Math.max(0, Math.min(maxScroll, targetScrollLeft));
+
+  const finalCardLeftInView = cardLeft - clampedTarget;
+  const finalCardRightInView = finalCardLeftInView + cardWidth;
+  const isFullyVisibleInTrack = (finalCardLeftInView >= 0 && finalCardRightInView <= trackWidth);
+
+  assertTest('Step 73-6: 1400px 랩톱 환경에서 마지막 현장 선택 시 clampedTarget(530px) 스크롤로 카드 100% 가시 영역 내 중앙 포커스 수학적 검증',
+    clampedTarget === 530 && isFullyVisibleInTrack && finalCardLeftInView === 822 && finalCardRightInView === 1082
+  );
+}
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
