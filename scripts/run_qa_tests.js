@@ -2721,7 +2721,7 @@ assertTest('buildSidebarDashboardHtml: 캘린더 캡쳐 프리뷰 모달(#captur
 // 35-5: 클라이언트 스크립트에 captureCalendarScreen, showCaptureModal, closeCaptureModal 함수 탑재 검증
 assertTest('buildSidebarDashboardHtml: 클라이언트 스크립트에 captureCalendarScreen, showCaptureModal, closeCaptureModal 함수 탑재 검증',
   dashHtml35.indexOf('function captureCalendarScreen()') !== -1 &&
-  dashHtml35.indexOf('function showCaptureModal(dataUrl, filename)') !== -1 &&
+  dashHtml35.indexOf('function showCaptureModal(dataUrl, filename') !== -1 &&
   dashHtml35.indexOf('function closeCaptureModal(e)') !== -1
 );
 
@@ -2779,7 +2779,7 @@ assertTest('formatAllDatesInSheetToYYYYMMDD: 시트 날짜 2026.00.00 일괄 변
 // 36-5: captureCalendarScreen 캡쳐 즉시 자동 다운로드 제거(팝업만 단독 띄움) 검증
 const dashHtml36 = sandbox.buildSidebarDashboardHtml('mobile');
 assertTest('buildSidebarDashboardHtml: 캡쳐 버튼 클릭 시 중복 다운로드 유발하던 즉시 link.click() 배제 및 팝업(showCaptureModal) 단독 호출 검증',
-  dashHtml36.indexOf('showCaptureModal(dataUrl, filename);') !== -1 &&
+  dashHtml36.indexOf('showCaptureModal(dataUrl, filename') !== -1 &&
   dashHtml36.indexOf('link.download = filename;\n        link.href = dataUrl;\n        document.body.appendChild(link);\n        link.click();') === -1
 );
 
@@ -6650,6 +6650,41 @@ assertTest('Step 77-3: 정렬(진척률/최근/가나다) 클릭 시 맨 앞 첫
 assertTest('Step 77-4: 공종 테이블 컬럼 헤더 th "공정 일정 (시작 ~ 종료)" -> "일정" 간결화 검증',
   dashHtml77.indexOf('<th style="width:220px;">일정</th>') !== -1 &&
   dashHtml77.indexOf('공정 일정 (시작 ~ 종료)') === -1
+);
+
+// ========================================================
+// 78. [PC 현장별 상세 대시보드 전체(Full-Scroll) 캡쳐 및 타이틀/파일명 동적 지정 QA]
+// ========================================================
+console.log('\n📸 [Step 78: PC 현장별 상세 대시보드 전체(Full-Scroll) 캡쳐 및 타이틀/파일명 동적화 QA]');
+
+const dashHtml78 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 78-1: 현장별 탭 활성화 시 .pc-site-detail-pane 자동 판별 검증
+assertTest('Step 78-1: captureCalendarScreen 내 현장별 뷰 감지 및 타겟 .pc-site-detail-pane 자동 지정 검증',
+  dashHtml78.indexOf('const isSiteDetailActive = contentArea && !contentArea.classList.contains("hidden") && contentArea.style.display !== "none";') !== -1 &&
+  dashHtml78.indexOf('target = document.querySelector(".pc-site-detail-pane");') !== -1 &&
+  dashHtml78.indexOf('captureType = "site";') !== -1
+);
+
+// 78-2: 현장별 캡쳐 시 전체 스크롤 높이 펼침(overflow: visible, height: auto) 및 원복 검증
+assertTest('Step 78-2: 스크롤 잘림 없는 전체 캡쳐를 위한 스타일 임시 해제(overflow: visible) 및 원복 가드 검증',
+  dashHtml78.indexOf('target.style.overflow = "visible";') !== -1 &&
+  dashHtml78.indexOf('target.style.height = "auto";') !== -1 &&
+  dashHtml78.indexOf('target.style.overflow = origOverflow;') !== -1 &&
+  dashHtml78.indexOf('target.scrollTop = origScrollTop;') !== -1
+);
+
+// 78-3: 캡쳐 모달 타이틀(현장 공정 상세 캡쳐 완료) 및 현장명 파일명 지정 검증
+assertTest('Step 78-3: showCaptureModal 내 captureModalTitle 및 현장명 포함 파일명 생성 검증',
+  dashHtml78.indexOf('id="captureModalTitle"') !== -1 &&
+  dashHtml78.indexOf('titleEl.innerText = (captureType === "site") ? "📷 현장 공정 상세 캡쳐 완료" : "📷 캘린더 캡쳐 완료";') !== -1 &&
+  dashHtml78.indexOf('_공정관리_') !== -1
+);
+
+// 78-4: 캡쳐 모달 다이얼로그 max-width: 680px 및 이미지 종횡비 보호 검증
+assertTest('Step 78-4: 캡쳐 모달 다이얼로그 max-width: 680px 및 max-height: 65vh; object-fit: contain 검증',
+  dashHtml78.indexOf('max-width:680px;') !== -1 &&
+  dashHtml78.indexOf('max-height:65vh; object-fit:contain;') !== -1
 );
 
 console.log('\n========================================================');
