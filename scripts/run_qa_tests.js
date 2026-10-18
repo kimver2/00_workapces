@@ -6449,6 +6449,53 @@ assertTest('Step 73-5: onPcSiteCheckChange 내 !isCalendarMode 시 renderList �
   );
 }
 
+// ========================================================
+// Step 74: PC 현장 스크롤 행 숨김, 검색창 다국어/한글 포커스 유지 및 탭 전환 시 현장목록 은폐 무결성 QA
+// ========================================================
+console.log('\n--- [Step 74] PC 현장 스크롤 밀착, 검색창 글자 입력 포커스 유지 및 탭 전환 은폐 검증 ---');
+
+const dashHtml74 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 74-1: .pc-site-detail-pane padding-top: 0 및 .pc-detail-hero margin-top: 16px로 스크롤 시 상단 틈새 행 노출 원천 차단 검증
+assertTest('Step 74-1: .pc-site-detail-pane padding: 0 22px 36px 22px 및 hero margin-top: 16px 탑재 (스크롤 시 상단 행 틈새 노출 원천 차단)',
+  dashHtml74.indexOf('.pc-site-detail-pane { flex: 1; min-height: 0; overflow-y: auto; padding: 0 22px 36px 22px; display: flex; flex-direction: column; gap: 14px; min-width: 0; position: relative; }') !== -1 &&
+  dashHtml74.indexOf('.pc-detail-hero { margin-top: 16px; background: #ffffff;') !== -1
+);
+
+// 74-2: 공종 검색창 placeholder="검색" 및 id="pcSiteTaskSearchInput" 검증
+assertTest('Step 74-2: 공종 검색창 placeholder="검색" 간결화 및 id="pcSiteTaskSearchInput" 탑재 검증',
+  dashHtml74.indexOf('placeholder="검색"') !== -1 &&
+  dashHtml74.indexOf('id="pcSiteTaskSearchInput"') !== -1 &&
+  dashHtml74.indexOf('placeholder="현장 내 공종 실시간 검색..."') === -1
+);
+
+// 74-3: onPcSiteTaskSearch 인플레이스 DOM 필터링으로 입력 도중 포커스 소실 및 한 글자 제한 원천 해결 검증
+assertTest('Step 74-3: onPcSiteTaskSearch 인플레이스 DOM 필터링 탑재 (입력 시 renderList 호출 배제로 포커스 소실 및 한글 자모 결합 중단 방지)',
+  dashHtml74.indexOf('function onPcSiteTaskSearch(query) {') !== -1 &&
+  dashHtml74.indexOf('const rows = document.querySelectorAll(".pc-tasks-table tbody tr.pc-task-row");') !== -1 &&
+  dashHtml74.indexOf('tr.dataset.search') !== -1 &&
+  dashHtml74.indexOf('pcTasksEmptyRow') !== -1
+);
+
+// 74-4: 테이블 행(tr)에 .pc-task-row 클래스 및 data-search/data-status/data-delayed 속성 탑재 검증
+assertTest('Step 74-4: table tr에 .pc-task-row 클래스 및 실시간 검색용 data-search/status/delayed 속성 탑재 검증',
+  dashHtml74.indexOf('tr class="pc-task-row') !== -1 &&
+  dashHtml74.indexOf('searchTargetStr') !== -1 &&
+  dashHtml74.indexOf('escapeHtml(searchTargetStr)') !== -1
+);
+
+// 74-5: renderPcSiteDashboard 리렌더링 시 hadSearchFocus 및 setSelectionRange 커서/포커스 복구 로직 검증
+assertTest('Step 74-5: 리렌더링 시 hadSearchFocus 및 setSelectionRange 커서/포커스 복원 가드 검증',
+  dashHtml74.indexOf('const hadSearchFocus = (document.activeElement && document.activeElement.id === "pcSiteTaskSearchInput");') !== -1 &&
+  dashHtml74.indexOf('sInput.setSelectionRange(searchCursor, searchCursor);') !== -1
+);
+
+// 74-6: 월간/주간 탭 전환 시 contentArea.pc-dashboard-active.hidden { display: none !important; } 및 클래스 제거 검증
+assertTest('Step 74-6: 월간/주간 탭 전환 시 contentArea의 pc-dashboard-active 제거 및 .hidden 완전 은폐 CSS 검증',
+  dashHtml74.indexOf('#contentArea.hidden, #contentArea.pc-dashboard-active.hidden { display: none !important; }') !== -1 &&
+  dashHtml74.indexOf('contentArea.classList.remove("pc-dashboard-active");') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
