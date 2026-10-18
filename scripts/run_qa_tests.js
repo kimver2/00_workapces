@@ -6189,6 +6189,72 @@ assertTest('Step 69-5: 1200px 이상 와이드 화면에서도 minmax(max-conten
   dashHtml68.indexOf('min-height: min-content !important;') !== -1
 );
 
+// ============================================================================
+// [Step 70] PC 주간 7-Column 뷰 & 상단 캐러셀 와이드 현장 대시보드 & 담당자 표기 무결성 QA
+// ============================================================================
+console.log('\n--- [Step 70] PC 주간 7-Column 그리드, 상단 캐러셀 와이드 대시보드 및 담당자 직급 생략 무결성 검증 ---');
+
+// 1. formatManagerName 직급 생략 및 순수 이름 추출 검증
+const clientScript70 = dashHtml68.match(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/)[1];
+const clientSandbox70 = {
+  document: { getElementById: () => null, querySelectorAll: () => [], addEventListener: () => {} },
+  window: { innerWidth: 1200, addEventListener: () => {} },
+  setTimeout: () => {},
+  Date: Date,
+  Math: Math,
+  String: String,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent
+};
+vm.createContext(clientSandbox70);
+vm.runInContext(clientScript70, clientSandbox70);
+
+assertTest('Step 70-1: formatManagerName: 직급(대리, 과장, 팀장 등) 및 괄호 생략, 순수 이름 추출 검증',
+  typeof clientSandbox70.formatManagerName === 'function' &&
+  clientSandbox70.formatManagerName('전예린 대리') === '전예린' &&
+  clientSandbox70.formatManagerName('송지은 과장') === '송지은' &&
+  clientSandbox70.formatManagerName('한송이(팀장)') === '한송이' &&
+  clientSandbox70.formatManagerName('조항만') === '조항만' &&
+  clientSandbox70.formatManagerName('인경호 실장님') === '인경호'
+);
+
+// 2. PC 현장 뷰: 주담당자 -> 담당자 변경 및 메타 줄 전체공종수 삭제 검증
+assertTest('Step 70-2: PC 현장 뷰: "주담당자" 대신 "담당자:" 표기 및 메타 줄 중복 "전체 공종: " 삭제 검증',
+  dashHtml68.indexOf('<span>담당자: <strong>') !== -1 &&
+  dashHtml68.indexOf('주담당자') === -1 &&
+  dashHtml68.indexOf('주 담당자') === -1 &&
+  dashHtml68.indexOf('전체 공종: 35개 공정') === -1
+);
+
+// 3. PC 현장 뷰: 상단 캐러셀 & 하단 와이드 대시보드 구조 및 컨트롤러 함수 검증
+assertTest('Step 70-3: PC 현장 뷰: 상단 가로 캐러셀 바(.pc-site-carousel-bar) 및 하단 와이드 대시보드(.pc-site-detail-pane) 탑재 검증',
+  dashHtml68.indexOf('.pc-site-dashboard-layout') !== -1 &&
+  dashHtml68.indexOf('.pc-site-carousel-bar') !== -1 &&
+  dashHtml68.indexOf('.pc-carousel-track') !== -1 &&
+  dashHtml68.indexOf('.pc-site-detail-pane') !== -1 &&
+  dashHtml68.indexOf('.pc-kpi-summary-panel') !== -1 &&
+  dashHtml68.indexOf('.pc-tasks-table-card') !== -1 &&
+  dashHtml68.indexOf('function scrollPcSiteCarousel(') !== -1 &&
+  dashHtml68.indexOf('function selectPcSite(') !== -1 &&
+  dashHtml68.indexOf('function setPcSiteSortMode(') !== -1 &&
+  dashHtml68.indexOf('function setPcSiteDetailFilter(') !== -1
+);
+
+// 4. PC 주간 뷰: 7-Column 그리드 보드 구조 및 CSS 검증
+assertTest('Step 70-4: PC 주간 뷰: 7-Column 데스크톱 그리드(.pc-weekly-grid) 및 일~토 7개 열 렌더링 로직 검증',
+  dashHtml68.indexOf('.pc-weekly-grid') !== -1 &&
+  dashHtml68.indexOf('grid-template-columns: repeat(7, 1fr)') !== -1 &&
+  dashHtml68.indexOf('.pc-weekly-col') !== -1 &&
+  dashHtml68.indexOf('function renderWeeklyCalendar(') !== -1 &&
+  dashHtml68.indexOf('pc-weekly-grid') !== -1
+);
+
+// 5. renderList 내 isPcMode 분기 및 PC 대시보드 렌더링 호출 검증
+assertTest('Step 70-5: renderList: PC 환경(width >= 768px) 접속 시 renderPcSiteDashboard 자동 호출 분기 검증',
+  dashHtml68.indexOf('const isPcMode = (typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth >= 768);') !== -1 &&
+  dashHtml68.indexOf('renderPcSiteDashboard(matchedSites);') !== -1 &&
+  dashHtml68.indexOf('container.classList.add("pc-dashboard-active");') !== -1
+);
 
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
