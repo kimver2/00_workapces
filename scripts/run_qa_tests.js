@@ -6256,6 +6256,89 @@ assertTest('Step 70-5: renderList: PC 환경(width >= 768px) 접속 시 renderPc
   dashHtml68.indexOf('container.classList.add("pc-dashboard-active");') !== -1
 );
 
+// ============================================================================
+// [Step 71] 현장 상태 판정(예정/진행/일정확인필요/완료), 안내 배너, 탭 문구 및 뷰 전환 QA
+// ============================================================================
+console.log('\n--- [Step 71] 현장 상태 판정 로직, 안내 배너, 탭 명칭(월간/주간/현장별) 및 화면 전환 무결성 검증 ---');
+
+const dashHtml71 = sandbox.buildSidebarDashboardHtml('desktop');
+const clientScript71 = dashHtml71.match(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/)[1];
+const clientSandbox71 = {
+  document: { getElementById: () => null, querySelectorAll: () => [], addEventListener: () => {} },
+  window: { innerWidth: 1200, addEventListener: () => {} },
+  setTimeout: () => {},
+  Date: Date,
+  Math: Math,
+  String: String,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent
+};
+vm.createContext(clientSandbox71);
+vm.runInContext(clientScript71, clientSandbox71);
+
+// 1. getSiteStatusInfo 함수 엣지케이스별 상태 판정 검증
+const resPlan71 = clientSandbox71.getSiteStatusInfo({
+  siteName: '미래현장',
+  tasks: [{ taskName: '철거', status: '예정', startDateStr: '2026-10-25' }],
+  inProgressTasksCount: 0,
+  completedTasksCount: 0
+}, '2026-10-18');
+
+const resCheck71 = clientSandbox71.getSiteStatusInfo({
+  siteName: '경과현장',
+  tasks: [{ taskName: '철거', status: '예정', startDateStr: '2026-10-12' }],
+  inProgressTasksCount: 0,
+  completedTasksCount: 0
+}, '2026-10-18');
+
+const resProg71 = clientSandbox71.getSiteStatusInfo({
+  siteName: '진행현장',
+  tasks: [{ taskName: '철거', status: '진행 중', startDateStr: '2026-10-10' }],
+  inProgressTasksCount: 1
+}, '2026-10-18');
+
+const resDone71 = clientSandbox71.getSiteStatusInfo({
+  siteName: '완료현장',
+  isAllCompleted: true,
+  tasks: [{ taskName: '청소', status: '완료' }]
+}, '2026-10-18');
+
+assertTest('Step 71-1: getSiteStatusInfo: 착공 미래(예정), 착공 경과(일정확인필요 배너), 진행중, 완료 상태 정확 판정 검증',
+  resPlan71.status === 'plan' &&
+  resPlan71.text.indexOf('공사예정') !== -1 &&
+  resCheck71.status === 'check_needed' &&
+  resCheck71.text.indexOf('일정 확인 필요') !== -1 &&
+  resCheck71.alertMsg.indexOf('아직 진행 또는 완료된 공정이 없습니다') !== -1 &&
+  resProg71.status === 'prog' &&
+  resProg71.text === '공사진행중' &&
+  resDone71.status === 'done' &&
+  resDone71.text === '공사완료'
+);
+
+// 2. 우측 상단 뷰 탭 명칭: 월간, 주간, 현장별 변경 검증
+assertTest('Step 71-2: 우측 상단 뷰 전환 탭: "월간", "주간", "현장별" 간결 명칭 적용 검증',
+  dashHtml71.indexOf('>월간</button>') !== -1 &&
+  dashHtml71.indexOf('>주간</button>') !== -1 &&
+  dashHtml71.indexOf('>현장별</button>') !== -1 &&
+  dashHtml71.indexOf('>월간 달력</button>') === -1 &&
+  dashHtml71.indexOf('>현장별 카드</button>') === -1
+);
+
+// 3. switchToPcView: hidden 클래스 및 완벽한 분리 검증
+assertTest('Step 71-3: switchToPcView: .hidden 클래스 및 calendarArea/contentArea 완전 분리 검증',
+  dashHtml71.indexOf('#calendarArea.hidden, #contentArea.hidden { display: none !important; }') !== -1 &&
+  dashHtml71.indexOf('function switchToPcView(view)') !== -1 &&
+  dashHtml71.indexOf('calArea.classList.add("hidden")') !== -1 &&
+  dashHtml71.indexOf('contentArea.classList.remove("hidden")') !== -1
+);
+
+// 4. 사이드바 현장명 라벨 클릭 시 현장 상세로 즉시 이동 연동 검증
+assertTest('Step 71-4: 사이드바 현장명 라벨: onclick="onPcSidebarSiteLabelClick" 탑재 및 공종 리스트 즉시 연결 검증',
+  dashHtml71.indexOf('function onPcSidebarSiteLabelClick(') !== -1 &&
+  dashHtml71.indexOf('onPcSidebarSiteLabelClick(event,') !== -1 &&
+  dashHtml71.indexOf('.site-name-label { cursor: pointer;') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -6265,5 +6348,6 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
+
 
 
