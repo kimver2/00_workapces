@@ -6725,6 +6725,45 @@ assertTest('Step 79-4: PC 좌측 사이드바 완료 현장 목록, togglePcSide
   dashHtml79.indexOf('id="pcSidebarDoneList"') !== -1
 );
 
+console.log('\n📸 [Step 80: PC 현장별 뷰 전체 공정(Full-Scroll) 캡쳐 및 하단 잘림 원천 차단 QA]');
+const dashHtml80 = sandbox.buildSidebarDashboardHtml('pc');
+
+// 80-1: captureCalendarScreen 내 풀-스크롤 높이 동적 측정 검증
+assertTest('Step 80-1: captureCalendarScreen 내 tableCard 및 전체 콘텐츠 높이(captureFullHeight) 동적 측정 검증',
+  dashHtml80.indexOf('let captureFullHeight = target.scrollHeight || target.offsetHeight;') !== -1 &&
+  dashHtml80.indexOf('const tableCard = target.querySelector(".pc-tasks-table-card");') !== -1 &&
+  dashHtml80.indexOf('const tableCardFullHeight = tableCard.scrollHeight;') !== -1 &&
+  dashHtml80.indexOf('captureFullHeight = Math.max(captureFullHeight, estimatedHeight);') !== -1
+);
+
+// 80-2: html2canvas 옵션에 fullWidth, fullHeight, windowWidth, windowHeight 설정 검증
+assertTest('Step 80-2: html2canvas 옵션에 width, height, windowWidth, windowHeight 및 scroll 0 설정 검증',
+  dashHtml80.indexOf('width: captureFullWidth,') !== -1 &&
+  dashHtml80.indexOf('height: captureFullHeight,') !== -1 &&
+  dashHtml80.indexOf('windowWidth: captureFullWidth + 100,') !== -1 &&
+  dashHtml80.indexOf('windowHeight: captureFullHeight + 300,') !== -1 &&
+  dashHtml80.indexOf('scrollX: 0,') !== -1 &&
+  dashHtml80.indexOf('scrollY: 0,') !== -1
+);
+
+// 80-3: onclone 핸들러 내 상위 컨테이너 클리핑 해제 및 clonedTarget minHeight 검증
+assertTest('Step 80-3: onclone 핸들러 내 contentArea, pc-main-content 클리핑 해제 및 clonedTarget 높이 보장 검증',
+  dashHtml80.indexOf('onclone: function(clonedDoc) {') !== -1 &&
+  dashHtml80.indexOf('const cArea = clonedDoc.getElementById("contentArea");') !== -1 &&
+  dashHtml80.indexOf('const mContent = clonedDoc.querySelector(".pc-main-content");') !== -1 &&
+  dashHtml80.indexOf('clonedTarget.style.minHeight = captureFullHeight + "px";') !== -1 &&
+  dashHtml80.indexOf('clonedTarget.style.overflow = "visible";') !== -1
+);
+
+// 80-4: onclone 핸들러 내 sticky 헤더 static 변환 및 플로팅 버튼 은폐 검증
+assertTest('Step 80-4: onclone 핸들러 내 Sticky 툴바/헤더 static 변환 및 맨위로 버튼 은폐 검증',
+  dashHtml80.indexOf('const toolbar = clonedTarget.querySelector(".pc-tasks-toolbar");') !== -1 &&
+  dashHtml80.indexOf('if (toolbar) toolbar.style.position = "static";') !== -1 &&
+  dashHtml80.indexOf('ths[i].style.position = "static";') !== -1 &&
+  dashHtml80.indexOf('const topBtn = clonedDoc.getElementById("pcScrollTopBtn");') !== -1 &&
+  dashHtml80.indexOf('if (topBtn) topBtn.style.display = "none";') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
