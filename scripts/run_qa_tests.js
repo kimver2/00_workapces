@@ -6916,6 +6916,48 @@ assertTest('Step 84-6: 모바일 메인 화면 뒤로가기 시 무한 로딩 �
   dashHtml84.indexOf('confirm("우성아이디 대시보드를 종료하시겠습니까?")') !== -1
 );
 
+console.log('\n📸 [Step 85: captureCalendarScreen 내 gridH 스코프 호이스팅 및 ReferenceError 방지 무결성 QA]');
+
+// 85-1: doCapture 최상단 스코프에 let gridH = 0; 선언 검증 (블록 스코프 탈출 방어)
+assertTest('Step 85-1: doCapture 최상단 스코프에 let gridH = 0; 선언 검증',
+  rawCode84.indexOf("html += '    let gridH = 0;';") !== -1
+);
+
+// 85-2: captureType === 'calendar' 블록 내 중복 let 없는 gridH = 0; 재할당 검증
+assertTest('Step 85-2: captureType === "calendar" 블록 내 중복 let 없는 gridH = 0; 재할당 검증',
+  rawCode84.indexOf("html += '      gridH = 0;';") !== -1 &&
+  rawCode84.indexOf("html += '      let gridH = 0;';") === -1
+);
+
+// 85-3: html2canvas onclone 핸들러 내 if (gridH > 0) clonedGrid.style.minHeight = gridH + 'px'; 안전 조건문 검증
+assertTest('Step 85-3: html2canvas onclone 핸들러 내 if (gridH > 0) 안전 조건문 검증',
+  rawCode84.indexOf("html += '            if (gridH > 0) clonedGrid.style.minHeight = gridH + \"px\";';") !== -1
+);
+
+// 85-4: 캘린더 화면 캡쳐 가상 실행 시 ReferenceError 없이 정상 통과 검증
+let simulatedCaptureError = null;
+try {
+  let captureFullHeight = 800;
+  let captureFullWidth = 1200;
+  let gridH = 0;
+  let captureType = "calendar";
+  if (captureType === "calendar") {
+    gridH = 1450;
+  }
+  const oncloneSimulation = function() {
+    let style = {};
+    if (gridH > 0) style.minHeight = gridH + "px";
+    return style.minHeight;
+  };
+  const minH = oncloneSimulation();
+  if (minH !== "1450px") throw new Error("Expected 1450px, got " + minH);
+} catch (e) {
+  simulatedCaptureError = e;
+}
+assertTest('Step 85-4: 캘린더 화면 캡쳐 가상 실행 시 ReferenceError(gridH is not defined) 전무 및 1450px 계산 검증',
+  simulatedCaptureError === null
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

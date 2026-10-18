@@ -10188,6 +10188,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    target.scrollTop = 0;';
   html += '    let captureFullHeight = target.scrollHeight || target.offsetHeight;';
   html += '    let captureFullWidth = target.scrollWidth || target.offsetWidth;';
+  html += '    let gridH = 0;';
   html += '    if (captureType === "site") {';
   html += '      const tableCard = target.querySelector(".pc-tasks-table-card");';
   html += '      if (tableCard) {';
@@ -10219,7 +10220,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (navBar && navBar.offsetHeight) headerH += navBar.offsetHeight;';
   html += '      if (weekdaysBar && weekdaysBar.offsetHeight) headerH += weekdaysBar.offsetHeight;';
   html += '      if (filterNotice && filterNotice.style.display !== "none" && filterNotice.offsetHeight) headerH += filterNotice.offsetHeight;';
-  html += '      let gridH = 0;';
+  html += '      gridH = 0;';
   html += '      if (calGrid && calGrid.style.display !== "none") {';
   html += '        gridH = calGrid.scrollHeight;';
   html += '        const cells = calGrid.querySelectorAll(".cal-day-cell");';
@@ -10331,7 +10332,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '            clonedGrid.style.maxHeight = "none";';
   html += '            clonedGrid.style.overflow = "visible";';
   html += '            clonedGrid.style.flex = "none";';
-  html += '            clonedGrid.style.minHeight = gridH + "px";';
+  html += '            if (gridH > 0) clonedGrid.style.minHeight = gridH + "px";';
   html += '            const clonedCells = clonedGrid.querySelectorAll(".cal-day-cell");';
   html += '            for (let i = 0; i < clonedCells.length; i++) {';
   html += '              clonedCells[i].style.overflow = "visible";';
