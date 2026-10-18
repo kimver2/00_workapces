@@ -6793,6 +6793,40 @@ assertTest('Step 81-4: 캐러셀 정렬 버튼 3종의 친절한 title 툴팁 �
   dashHtml81.indexOf('최근 공사 완료일(준공일)이 최신인 순서로 정렬합니다') !== -1
 );
 
+console.log('\n🔢 [Step 82: PC 공종 테이블 [수정] 모달 연동 및 월간/주간 캘린더 전체(1~31일) 캡쳐 무결성 QA]');
+const dashHtml82 = sandbox.buildSidebarDashboardHtml('pc');
+
+// 82-1: PC 공종 테이블 [수정] 버튼 클릭 시 openEditModal 호출 및 encCurSite 파라미터 전달 검증
+assertTest('Step 82-1: PC 공종 테이블 [수정] 버튼 및 행 더블클릭에 openEditModal 및 encCurSite 바인딩 검증',
+  dashHtml82.indexOf('const encCurSite = encodeURIComponent(curSite.siteName || "");') !== -1 &&
+  dashHtml82.indexOf('ondblclick="openEditModal(\\\'\'' + ' + task.row + ' + '\'\\\', \\\'\'' + ' + encCurSite + ' + '\'\\\')') !== -1 &&
+  dashHtml82.indexOf('onclick="event.stopPropagation();openEditModal(') !== -1
+);
+
+// 82-2: openEditModal 함수 구현 및 rawData.sites 검색 -> openBottomSheet 및 focusSheetRow 연동 검증
+assertTest('Step 82-2: openEditModal 함수 구현 및 openBottomSheet, focusSheetRow 연동 검증',
+  dashHtml82.indexOf('function openEditModal(row, encSiteName)') !== -1 &&
+  dashHtml82.indexOf('openBottomSheet(siteName, targetTask);') !== -1 &&
+  dashHtml82.indexOf('google.script.run.focusSheetRow(targetTask.row, !!targetTask.isArchived, siteName || "", targetTask.taskName || "", targetTask.dateDisplay || targetTask.startDateStr || "");') !== -1
+);
+
+// 82-3: captureCalendarScreen 내 captureType === "calendar" 분기에서 calGrid 전체 높이 계산 검증
+assertTest('Step 82-3: captureCalendarScreen 내 캘린더 전체 높이(calGrid scrollHeight + 행별 셀 최대 높이 합산) 계산 검증',
+  dashHtml82.indexOf('else if (captureType === "calendar") {') !== -1 &&
+  dashHtml82.indexOf('const calGrid = target.querySelector("#calGrid");') !== -1 &&
+  dashHtml82.indexOf('gridH = Math.max(gridH, sumRows);') !== -1 &&
+  dashHtml82.indexOf('captureFullHeight = Math.max(captureFullHeight, headerH + gridH + 30);') !== -1
+);
+
+// 82-4: html2canvas onclone 핸들러 내 calendarArea, .calendar-view, #calGrid 오버플로우/높이 클리핑 해제 검증
+assertTest('Step 82-4: html2canvas onclone 핸들러 내 캘린더 컨테이너 및 calGrid 오버플로우/높이 해제 검증',
+  dashHtml82.indexOf('const clonedGrid = clonedDoc.getElementById("calGrid");') !== -1 &&
+  dashHtml82.indexOf('clonedGrid.style.height = "auto";') !== -1 &&
+  dashHtml82.indexOf('clonedGrid.style.overflow = "visible";') !== -1 &&
+  dashHtml82.indexOf('clonedGrid.style.flex = "none";') !== -1 &&
+  dashHtml82.indexOf('clonedCalView.style.minHeight = captureFullHeight + "px";') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
