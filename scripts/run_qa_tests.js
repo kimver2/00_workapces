@@ -6578,6 +6578,43 @@ assertTest('Step 75-5: 풀-라이프사이클 왕복 전환 모의 검증 (월�
   return isWeekListHidden && isMonthGridVisible;
 });
 
+// ========================================================
+// Step 76: PC 현장 공종 테이블 상태(Status) 알약 뱃지(Pill Badge) 및 아이콘 시각화 무결성 QA
+// ========================================================
+console.log('\n--- [Step 76] PC 공종 테이블 상태 알약 뱃지(Pill Badge) 및 아이콘 시각화 검증 ---');
+
+const dashHtml76 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 76-1: .pc-status-pill CSS 스타일 (둥근 알약, 패딩, 테마별 컬러 및 hover 효과) 검증
+assertTest('Step 76-1: .pc-status-pill CSS 스타일 (border-radius: 9999px, done/prog/delay/plan/as 테마) 검증',
+  dashHtml76.indexOf('.pc-status-pill { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 3px 9px; border-radius: 9999px;') !== -1 &&
+  dashHtml76.indexOf('.pc-status-pill.done { background: #ecfdf5; color: #15803d; border: 1px solid #86efac; }') !== -1 &&
+  dashHtml76.indexOf('.pc-status-pill.prog { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }') !== -1 &&
+  dashHtml76.indexOf('.pc-status-pill.delay { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5;') !== -1 &&
+  dashHtml76.indexOf('.pc-status-pill.plan { background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; }') !== -1
+);
+
+// 76-2: 테이블 컬럼 헤더 th 상태 열 너비(width: 96px) 및 중앙 정렬 검증
+assertTest('Step 76-2: 테이블 헤더 th 상태 열 width: 96px 및 text-align: center 검증',
+  dashHtml76.indexOf('<th style="width:96px;text-align:center;">상태</th>') !== -1
+);
+
+// 76-3: 테이블 각 행에 .pc-status-pill 탑재 및 상태별 아이콘(✅ 완료, ⚠️ 지연, ▶️ 진행중, ⏳ 예정, 🛠️ A/S) 렌더링 검증
+assertTest('Step 76-3: td 상태 셀 .pc-status-pill 탑재 및 상태별 직관적 아이콘 매핑 검증',
+  dashHtml76.indexOf('class="pc-status-pill') !== -1 &&
+  dashHtml76.indexOf('class="pill-icon"') !== -1 &&
+  dashHtml76.indexOf('badgeIcon = "✅"; badgeText = "완료";') !== -1 &&
+  dashHtml76.indexOf('badgeIcon = "⚠️"; badgeText = "지연";') !== -1 &&
+  dashHtml76.indexOf('badgeIcon = "▶️";') !== -1 &&
+  dashHtml76.indexOf('badgeIcon = "⏳";') !== -1
+);
+
+// 76-4: switchToPcView("list") 시 pcMonthTitle이 연월(2026년 10월)로 자동 리셋 검증
+assertTest('Step 76-4: switchToPcView("list") 시 pcMonthTitle 연월 텍스트 자동 동기화 검증',
+  dashHtml76.indexOf('const pcTitle = document.getElementById("pcMonthTitle");') !== -1 &&
+  dashHtml76.indexOf('if (pcTitle) pcTitle.innerText = calYear + "년 " + calMonth + "월";') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
