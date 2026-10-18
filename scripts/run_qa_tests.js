@@ -6339,6 +6339,51 @@ assertTest('Step 71-4: 사이드바 현장명 라벨: onclick="onPcSidebarSiteLa
   dashHtml71.indexOf('.site-name-label { cursor: pointer;') !== -1
 );
 
+// ========================================================
+// Step 72: PC 현장 공종 리스트 51개 전체 스크롤, 테이블 카드 크기 고정 해제, Sticky 툴바/헤더 및 맨 위로 버튼 QA
+// ========================================================
+console.log('\n--- [Step 72] PC 현장 공종 리스트 전체 스크롤, 테이블 카드 flex-shrink: 0, Sticky 툴바/헤더 및 맨 위로 버튼 무결성 검증 ---');
+
+const dashHtml72 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 72-1: #contentArea display: flex !important, min-height: 0 검증
+assertTest('Step 72-1: #contentArea에 display: flex !important 및 min-height: 0 탑재로 모달 2-컬럼 그리드 오염 방지 검증',
+  dashHtml72.indexOf('#contentArea { display: flex !important; flex-direction: column !important; flex: 1; height: 100%; min-height: 0;') !== -1 &&
+  dashHtml72.indexOf('#contentArea.pc-dashboard-active { display: flex !important; flex-direction: column !important;') !== -1
+);
+
+// 72-2: .pc-site-dashboard-layout & .pc-site-detail-pane flex 및 스크롤바 탑재 검증
+assertTest('Step 72-2: .pc-site-detail-pane에 min-height: 0, overflow-y: auto 및 슬림 스크롤바(-webkit-scrollbar) 탑재 검증',
+  dashHtml72.indexOf('.pc-site-dashboard-layout { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden;') !== -1 &&
+  dashHtml72.indexOf('.pc-site-detail-pane { flex: 1; min-height: 0; overflow-y: auto;') !== -1 &&
+  dashHtml72.indexOf('.pc-site-detail-pane::-webkit-scrollbar { width: 8px; }') !== -1
+);
+
+// 72-3: .pc-tasks-table-card flex-shrink: 0 !important, overflow: visible !important 탑재로 51개 공정 찌그러짐 방지 검증
+assertTest('Step 72-3: .pc-tasks-table-card에 flex-shrink: 0 !important 및 overflow: visible !important 탑재 검증 (51개 공정 전체 렌더링)',
+  dashHtml72.indexOf('.pc-tasks-table-card { background: #ffffff; border-radius: 12px; border: 1.5px solid #e2e8f0; box-shadow: 0 1px 4px rgba(0,0,0,0.02); display: flex; flex-direction: column; flex-shrink: 0 !important; position: relative; overflow: visible !important;') !== -1
+);
+
+// 72-4: 툴바 및 thead th Sticky 상단 고정 검증
+assertTest('Step 72-4: 테이블 툴바(top: 0) 및 컬럼 헤더(top: 48px) Sticky 고정 CSS 탑재 검증',
+  dashHtml72.indexOf('.pc-tasks-toolbar { position: sticky; top: 0; z-index: 15;') !== -1 &&
+  dashHtml72.indexOf('.pc-tasks-table th { position: sticky; top: 48px; z-index: 14;') !== -1 &&
+  dashHtml72.indexOf('.pc-tasks-table { width: 100%; border-collapse: separate; border-spacing: 0;') !== -1
+);
+
+// 72-5: pcScrollTopBtn 및 scrollPcDetailTop 탑재 검증
+assertTest('Step 72-5: 맨 위로 플로팅 버튼(pcScrollTopBtn), scrollPcDetailTop 함수 및 스크롤 이벤트 리스너 탑재 검증',
+  dashHtml72.indexOf('id="pcScrollTopBtn" class="pc-scroll-top-btn" onclick="scrollPcDetailTop()"') !== -1 &&
+  dashHtml72.indexOf('function scrollPcDetailTop()') !== -1 &&
+  dashHtml72.indexOf('dPane.addEventListener("scroll", function()') !== -1
+);
+
+// 72-6: 날짜 계산 NaN 방어 검증
+assertTest('Step 72-6: 잔여/경과 일수 계산 시 !isNaN(diffDays) 방어 로직 검증',
+  dashHtml72.indexOf('if (!isNaN(diffDays)) {') !== -1 &&
+  dashHtml72.indexOf('cleanLatest = String(latestDateStr).replace(/\\\\./g, "-").trim();') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
