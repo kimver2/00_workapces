@@ -6814,17 +6814,17 @@ assertTest('Step 82-2: openEditModal 함수 구현 및 openBottomSheet, focusShe
 assertTest('Step 82-3: captureCalendarScreen 내 캘린더 전체 높이(calGrid scrollHeight + 행별 셀 최대 높이 합산) 계산 검증',
   dashHtml82.indexOf('else if (captureType === "calendar") {') !== -1 &&
   dashHtml82.indexOf('const calGrid = target.querySelector("#calGrid");') !== -1 &&
-  dashHtml82.indexOf('gridH = Math.max(gridH, sumRows);') !== -1 &&
-  dashHtml82.indexOf('captureFullHeight = Math.max(captureFullHeight, headerH + gridH + 120);') !== -1
+  (dashHtml82.indexOf('gridH = sumRows + (calRowCount * 2);') !== -1 || dashHtml82.indexOf('gridH = Math.max(gridH, sumRows);') !== -1) &&
+  dashHtml82.indexOf('captureFullHeight = Math.max(captureFullHeight, headerH + gridH') !== -1
 );
 
 // 82-4: html2canvas onclone 핸들러 내 calendarArea, .calendar-view, #calGrid 오버플로우/높이 클리핑 해제 검증
 assertTest('Step 82-4: html2canvas onclone 핸들러 내 캘린더 컨테이너 및 calGrid 오버플로우/높이 해제 검증',
   dashHtml82.indexOf('const clonedGrid = clonedDoc.getElementById("calGrid");') !== -1 &&
-  dashHtml82.indexOf('clonedGrid.style.height = "auto";') !== -1 &&
+  (dashHtml82.indexOf('clonedGrid.style.height = gridH + "px";') !== -1 || dashHtml82.indexOf('clonedGrid.style.height = "auto";') !== -1) &&
   dashHtml82.indexOf('clonedGrid.style.overflow = "visible";') !== -1 &&
   dashHtml82.indexOf('clonedGrid.style.flex = "none";') !== -1 &&
-  dashHtml82.indexOf('clonedCalView.style.minHeight = captureFullHeight + "px";') !== -1
+  dashHtml82.indexOf('clonedCalView.style.height = captureFullHeight + "px";') !== -1
 );
 
 console.log('\n🔢 [Step 83: 캘린더 알약 셀 풀 높이 캡쳐 및 조항만 대표 단일 모닝 브리핑 발송 가드 QA]');
@@ -6832,13 +6832,13 @@ console.log('\n🔢 [Step 83: 캘린더 알약 셀 풀 높이 캡쳐 및 조항�
 // 83-1: 캘린더 캡쳐 시 알약 개수(pillCount) 및 neededH 기반 셀 높이 동적 계산 검증
 assertTest('Step 83-1: 캘린더 캡쳐 시 알약 개수(pillCount) 및 neededH 기반 셀 높이 동적 계산 검증',
   dashHtml82.indexOf('const pills = cell.querySelectorAll(".cal-event-pill");') !== -1 &&
-  dashHtml82.indexOf('const pillH = 28 + (pillCount * 24) + 16;') !== -1 &&
-  dashHtml82.indexOf('const neededH = Math.max(cell.scrollHeight || 0, cell.offsetHeight || 0, evH, pillH, 76);') !== -1
+  (dashHtml82.indexOf('pillCount * 30') !== -1 || dashHtml82.indexOf('pillCount * 24') !== -1) &&
+  dashHtml82.indexOf('neededH = Math.max(') !== -1
 );
 
 // 83-2: onclone 핸들러 내 clonedCells 및 clonedEvLists의 overflow: visible/height: auto 해제 검증
 assertTest('Step 83-2: onclone 핸들러 내 clonedCells 및 clonedEvLists의 overflow: visible/height: auto 해제 검증',
-  dashHtml82.indexOf('clonedCells[i].style.overflow = "visible";') !== -1 &&
+  (dashHtml82.indexOf('cell.style.overflow = "visible";') !== -1 || dashHtml82.indexOf('clonedCells[i].style.overflow = "visible";') !== -1) &&
   dashHtml82.indexOf('clonedEvLists[i].style.overflow = "visible";') !== -1
 );
 
@@ -6929,9 +6929,10 @@ assertTest('Step 85-2: captureType === "calendar" 블록 내 중복 let 없는 g
   rawCode84.indexOf("html += '      let gridH = 0;';") === -1
 );
 
-// 85-3: html2canvas onclone 핸들러 내 if (gridH > 0) clonedGrid.style.minHeight = gridH + 'px'; 안전 조건문 검증
-assertTest('Step 85-3: html2canvas onclone 핸들러 내 if (gridH > 0) 안전 조건문 검증',
-  rawCode84.indexOf("html += '            if (gridH > 0) clonedGrid.style.minHeight = gridH + \"px\";';") !== -1
+// 85-3: html2canvas onclone 핸들러 내 clonedGrid.style.height / minHeight 설정 검증
+assertTest('Step 85-3: html2canvas onclone 핸들러 내 clonedGrid.style.height 및 minHeight 설정 검증',
+  rawCode84.indexOf("html += '            clonedGrid.style.height = gridH + \"px\";';") !== -1 &&
+  rawCode84.indexOf("html += '            clonedGrid.style.minHeight = gridH + \"px\";';") !== -1
 );
 
 // 85-4: 캘린더 화면 캡쳐 가상 실행 시 ReferenceError 없이 정상 통과 검증
@@ -6956,6 +6957,41 @@ try {
 }
 assertTest('Step 85-4: 캘린더 화면 캡쳐 가상 실행 시 ReferenceError(gridH is not defined) 전무 및 1450px 계산 검증',
   simulatedCaptureError === null
+);
+
+console.log('\n📸 [Step 86: 다중 일정(Heavy Schedules) 시 CSS Grid 1fr 왜곡 방지 및 gridTemplateRows 동적 할당 QA]');
+
+const dashHtml86 = sandbox.buildSidebarDashboardHtml("WEB_DESKTOP");
+
+// 86-1: rowHeights 및 calRowCount 동적 산출 엔진 탑재 검증
+assertTest('Step 86-1: rowHeights 및 calRowCount 동적 산출 엔진 탑재 검증',
+  dashHtml86.indexOf('let rowHeights = [];') !== -1 &&
+  dashHtml86.indexOf('let calRowCount = 0;') !== -1 &&
+  dashHtml86.indexOf('calRowCount = Math.ceil(cells.length / 7);') !== -1
+);
+
+// 86-2: 알약 30px 및 셀 최소 80px 보장 검증
+assertTest('Step 86-2: 알약 30px 및 셀 최소 80px 보장 검증',
+  dashHtml86.indexOf('pillCount * 30') !== -1 &&
+  dashHtml86.indexOf('neededH = Math.max(cell.scrollHeight || 0, cell.offsetHeight || 0, evH, pillH, 80);') !== -1
+);
+
+// 86-3: onclone 핸들러 내 gridTemplateRows = rowHeights.map(...).join(" ") 및 gridAutoRows = "auto" 할당 검증
+assertTest('Step 86-3: onclone 핸들러 내 gridTemplateRows 및 gridAutoRows = "auto" 할당 검증',
+  dashHtml86.indexOf('clonedGrid.style.gridTemplateRows = rowHeights.map(function(h) { return h + "px"; }).join(" ");') !== -1 &&
+  dashHtml86.indexOf('clonedGrid.style.gridAutoRows = "auto";') !== -1
+);
+
+// 86-4: 개별 셀 높이(rHeight) 및 최소 높이 명시 할당 검증
+assertTest('Step 86-4: 개별 셀 높이(rHeight) 및 최소 높이 명시 할당 검증',
+  dashHtml86.indexOf('cell.style.height = rHeight + "px";') !== -1 &&
+  dashHtml86.indexOf('cell.style.minHeight = rHeight + "px";') !== -1
+);
+
+// 86-5: 주간 뷰(.pc-weekly-grid) 컬럼 높이 자동 확장(setProperty("height", "auto", "important")) 검증
+assertTest('Step 86-5: 주간 뷰(.pc-weekly-grid) 컬럼 높이 자동 확장 검증',
+  dashHtml86.indexOf('clonedWeeklyGrid.style.setProperty("height", "auto", "important");') !== -1 &&
+  dashHtml86.indexOf('const colBody = weeklyCols[i].querySelector(".pc-weekly-col-body");') !== -1
 );
 
 console.log('\n========================================================');
