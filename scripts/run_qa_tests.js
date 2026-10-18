@@ -6399,13 +6399,12 @@ assertTest('Step 73-1: scrollActivePcCardIntoView 함수 및 중앙 정렬 스�
   dashHtml73.indexOf('track.scrollTo({ left: clampedTarget, behavior: isSmooth ? "smooth" : "auto" });') !== -1
 );
 
-// 73-2: renderPcSiteDashboard 내 prevScrollLeft 보존 및 자동 스크롤 검증
+// 73-2: renderPcSiteDashboard 내 prevScrollLeft 보존 및 자동 스크롤 검증 (정렬 변경 시에는 0으로 리셋)
 assertTest('Step 73-2: renderPcSiteDashboard 내 렌더링 전 scrollLeft 보존 및 리셋 방지 검증',
   dashHtml73.indexOf('const prevTrack = document.getElementById("pcSiteCarouselTrack");') !== -1 &&
-  dashHtml73.indexOf('const prevScrollLeft = prevTrack ? prevTrack.scrollLeft : null;') !== -1 &&
-  dashHtml73.indexOf('if (newTrack && prevScrollLeft !== null) {') !== -1 &&
-  dashHtml73.indexOf('newTrack.scrollLeft = prevScrollLeft;') !== -1 &&
-  dashHtml73.indexOf('scrollActivePcCardIntoView(prevScrollLeft !== null);') !== -1
+  dashHtml73.indexOf('const prevScrollLeft = (!isSortChange && prevTrack) ? prevTrack.scrollLeft : 0;') !== -1 &&
+  dashHtml73.indexOf('if (newTrack) {') !== -1 &&
+  dashHtml73.indexOf('scrollActivePcCardIntoView(!isSortChange && prevScrollLeft !== null);') !== -1
 );
 
 // 73-3: selectPcSite 및 onPcSidebarSiteLabelClick 내 활성 카드 자동 중앙 스크롤 연동 검증
@@ -6414,10 +6413,9 @@ assertTest('Step 73-3: selectPcSite 및 onPcSidebarSiteLabelClick 내 scrollActi
   dashHtml73.indexOf('function onPcSidebarSiteLabelClick(e, siteEnc) {') !== -1
 );
 
-// 73-4: .pc-carousel-track CSS에서 scroll-behavior: smooth 제거하여 JS scrollTo 제어권 확보 검증
-assertTest('Step 73-4: .pc-carousel-track CSS 내 scroll-behavior: smooth 제거(자바스크립트 완전 제어권 확보) 검증',
-  dashHtml73.indexOf('.pc-carousel-track { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 6px 2px; }') !== -1 &&
-  dashHtml73.indexOf('.pc-carousel-track { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 6px 2px; scroll-behavior: smooth; }') === -1
+// 73-4: .pc-carousel-track CSS에서 flex: 1, min-width: 0 반응형 가로 확장 탑재 검증
+assertTest('Step 73-4: .pc-carousel-track CSS 내 flex: 1, min-width: 0 반응형 확장 검증',
+  dashHtml73.indexOf('.pc-carousel-track { flex: 1; min-width: 0;') !== -1
 );
 
 // 73-5: onPcSiteCheckChange에서 !isCalendarMode(현장 뷰)일 때 renderList 호출 분기 검증
@@ -6609,10 +6607,49 @@ assertTest('Step 76-3: td 상태 셀 .pc-status-pill 탑재 및 상태별 직관
   dashHtml76.indexOf('badgeIcon = "⏳";') !== -1
 );
 
-// 76-4: switchToPcView("list") 시 pcMonthTitle이 연월(2026년 10월)로 자동 리셋 검증
-assertTest('Step 76-4: switchToPcView("list") 시 pcMonthTitle 연월 텍스트 자동 동기화 검증',
-  dashHtml76.indexOf('const pcTitle = document.getElementById("pcMonthTitle");') !== -1 &&
-  dashHtml76.indexOf('if (pcTitle) pcTitle.innerText = calYear + "년 " + calMonth + "월";') !== -1
+// ========================================================
+// 77. [PC 현장 캐러셀 세로 바 네비게이션 버튼 & 활성/비활성 & 정렬 시 첫 카드 자동 선택 & 일정 헤더 간결화 QA]
+// ========================================================
+console.log('\n🧭 [Step 77: 캐러셀 세로 바 네비게이션, 활성/비활성 동적 제어, 정렬 시 맨 앞 카드 자동 선택 & 일정 헤더 QA]');
+
+const dashHtml77 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 77-1: 캐러셀 트랙 세로 바(Bar) 형식 네비게이션 버튼 CSS 및 DOM 구조 검증
+assertTest('Step 77-1: 캐러셀 트랙 세로 바(.pc-carousel-bar-nav) 네비게이션 버튼 CSS 및 DOM 구조 검증',
+  dashHtml77.indexOf('.pc-carousel-track-wrapper { display: flex; align-items: stretch; gap: 6px;') !== -1 &&
+  dashHtml77.indexOf('.pc-carousel-bar-nav { width: 26px; border-radius: 8px; border: 1.5px solid #e2e8f0;') !== -1 &&
+  dashHtml77.indexOf('.pc-carousel-bar-nav:disabled, .pc-carousel-bar-nav.disabled { opacity: 0.22; cursor: not-allowed; pointer-events: none;') !== -1 &&
+  dashHtml77.indexOf('id="btnCarouselPrev" class="pc-carousel-bar-nav prev"') !== -1 &&
+  dashHtml77.indexOf('id="btnCarouselNext" class="pc-carousel-bar-nav next"') !== -1 &&
+  dashHtml77.indexOf('class="pc-carousel-nav"') === -1
+);
+
+// 77-2: 캐러셀 바 버튼 활성/비활성 동적 감지 로직(updateCarouselNavButtons) 및 스크롤 연동 검증
+assertTest('Step 77-2: updateCarouselNavButtons 함수 정의 및 scrollLeft/maxScroll 기반 활성/비활성 동적 토글 검증',
+  dashHtml77.indexOf('function updateCarouselNavButtons() {') !== -1 &&
+  dashHtml77.indexOf('const sLeft = Math.round(track.scrollLeft);') !== -1 &&
+  dashHtml77.indexOf('const maxS = Math.max(0, track.scrollWidth - track.clientWidth);') !== -1 &&
+  dashHtml77.indexOf('prevBtn.disabled = !canScrollPrev;') !== -1 &&
+  dashHtml77.indexOf('nextBtn.disabled = !canScrollNext;') !== -1 &&
+  dashHtml77.indexOf('newTrack.addEventListener("scroll", updateCarouselNavButtons);') !== -1 &&
+  dashHtml77.indexOf('window.addEventListener("resize", updateCarouselNavButtons);') !== -1
+);
+
+// 77-3: 정렬 버튼 클릭 시 pcSiteSortJustChanged = true, 첫 번째 현장(sitesList[0]) 무조건 선택 및 scrollLeft = 0 검증
+assertTest('Step 77-3: 정렬(진척률/최근/가나다) 클릭 시 맨 앞 첫 번째 현장 강제 선택 및 스크롤 0 리셋 검증',
+  dashHtml77.indexOf('pcSiteSortJustChanged = true;') !== -1 &&
+  dashHtml77.indexOf('selectedPcSiteName = "";') !== -1 &&
+  dashHtml77.indexOf('const isSortChange = pcSiteSortJustChanged;') !== -1 &&
+  dashHtml77.indexOf('if (isSortChange) {') !== -1 &&
+  dashHtml77.indexOf('curItem = sitesList[0];') !== -1 &&
+  dashHtml77.indexOf('if (isSortChange) {') !== -1 &&
+  dashHtml77.indexOf('newTrack.scrollLeft = 0;') !== -1
+);
+
+// 77-4: 공종 테이블 헤더 "공정 일정 (시작 ~ 종료)" -> "일정" 간결화 검증
+assertTest('Step 77-4: 공종 테이블 컬럼 헤더 th "공정 일정 (시작 ~ 종료)" -> "일정" 간결화 검증',
+  dashHtml77.indexOf('<th style="width:220px;">일정</th>') !== -1 &&
+  dashHtml77.indexOf('공정 일정 (시작 ~ 종료)') === -1
 );
 
 console.log('\n========================================================');
