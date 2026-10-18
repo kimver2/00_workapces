@@ -6764,6 +6764,35 @@ assertTest('Step 80-4: onclone 핸들러 내 Sticky 툴바/헤더 static 변환 
   dashHtml80.indexOf('if (topBtn) topBtn.style.display = "none";') !== -1
 );
 
+console.log('\n🔢 [Step 81: 완료 현장 건수 정확 계산 및 가나다순/최근공정순 정렬 무결성 QA]');
+const dashHtml81 = sandbox.buildSidebarDashboardHtml('pc');
+
+// 81-1: PC 사이드바 및 캐러셀 헤더 완료 현장 건수 무결성 계산 검증 (아카이브된 완료 현장 누락 원천 방지)
+assertTest('Step 81-1: 사이드바 및 캐러셀 헤더에서 isArchived 포함 완료 현장 건수 정확 계산 검증',
+  dashHtml81.indexOf('const doneSites = rawData.sites.filter(s => s.isAllCompleted || s.isArchived);') !== -1 &&
+  dashHtml81.indexOf('const totalDoneSites = (rawData && Array.isArray(rawData.sites)) ? rawData.sites.filter(s => s.isAllCompleted || s.isArchived).length : 0;') !== -1
+);
+
+// 81-2: renderList 내 currentFilter === "done" 분기에서 isAllCompleted || isArchived 검증
+assertTest('Step 81-2: renderList 내 currentFilter 분기에서 isArchived 포함 및 진행/완료 배타적 분기 검증',
+  dashHtml81.indexOf('if (!site.isAllCompleted && !site.isArchived) return;') !== -1 &&
+  dashHtml81.indexOf('if (site.isAllCompleted || site.isArchived) return;') !== -1
+);
+
+// 81-3: PC 현장별 뷰 정렬 로직 (가나다순, 최근공정순 완료/진행 분기, 진척률순) 검증
+assertTest('Step 81-3: PC 현장별 뷰 정렬 로직 (가나다순, 최근공정순 완료/진행 분기, 진척률순) 검증',
+  dashHtml81.indexOf('(a.site.siteName || "").localeCompare(b.site.siteName || "", "ko")') !== -1 &&
+  dashHtml81.indexOf('const aToday = a.site.hasTodayTask ? 1 : 0;') !== -1 &&
+  dashHtml81.indexOf('const bLat = b.latestFilteredMs || 0;') !== -1
+);
+
+// 81-4: 캐러셀 정렬 버튼 3종(진척률순, 최근공정순, 가나다순) title 툴팁 탑재 검증
+assertTest('Step 81-4: 캐러셀 정렬 버튼 3종의 친절한 title 툴팁 탑재 검증',
+  dashHtml81.indexOf('title="공정 진척률이 높은 순서로 정렬합니다"') !== -1 &&
+  dashHtml81.indexOf('title="현장 이름을 가나다순(사전순)으로 정렬합니다"') !== -1 &&
+  dashHtml81.indexOf('최근 공사 완료일(준공일)이 최신인 순서로 정렬합니다') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
