@@ -7208,9 +7208,9 @@ assertTest('Step 91-4: 사이드바 진행 현장 스크롤바 커스텀 스타�
   dashHtml91.indexOf('.pc-sidebar-filter-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }') !== -1
 );
 
-// 91-5: index.html 내 exec?v=81/82 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 91-5: index.html 내 exec?v=81/82 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml91.indexOf('exec?v=81') !== -1 || indexHtml91.indexOf('exec?v=82') !== -1
+// 91-5: index.html 내 exec?v=81/82/83 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 91-5: index.html 내 exec?v=81/82/83 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml91.indexOf('exec?v=81') !== -1 || indexHtml91.indexOf('exec?v=82') !== -1 || indexHtml91.indexOf('exec?v=83') !== -1
 );
 
 console.log('\n🎯 [Step 92: v82 PC 현장 캐러셀 카드 선택 시 스와이프 애니메이션 완전 제거 및 즉시 선택 무결성 QA]');
@@ -7245,7 +7245,59 @@ assertTest('Step 92-4: selectPcSite 및 onPcSidebarSiteLabelClick 내 scrollActi
 
 // 92-5: index.html 내 exec?v=82 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 92-5: index.html 내 exec?v=82 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml92.indexOf('exec?v=82') !== -1
+  indexHtml92.indexOf('exec?v=82') !== -1 || indexHtml92.indexOf('exec?v=83') !== -1
+);
+
+// ========================================================
+// 93. [필터 안내 바 시각적 강조 및 아이디어 4번 상태 강조 스타일 QA]
+// ========================================================
+console.log('\n🔍 [Step 93: 필터 안내 바 시각적 강조 및 아이디어 4번 상태 강조 스타일 QA]');
+
+const dashHtml93 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml93 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 93-1: .cal-filter-notice 시각적 배너 스타일링 탑재 검증
+assertTest('Step 93-1: .cal-filter-notice 시각적 배너 및 알약 태그/리셋 버튼 스타일 탑재 검증',
+  dashHtml93.indexOf('.cal-filter-notice { display: block; padding: 8px 12px; background: #f0f7ff;') !== -1 &&
+  dashHtml93.indexOf('.cal-filter-badge-main') !== -1 &&
+  dashHtml93.indexOf('.cal-filter-chip') !== -1 &&
+  dashHtml93.indexOf('.btn-cal-filter-reset') !== -1
+);
+
+// 93-2: updateCalendarFilterBanner 함수 및 개별 필터 해제(✕) + 0건 경고 배지 검증
+assertTest('Step 93-2: updateCalendarFilterBanner 내 개별 필터 해제(✕) 및 0건 경고 태그 탑재 검증',
+  dashHtml93.indexOf('function updateCalendarFilterBanner(renderedCount)') !== -1 &&
+  dashHtml93.indexOf('⚡ 필터 적용 중') !== -1 &&
+  dashHtml93.indexOf('⚠️ 일치하는 일정 0건') !== -1 &&
+  dashHtml93.indexOf('class="chip-del"') !== -1
+);
+
+// 93-3: 아이디어 4번 - 검색창/멤버 셀렉트/체크박스 활성 상태 시각적 강조(Glow/배경색) CSS 검증
+assertTest('Step 93-3: 아이디어 4번 검색창(.has-query), 멤버셀렉트(.has-member) 시각적 Glow CSS 검증',
+  dashHtml93.indexOf('.pc-desktop-search-box.has-query { background: #eff6ff !important; border-color: #2563eb !important;') !== -1 &&
+  dashHtml93.indexOf('.pc-member-select.has-member { background-color: #eff6ff !important; border-color: #2563eb !important;') !== -1 &&
+  dashHtml93.indexOf('.search-box.has-query .search-input { border-color: #2563eb !important; background: #eff6ff !important;') !== -1
+);
+
+// 93-4: updateFilterVisualStates 함수 및 PC 사이드바 뱃지/초기화 연동 검증
+assertTest('Step 93-4: updateFilterVisualStates 함수 및 PC 사이드바 뱃지/초기화 연동 검증',
+  dashHtml93.indexOf('function updateFilterVisualStates()') !== -1 &&
+  dashHtml93.indexOf('pcMemberClearBtn') !== -1 &&
+  dashHtml93.indexOf('pcSidebarCheckedBadge') !== -1
+);
+
+// 93-5: resetAllCalendarFilters 종합 필터 초기화 및 뷰 동기화 검증
+assertTest('Step 93-5: resetAllCalendarFilters 종합 필터 초기화(현장/멤버/검색어/KPI) 및 시각 상태 동기화 검증',
+  dashHtml93.indexOf('checkedSites.clear();') !== -1 &&
+  dashHtml93.indexOf('selectedMember = "";') !== -1 &&
+  dashHtml93.indexOf('pcInput.value = "";') !== -1 &&
+  dashHtml93.indexOf('currentFilter = "all";') !== -1 &&
+  dashHtml93.indexOf('updateFilterVisualStates();') !== -1
+);
+
+// 93-6: index.html 내 exec?v=83 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 93-6: index.html 내 exec?v=83 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml93.indexOf('exec?v=83') !== -1
 );
 
 console.log('\n========================================================');
