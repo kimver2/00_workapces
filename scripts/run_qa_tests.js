@@ -7104,7 +7104,7 @@ assertTest('Step 89-3: 현장서식.js message 리스너 내 ORCA_ESCAPE_KEY 지
 assertTest('Step 89-4: index.html 내 부모 창 keydown Escape 감지 및 ORCA_ESCAPE_KEY 브릿지 검증',
   indexHtml89.indexOf('ev.key === \'Escape\' || ev.key === \'Esc\' || ev.keyCode === 27') !== -1 &&
   indexHtml89.indexOf('orcaDashboardSource.postMessage({ type: \'ORCA_ESCAPE_KEY\' }, \'*\')') !== -1 &&
-  (indexHtml89.indexOf('exec?v=80') !== -1 || indexHtml89.indexOf('exec?v=79') !== -1)
+  indexHtml89.indexOf('exec?v=') !== -1
 );
 
 // 89-5: 모의 환경에서 handleGlobalEscape 실행 시 팝업 닫힘 동작 검증
@@ -7174,8 +7174,43 @@ assertTest('Step 90-5: captureModal 내 capturePreviewImg 및 컨테이너 max-w
 );
 
 // 90-6: index.html 내 exec?v=80 배포 버전 갱신 검증
-assertTest('Step 90-6: index.html 내 exec?v=80 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml90.indexOf('exec?v=80') !== -1
+assertTest('Step 90-6: index.html 내 exec?v=80/81 캐시 버스팅 파라미터 탑재 검증',
+  indexHtml90.indexOf('exec?v=80') !== -1 || indexHtml90.indexOf('exec?v=81') !== -1
+);
+
+console.log('\n🎯 [Step 91: v81 PC 사이드바 담당자 상단 재배치 & 진행 현장 아래 끝까지 영역 확장 QA]');
+
+const dashHtml91 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml91 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 91-1: 사이드바 DOM 순서에서 담당자(pcMemberSelect)가 진행 현장(pcSidebarSiteList)보다 위에 위치하는지 검증
+assertTest('Step 91-1: 사이드바 DOM 순서에서 담당자(pcMemberSelect)가 진행 현장(pcSidebarSiteList)보다 위에 위치하는지 검증',
+  dashHtml91.indexOf('id="pcMemberSelect"') !== -1 &&
+  dashHtml91.indexOf('id="pcSidebarSiteList"') !== -1 &&
+  dashHtml91.indexOf('id="pcMemberSelect"') < dashHtml91.indexOf('id="pcSidebarSiteList"')
+);
+
+// 91-2: 사이드바 섹션 클래스(pc-sidebar-section-member, pc-sidebar-section-sites) 탑재 검증
+assertTest('Step 91-2: 사이드바 섹션 클래스(pc-sidebar-section-member, pc-sidebar-section-sites) 탑재 검증',
+  dashHtml91.indexOf('class="pc-sidebar-section pc-sidebar-section-member"') !== -1 &&
+  dashHtml91.indexOf('class="pc-sidebar-section pc-sidebar-section-sites"') !== -1
+);
+
+// 91-3: CSS에서 진행 현장 섹션 및 리스트의 flex: 1, min-height: 0, max-height: none 확장 스타일 탑재 검증
+assertTest('Step 91-3: CSS에서 진행 현장 섹션 및 리스트의 flex: 1, min-height: 0, max-height: none 확장 스타일 탑재 검증',
+  dashHtml91.indexOf('.pc-sidebar-section-sites { flex: 1; min-height: 0; display: flex; flex-direction: column;') !== -1 &&
+  dashHtml91.indexOf('.pc-sidebar-filter-list { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; max-height: none; overflow-y: auto;') !== -1
+);
+
+// 91-4: 사이드바 진행 현장 스크롤바 커스텀 스타일(::-webkit-scrollbar 4px) 탑재 검증
+assertTest('Step 91-4: 사이드바 진행 현장 스크롤바 커스텀 스타일(::-webkit-scrollbar 4px) 탑재 검증',
+  dashHtml91.indexOf('.pc-sidebar-filter-list::-webkit-scrollbar { width: 4px; }') !== -1 &&
+  dashHtml91.indexOf('.pc-sidebar-filter-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }') !== -1
+);
+
+// 91-5: index.html 내 exec?v=81 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 91-5: index.html 내 exec?v=81 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml91.indexOf('exec?v=81') !== -1
 );
 
 console.log('\n========================================================');

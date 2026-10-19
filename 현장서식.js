@@ -9056,7 +9056,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .pc-btn-action-top.refresh-btn { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }';
 
   html += '  .pc-workspace { display: flex !important; flex: 1; height: calc(100vh - 60px); overflow: hidden; }';
-  html += '  .pc-sidebar { display: flex !important; flex-direction: column; width: 260px; flex-shrink: 0; background: #ffffff; border-right: 1px solid #e2e8f0; padding: 16px 14px; overflow-y: auto; gap: 18px; }';
+  html += '  .pc-sidebar { display: flex !important; flex-direction: column; width: 260px; flex-shrink: 0; background: #ffffff; border-right: 1px solid #e2e8f0; padding: 16px 14px 14px; overflow: hidden; gap: 14px; box-sizing: border-box; }';
   html += '  .pc-btn-create-event { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 18px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 28px; font-size: 14px; font-weight: 800; color: #1e293b; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.08); transition: all 0.18s; }';
   html += '  .pc-btn-create-event:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); border-color: #cbd5e1; transform: translateY(-1px); }';
   html += '  .pc-btn-create-event svg { width: 20px; height: 20px; }';
@@ -9069,9 +9069,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .mini-day-cell:hover { background: #e2e8f0; }';
   html += '  .mini-day-cell.today { background: #2563eb; color: #fff; font-weight: 800; }';
 
-  html += '  .pc-sidebar-section { display: flex; flex-direction: column; gap: 8px; }';
+  html += '  .pc-sidebar-section { display: flex; flex-direction: column; gap: 8px; flex: none; }';
   html += '  .pc-sidebar-section-title { font-size: 11.5px; font-weight: 800; color: #64748b; letter-spacing: -0.2px; display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; }';
-  html += '  .pc-sidebar-filter-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }';
+  html += '  .pc-sidebar-section-member { flex: none; }';
+  html += '  .pc-sidebar-section-sites { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }';
+  html += '  .pc-sidebar-filter-list { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; max-height: none; overflow-y: auto; padding-right: 2px; }';
+  html += '  .pc-sidebar-filter-list::-webkit-scrollbar { width: 4px; }';
+  html += '  .pc-sidebar-filter-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }';
+  html += '  .pc-sidebar-filter-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }';
+  html += '  @media (max-height: 680px) { .pc-sidebar { overflow-y: auto !important; } .pc-sidebar-section-sites { flex: none !important; } .pc-sidebar-filter-list { max-height: 240px !important; } }';
   html += '  .pc-sidebar-filter-list .filter-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; color: #334155; transition: background 0.1s; }';
   html += '  .pc-sidebar-filter-list .filter-item:hover { background: #f1f5f9; }';
   html += '  .pc-sidebar-filter-list .filter-item input { cursor: pointer; accent-color: #2563eb; }';
@@ -9380,7 +9386,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </div>';
   html += '    </div>';
   html += '    <div class="pc-mini-calendar-widget" id="pcMiniCalendarArea"></div>';
-  html += '    <div class="pc-sidebar-section">';
+  html += '    <div class="pc-sidebar-section pc-sidebar-section-member">';
+  html += '      <div class="pc-sidebar-section-title">';
+  html += '        <span>담당자</span>';
+  html += '      </div>';
+  html += '      <div id="pcSidebarMemberArea">';
+  html += '        <select id="pcMemberSelect" class="pc-member-select" onchange="setPcMemberSelect(this.value)">';
+  html += '          <option value="">👤 전체 담당자</option>';
+  html += '        </select>';
+  html += '      </div>';
+  html += '    </div>';
+  html += '    <div class="pc-sidebar-section pc-sidebar-section-sites">';
   html += '      <div class="pc-sidebar-section-title">';
   html += '        <span>진행 현장</span>';
   html += '        <div style="display:flex;align-items:center;gap:5px;font-size:11px;">';
@@ -9390,16 +9406,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '        </div>';
   html += '      </div>';
   html += '      <div class="pc-sidebar-filter-list" id="pcSidebarSiteList"></div>';
-  html += '    </div>';
-  html += '    <div class="pc-sidebar-section">';
-  html += '      <div class="pc-sidebar-section-title">';
-  html += '        <span>담당자</span>';
-  html += '      </div>';
-  html += '      <div id="pcSidebarMemberArea">';
-  html += '        <select id="pcMemberSelect" class="pc-member-select" onchange="setPcMemberSelect(this.value)">';
-  html += '          <option value="">👤 전체 담당자</option>';
-  html += '        </select>';
-  html += '      </div>';
   html += '    </div>';
   html += '  </aside>';
 
