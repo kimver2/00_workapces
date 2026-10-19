@@ -6740,7 +6740,7 @@ assertTest('Step 80-1: captureCalendarScreen 내 tableCard 및 전체 콘텐츠 
 assertTest('Step 80-2: html2canvas 옵션에 width, height, windowWidth, windowHeight 및 scroll 0 설정 검증',
   dashHtml80.indexOf('width: captureFullWidth,') !== -1 &&
   dashHtml80.indexOf('height: captureFullHeight,') !== -1 &&
-  dashHtml80.indexOf('windowWidth: captureFullWidth + 100,') !== -1 &&
+  (dashHtml80.indexOf('windowWidth: (captureType === "site") ? (captureFullWidth + 100) : captureFullWidth,') !== -1 || dashHtml80.indexOf('windowWidth: captureFullWidth + 100,') !== -1) &&
   dashHtml80.indexOf('windowHeight: captureFullHeight + 500,') !== -1 &&
   dashHtml80.indexOf('scrollX: 0,') !== -1 &&
   dashHtml80.indexOf('scrollY: 0,') !== -1
@@ -7104,7 +7104,7 @@ assertTest('Step 89-3: 현장서식.js message 리스너 내 ORCA_ESCAPE_KEY 지
 assertTest('Step 89-4: index.html 내 부모 창 keydown Escape 감지 및 ORCA_ESCAPE_KEY 브릿지 검증',
   indexHtml89.indexOf('ev.key === \'Escape\' || ev.key === \'Esc\' || ev.keyCode === 27') !== -1 &&
   indexHtml89.indexOf('orcaDashboardSource.postMessage({ type: \'ORCA_ESCAPE_KEY\' }, \'*\')') !== -1 &&
-  indexHtml89.indexOf('exec?v=79') !== -1
+  (indexHtml89.indexOf('exec?v=80') !== -1 || indexHtml89.indexOf('exec?v=79') !== -1)
 );
 
 // 89-5: 모의 환경에서 handleGlobalEscape 실행 시 팝업 닫힘 동작 검증
@@ -7125,6 +7125,57 @@ const mockDoc = {
 assertTest('Step 89-5: 모의 환경에서 handleGlobalEscape 실행 시 바텀시트 닫힘 검증',
   dashHtml89.indexOf('if (typeof isBottomSheetVisible === "function" && isBottomSheetVisible())') !== -1 &&
   dashHtml89.indexOf('if (typeof closeBottomSheet === "function") { closeBottomSheet(); return true; }') !== -1
+);
+
+// ========================================================
+// 90. [v80 모바일 화면 캘린더 캡쳐 시 토요일(7번째 컬럼) 우측 잘림 방지 및 7요일 전체 보장 QA]
+// ========================================================
+console.log('\n📸 [Step 90: v80 모바일 캘린더 캡쳐 토요일 우측 잘림 방지 및 7요일 전체 보장 QA]');
+
+const dashHtml90 = sandbox.buildSidebarDashboardHtml('mobile');
+const indexHtml90 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 90-1: captureCalendarScreen 내 calGrid 및 weekdaysBar scrollWidth/offsetWidth 측정 검증
+assertTest('Step 90-1: captureCalendarScreen 내 calGrid 및 weekdaysBar scrollWidth/offsetWidth 동적 측정 검증',
+  dashHtml90.indexOf('captureFullWidth = Math.max(captureFullWidth, calGrid.scrollWidth || 0, calGrid.offsetWidth || 0);') !== -1 &&
+  dashHtml90.indexOf('captureFullWidth = Math.max(captureFullWidth, weekdaysBar.scrollWidth || 0, weekdaysBar.offsetWidth || 0);') !== -1
+);
+
+// 90-2: captureCalendarScreen 내 캘린더 캡쳐 시 windowWidth를 captureFullWidth로 일치시켜 100px 초과 확장 방지 검증
+assertTest('Step 90-2: html2canvas windowWidth 옵션을 캘린더 캡쳐 시 captureFullWidth로 1:1 일치 설정 검증',
+  dashHtml90.indexOf('windowWidth: (captureType === "site") ? (captureFullWidth + 100) : captureFullWidth,') !== -1
+);
+
+// 90-3: onclone 핸들러 내 calendarArea/clonedCalView의 margin: 0, padding: 0, width: captureFullWidth, box-sizing: border-box 검증
+assertTest('Step 90-3: onclone 핸들러 내 calendarArea, clonedCalView의 마진/패딩 리셋 및 1:1 너비/box-sizing 검증',
+  dashHtml90.indexOf('cArea.style.margin = "0";') !== -1 &&
+  dashHtml90.indexOf('cArea.style.padding = "0";') !== -1 &&
+  dashHtml90.indexOf('cArea.style.width = captureFullWidth + "px";') !== -1 &&
+  dashHtml90.indexOf('clonedCalView.style.width = captureFullWidth + "px";') !== -1 &&
+  dashHtml90.indexOf('clonedCalView.style.boxSizing = "border-box";') !== -1
+);
+
+// 90-4: onclone 핸들러 내 clonedGrid 및 cal-weekdays의 width: 100%, boxSizing: border-box, clonedCells boxSizing 검증
+assertTest('Step 90-4: onclone 핸들러 내 clonedGrid, cal-weekdays, clonedNavBar, clonedCells의 box-sizing: border-box 검증',
+  dashHtml90.indexOf('clonedWeekdays.style.width = "100%";') !== -1 &&
+  dashHtml90.indexOf('clonedWeekdays.style.boxSizing = "border-box";') !== -1 &&
+  dashHtml90.indexOf('clonedNavBar.style.width = "100%";') !== -1 &&
+  dashHtml90.indexOf('clonedNavBar.style.boxSizing = "border-box";') !== -1 &&
+  dashHtml90.indexOf('clonedGrid.style.width = "100%";') !== -1 &&
+  dashHtml90.indexOf('clonedGrid.style.boxSizing = "border-box";') !== -1 &&
+  dashHtml90.indexOf('cell.style.boxSizing = "border-box";') !== -1
+);
+
+// 90-5: captureModal 내 capturePreviewImg 및 컨테이너 max-width: 100%, box-sizing: border-box, overflow-x: hidden 검증
+assertTest('Step 90-5: captureModal 내 capturePreviewImg 및 컨테이너 max-width: 100%, box-sizing: border-box, overflow-x: hidden 검증',
+  dashHtml90.indexOf('overflow-x:hidden') !== -1 &&
+  dashHtml90.indexOf('max-width:100%') !== -1 &&
+  dashHtml90.indexOf('box-sizing:border-box') !== -1
+);
+
+// 90-6: index.html 내 exec?v=80 배포 버전 갱신 검증
+assertTest('Step 90-6: index.html 내 exec?v=80 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml90.indexOf('exec?v=80') !== -1
 );
 
 console.log('\n========================================================');
