@@ -9251,6 +9251,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .pc-status-pill.plan { background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; }';
   html += '  .pc-status-pill.as { background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; }';
   html += '  .pc-status-pill.cancel { background: #f1f5f9; color: #94a3b8; border: 1px solid #cbd5e1; text-decoration: line-through; }';
+  html += '  .pc-manager-pill { display: inline-flex; align-items: center; justify-content: center; gap: 3.5px; padding: 2.5px 8.5px; border-radius: 9999px; font-size: 11.5px; font-weight: 700; line-height: 1.4; white-space: nowrap; letter-spacing: -0.2px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; box-sizing: border-box; }';
+  html += '  .pc-manager-pill .mgr-icon { font-size: 10px; line-height: 1; opacity: 0.85; }';
+  html += '  .pc-partner-pill { display: inline-flex; align-items: center; gap: 3.5px; padding: 2.5px 8.5px; border-radius: 9999px; font-size: 11.5px; font-weight: 700; line-height: 1.4; white-space: nowrap; letter-spacing: -0.2px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; box-sizing: border-box; }';
   html += '  .pc-scroll-top-btn { position: fixed; bottom: 24px; right: 28px; z-index: 50; padding: 8px 14px; border-radius: 20px; background: #0f172a; color: #ffffff; font-size: 12px; font-weight: 800; border: none; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25); cursor: pointer; opacity: 0; pointer-events: none; transform: translateY(8px); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); display: flex; align-items: center; gap: 5px; }';
   html += '  .pc-scroll-top-btn.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }';
   html += '  .pc-scroll-top-btn:hover { background: #1e293b; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(15, 23, 42, 0.32); }';
@@ -11815,7 +11818,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'      </div>\';';
   html += '  dHtml += \'      <table class="pc-tasks-table">\';';
-  html += '  dHtml += \'        <thead><tr><th style="width:96px;text-align:center;">상태</th><th style="min-width:180px;">공종 / 세부작업</th><th style="width:220px;">일정</th><th style="width:100px;">담당자</th><th style="width:120px;">협력업체</th><th style="min-width:200px;">비고 및 특이사항</th><th style="width:70px;text-align:center;">관리</th></tr></thead>\';';
+  html += '  dHtml += \'        <thead><tr><th style="width:88px;text-align:center;">상태</th><th style="width:120px;min-width:100px;">공종</th><th style="width:190px;">일정</th><th style="width:105px;text-align:center;">담당자</th><th style="width:160px;min-width:150px;">협력업체</th><th style="min-width:180px;">비고 및 특이사항</th><th style="width:70px;text-align:center;">관리</th></tr></thead>\';';
   html += '  dHtml += \'        <tbody>\';';
   html += '  if (filteredTasks.length === 0) {';
   html += '    dHtml += \'          <tr><td colspan="7" style="text-align:center;padding:40px;color:#94a3b8;font-weight:600;">조건에 맞는 공정이 없습니다.</td></tr>\';';
@@ -11849,8 +11852,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '      dHtml += \'            <td style="text-align:center;"><span class="pc-status-pill \' + badgeCls + \'"><span class="pill-icon">\' + badgeIcon + \'</span><span>\' + escapeHtml(badgeText) + \'</span></span></td>\';';
   html += '      dHtml += \'            <td><strong style="color:#0f172a;font-size:13px;">\' + escapeHtml(task.taskName) + \'</strong></td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-weight:800;\' : \'font-weight:600;\') + \'">\' + escapeHtml(dateStr || "일정 미정") + \'</span>\' + ddayChip + \'</td>\';';
-  html += '      dHtml += \'            <td><strong>\' + escapeHtml(tMgr || "미지정") + \'</strong></td>\';';
-  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span style="color:#1d4ed8;font-weight:700;background:#eff6ff;padding:2px 8px;border-radius:6px;font-size:12px;border:1px solid #bfdbfe;">🤝 \' + escapeHtml(task.partner) + \'</span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
+  html += '      dHtml += \'            <td style="text-align:center;">\' + (tMgr ? \'<span class="pc-manager-pill"><span class="mgr-icon">👤</span><span>\' + escapeHtml(tMgr) + \'</span></span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
+  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span class="pc-partner-pill">🤝 \' + escapeHtml(task.partner) + \'</span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-size:12px;\' : \'color:#475569;font-size:12px;\') + \'">\' + escapeHtml(task.memo || "-") + \'</span></td>\';';
   html += '      dHtml += \'            <td style="text-align:center;"><button type="button" class="pc-task-btn-edit" onclick="event.stopPropagation();openEditModal(\\\'\' + task.row + \'\\\', \\\'\' + encCurSite + \'\\\')">수정</button></td>\';';
   html += '      dHtml += \'          </tr>\';';

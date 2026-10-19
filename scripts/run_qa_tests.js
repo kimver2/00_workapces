@@ -6592,9 +6592,9 @@ assertTest('Step 76-1: .pc-status-pill CSS 스타일 (border-radius: 9999px, don
   dashHtml76.indexOf('.pc-status-pill.plan { background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; }') !== -1
 );
 
-// 76-2: 테이블 컬럼 헤더 th 상태 열 너비(width: 96px) 및 중앙 정렬 검증
-assertTest('Step 76-2: 테이블 헤더 th 상태 열 width: 96px 및 text-align: center 검증',
-  dashHtml76.indexOf('<th style="width:96px;text-align:center;">상태</th>') !== -1
+// 76-2: 테이블 컬럼 헤더 th 상태 열 너비 및 중앙 정렬 검증
+assertTest('Step 76-2: 테이블 헤더 th 상태 열 text-align: center 검증',
+  dashHtml76.indexOf('text-align:center;">상태</th>') !== -1
 );
 
 // 76-3: 테이블 각 행에 .pc-status-pill 탑재 및 상태별 아이콘(✅ 완료, ⚠️ 지연, ▶️ 진행중, ⏳ 예정, 🛠️ A/S) 렌더링 검증
@@ -6648,7 +6648,7 @@ assertTest('Step 77-3: 정렬(진척률/최근/가나다) 클릭 시 맨 앞 첫
 
 // 77-4: 공종 테이블 헤더 "공정 일정 (시작 ~ 종료)" -> "일정" 간결화 검증
 assertTest('Step 77-4: 공종 테이블 컬럼 헤더 th "공정 일정 (시작 ~ 종료)" -> "일정" 간결화 검증',
-  dashHtml77.indexOf('<th style="width:220px;">일정</th>') !== -1 &&
+  dashHtml77.indexOf('>일정</th>') !== -1 &&
   dashHtml77.indexOf('공정 일정 (시작 ~ 종료)') === -1
 );
 
@@ -6895,9 +6895,10 @@ assertTest('Step 84-3: 좌측 상단 로고/타이틀 클릭 시 onLogoClick 호
 
 // 84-4: PC 공종 테이블 <th>협력업체</th> 및 행 내 task.partner 뱃지 노출 검증
 assertTest('Step 84-4: PC 공종 테이블 <th>협력업체</th> 및 행 내 task.partner 뱃지 노출 검증',
-  dashHtml84.indexOf('<th style="width:120px;">협력업체</th>') !== -1 &&
+  dashHtml84.indexOf('>협력업체</th>') !== -1 &&
   dashHtml84.indexOf('colspan="7"') !== -1 &&
   dashHtml84.indexOf('task.partner') !== -1 &&
+  dashHtml84.indexOf('pc-partner-pill') !== -1 &&
   dashHtml84.indexOf('🤝 \' + escapeHtml(task.partner)') !== -1
 );
 
@@ -6992,6 +6993,37 @@ assertTest('Step 86-4: 개별 셀 높이(rHeight) 및 최소 높이 명시 할�
 assertTest('Step 86-5: 주간 뷰(.pc-weekly-grid) 컬럼 높이 자동 확장 검증',
   dashHtml86.indexOf('clonedWeeklyGrid.style.setProperty("height", "auto", "important");') !== -1 &&
   dashHtml86.indexOf('const colBody = weeklyCols[i].querySelector(".pc-weekly-col-body");') !== -1
+);
+
+// ========================================================
+// Step 87: v77 PC 현장 공종 테이블 간결화(공종), 협력업체 1줄 보장(160px, .pc-partner-pill), 담당자 알약 뱃지(👤, .pc-manager-pill) QA
+// ========================================================
+console.log('\n🎯 [Step 87: v77 PC 공종 헤더 간결화, 협력업체 1줄 보장, 담당자 👤 알약 뱃지 시각화 QA]');
+
+const dashHtml87 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 87-1: 헤더 '공종 / 세부작업' -> '공종' 간결화 검증
+assertTest('Step 87-1: 테이블 헤더 "공종 / 세부작업" -> "공종" 간결화 및 width 조정 검증',
+  dashHtml87.indexOf('<th style="width:120px;min-width:100px;">공종</th>') !== -1 &&
+  dashHtml87.indexOf('<th>공종 / 세부작업</th>') === -1
+);
+
+// 87-2: 협력업체 컬럼 폭 확장 (160px) 및 white-space: nowrap 기반 1줄 보장 검증
+assertTest('Step 87-2: 협력업체 컬럼 160px 및 .pc-partner-pill white-space: nowrap 한 줄 보장 검증',
+  dashHtml87.indexOf('<th style="width:160px;min-width:150px;">협력업체</th>') !== -1 &&
+  dashHtml87.indexOf('.pc-partner-pill { display: inline-flex; align-items: center; gap: 3.5px;') !== -1 &&
+  dashHtml87.indexOf('white-space: nowrap;') !== -1 &&
+  dashHtml87.indexOf('pc-partner-pill') !== -1 &&
+  dashHtml87.indexOf('escapeHtml(task.partner)') !== -1
+);
+
+// 87-3: 담당자 알약 스타일 (.pc-manager-pill) 및 👤 아이콘, 중앙 정렬 검증
+assertTest('Step 87-3: 담당자 열 .pc-manager-pill 알약 뱃지 및 👤 아이콘, 중앙 정렬 검증',
+  dashHtml87.indexOf('.pc-manager-pill { display: inline-flex; align-items: center; justify-content: center; gap: 3.5px;') !== -1 &&
+  dashHtml87.indexOf('<th style="width:105px;text-align:center;">담당자</th>') !== -1 &&
+  dashHtml87.indexOf('pc-manager-pill') !== -1 &&
+  dashHtml87.indexOf('mgr-icon">👤</span>') !== -1 &&
+  dashHtml87.indexOf('escapeHtml(tMgr)') !== -1
 );
 
 console.log('\n========================================================');
