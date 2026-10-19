@@ -5426,13 +5426,54 @@ function initSiteInfoSheetFormat(sheet, ss) {
 }
 
 /**
- * '현장정보' 시트의 모든 데이터를 { siteName: { ... } } 맵으로 일괄 로드
+ * '현장정보' 시트 내의 유령 빈 행(A열 현장명이 비어있는 행) 자동 청소 및 데이터 당기기
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @return {number} 삭제된 빈 행 수
+ */
+function cleanSiteInfoSheetBlankRows(sheet) {
+  if (!sheet) return 0;
+  var deletedCount = 0;
+  try {
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 0;
+
+    var numCols = Math.min(sheet.getLastColumn() || 8, 8);
+    if (numCols < 1) numCols = 8;
+    var data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+
+    // 아래에서 위로 역순 순회하며 A열(현장명)이 비어있는 행 삭제
+    for (var i = data.length - 1; i >= 0; i--) {
+      var row = data[i];
+      var siteName = String(row[0] || "").trim();
+
+      // A열(현장명)이 비어있으면 유효한 현장 정보 행이 아니므로 빈 행으로 판단하여 삭제
+      if (!siteName) {
+        var rowIndex = i + 2;
+        sheet.deleteRow(rowIndex);
+        deletedCount++;
+      }
+    }
+    if (deletedCount > 0) {
+      SpreadsheetApp.flush();
+    }
+  } catch (e) {
+    Logger.log("cleanSiteInfoSheetBlankRows error: " + e.toString());
+  }
+  return deletedCount;
+}
+
+/**
+ * '현장정보' 시트의 모든 데이터를 { siteName: { ... } } 맵으로 일괄 로드 (빈 행 자동 정돈 내장)
  */
 function getSiteInfoMap(ss) {
   var map = {};
   try {
     var sheet = findSiteInfoSheet(ss, true);
     if (!sheet) return map;
+
+    // 1) 유령 빈 행 자동 정돈 및 데이터 당기기 (Self-Healing)
+    cleanSiteInfoSheetBlankRows(sheet);
+
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
 
@@ -5472,6 +5513,9 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
     var sheet = findSiteInfoSheet(ss, true);
     if (!sheet) return { success: false, error: "현장정보 시트를 찾을 수 없습니다." };
 
+    // 1) 유령 빈 행 정리
+    cleanSiteInfoSheetBlankRows(sheet);
+
     var colMap = {
       "address": 2,
       "doorPassword": 3,
@@ -5487,19 +5531,28 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
 
     var lastRow = sheet.getLastRow();
     var targetRow = -1;
+    var firstEmptyRow = -1;
 
     if (lastRow >= 2) {
       var siteNames = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
       for (var i = 0; i < siteNames.length; i++) {
-        if (String(siteNames[i][0] || "").trim() === cleanSite) {
+        var sName = String(siteNames[i][0] || "").trim();
+        if (sName === cleanSite) {
           targetRow = i + 2;
           break;
+        }
+        if (firstEmptyRow === -1 && !sName) {
+          firstEmptyRow = i + 2;
         }
       }
     }
 
     if (targetRow === -1) {
-      targetRow = Math.max(lastRow + 1, 2);
+      if (firstEmptyRow !== -1) {
+        targetRow = firstEmptyRow;
+      } else {
+        targetRow = Math.max(lastRow + 1, 2);
+      }
       sheet.getRange(targetRow, 1).setValue(cleanSite).setFontWeight("bold").setHorizontalAlignment("center");
       sheet.getRange(targetRow, 5, 1, 3).insertCheckboxes().setHorizontalAlignment("center");
       sheet.getRange(targetRow, 1, 1, 8).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
@@ -5534,21 +5587,33 @@ function saveFullSiteInfoFromWeb(siteName, infoObj) {
     var sheet = findSiteInfoSheet(ss, true);
     if (!sheet) return { success: false, error: "현장정보 시트를 찾을 수 없습니다." };
 
+    // 1) 유령 빈 행 정리
+    cleanSiteInfoSheetBlankRows(sheet);
+
     var lastRow = sheet.getLastRow();
     var targetRow = -1;
+    var firstEmptyRow = -1;
 
     if (lastRow >= 2) {
       var siteNames = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
       for (var i = 0; i < siteNames.length; i++) {
-        if (String(siteNames[i][0] || "").trim() === cleanSite) {
+        var sName = String(siteNames[i][0] || "").trim();
+        if (sName === cleanSite) {
           targetRow = i + 2;
           break;
+        }
+        if (firstEmptyRow === -1 && !sName) {
+          firstEmptyRow = i + 2;
         }
       }
     }
 
     if (targetRow === -1) {
-      targetRow = Math.max(lastRow + 1, 2);
+      if (firstEmptyRow !== -1) {
+        targetRow = firstEmptyRow;
+      } else {
+        targetRow = Math.max(lastRow + 1, 2);
+      }
       sheet.getRange(targetRow, 1).setValue(cleanSite).setFontWeight("bold").setHorizontalAlignment("center");
       sheet.getRange(targetRow, 5, 1, 3).insertCheckboxes().setHorizontalAlignment("center");
       sheet.getRange(targetRow, 1, 1, 8).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
@@ -5578,8 +5643,13 @@ function setupSiteInfoSheetMenu() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findSiteInfoSheet(ss, true);
   if (sheet) {
+    var cleaned = cleanSiteInfoSheetBlankRows(sheet);
     ss.setActiveSheet(sheet);
-    SpreadsheetApp.getUi().alert("🏢 현장정보 시트 점검 완료", "'현장정보' 시트가 정상적으로 열렸습니다.\n현장별 주소, 도어락 비밀번호, 착공 전 체크리스트(동의서, 보양 등)를 편리하게 관리하세요.", SpreadsheetApp.getUi().ButtonSet.OK);
+    var alertMsg = "'현장정보' 시트가 정상적으로 열렸습니다.\n현장별 주소, 도어락 비밀번호, 착공 전 체크리스트(동의서, 보양 등)를 편리하게 관리하세요.";
+    if (cleaned > 0) {
+      alertMsg += "\n\n💡 [자동 정돈 완료] 유령 빈 행 " + cleaned + "개가 자동으로 정리되고 데이터가 정렬되었습니다.";
+    }
+    SpreadsheetApp.getUi().alert("🏢 현장정보 시트 점검 완료", alertMsg, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
@@ -7008,6 +7078,18 @@ function doGet(e) {
       success: true,
       consolidatedCount: movedCnt,
       sortedBlockCount: sortedCnt
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-2) 현장정보 시트 유령 빈 행 자동 청소 요청 (action=cleanSiteInfo || action=cleanSiteInfoBlankRows)
+  if (action === "cleanSiteInfo" || action === "cleanSiteInfoBlankRows") {
+    var infoSheet = findSiteInfoSheet(ss, true);
+    var cleanedCnt = infoSheet ? cleanSiteInfoSheetBlankRows(infoSheet) : 0;
+    invalidateDashboardServerCache();
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      cleanedCount: cleanedCnt,
+      message: cleanedCnt + "개의 유령 빈 행이 정리되고 데이터가 당겨졌습니다."
     })).setMimeType(ContentService.MimeType.JSON);
   }
 

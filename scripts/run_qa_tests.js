@@ -7388,9 +7388,11 @@ assertTest('Step 95-5: 현장정보 수정 모달 마크업 및 openSiteInfoEdit
   dashHtml95.indexOf('function saveSiteInfoEditModal()') !== -1
 );
 
-// 95-6: index.html 내 exec?v=85/86 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 95-6: index.html 내 exec?v=85/86 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml95.indexOf('exec?v=85') !== -1 || indexHtml95.indexOf('exec?v=86') !== -1
+// 95-6: index.html 내 exec?v=85 이상 캐시 버스팅 파라미터 갱신 검증
+const vMatch95 = indexHtml95.match(/exec\?v=(\d+)/);
+const vNum95 = vMatch95 ? parseInt(vMatch95[1], 10) : 0;
+assertTest('Step 95-6: index.html 내 exec?v=85 이상 캐시 버스팅 파라미터 갱신 검증',
+  vNum95 >= 85
 );
 
 // ========================================================
@@ -7438,9 +7440,63 @@ assertTest('Step 96-5: handleGlobalEscape 내 partnerGuideModalOverlay Escape �
   dashHtml96.indexOf('closePartnerGuideModal()') !== -1
 );
 
-// 96-6: index.html 내 exec?v=86 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 96-6: index.html 내 exec?v=86 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml96.indexOf('exec?v=86') !== -1
+// 96-6: index.html 내 exec?v=86 또는 v=87 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 96-6: index.html 내 exec 캐시 버스팅 파라미터 탑재 검증',
+  indexHtml96.indexOf('exec?v=8') !== -1
+);
+
+// ========================================================
+console.log('\n--- [Step 97]: 현장정보 시트 유령 빈 행(2번 행) 자동 청소 및 자체 치유(Self-Healing) QA ---');
+
+const indexHtml97 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 97-1: cleanSiteInfoSheetBlankRows 함수 존재 검증
+assertTest('Step 97-1: cleanSiteInfoSheetBlankRows 함수 존재 검증',
+  typeof sandbox.cleanSiteInfoSheetBlankRows === 'function'
+);
+
+// 97-2: cleanSiteInfoSheetBlankRows 유령 빈 행 삭제 시뮬레이션 검증
+let deletedRowsList = [];
+const mockBlankSheet = {
+  getLastRow: () => 3,
+  getLastColumn: () => 8,
+  getRange: (r, c, numR, numC) => {
+    return {
+      getValues: () => [
+        ['', '', '', '', false, false, false, ''], // 2번 행 (빈 행)
+        ['신대방우성 5동 601호', '양녕로25가길14', '1234', '01028008494', true, false, false, '사다리차불가'] // 3번 행
+      ]
+    };
+  },
+  deleteRow: (rowIdx) => {
+    deletedRowsList.push(rowIdx);
+  }
+};
+const cleanedCountResult = sandbox.cleanSiteInfoSheetBlankRows(mockBlankSheet);
+assertTest('Step 97-2: 2번 행이 비어있는 경우 cleanSiteInfoSheetBlankRows가 정확히 2번 행을 삭제(deleteRow(2))하고 1 반환',
+  cleanedCountResult === 1 && deletedRowsList.length === 1 && deletedRowsList[0] === 2
+);
+
+// 97-3: getSiteInfoMap, saveSiteInfoFieldFromWeb, saveFullSiteInfoFromWeb 내 cleanSiteInfoSheetBlankRows 호출 확인
+const fsMainJs = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+assertTest('Step 97-3: getSiteInfoMap 및 저장 함수 내 cleanSiteInfoSheetBlankRows 및 firstEmptyRow 재사용 로직 확인',
+  fsMainJs.indexOf('cleanSiteInfoSheetBlankRows(sheet);') !== -1 &&
+  fsMainJs.indexOf('firstEmptyRow !== -1') !== -1
+);
+
+// 97-4: doGet 내 cleanSiteInfo / cleanSiteInfoBlankRows 액션 엔드포인트 확인
+assertTest('Step 97-4: doGet 내 action === "cleanSiteInfo" 또는 "cleanSiteInfoBlankRows" 지원 확인',
+  fsMainJs.indexOf('action === "cleanSiteInfo" || action === "cleanSiteInfoBlankRows"') !== -1
+);
+
+// 97-5: setupSiteInfoSheetMenu 내 자동 정돈 연동 확인
+assertTest('Step 97-5: setupSiteInfoSheetMenu 내 cleanSiteInfoSheetBlankRows 연동 확인',
+  fsMainJs.indexOf('var cleaned = cleanSiteInfoSheetBlankRows(sheet);') !== -1
+);
+
+// 97-6: index.html 내 exec?v=87 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 97-6: index.html 내 exec?v=87 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml97.indexOf('exec?v=87') !== -1
 );
 
 console.log('\n========================================================');
