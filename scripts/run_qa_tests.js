@@ -7440,9 +7440,9 @@ assertTest('Step 96-5: handleGlobalEscape 내 partnerGuideModalOverlay Escape �
   dashHtml96.indexOf('closePartnerGuideModal()') !== -1
 );
 
-// 96-6: index.html 내 exec?v=86 또는 v=87 캐시 버스팅 파라미터 갱신 검증
+// 96-6: index.html 내 exec 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 96-6: index.html 내 exec 캐시 버스팅 파라미터 탑재 검증',
-  indexHtml96.indexOf('exec?v=8') !== -1
+  /exec\?v=(?:8[6-9]|9\d|[1-9]\d{2,})/.test(indexHtml96)
 );
 
 // ========================================================
@@ -7580,9 +7580,47 @@ assertTest('Step 99-3: 현장 자료 및 안내문 확인 버튼 스타일 전�
   driveBtnIndex < media768Index && partnerBtnIndex < media768Index
 );
 
-// 99-4: index.html 내 exec?v=89 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 99-4: index.html 내 exec?v=89 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml99.indexOf('exec?v=89') !== -1
+// 99-4: index.html 내 exec?v=89 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 99-4: index.html 내 exec?v=89 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:89|9\d|[1-9]\d{2,})/.test(indexHtml99)
+);
+
+// ========================================================
+console.log('\n--- [Step 100]: 모바일 현장 상세 정보(주소/도어락비번/관리실/특이사항) 직접 노출 & 원클릭 연동 QA ---');
+
+const dashHtml100Mobile = sandbox.buildSidebarDashboardHtml('mobile');
+const indexHtml100 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 100-1: 모바일 현장 카드 내 4대 마스터 정보 (주소, 비번, 관리사무소, 특이사항) 마크업 탑재 검증
+assertTest('Step 100-1: 모바일 현장 아코디언 카드 내 4대 마스터 정보(주소, 비번, 관리실, 특이사항) 노출 검증',
+  dashHtml100Mobile.indexOf('📍 현장 주소') !== -1 &&
+  dashHtml100Mobile.indexOf('🔑 도어락 비밀번호') !== -1 &&
+  dashHtml100Mobile.indexOf('📞 관리사무소') !== -1 &&
+  dashHtml100Mobile.indexOf('⚠️ 현장 특이사항 / 주차') !== -1
+);
+
+// 100-2: 주소 복사 버튼(copyTextToClipboard) 및 관리사무소 전화걸기(href="tel:) 연동 검증
+assertTest('Step 100-2: 주소 복사 버튼(copyTextToClipboard) 및 관리실 전화걸기(href="tel:) 지원 검증',
+  dashHtml100Mobile.indexOf('copyTextToClipboard') !== -1 &&
+  dashHtml100Mobile.indexOf('href="tel:') !== -1
+);
+
+// 100-3: 모바일 바텀시트 모달 내 sheetSiteInfoBanner 및 updateSheetModalSiteInfo 함수 검증
+assertTest('Step 100-3: 모바일 바텀시트 모달 내 sheetSiteInfoBanner 및 updateSheetModalSiteInfo 검증',
+  dashHtml100Mobile.indexOf('id="sheetSiteInfoBanner"') !== -1 &&
+  dashHtml100Mobile.indexOf('function updateSheetModalSiteInfo(siteName)') !== -1 &&
+  dashHtml100Mobile.indexOf('updateSheetModalSiteInfo(site)') !== -1
+);
+
+// 100-4: 모바일 현장 정보 수정 버튼(btn-site-info-edit) 및 openSiteInfoEditModal 연동 검증
+assertTest('Step 100-4: 모바일 카드 내 정보 수정 버튼(btn-site-info-edit) 및 모달 오픈 검증',
+  dashHtml100Mobile.indexOf('btn-site-info-edit') !== -1 &&
+  dashHtml100Mobile.indexOf('openSiteInfoEditModal') !== -1
+);
+
+// 100-5: index.html 내 exec?v=90 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 100-5: index.html 내 exec?v=90 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml100.indexOf('exec?v=90') !== -1
 );
 
 console.log('\n========================================================');
