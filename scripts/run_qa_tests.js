@@ -6886,7 +6886,7 @@ assertTest('Step 84-2: 상단 바 날짜 네비게이션 배치 순서([년도�
 
 // 84-3: 좌측 상단 '우성아이디' 로고/타이틀 클릭 시 onLogoClick 호출 및 초기 월간 화면 리프레시 검증
 assertTest('Step 84-3: 좌측 상단 로고/타이틀 클릭 시 onLogoClick 호출 및 초기 월간 화면 리프레시 검증',
-  dashHtml84.indexOf('class="pc-logo-badge" onclick="onLogoClick()"') !== -1 &&
+  (dashHtml84.indexOf('class="pc-logo-badge" onclick="onLogoClick()"') !== -1 || dashHtml84.indexOf('class="pc-logo-title-link" onclick="onLogoClick()"') !== -1) &&
   dashHtml84.indexOf('id="pageTitle" onclick="onLogoClick()"') !== -1 &&
   dashHtml84.indexOf('function onLogoClick()') !== -1 &&
   dashHtml84.indexOf('switchToPcView("month")') !== -1 &&
@@ -7208,9 +7208,9 @@ assertTest('Step 91-4: 사이드바 진행 현장 스크롤바 커스텀 스타�
   dashHtml91.indexOf('.pc-sidebar-filter-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }') !== -1
 );
 
-// 91-5: index.html 내 exec?v=81/82/83 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 91-5: index.html 내 exec?v=81/82/83 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml91.indexOf('exec?v=81') !== -1 || indexHtml91.indexOf('exec?v=82') !== -1 || indexHtml91.indexOf('exec?v=83') !== -1
+// 91-5: index.html 내 exec?v=81/82/83/84 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 91-5: index.html 내 exec?v=81/82/83/84 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml91.indexOf('exec?v=81') !== -1 || indexHtml91.indexOf('exec?v=82') !== -1 || indexHtml91.indexOf('exec?v=83') !== -1 || indexHtml91.indexOf('exec?v=84') !== -1
 );
 
 console.log('\n🎯 [Step 92: v82 PC 현장 캐러셀 카드 선택 시 스와이프 애니메이션 완전 제거 및 즉시 선택 무결성 QA]');
@@ -7243,9 +7243,9 @@ assertTest('Step 92-4: selectPcSite 및 onPcSidebarSiteLabelClick 내 scrollActi
   dashHtml92.indexOf('scrollActivePcCardIntoView(false);') !== -1
 );
 
-// 92-5: index.html 내 exec?v=82 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 92-5: index.html 내 exec?v=82 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml92.indexOf('exec?v=82') !== -1 || indexHtml92.indexOf('exec?v=83') !== -1
+// 92-5: index.html 내 exec?v=82/83/84 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 92-5: index.html 내 exec?v=82/83/84 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml92.indexOf('exec?v=82') !== -1 || indexHtml92.indexOf('exec?v=83') !== -1 || indexHtml92.indexOf('exec?v=84') !== -1
 );
 
 // ========================================================
@@ -7295,9 +7295,47 @@ assertTest('Step 93-5: resetAllCalendarFilters 종합 필터 초기화(현장/�
   dashHtml93.indexOf('updateFilterVisualStates();') !== -1
 );
 
-// 93-6: index.html 내 exec?v=83 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 93-6: index.html 내 exec?v=83 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml93.indexOf('exec?v=83') !== -1
+// 93-6: index.html 내 exec?v=83/84 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 93-6: index.html 내 exec?v=83/84 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml93.indexOf('exec?v=83') !== -1 || indexHtml93.indexOf('exec?v=84') !== -1
+);
+
+// ========================================================
+// [Step 94]: 상단 헤더 '현장데이터 시트' 초록색 버튼 및 사이드바 현장명 클릭 시 체크박스 연동 분리 검증
+// ========================================================
+console.log('\n--- [Step 94]: 상단 헤더 현장데이터 시트 초록색 버튼 및 사이드바 체크박스 격리 검증 ---');
+
+const dashHtml94 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml94 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 94-1: PC 상단 헤더 '현장데이터 시트' 초록색 뱃지 버튼(#059669) 및 구글 시트 링크 연동 검증
+assertTest('Step 94-1: PC 상단 헤더 현장데이터 시트 초록색 버튼(#059669) 및 새창 링크 검증',
+  dashHtml94.indexOf('pc-sheet-badge-btn') !== -1 &&
+  dashHtml94.indexOf('#059669') !== -1 &&
+  dashHtml94.indexOf('https://docs.google.com/spreadsheets/d/1V6Nb5ZB8gOfwDFsN8svMDZQYWXIJjGa9tuUYrVu0JhY/edit?gid=244837509#gid=244837509') !== -1 &&
+  dashHtml94.indexOf('target="_blank"') !== -1 &&
+  dashHtml94.indexOf('rel="noopener noreferrer"') !== -1 &&
+  dashHtml94.indexOf('현장데이터 시트') !== -1 &&
+  dashHtml94.indexOf('onclick="event.stopPropagation();"') !== -1
+);
+
+// 94-2: PC 사이드바 진행 현장 컨테이너 label -> div 변경 및 체크박스 전용 래퍼 분리 검증
+assertTest('Step 94-2: PC 사이드바 진행 현장 div 컨테이너 및 체크박스 전용 래퍼 격리 검증',
+  dashHtml94.indexOf('<div class="filter-item pc-sidebar-site-item">') !== -1 &&
+  dashHtml94.indexOf('<label class="pc-site-check-wrap"') !== -1 &&
+  dashHtml94.indexOf('class="site-name-label"') !== -1
+);
+
+// 94-3: onPcSidebarSiteLabelClick 이벤트 전파 차단 및 preventDefault 적용 검증
+assertTest('Step 94-3: onPcSidebarSiteLabelClick preventDefault 및 stopPropagation 방어 로직 검증',
+  dashHtml94.indexOf('function onPcSidebarSiteLabelClick(e, siteEnc)') !== -1 &&
+  dashHtml94.indexOf('if (typeof e.preventDefault === "function") e.preventDefault();') !== -1 &&
+  dashHtml94.indexOf('if (typeof e.stopPropagation === "function") e.stopPropagation();') !== -1
+);
+
+// 94-4: index.html 내 exec?v=84 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 94-4: index.html 내 exec?v=84 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml94.indexOf('exec?v=84') !== -1
 );
 
 console.log('\n========================================================');
