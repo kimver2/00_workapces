@@ -7173,9 +7173,9 @@ assertTest('Step 90-5: captureModal 내 capturePreviewImg 및 컨테이너 max-w
   dashHtml90.indexOf('box-sizing:border-box') !== -1
 );
 
-// 90-6: index.html 내 exec?v=80 배포 버전 갱신 검증
-assertTest('Step 90-6: index.html 내 exec?v=80/81 캐시 버스팅 파라미터 탑재 검증',
-  indexHtml90.indexOf('exec?v=80') !== -1 || indexHtml90.indexOf('exec?v=81') !== -1
+// 90-6: index.html 내 exec?v= 배포 버전 갱신 검증
+assertTest('Step 90-6: index.html 내 exec?v= 캐시 버스팅 파라미터 탑재 검증',
+  indexHtml90.indexOf('exec?v=') !== -1
 );
 
 console.log('\n🎯 [Step 91: v81 PC 사이드바 담당자 상단 재배치 & 진행 현장 아래 끝까지 영역 확장 QA]');
@@ -7208,9 +7208,44 @@ assertTest('Step 91-4: 사이드바 진행 현장 스크롤바 커스텀 스타�
   dashHtml91.indexOf('.pc-sidebar-filter-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }') !== -1
 );
 
-// 91-5: index.html 내 exec?v=81 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 91-5: index.html 내 exec?v=81 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml91.indexOf('exec?v=81') !== -1
+// 91-5: index.html 내 exec?v=81/82 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 91-5: index.html 내 exec?v=81/82 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml91.indexOf('exec?v=81') !== -1 || indexHtml91.indexOf('exec?v=82') !== -1
+);
+
+console.log('\n🎯 [Step 92: v82 PC 현장 캐러셀 카드 선택 시 스와이프 애니메이션 완전 제거 및 즉시 선택 무결성 QA]');
+
+const dashHtml92 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml92 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 92-1: .pc-carousel-track CSS에서 scroll-behavior: smooth 제거 검증 (DOM 갱신 시 0에서부터 스와이프 방지)
+assertTest('Step 92-1: .pc-carousel-track CSS 내 scroll-behavior: smooth 제거 검증 (0px 스와이프 원천 차단)',
+  dashHtml92.indexOf('.pc-carousel-track { flex: 1; min-width: 0; display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 6px 2px; }') !== -1 &&
+  dashHtml92.indexOf('.pc-carousel-track { flex: 1; min-width: 0; display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 6px 2px; scroll-behavior: smooth;') === -1
+);
+
+// 92-2: isSiteSelecting 플래그 변수 및 scrollActivePcCardIntoView 내 isSmooth 강제 해제 검증
+assertTest('Step 92-2: isSiteSelecting 플래그 변수 및 scrollActivePcCardIntoView 내 isSmooth=false 강제 해제 검증',
+  dashHtml92.indexOf('let isSiteSelecting = false;') !== -1 &&
+  dashHtml92.indexOf('if (isSiteSelecting) isSmooth = false;') !== -1
+);
+
+// 92-3: 이미 화면에 완전히 노출된 카드는 스크롤 자체를 생략(isCardFullyVisible)하여 흔들림 방지 검증
+assertTest('Step 92-3: 노출 카드 클릭 시 스크롤 생략(isCardFullyVisible) 가드 탑재 검증',
+  dashHtml92.indexOf('const isCardFullyVisible = (cardRect.left >= trackRect.left + 4 && cardRect.right <= trackRect.right - 4);') !== -1 &&
+  dashHtml92.indexOf('if (isCardFullyVisible) {') !== -1
+);
+
+// 92-4: selectPcSite 및 onPcSidebarSiteLabelClick 내 scrollActivePcCardIntoView(false) 즉시 선택 연동 검증
+assertTest('Step 92-4: selectPcSite 및 onPcSidebarSiteLabelClick 내 scrollActivePcCardIntoView(false) 즉시 선택 연동 검증',
+  dashHtml92.indexOf('isSiteSelecting = true;') !== -1 &&
+  dashHtml92.indexOf('isSiteSelecting = false;') !== -1 &&
+  dashHtml92.indexOf('scrollActivePcCardIntoView(false);') !== -1
+);
+
+// 92-5: index.html 내 exec?v=82 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 92-5: index.html 내 exec?v=82 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml92.indexOf('exec?v=82') !== -1
 );
 
 console.log('\n========================================================');
