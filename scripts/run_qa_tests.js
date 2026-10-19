@@ -7208,9 +7208,9 @@ assertTest('Step 91-4: 사이드바 진행 현장 스크롤바 커스텀 스타�
   dashHtml91.indexOf('.pc-sidebar-filter-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }') !== -1
 );
 
-// 91-5: index.html 내 exec?v=81/82/83/84 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 91-5: index.html 내 exec?v=81/82/83/84 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml91.indexOf('exec?v=81') !== -1 || indexHtml91.indexOf('exec?v=82') !== -1 || indexHtml91.indexOf('exec?v=83') !== -1 || indexHtml91.indexOf('exec?v=84') !== -1
+// 91-5: index.html 내 exec?v=81/82/83/84/85 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 91-5: index.html 내 exec?v=81/82/83/84/85 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml91.indexOf('exec?v=81') !== -1 || indexHtml91.indexOf('exec?v=82') !== -1 || indexHtml91.indexOf('exec?v=83') !== -1 || indexHtml91.indexOf('exec?v=84') !== -1 || indexHtml91.indexOf('exec?v=85') !== -1
 );
 
 console.log('\n🎯 [Step 92: v82 PC 현장 캐러셀 카드 선택 시 스와이프 애니메이션 완전 제거 및 즉시 선택 무결성 QA]');
@@ -7243,9 +7243,9 @@ assertTest('Step 92-4: selectPcSite 및 onPcSidebarSiteLabelClick 내 scrollActi
   dashHtml92.indexOf('scrollActivePcCardIntoView(false);') !== -1
 );
 
-// 92-5: index.html 내 exec?v=82/83/84 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 92-5: index.html 내 exec?v=82/83/84 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml92.indexOf('exec?v=82') !== -1 || indexHtml92.indexOf('exec?v=83') !== -1 || indexHtml92.indexOf('exec?v=84') !== -1
+// 92-5: index.html 내 exec?v=82/83/84/85 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 92-5: index.html 내 exec?v=82/83/84/85 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml92.indexOf('exec?v=82') !== -1 || indexHtml92.indexOf('exec?v=83') !== -1 || indexHtml92.indexOf('exec?v=84') !== -1 || indexHtml92.indexOf('exec?v=85') !== -1
 );
 
 // ========================================================
@@ -7295,9 +7295,9 @@ assertTest('Step 93-5: resetAllCalendarFilters 종합 필터 초기화(현장/�
   dashHtml93.indexOf('updateFilterVisualStates();') !== -1
 );
 
-// 93-6: index.html 내 exec?v=83/84 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 93-6: index.html 내 exec?v=83/84 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml93.indexOf('exec?v=83') !== -1 || indexHtml93.indexOf('exec?v=84') !== -1
+// 93-6: index.html 내 exec?v=83/84/85 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 93-6: index.html 내 exec?v=83/84/85 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml93.indexOf('exec?v=83') !== -1 || indexHtml93.indexOf('exec?v=84') !== -1 || indexHtml93.indexOf('exec?v=85') !== -1
 );
 
 // ========================================================
@@ -7333,9 +7333,64 @@ assertTest('Step 94-3: onPcSidebarSiteLabelClick preventDefault 및 stopPropagat
   dashHtml94.indexOf('if (typeof e.stopPropagation === "function") e.stopPropagation();') !== -1
 );
 
-// 94-4: index.html 내 exec?v=84 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 94-4: index.html 내 exec?v=84 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml94.indexOf('exec?v=84') !== -1
+// 94-4: index.html 내 exec?v=84/85 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 94-4: index.html 내 exec?v=84/85 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml94.indexOf('exec?v=84') !== -1 || indexHtml94.indexOf('exec?v=85') !== -1
+);
+
+// ========================================================
+// [Step 95]: '현장정보' 마스터 시트 탭 연동, 착공 체크리스트(동의서/보양/신고) 및 반장님 안내문 복사 QA
+// ========================================================
+console.log('\n--- [Step 95]: 현장정보 시트 연동, 착공 체크리스트 및 반장님 안내문 복사 QA ---');
+
+const dashHtml95 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml95 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 95-1: '현장정보' 마스터 시트 탭 탐색/초기화 및 getSiteInfoMap 구현 검증
+assertTest('Step 95-1: 현장정보 시트 탐색/초기화(findSiteInfoSheet, initSiteInfoSheetFormat, getSiteInfoMap) 구현 검증',
+  typeof sandbox.findSiteInfoSheet === 'function' &&
+  typeof sandbox.initSiteInfoSheetFormat === 'function' &&
+  typeof sandbox.getSiteInfoMap === 'function'
+);
+
+// 95-2: 대시보드 실시간 저장 API 및 getSidebarDashboardData 내 siteInfoMap 주입 검증
+assertTest('Step 95-2: 대시보드 실시간 저장 API(saveSiteInfoFieldFromWeb, saveFullSiteInfoFromWeb) 검증',
+  typeof sandbox.saveSiteInfoFieldFromWeb === 'function' &&
+  typeof sandbox.saveFullSiteInfoFromWeb === 'function'
+);
+
+// 95-3: 반장님 작업 안내문 텍스트 조합 및 클립보드 복사 엔진 탑재 검증
+assertTest('Step 95-3: 반장님 작업 안내문(buildPartnerWorkGuideText, copyPartnerWorkGuide) 탑재 검증',
+  dashHtml95.indexOf('function buildPartnerWorkGuideText(siteName, taskObj)') !== -1 &&
+  dashHtml95.indexOf('function copyPartnerWorkGuide(siteName, taskObj)') !== -1 &&
+  dashHtml95.indexOf('function copyCurrentTaskPartnerGuide()') !== -1 &&
+  dashHtml95.indexOf('[우성아이디 현장 작업 안내]') !== -1 &&
+  dashHtml95.indexOf('📍 현장 주소:') !== -1 &&
+  dashHtml95.indexOf('🔑 도어락 비번:') !== -1
+);
+
+// 95-4: PC 상세 뷰 착공 3대 체크리스트(동의서/보양/신고) 인터랙티브 칩 및 togglePreChecklist 검증
+assertTest('Step 95-4: PC 상세 뷰 착공 3대 체크리스트 칩 및 togglePreChecklist 함수 검증',
+  dashHtml95.indexOf('pc-site-info-card') !== -1 &&
+  dashHtml95.indexOf('pc-checklist-chip') !== -1 &&
+  dashHtml95.indexOf('function togglePreChecklist(siteName, fieldName, e)') !== -1 &&
+  dashHtml95.indexOf('입주민 동의서') !== -1 &&
+  dashHtml95.indexOf('승강기 보양') !== -1 &&
+  dashHtml95.indexOf('관리실 신고') !== -1
+);
+
+// 95-5: 현장정보 수정 모달(siteInfoModalOverlay) 마크업 및 openSiteInfoEditModal/saveSiteInfoEditModal 검증
+assertTest('Step 95-5: 현장정보 수정 모달 마크업 및 openSiteInfoEditModal/saveSiteInfoEditModal 검증',
+  dashHtml95.indexOf('id="siteInfoModalOverlay"') !== -1 &&
+  dashHtml95.indexOf('id="editSiteInfoAddress"') !== -1 &&
+  dashHtml95.indexOf('id="editSiteInfoDoorPassword"') !== -1 &&
+  dashHtml95.indexOf('function openSiteInfoEditModal(siteName, e)') !== -1 &&
+  dashHtml95.indexOf('function saveSiteInfoEditModal()') !== -1
+);
+
+// 95-6: index.html 내 exec?v=85 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 95-6: index.html 내 exec?v=85 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml95.indexOf('exec?v=85') !== -1
 );
 
 console.log('\n========================================================');
