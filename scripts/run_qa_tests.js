@@ -7208,9 +7208,9 @@ assertTest('Step 91-4: 사이드바 진행 현장 스크롤바 커스텀 스타�
   dashHtml91.indexOf('.pc-sidebar-filter-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }') !== -1
 );
 
-// 91-5: index.html 내 exec?v=81/82/83/84/85 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 91-5: index.html 내 exec?v=81/82/83/84/85 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml91.indexOf('exec?v=81') !== -1 || indexHtml91.indexOf('exec?v=82') !== -1 || indexHtml91.indexOf('exec?v=83') !== -1 || indexHtml91.indexOf('exec?v=84') !== -1 || indexHtml91.indexOf('exec?v=85') !== -1
+// 91-5: index.html 내 exec?v=81~86 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 91-5: index.html 내 exec?v=81~86 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(8[1-9]|9\d|\d{3,})/.test(indexHtml91)
 );
 
 console.log('\n🎯 [Step 92: v82 PC 현장 캐러셀 카드 선택 시 스와이프 애니메이션 완전 제거 및 즉시 선택 무결성 QA]');
@@ -7243,9 +7243,9 @@ assertTest('Step 92-4: selectPcSite 및 onPcSidebarSiteLabelClick 내 scrollActi
   dashHtml92.indexOf('scrollActivePcCardIntoView(false);') !== -1
 );
 
-// 92-5: index.html 내 exec?v=82/83/84/85 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 92-5: index.html 내 exec?v=82/83/84/85 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml92.indexOf('exec?v=82') !== -1 || indexHtml92.indexOf('exec?v=83') !== -1 || indexHtml92.indexOf('exec?v=84') !== -1 || indexHtml92.indexOf('exec?v=85') !== -1
+// 92-5: index.html 내 exec?v=82~86 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 92-5: index.html 내 exec?v=82~86 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(8[2-9]|9\d|\d{3,})/.test(indexHtml92)
 );
 
 // ========================================================
@@ -7295,9 +7295,9 @@ assertTest('Step 93-5: resetAllCalendarFilters 종합 필터 초기화(현장/�
   dashHtml93.indexOf('updateFilterVisualStates();') !== -1
 );
 
-// 93-6: index.html 내 exec?v=83/84/85 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 93-6: index.html 내 exec?v=83/84/85 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml93.indexOf('exec?v=83') !== -1 || indexHtml93.indexOf('exec?v=84') !== -1 || indexHtml93.indexOf('exec?v=85') !== -1
+// 93-6: index.html 내 exec?v=83~86 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 93-6: index.html 내 exec?v=83~86 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(8[3-9]|9\d|\d{3,})/.test(indexHtml93)
 );
 
 // ========================================================
@@ -7333,9 +7333,9 @@ assertTest('Step 94-3: onPcSidebarSiteLabelClick preventDefault 및 stopPropagat
   dashHtml94.indexOf('if (typeof e.stopPropagation === "function") e.stopPropagation();') !== -1
 );
 
-// 94-4: index.html 내 exec?v=84/85 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 94-4: index.html 내 exec?v=84/85 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml94.indexOf('exec?v=84') !== -1 || indexHtml94.indexOf('exec?v=85') !== -1
+// 94-4: index.html 내 exec?v=84~86 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 94-4: index.html 내 exec?v=84~86 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(8[4-9]|9\d|\d{3,})/.test(indexHtml94)
 );
 
 // ========================================================
@@ -7388,9 +7388,59 @@ assertTest('Step 95-5: 현장정보 수정 모달 마크업 및 openSiteInfoEdit
   dashHtml95.indexOf('function saveSiteInfoEditModal()') !== -1
 );
 
-// 95-6: index.html 내 exec?v=85 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 95-6: index.html 내 exec?v=85 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml95.indexOf('exec?v=85') !== -1
+// 95-6: index.html 내 exec?v=85/86 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 95-6: index.html 내 exec?v=85/86 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml95.indexOf('exec?v=85') !== -1 || indexHtml95.indexOf('exec?v=86') !== -1
+);
+
+// ========================================================
+// [Step 96]: 반장님 안내문 확인 모달, 실시간 편집/복사 및 오늘 일정/담당자 자동 연동 QA
+// ========================================================
+console.log('\n--- [Step 96]: 반장님 안내문 확인 모달, 실시간 편집/복사 및 오늘 일정/담당자 자동 연동 QA ---');
+
+const dashHtml96 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml96 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 96-1: partnerGuideModalOverlay 모달 마크업 및 textarea, 복사 버튼 검증
+assertTest('Step 96-1: partnerGuideModalOverlay 모달 마크업 및 textarea, 복사 버튼 탑재 검증',
+  dashHtml96.indexOf('id="partnerGuideModalOverlay"') !== -1 &&
+  dashHtml96.indexOf('id="partnerGuideModalText"') !== -1 &&
+  dashHtml96.indexOf('id="btnDoPartnerGuideCopy"') !== -1 &&
+  dashHtml96.indexOf('반장님 작업 안내문 확인') !== -1
+);
+
+// 96-2: openPartnerWorkGuideModal, closePartnerGuideModal, copyPartnerGuideFromModal 함수 구현 검증
+assertTest('Step 96-2: openPartnerWorkGuideModal, closePartnerGuideModal, copyPartnerGuideFromModal 함수 구현 검증',
+  dashHtml96.indexOf('function openPartnerWorkGuideModal(siteName, taskObj, e)') !== -1 &&
+  dashHtml96.indexOf('function closePartnerGuideModal(e)') !== -1 &&
+  dashHtml96.indexOf('function copyPartnerGuideFromModal()') !== -1 &&
+  dashHtml96.indexOf('function openCurrentTaskPartnerGuideModal()') !== -1
+);
+
+// 96-3: buildPartnerWorkGuideText 내 오늘 일정 자동 추출 및 공종/담당자/작업일자 결합 검증
+assertTest('Step 96-3: buildPartnerWorkGuideText 내 오늘 일정 자동 추출 및 공종/담당자/작업일자 결합 검증',
+  dashHtml96.indexOf('function formatKoreanDOW(dObj)') !== -1 &&
+  dashHtml96.indexOf('todayTasks = siteObj.tasks.filter(') !== -1 &&
+  dashHtml96.indexOf('sStr <= todayHyphen && todayHyphen <= eStr') !== -1 &&
+  dashHtml96.indexOf('mgrSet.join(", ")') !== -1
+);
+
+// 96-4: 버튼 라벨 '📋 안내문 확인' (PC/모바일/바텀시트) 갱신 검증
+assertTest('Step 96-4: 버튼 라벨 "📋 안내문 확인" (PC/모바일/바텀시트) 갱신 검증',
+  dashHtml96.indexOf('📋 안내문 확인') !== -1 &&
+  dashHtml96.indexOf('onclick="openCurrentTaskPartnerGuideModal()"') !== -1 &&
+  dashHtml96.indexOf('openPartnerWorkGuideModal(decodeURIComponent(') !== -1
+);
+
+// 96-5: handleGlobalEscape 내 partnerGuideModalOverlay Escape 닫기 연동 검증
+assertTest('Step 96-5: handleGlobalEscape 내 partnerGuideModalOverlay Escape 닫기 연동 검증',
+  dashHtml96.indexOf('const partnerOverlay = document.getElementById("partnerGuideModalOverlay");') !== -1 &&
+  dashHtml96.indexOf('closePartnerGuideModal()') !== -1
+);
+
+// 96-6: index.html 내 exec?v=86 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 96-6: index.html 내 exec?v=86 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml96.indexOf('exec?v=86') !== -1
 );
 
 console.log('\n========================================================');
