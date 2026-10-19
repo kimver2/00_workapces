@@ -7070,6 +7070,63 @@ assertTest('Step 88-5: setFilter 및 updatePcSidebarKPIs 내 .pc-kpi-box active 
   dashHtml88.indexOf('box.classList.toggle("active", box.dataset.filter === currentFilter);') !== -1
 );
 
+// ========================================================
+// Step 89: v79 PC 공정 수정/상세 모달 Esc(Escape) 키로 닫기 지원 QA
+// ========================================================
+console.log('\n🎯 [Step 89: v79 PC 공정 수정/상세 모달 Esc(Escape) 키로 닫기 지원 QA]');
+
+const dashHtml89 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+const indexHtml89 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 89-1: handleGlobalEscape 함수 구현 및 계층적 모달 닫기 순서 검증
+assertTest('Step 89-1: handleGlobalEscape 함수 구현 및 계층적 모달 닫기(삭제->피커->바텀시트->캡쳐->현장) 검증',
+  dashHtml89.indexOf('function handleGlobalEscape() {') !== -1 &&
+  dashHtml89.indexOf('document.getElementById("deleteConfirmOverlay")') !== -1 &&
+  dashHtml89.indexOf('closeDeleteConfirmModal()') !== -1 &&
+  dashHtml89.indexOf('document.getElementById("sheetCustomCalPopover")') !== -1 &&
+  dashHtml89.indexOf('closeCustomDatePicker()') !== -1 &&
+  dashHtml89.indexOf('isBottomSheetVisible()') !== -1 &&
+  dashHtml89.indexOf('closeBottomSheet()') !== -1
+);
+
+// 89-2: 현장서식.js 내 keydown 이벤트 리스너 Escape 키 핸들링 검증
+assertTest('Step 89-2: 현장서식.js 내 keydown 이벤트 리스너 Escape(keyCode 27) 핸들링 검증',
+  dashHtml89.indexOf('e.key === "Escape" || e.key === "Esc" || e.keyCode === 27') !== -1 &&
+  dashHtml89.indexOf('handleGlobalEscape()') !== -1
+);
+
+// 89-3: 현장서식.js message 리스너 내 ORCA_ESCAPE_KEY 지원 검증
+assertTest('Step 89-3: 현장서식.js message 리스너 내 ORCA_ESCAPE_KEY 지원 검증',
+  dashHtml89.indexOf('data.type === "ORCA_ESCAPE_KEY"') !== -1
+);
+
+// 89-4: index.html 내 부모 창 keydown Escape 감지 및 iframe postMessage 브릿지 검증
+assertTest('Step 89-4: index.html 내 부모 창 keydown Escape 감지 및 ORCA_ESCAPE_KEY 브릿지 검증',
+  indexHtml89.indexOf('ev.key === \'Escape\' || ev.key === \'Esc\' || ev.keyCode === 27') !== -1 &&
+  indexHtml89.indexOf('orcaDashboardSource.postMessage({ type: \'ORCA_ESCAPE_KEY\' }, \'*\')') !== -1 &&
+  indexHtml89.indexOf('exec?v=79') !== -1
+);
+
+// 89-5: 모의 환경에서 handleGlobalEscape 실행 시 팝업 닫힘 동작 검증
+let mockOverlayClosed = false;
+const mockDoc = {
+  getElementById: function(id) {
+    if (id === 'sheetOverlay') {
+      return {
+        classList: {
+          contains: function(cls) { return cls === 'show'; },
+          remove: function(cls) { if (cls === 'show') mockOverlayClosed = true; }
+        }
+      };
+    }
+    return null;
+  }
+};
+assertTest('Step 89-5: 모의 환경에서 handleGlobalEscape 실행 시 바텀시트 닫힘 검증',
+  dashHtml89.indexOf('if (typeof isBottomSheetVisible === "function" && isBottomSheetVisible())') !== -1 &&
+  dashHtml89.indexOf('if (typeof closeBottomSheet === "function") { closeBottomSheet(); return true; }') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

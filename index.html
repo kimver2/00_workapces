@@ -87,7 +87,7 @@
   <!-- 전체화면 무배너 웹앱 프레임 -->
   <iframe
     id="appFrame"
-    src="https://script.google.com/macros/s/AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg/exec?v=78"
+    src="https://script.google.com/macros/s/AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg/exec?v=79"
     allow="clipboard-write; camera; geolocation"
     onload="hideLoading()">
   </iframe>
@@ -184,6 +184,18 @@
         try {
           window.history.pushState({ page: 'home' }, '');
         } catch (eStay) {}
+      }
+    });
+
+    // PC에서 부모 창 포커스 상태 시 Esc(Escape) 키 입력 브릿지:
+    // iframe 내부 모달로 전달하여 팝업 닫기 지원
+    window.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Escape' || ev.key === 'Esc' || ev.keyCode === 27) {
+        if (orcaDashboardSource) {
+          try {
+            orcaDashboardSource.postMessage({ type: 'ORCA_ESCAPE_KEY' }, '*');
+          } catch (eEsc) {}
+        }
       }
     });
   </script>
