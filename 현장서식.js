@@ -9084,14 +9084,18 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .pc-member-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }';
   html += '';
   html += '  .pc-kpi-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px; }';
-  html += '  .pc-kpi-box { padding: 6px 8px; border-radius: 6px; cursor: pointer; transition: transform 0.1s; }';
-  html += '  .pc-kpi-box:hover { transform: translateY(-1px); }';
-  html += '  .pc-kpi-box.today { background: #f1f5f9; }';
-  html += '  .pc-kpi-box.today .kpi-sub { color: #64748b; font-size: 10.5px; font-weight: 600; }';
-  html += '  .pc-kpi-box.today .kpi-val { font-size: 15px; font-weight: 800; color: #2563eb; }';
-  html += '  .pc-kpi-box.delay { background: #fee2e2; }';
+  html += '  .pc-kpi-box { padding: 7px 9px; border-radius: 9px; cursor: pointer; border: 1.5px solid transparent; transition: all 0.15s ease; box-sizing: border-box; }';
+  html += '  .pc-kpi-box:hover { transform: translateY(-1.5px); }';
+  html += '  .pc-kpi-box.today { background: #f1f5f9; border-color: #e2e8f0; }';
+  html += '  .pc-kpi-box.today:hover { border-color: #94a3b8; background: #e2e8f0; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }';
+  html += '  .pc-kpi-box.today .kpi-sub { color: #64748b; font-size: 10.5px; font-weight: 700; }';
+  html += '  .pc-kpi-box.today .kpi-val { font-size: 15.5px; font-weight: 800; color: #2563eb; }';
+  html += '  .pc-kpi-box.today.active { border-color: #2563eb !important; background: #eff6ff !important; box-shadow: 0 0 0 1px #2563eb, 0 4px 12px rgba(37,99,235,0.18) !important; }';
+  html += '  .pc-kpi-box.delay { background: #fef2f2; border-color: #fecaca; }';
+  html += '  .pc-kpi-box.delay:hover { border-color: #f87171; background: #fee2e2; box-shadow: 0 2px 6px rgba(239,68,68,0.1); }';
   html += '  .pc-kpi-box.delay .kpi-sub { color: #dc2626; font-size: 10.5px; font-weight: 700; }';
-  html += '  .pc-kpi-box.delay .kpi-val { font-size: 15px; font-weight: 800; color: #dc2626; }';
+  html += '  .pc-kpi-box.delay .kpi-val { font-size: 15.5px; font-weight: 800; color: #dc2626; }';
+  html += '  .pc-kpi-box.delay.active { border-color: #dc2626 !important; background: #fff5f5 !important; box-shadow: 0 0 0 1px #dc2626, 0 4px 12px rgba(220,38,38,0.2) !important; }';
 
   html += '  .pc-main-content { display: flex !important; flex-direction: column; flex: 1; height: 100%; min-width: 0; overflow: hidden; background: #ffffff; position: relative; }';
   html += '  #calendarArea { display: flex; flex-direction: column; flex: 1; height: 100%; max-width: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden; }';
@@ -9365,11 +9369,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '    </button>';
   html += '    <div class="pc-sidebar-section">';
   html += '      <div class="pc-kpi-summary-grid">';
-  html += '        <div class="pc-kpi-box today" onclick="setFilter(\'today\'); switchToPcView(\'list\');" title="오늘 진행 공정 보기">';
+  html += '        <div class="pc-kpi-box today" data-filter="today" onclick="onPcSidebarKpiClick(\'today\')" title="오늘 진행 공정 보기 (클릭 시 토글)">';
   html += '          <div class="kpi-sub">오늘 진행</div>';
   html += '          <div class="kpi-val" id="pcKpiToday">-</div>';
   html += '        </div>';
-  html += '        <div class="pc-kpi-box delay" onclick="setFilter(\'delay\'); switchToPcView(\'list\');" title="공정 지연 공정 보기">';
+  html += '        <div class="pc-kpi-box delay" data-filter="delay" onclick="onPcSidebarKpiClick(\'delay\')" title="공정 지연 공정 보기 (클릭 시 토글)">';
   html += '          <div class="kpi-sub">공정 지연 ⚠️</div>';
   html += '          <div class="kpi-val" id="pcKpiDelay">-</div>';
   html += '        </div>';
@@ -9726,6 +9730,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (typeof selectAllPcSites === "function") selectAllPcSites();';
   html += '    currentFilter = "all";';
   html += '    pcSiteDetailFilter = "all";';
+  html += '    document.querySelectorAll(".pc-kpi-box").forEach(box => {';
+  html += '      box.classList.remove("active");';
+  html += '    });';
   html += '    pcSiteTaskSearchQuery = "";';
   html += '    pcSelectedMember = "";';
   html += '    const memberSel = document.getElementById("pcMemberSelect");';
@@ -9740,6 +9747,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '    console.error("onLogoClick error:", eLogo);';
   html += '    if (typeof loadData === "function") loadData(true);';
   html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onPcSidebarKpiClick(type) {';
+  html += '  const nextFilter = (currentFilter === type) ? "all" : type;';
+  html += '  setFilter(nextFilter);';
+  html += '  switchToPcView("list");';
   html += '}';
   html += '';
   html += 'function switchToPcView(view) {';
@@ -10001,6 +10014,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const delayEl = document.getElementById("pcKpiDelay");';
   html += '  if (todayEl) todayEl.innerText = (rawData.kpi.todayCount || 0) + "건";';
   html += '  if (delayEl) delayEl.innerText = (rawData.kpi.delayedCount || 0) + "건";';
+  html += '  document.querySelectorAll(".pc-kpi-box").forEach(box => {';
+  html += '    box.classList.toggle("active", box.dataset.filter === currentFilter);';
+  html += '  });';
   html += '}';
 
   html += 'function toggleCalendarView() {';
@@ -11309,6 +11325,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });';
   html += '  document.querySelectorAll(".kpi-card").forEach(c => {';
   html += '    c.classList.toggle("active", c.dataset.filter === type);';
+  html += '  });';
+  html += '  document.querySelectorAll(".pc-kpi-box").forEach(box => {';
+  html += '    box.classList.toggle("active", box.dataset.filter === type);';
   html += '  });';
   html += '  updateCheckedStatusUI();';
   html += '  if (isCalendarMode) toggleCalendarView(); else renderList();';

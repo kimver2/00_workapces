@@ -7026,6 +7026,50 @@ assertTest('Step 87-3: 담당자 열 .pc-manager-pill 알약 뱃지 및 👤 아
   dashHtml87.indexOf('escapeHtml(tMgr)') !== -1
 );
 
+// ========================================================
+// Step 88: v78 PC 사이드바 오늘진행/공정지연 선택 시 현장카드 스타일 테두리 강조 표시 QA
+// ========================================================
+console.log('\n🎯 [Step 88: v78 PC 사이드바 오늘진행/공정지연 선택 시 현장카드 스타일 테두리 강조 표시 QA]');
+
+const dashHtml88 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
+
+// 88-1: .pc-kpi-box 기본 테두리(1.5px solid transparent) 및 hover 스타일 검증
+assertTest('Step 88-1: .pc-kpi-box 기본 테두리 및 hover 스타일 탑재 검증',
+  dashHtml88.indexOf('.pc-kpi-box { padding: 7px 9px; border-radius: 9px; cursor: pointer; border: 1.5px solid transparent;') !== -1 &&
+  dashHtml88.indexOf('.pc-kpi-box.today { background: #f1f5f9; border-color: #e2e8f0; }') !== -1 &&
+  dashHtml88.indexOf('.pc-kpi-box.delay { background: #fef2f2; border-color: #fecaca; }') !== -1
+);
+
+// 88-2: .pc-kpi-box.today.active 및 delay.active 테두리 강조(border-color, box-shadow) 검증
+assertTest('Step 88-2: .pc-kpi-box.today.active 및 delay.active 테두리 강조 스타일 검증',
+  dashHtml88.indexOf('.pc-kpi-box.today.active { border-color: #2563eb !important; background: #eff6ff !important;') !== -1 &&
+  dashHtml88.indexOf('.pc-kpi-box.delay.active { border-color: #dc2626 !important; background: #fff5f5 !important;') !== -1
+);
+
+// 88-3: 사이드바 HTML 내 data-filter 속성 및 onPcSidebarKpiClick 바인딩 검증
+assertTest('Step 88-3: 사이드바 HTML 내 data-filter 속성 및 onPcSidebarKpiClick 바인딩 검증',
+  dashHtml88.indexOf('class="pc-kpi-box today"') !== -1 &&
+  dashHtml88.indexOf('data-filter="today"') !== -1 &&
+  dashHtml88.indexOf('class="pc-kpi-box delay"') !== -1 &&
+  dashHtml88.indexOf('data-filter="delay"') !== -1 &&
+  dashHtml88.indexOf('onPcSidebarKpiClick') !== -1
+);
+
+// 88-4: onPcSidebarKpiClick 함수 구현 및 토글 필터링 검증
+assertTest('Step 88-4: onPcSidebarKpiClick 함수 정의 및 토글 필터링 검증',
+  dashHtml88.indexOf('function onPcSidebarKpiClick(type) {') !== -1 &&
+  dashHtml88.indexOf('const nextFilter = (currentFilter === type) ? "all" : type;') !== -1 &&
+  dashHtml88.indexOf('setFilter(nextFilter);') !== -1 &&
+  dashHtml88.indexOf('switchToPcView("list");') !== -1
+);
+
+// 88-5: setFilter 및 updatePcSidebarKPIs 내 .pc-kpi-box active 동기화 검증
+assertTest('Step 88-5: setFilter 및 updatePcSidebarKPIs 내 .pc-kpi-box active 동기화 검증',
+  dashHtml88.indexOf('document.querySelectorAll(".pc-kpi-box").forEach(box => {') !== -1 &&
+  dashHtml88.indexOf('box.classList.toggle("active", box.dataset.filter === type);') !== -1 &&
+  dashHtml88.indexOf('box.classList.toggle("active", box.dataset.filter === currentFilter);') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
