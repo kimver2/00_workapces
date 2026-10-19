@@ -7539,9 +7539,50 @@ assertTest('Step 98-5: 현장정보 수정 모달 내 editSiteInfoDriveUrl 입�
   dashHtml98.indexOf('function openCurrentTaskSiteDriveLink()') !== -1
 );
 
-// 98-6: index.html 내 exec?v=88 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 98-6: index.html 내 exec?v=88 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml98.indexOf('exec?v=88') !== -1
+// 98-6: index.html 내 exec?v=88 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 98-6: index.html 내 exec?v=88 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:8[8-9]|9\d|[1-9]\d{2,})/.test(indexHtml98)
+);
+
+// ========================================================
+console.log('\n--- [Step 99]: 모바일 화면 모달 오버레이 전역 CSS 스코핑 & 화면 깨짐 방지 QA ---');
+
+const dashHtml99Mobile = sandbox.buildSidebarDashboardHtml('mobile');
+const dashHtml99Web = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml99 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 99-1: 모바일 및 웹 HTML 모두에 site-info-modal-overlay 및 partner-guide-modal-overlay 전역 스타일 선언 검증
+const media768Index = dashHtml99Web.indexOf('@media (min-width: 768px)');
+const siteOverlayIndex = dashHtml99Web.indexOf('.site-info-modal-overlay {');
+const partnerOverlayIndex = dashHtml99Web.indexOf('.partner-guide-modal-overlay {');
+
+assertTest('Step 99-1: 모달 오버레이 CSS가 @media (min-width: 768px) 이전 전역 영역에 선언되었는지 검증',
+  media768Index !== -1 &&
+  siteOverlayIndex !== -1 &&
+  partnerOverlayIndex !== -1 &&
+  siteOverlayIndex < media768Index &&
+  partnerOverlayIndex < media768Index
+);
+
+// 99-2: 모달 기본 display: none 및 active 시 display: flex !important 적용 검증
+assertTest('Step 99-2: 모달 오버레이 display: none 및 active 시 display: flex !important 보장',
+  dashHtml99Web.indexOf('.site-info-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.55); backdrop-filter: blur(2px); z-index: 1000; display: none;') !== -1 &&
+  dashHtml99Web.indexOf('.site-info-modal-overlay.active { display: flex !important; }') !== -1 &&
+  dashHtml99Web.indexOf('.partner-guide-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.55); backdrop-filter: blur(2px); z-index: 1000; display: none;') !== -1 &&
+  dashHtml99Web.indexOf('.partner-guide-modal-overlay.active { display: flex !important; }') !== -1
+);
+
+// 99-3: 공용 버튼 스타일(.btn-site-drive-link, .btn-partner-guide) 전역 선언 검증
+const driveBtnIndex = dashHtml99Web.indexOf('.btn-site-drive-link {');
+const partnerBtnIndex = dashHtml99Web.indexOf('.btn-partner-guide {');
+assertTest('Step 99-3: 현장 자료 및 안내문 확인 버튼 스타일 전역 스코프 탑재 검증',
+  driveBtnIndex !== -1 && partnerBtnIndex !== -1 &&
+  driveBtnIndex < media768Index && partnerBtnIndex < media768Index
+);
+
+// 99-4: index.html 내 exec?v=89 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 99-4: index.html 내 exec?v=89 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml99.indexOf('exec?v=89') !== -1
 );
 
 console.log('\n========================================================');
