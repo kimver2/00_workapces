@@ -5355,14 +5355,49 @@ function findSiteInfoSheet(ss, createIfMissing) {
 }
 
 /**
+ * '현장정보' 시트 헤더에 '드라이브 링크' 열(9열)이 없으면 자동으로 추가/마이그레이션
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ */
+function ensureSiteInfoSheetHeaders(sheet) {
+  if (!sheet) return;
+  try {
+    var maxCols = sheet.getMaxColumns();
+    if (maxCols < 9) {
+      sheet.insertColumnsAfter(maxCols, 9 - maxCols);
+    }
+    var hVal = String(sheet.getRange(1, 9).getValue() || "").trim();
+    if (hVal !== "드라이브 링크") {
+      sheet.getRange(1, 9).setValue("드라이브 링크")
+        .setBackground("#1e3a8a")
+        .setFontColor("#ffffff")
+        .setFontWeight("bold")
+        .setHorizontalAlignment("center")
+        .setVerticalAlignment("middle");
+      try {
+        sheet.setColumnWidth(9, 260);
+      } catch (eW) {}
+      var lastR = sheet.getLastRow();
+      if (lastR >= 2) {
+        sheet.getRange(2, 9, lastR - 1, 1)
+          .setHorizontalAlignment("left")
+          .setVerticalAlignment("middle")
+          .setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+      }
+    }
+  } catch (e) {
+    Logger.log("ensureSiteInfoSheetHeaders error: " + e.toString());
+  }
+}
+
+/**
  * '현장정보' 시트 헤더 및 초기 서식/체크박스/기본 현장 데이터 세팅
  */
 function initSiteInfoSheetFormat(sheet, ss) {
   if (!sheet) return;
   if (!ss) ss = sheet.getParent() || getAppSpreadsheet();
 
-  var headers = [["현장명", "현장 주소", "도어락 비밀번호", "관리사무소 연락처", "입주민 동의서", "승강기 보양", "관리실 신고", "현장 특이사항 / 주차 안내"]];
-  var headerRange = sheet.getRange(1, 1, 1, 8);
+  var headers = [["현장명", "현장 주소", "도어락 비밀번호", "관리사무소 연락처", "입주민 동의서", "승강기 보양", "관리실 신고", "현장 특이사항 / 주차 안내", "드라이브 링크"]];
+  var headerRange = sheet.getRange(1, 1, 1, 9);
   headerRange.setValues(headers)
     .setBackground("#1e3a8a")
     .setFontColor("#ffffff")
@@ -5373,18 +5408,18 @@ function initSiteInfoSheetFormat(sheet, ss) {
   sheet.setFrozenRows(1);
 
   // 열 너비 설정
-  var colWidths = [180, 280, 130, 140, 110, 110, 110, 320];
+  var colWidths = [180, 280, 130, 140, 110, 110, 110, 320, 260];
   for (var c = 0; c < colWidths.length; c++) {
     try {
       sheet.setColumnWidth(c + 1, colWidths[c]);
     } catch(eW) {}
   }
 
-  // 9열 이상 존재 시 불필요한 열 삭제하여 A~H열(8열)로 정돈
+  // 10열 이상 존재 시 불필요한 열 삭제하여 A~I열(9열)로 정돈
   var maxCols = sheet.getMaxColumns();
-  if (maxCols > 8) {
+  if (maxCols > 9) {
     try {
-      sheet.deleteColumns(9, maxCols - 8);
+      sheet.deleteColumns(10, maxCols - 9);
     } catch(eDel) {}
   }
 
@@ -5399,23 +5434,23 @@ function initSiteInfoSheetFormat(sheet, ss) {
         var sName = String(siteData[r][0] || "").trim();
         if (sName && !addedSites.has(sName)) {
           addedSites.add(sName);
-          rowsToInsert.push([sName, "", "", "", false, false, false, ""]);
+          rowsToInsert.push([sName, "", "", "", false, false, false, "", ""]);
         }
       }
       if (rowsToInsert.length > 0) {
-        sheet.getRange(2, 1, rowsToInsert.length, 8).setValues(rowsToInsert);
+        sheet.getRange(2, 1, rowsToInsert.length, 9).setValues(rowsToInsert);
         // E, F, G열 체크박스 삽입
         sheet.getRange(2, 5, rowsToInsert.length, 3).insertCheckboxes().setHorizontalAlignment("center");
         // A, C, D열 가운데 정렬
         [1, 3, 4].forEach(function(col) {
           sheet.getRange(2, col, rowsToInsert.length, 1).setHorizontalAlignment("center").setVerticalAlignment("middle");
         });
-        // B, H열 좌측 정렬
-        [2, 8].forEach(function(col) {
+        // B, H, I열 좌측 정렬
+        [2, 8, 9].forEach(function(col) {
           sheet.getRange(2, col, rowsToInsert.length, 1).setHorizontalAlignment("left").setVerticalAlignment("middle");
         });
         // 테두리
-        sheet.getRange(2, 1, rowsToInsert.length, 8).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+        sheet.getRange(2, 1, rowsToInsert.length, 9).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
       }
     }
   } catch(eInitRows) {
@@ -5437,8 +5472,8 @@ function cleanSiteInfoSheetBlankRows(sheet) {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return 0;
 
-    var numCols = Math.min(sheet.getLastColumn() || 8, 8);
-    if (numCols < 1) numCols = 8;
+    var numCols = Math.min(sheet.getLastColumn() || 9, 9);
+    if (numCols < 1) numCols = 9;
     var data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
 
     // 아래에서 위로 역순 순회하며 A열(현장명)이 비어있는 행 삭제
@@ -5463,7 +5498,7 @@ function cleanSiteInfoSheetBlankRows(sheet) {
 }
 
 /**
- * '현장정보' 시트의 모든 데이터를 { siteName: { ... } } 맵으로 일괄 로드 (빈 행 자동 정돈 내장)
+ * '현장정보' 시트의 모든 데이터를 { siteName: { ... } } 맵으로 일괄 로드 (빈 행 자동 정돈 & 9열 드라이브 링크 연동)
  */
 function getSiteInfoMap(ss) {
   var map = {};
@@ -5471,13 +5506,18 @@ function getSiteInfoMap(ss) {
     var sheet = findSiteInfoSheet(ss, true);
     if (!sheet) return map;
 
+    // 0) 헤더 점검 및 9열 '드라이브 링크' 자동 보장
+    ensureSiteInfoSheetHeaders(sheet);
+
     // 1) 유령 빈 행 자동 정돈 및 데이터 당기기 (Self-Healing)
     cleanSiteInfoSheetBlankRows(sheet);
 
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
 
-    var data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+    var maxC = Math.max(sheet.getLastColumn() || 9, 9);
+    var fetchCols = Math.min(maxC, 9);
+    var data = sheet.getRange(2, 1, lastRow - 1, fetchCols).getValues();
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
       var siteName = String(row[0] || "").trim();
@@ -5491,6 +5531,7 @@ function getSiteInfoMap(ss) {
         elevatorCoverDone: (row[5] === true || String(row[5]).toUpperCase() === "TRUE"),
         officeNoticeDone: (row[6] === true || String(row[6]).toUpperCase() === "TRUE"),
         memo: String(row[7] || "").trim(),
+        driveUrl: String(row[8] || "").trim(),
         rowNum: i + 2
       };
     }
@@ -5501,7 +5542,7 @@ function getSiteInfoMap(ss) {
 }
 
 /**
- * 대시보드에서 체크박스 토글 또는 단일 필드 수정 시 시트에 실시간 반영
+ * 대시보드에서 체크박스 토글 또는 단일 필드 수정 시 시트에 실시간 반영 (9열 드라이브 링크 지원)
  */
 function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
   try {
@@ -5513,6 +5554,9 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
     var sheet = findSiteInfoSheet(ss, true);
     if (!sheet) return { success: false, error: "현장정보 시트를 찾을 수 없습니다." };
 
+    // 0) 헤더 보장
+    ensureSiteInfoSheetHeaders(sheet);
+
     // 1) 유령 빈 행 정리
     cleanSiteInfoSheetBlankRows(sheet);
 
@@ -5523,7 +5567,9 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
       "consentDone": 5,
       "elevatorCoverDone": 6,
       "officeNoticeDone": 7,
-      "memo": 8
+      "memo": 8,
+      "driveUrl": 9,
+      "driveLink": 9
     };
 
     var targetCol = colMap[fieldName];
@@ -5555,7 +5601,7 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
       }
       sheet.getRange(targetRow, 1).setValue(cleanSite).setFontWeight("bold").setHorizontalAlignment("center");
       sheet.getRange(targetRow, 5, 1, 3).insertCheckboxes().setHorizontalAlignment("center");
-      sheet.getRange(targetRow, 1, 1, 8).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+      sheet.getRange(targetRow, 1, 1, 9).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
     }
 
     var valToSet = value;
@@ -5574,7 +5620,7 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
 }
 
 /**
- * 대시보드 모달에서 현장 전체 정보(주소, 비번, 연락처, 메모 등) 일괄 저장
+ * 대시보드 모달에서 현장 전체 정보(주소, 비번, 연락처, 메모, 드라이브 링크 등) 일괄 저장
  */
 function saveFullSiteInfoFromWeb(siteName, infoObj) {
   try {
@@ -5586,6 +5632,9 @@ function saveFullSiteInfoFromWeb(siteName, infoObj) {
     if (!ss) ss = getAppSpreadsheet();
     var sheet = findSiteInfoSheet(ss, true);
     if (!sheet) return { success: false, error: "현장정보 시트를 찾을 수 없습니다." };
+
+    // 0) 헤더 보장
+    ensureSiteInfoSheetHeaders(sheet);
 
     // 1) 유령 빈 행 정리
     cleanSiteInfoSheetBlankRows(sheet);
@@ -5616,7 +5665,7 @@ function saveFullSiteInfoFromWeb(siteName, infoObj) {
       }
       sheet.getRange(targetRow, 1).setValue(cleanSite).setFontWeight("bold").setHorizontalAlignment("center");
       sheet.getRange(targetRow, 5, 1, 3).insertCheckboxes().setHorizontalAlignment("center");
-      sheet.getRange(targetRow, 1, 1, 8).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+      sheet.getRange(targetRow, 1, 1, 9).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
     }
 
     if (infoObj.address !== undefined) sheet.getRange(targetRow, 2).setValue(String(infoObj.address || "").trim());
@@ -5626,6 +5675,11 @@ function saveFullSiteInfoFromWeb(siteName, infoObj) {
     if (infoObj.elevatorCoverDone !== undefined) sheet.getRange(targetRow, 6).setValue(infoObj.elevatorCoverDone === true || String(infoObj.elevatorCoverDone).toUpperCase() === "TRUE");
     if (infoObj.officeNoticeDone !== undefined) sheet.getRange(targetRow, 7).setValue(infoObj.officeNoticeDone === true || String(infoObj.officeNoticeDone).toUpperCase() === "TRUE");
     if (infoObj.memo !== undefined) sheet.getRange(targetRow, 8).setValue(String(infoObj.memo || "").trim());
+    if (infoObj.driveUrl !== undefined) {
+      sheet.getRange(targetRow, 9).setValue(String(infoObj.driveUrl || "").trim());
+    } else if (infoObj.driveLink !== undefined) {
+      sheet.getRange(targetRow, 9).setValue(String(infoObj.driveLink || "").trim());
+    }
 
     SpreadsheetApp.flush();
     invalidateDashboardServerCache();
@@ -5643,6 +5697,7 @@ function setupSiteInfoSheetMenu() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = findSiteInfoSheet(ss, true);
   if (sheet) {
+    ensureSiteInfoSheetHeaders(sheet);
     var cleaned = cleanSiteInfoSheetBlankRows(sheet);
     ss.setActiveSheet(sheet);
     var alertMsg = "'현장정보' 시트가 정상적으로 열렸습니다.\n현장별 주소, 도어락 비밀번호, 착공 전 체크리스트(동의서, 보양 등)를 편리하게 관리하세요.";
@@ -9597,12 +9652,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .pc-checklist-chip.done:hover { background: #dcfce7; border-color: #4ade80; }';
   html += '  .pc-checklist-chip .chip-box { font-size: 11px; }';
   html += '  .pc-site-info-actions { display: flex; align-items: center; gap: 6px; }';
+  html += '  .btn-site-drive-link { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #f0fdf4; color: #166534; border: 1.5px solid #86efac; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; }';
+  html += '  .btn-site-drive-link:hover { background: #dcfce7; border-color: #4ade80; transform: translateY(-0.5px); box-shadow: 0 2px 5px rgba(22,101,52,0.18); }';
+  html += '  .btn-site-drive-link:active { transform: translateY(0); }';
   html += '  .btn-partner-guide { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #93c5fd; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; }';
   html += '  .btn-partner-guide:hover { background: #dbeafe; border-color: #60a5fa; transform: translateY(-0.5px); box-shadow: 0 2px 5px rgba(37,99,235,0.18); }';
   html += '  .btn-partner-guide:active { transform: translateY(0); }';
   html += '  .btn-site-info-edit { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 7px; background: #ffffff; color: #475569; border: 1.5px solid #cbd5e1; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; }';
   html += '  .btn-site-info-edit:hover { background: #f1f5f9; border-color: #94a3b8; }';
-  html += '  .pc-site-info-details { display: grid; grid-template-columns: 1.4fr 0.8fr 1fr 1.8fr; gap: 10px; font-size: 12px; }';
+  html += '  .pc-site-info-details { display: grid; grid-template-columns: 1.2fr 0.8fr 0.8fr 1.5fr 1fr; gap: 10px; font-size: 12px; }';
   html += '  .pc-info-item { display: flex; flex-direction: column; gap: 2px; background: #f8fafc; border-radius: 8px; padding: 6px 10px; border: 1px solid #f1f5f9; min-width: 0; }';
   html += '  .pc-info-item-label { font-size: 10.5px; font-weight: 800; color: #64748b; }';
   html += '  .pc-info-item-val { font-size: 12px; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }';
@@ -9913,6 +9971,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div>';
   html += '        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
   html += '          <div class="sheet-site" id="sheetSiteName">-</div>';
+  html += '          <button type="button" id="sheetSiteDriveBtn" class="btn-sheet-goto-mini" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;font-weight:700;" onclick="openCurrentTaskSiteDriveLink()" title="현장 구글 드라이브 도면 / 사진 / 계약서 자료실 열기">📁 현장 자료</button>';
   html += '          <button type="button" id="sheetCopyPartnerGuideBtn" class="btn-sheet-goto-mini" style="background:#eff6ff;color:#1d4ed8;border-color:#93c5fd;font-weight:700;" onclick="openCurrentTaskPartnerGuideModal()" title="시공 반장님/협력업체 전용 카카오톡 작업 안내문 확인 및 편집">📋 안내문 확인</button>';
   html += '          <button type="button" id="sheetMiniGoToRowBtn" class="btn-sheet-goto-mini" onclick="goToCurrentTaskSheetRow()" title="현장데이터 시트에서 해당 행으로 이동">📍 시트 행 이동</button>';
   html += '          <button type="button" id="sheetAddSameDateBtn" class="btn-sheet-goto-mini" style="background:#ecfdf5;color:#047857;border-color:#a7f3d0;" onclick="openNewTaskOnCurrentDate()" title="이 날짜에 새 공정 일정 추가">➕ 같은 날 추가</button>';
@@ -10077,6 +10136,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div class="site-info-input-group">';
   html += '        <label>⚠️ 현장 특이사항 / 주차 안내 (반장님 공유용)</label>';
   html += '        <textarea id="editSiteInfoMemo" class="site-info-textarea" placeholder="예: 지하2층 방문객 등록 필수, 08:30 이전 소음작업 금지, 사다리차 불가"></textarea>';
+  html += '      </div>';
+  html += '      <div class="site-info-input-group">';
+  html += '        <label>📁 드라이브 링크 (도면 / 사진 / 계약서 Google Drive URL)</label>';
+  html += '        <input type="url" id="editSiteInfoDriveUrl" class="site-info-input" placeholder="예: https://drive.google.com/drive/folders/...">';
   html += '      </div>';
   html += '    </div>';
   html += '    <div class="site-info-modal-footer">';
@@ -10387,6 +10450,28 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
   html += '';
+  html += 'function openSiteDriveLink(siteName) {';
+  html += '  const sName = String(siteName || selectedPcSiteName || "").trim();';
+  html += '  if (!sName) return;';
+  html += '  const info = (rawData && rawData.siteInfoMap && rawData.siteInfoMap[sName]) ? rawData.siteInfoMap[sName] : {};';
+  html += '  const driveUrl = String(info.driveUrl || info.driveLink || "").trim();';
+  html += '  if (driveUrl) {';
+  html += '    window.open(driveUrl, "_blank");';
+  html += '  } else {';
+  html += '    showToast("💡 [" + sName + "] 등록된 드라이브 링크가 없습니다.");';
+  html += '    setTimeout(() => {';
+  html += '      openSiteInfoEditModal(sName);';
+  html += '      const uInp = document.getElementById("editSiteInfoDriveUrl");';
+  html += '      if (uInp) uInp.focus();';
+  html += '    }, 300);';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function openCurrentTaskSiteDriveLink() {';
+  html += '  if (!currentTaskObj || !currentTaskObj.siteName) return;';
+  html += '  openSiteDriveLink(currentTaskObj.siteName);';
+  html += '}';
+  html += '';
   html += 'function openSiteInfoEditModal(siteName, e) {';
   html += '  if (e) { e.stopPropagation(); e.preventDefault(); }';
   html += '  const sName = siteName || selectedPcSiteName || "";';
@@ -10398,6 +10483,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  document.getElementById("editSiteInfoDoorPassword").value = info.doorPassword || "";';
   html += '  document.getElementById("editSiteInfoOfficePhone").value = info.officePhone || "";';
   html += '  document.getElementById("editSiteInfoMemo").value = info.memo || "";';
+  html += '  const driveInp = document.getElementById("editSiteInfoDriveUrl");';
+  html += '  if (driveInp) driveInp.value = info.driveUrl || info.driveLink || "";';
   html += '  const modal = document.getElementById("siteInfoModalOverlay");';
   html += '  if (modal) modal.classList.add("active");';
   html += '}';
@@ -10415,6 +10502,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const pwd = document.getElementById("editSiteInfoDoorPassword").value.trim();';
   html += '  const phone = document.getElementById("editSiteInfoOfficePhone").value.trim();';
   html += '  const memo = document.getElementById("editSiteInfoMemo").value.trim();';
+  html += '  const driveInp = document.getElementById("editSiteInfoDriveUrl");';
+  html += '  const driveUrl = driveInp ? driveInp.value.trim() : "";';
   html += '  if (!rawData) rawData = {};';
   html += '  if (!rawData.siteInfoMap) rawData.siteInfoMap = {};';
   html += '  if (!rawData.siteInfoMap[sName]) rawData.siteInfoMap[sName] = { siteName: sName, consentDone: false, elevatorCoverDone: false, officeNoticeDone: false };';
@@ -10423,6 +10512,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  info.doorPassword = pwd;';
   html += '  info.officePhone = phone;';
   html += '  info.memo = memo;';
+  html += '  info.driveUrl = driveUrl;';
   html += '  const saveBtn = document.getElementById("btnSaveSiteInfo");';
   html += '  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerText = "저장 중..."; }';
   html += '  showToast("💾 [" + sName + "] 현장 정보 저장 중...");';
@@ -10439,7 +10529,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        console.error("saveFullSiteInfo error:", err);';
   html += '        showToast("⚠️ 현장 정보 저장 통신 실패");';
   html += '      })';
-  html += '      .saveFullSiteInfoFromWeb(sName, { address: addr, doorPassword: pwd, officePhone: phone, memo: memo });';
+  html += '      .saveFullSiteInfoFromWeb(sName, { address: addr, doorPassword: pwd, officePhone: phone, memo: memo, driveUrl: driveUrl });';
   html += '  }';
   html += '}';
 
@@ -12675,6 +12765,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'          </span>\';';
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'        <div class="pc-site-info-actions">\';';
+  html += '  dHtml += \'          <button type="button" class="btn-site-drive-link" onclick="openSiteDriveLink(decodeURIComponent(\\\'\' + curSiteEnc + \'\\\'))" title="현장 구글 드라이브 도면 / 사진 / 계약서 자료실 열기"><span>📁</span> 현장 자료</button>\';';
   html += '  dHtml += \'          <button type="button" class="btn-partner-guide" onclick="openPartnerWorkGuideModal(decodeURIComponent(\\\'\' + curSiteEnc + \'\\\'))" title="시공 반장님/협력업체 전용 카카오톡 작업 안내문 확인 및 편집"><span>📋</span> 안내문 확인</button>\';';
   html += '  dHtml += \'          <button type="button" class="btn-site-info-edit" onclick="openSiteInfoEditModal(decodeURIComponent(\\\'\' + curSiteEnc + \'\\\'), event)" title="현장 주소, 도어락 비밀번호, 관리실 연락처, 특이사항 편집"><span>✏️</span> 현장정보 수정</button>\';';
   html += '  dHtml += \'        </div>\';';
@@ -12695,6 +12786,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'        <div class="pc-info-item">\';';
   html += '  dHtml += \'          <span class="pc-info-item-label">⚠️ 현장 특이사항 / 주차 안내</span>\';';
   html += '  dHtml += \'          <span class="pc-info-item-val\' + (!curSiteInfo.memo ? " empty" : "") + \'" title="\' + escapeHtml(curSiteInfo.memo || "-") + \'">\' + escapeHtml(curSiteInfo.memo || "-") + \'</span>\';';
+  html += '  dHtml += \'        </div>\';';
+  html += '  dHtml += \'        <div class="pc-info-item">\';';
+  html += '  dHtml += \'          <span class="pc-info-item-label">📁 드라이브 링크</span>\';';
+  html += '  dHtml += \'          <span class="pc-info-item-val\' + (!curSiteInfo.driveUrl ? " empty" : "") + \'" title="\' + escapeHtml(curSiteInfo.driveUrl || "미등록") + \'">\' + (curSiteInfo.driveUrl ? \'<a href="\' + escapeHtml(curSiteInfo.driveUrl) + \'" target="_blank" rel="noopener noreferrer" style="color:#166534;text-decoration:underline;font-weight:700;" onclick="event.stopPropagation()">드라이브 열기 ↗</a>\' : \'링크 미등록\') + \'</span>\';';
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'      </div>\';';
   html += '  dHtml += \'    </div>\';';
@@ -13014,7 +13109,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    html += \'    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;margin-bottom:10px;display:flex;flex-direction:column;gap:6px;">\';';
   html += '    html += \'      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">\';';
   html += '    html += \'        <div style="font-size:11px;font-weight:800;color:#1e3a8a;display:flex;align-items:center;gap:3px;"><span>🛡️</span> 착공 체크:</div>\';';
-  html += '    html += \'        <button type="button" class="btn-partner-guide" style="padding:3px 8px;font-size:11px;" onclick="event.stopPropagation();openPartnerWorkGuideModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'))"><span>📋</span> 안내문 확인</button>\';';
+  html += '    html += \'        <div style="display:flex;align-items:center;gap:4px;">\';';
+  html += '    html += \'          <button type="button" class="btn-site-drive-link" style="padding:3px 8px;font-size:11px;" onclick="event.stopPropagation();openSiteDriveLink(decodeURIComponent(\\\'\' + siteEnc + \'\\\'))" title="현장 구글 드라이브 자료실 열기"><span>📁</span> 현장 자료</button>\';';
+  html += '    html += \'          <button type="button" class="btn-partner-guide" style="padding:3px 8px;font-size:11px;" onclick="event.stopPropagation();openPartnerWorkGuideModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'))"><span>📋</span> 안내문 확인</button>\';';
+  html += '    html += \'        </div>\';';
   html += '    html += \'      </div>\';';
   html += '    html += \'      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">\';';
   html += '    html += \'        <span class="pc-checklist-chip\' + (mobConsent ? " done" : "") + \'" style="font-size:11px;padding:2px 8px;" onclick="togglePreChecklist(decodeURIComponent(\\\'\' + siteEnc + \'\\\'), \\\'consentDone\\\', event)">\' + (mobConsent ? "☑️" : "⬜") + \' 동의서</span>\';';

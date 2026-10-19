@@ -7494,9 +7494,54 @@ assertTest('Step 97-5: setupSiteInfoSheetMenu 내 cleanSiteInfoSheetBlankRows �
   fsMainJs.indexOf('var cleaned = cleanSiteInfoSheetBlankRows(sheet);') !== -1
 );
 
-// 97-6: index.html 내 exec?v=87 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 97-6: index.html 내 exec?v=87 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml97.indexOf('exec?v=87') !== -1
+// 97-6: index.html 내 exec?v=87 이상 캐시 버스팅 파라미터 갱신 검증
+const vMatch97 = indexHtml97.match(/exec\?v=(\d+)/);
+const vNum97 = vMatch97 ? parseInt(vMatch97[1], 10) : 0;
+assertTest('Step 97-6: index.html 내 exec?v=87 이상 캐시 버스팅 파라미터 갱신 검증',
+  vNum97 >= 87
+);
+
+// ========================================================
+console.log('\n--- [Step 98]: 현장정보 시트 "드라이브 링크" 9열 및 "📁 현장 자료" 원클릭 연동 QA ---');
+
+const dashHtml98 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml98 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 98-1: ensureSiteInfoSheetHeaders 함수 존재 및 9열 '드라이브 링크' 헤더 보장 검증
+assertTest('Step 98-1: ensureSiteInfoSheetHeaders 함수 존재 및 9열 드라이브 링크 헤더 검증',
+  typeof sandbox.ensureSiteInfoSheetHeaders === 'function' &&
+  fsMainJs.indexOf('setValue("드라이브 링크")') !== -1
+);
+
+// 98-2: getSiteInfoMap 내 9열 driveUrl 매핑 및 saveFullSiteInfoFromWeb 지원 검증
+assertTest('Step 98-2: getSiteInfoMap 및 saveFullSiteInfoFromWeb driveUrl 매핑 검증',
+  fsMainJs.indexOf('driveUrl: String(row[8] || "").trim()') !== -1 &&
+  fsMainJs.indexOf('infoObj.driveUrl !== undefined') !== -1
+);
+
+// 98-3: 대시보드 내 "📁 현장 자료" 버튼 탑재 검증 (PC, 모바일 카드, 바텀시트 3개 영역)
+assertTest('Step 98-3: 대시보드 내 "📁 현장 자료" 버튼 탑재 검증 (PC, 모바일 카드, 바텀시트)',
+  dashHtml98.indexOf('btn-site-drive-link') !== -1 &&
+  dashHtml98.indexOf('📁</span> 현장 자료') !== -1 &&
+  dashHtml98.indexOf('id="sheetSiteDriveBtn"') !== -1
+);
+
+// 98-4: PC 상세 뷰 5번째 아이템 "📁 드라이브 링크" 바로가기 마크업 검증
+assertTest('Step 98-4: PC 상세 뷰 5번째 아이템 "📁 드라이브 링크" 바로가기 마크업 검증',
+  dashHtml98.indexOf('📁 드라이브 링크') !== -1 &&
+  dashHtml98.indexOf('드라이브 열기 ↗') !== -1
+);
+
+// 98-5: 현장정보 수정 모달 내 editSiteInfoDriveUrl 입력 필드 검증
+assertTest('Step 98-5: 현장정보 수정 모달 내 editSiteInfoDriveUrl 입력 필드 검증',
+  dashHtml98.indexOf('id="editSiteInfoDriveUrl"') !== -1 &&
+  dashHtml98.indexOf('function openSiteDriveLink(siteName)') !== -1 &&
+  dashHtml98.indexOf('function openCurrentTaskSiteDriveLink()') !== -1
+);
+
+// 98-6: index.html 내 exec?v=88 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 98-6: index.html 내 exec?v=88 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml98.indexOf('exec?v=88') !== -1
 );
 
 console.log('\n========================================================');
