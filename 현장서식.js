@@ -414,6 +414,7 @@ function onOpen() {
     .addItem("📁 완료현장 시트 동일 현장별 접기", "groupCompletedSitesMenu")
     .addItem("📂 완료현장 시트 전체 펼치기", "expandCompletedSitesMenu")
     .addItem("🏢 '현장정보' 시트 열기 (주소/도어락/체크리스트)", "setupSiteInfoSheetMenu")
+    .addItem("🤝 '02_거래처_정리본' 시트 생성 (10열 슬림화 백업본)", "createOrganizedPartnersBackupSheetMenu")
     .addSeparator()
 
     // [3개 제외 모든 설정 및 보조 기능은 '고급 설정 & 시스템 관리' 하위로 일원화 배치]
@@ -5709,6 +5710,1578 @@ function setupSiteInfoSheetMenu() {
 }
 
 
+
+var RAW_PARTNERS_FALLBACK_DATA = [
+  [
+    "현대천정재",
+    "시공",
+    "SMC",
+    "A팀",
+    "운영 중",
+    "SMC 천정재 (기존호흡 / 실리콘 마감 우수)",
+    "사모님",
+    "010-5335-8397",
+    "카카오톡 / 유선",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "해피바스",
+    "시공",
+    "SMC, 도기",
+    "B팀",
+    "운영 중",
+    "도기세팅 / 천정재 (2인1조 / 빠른세팅 / 현장대응력)",
+    "대표님",
+    "010-9213-4006",
+    "카카오톡 / 유선",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "도배",
+    "A팀",
+    "운영 중",
+    "도배 전반 (기존호흡 / 퀄리티 상급 / 현장대응력)",
+    "이충호 반장",
+    "010-3744-3901",
+    "카카오톡 / 유선 / 문자",
+    "",
+    "카톡방 활성화 / 스케줄 조정",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "친절한벽지",
+    "시공",
+    "도배",
+    "C팀",
+    "확인 필요",
+    "방산시장 거래처 / 간헐적 사용",
+    "",
+    "010-5210-9040",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "더탄성",
+    "시공",
+    "도장",
+    "A팀",
+    "운영 중",
+    "세라믹 도장 / 수성 (마감우수 / 면처리 섬세)",
+    "곽태윤 사장",
+    "010-3908-4006",
+    "카카오톡 / 유선",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "금성코킹",
+    "시공",
+    "마감",
+    "A팀",
+    "운영 중",
+    "실리콘 마감 / 코킹 (디테일 우수 / 마인드 좋음)",
+    "유기선 대표",
+    "010-7545-2447",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "목공",
+    "A팀",
+    "운영 중",
+    "목공 전반 (현장대응 빠름 / 기존호흡)",
+    "박동연 반장",
+    "010-5210-0290",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "카펜터스",
+    "시공",
+    "목공",
+    "B팀",
+    "운영 중",
+    "목공 (장비보유 / 유수 팀장급 네트워크 우수)",
+    "윤영웅 팀장",
+    "010-9460-2773",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "(신규발굴)",
+    "시공",
+    "설비",
+    "B팀",
+    "신규 발굴",
+    "장기적 발굴 필요 거래처",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "설비",
+    "A팀",
+    "운영 중",
+    "방통 / 설비 / 누수 / 도기세팅 (단가절대우위 / 경험多 / 우성 단독)",
+    "정경식 반장",
+    "010-3750-6903",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "꾸밀레오 도봉점",
+    "시공",
+    "설비",
+    "미지정",
+    "확인 필요",
+    "홈파기 배관시공 전문",
+    "",
+    "010-3782-1540",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "꾸밀레오 서부점",
+    "시공",
+    "설비",
+    "미지정",
+    "확인 필요",
+    "홈파기 배관시공 전문",
+    "",
+    "010-4323-2219",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "(욕실파티션)",
+    "시공",
+    "욕실",
+    "A팀",
+    "운영 중",
+    "욕실 파티션 전반",
+    "최치호 대표",
+    "010-3688-2496",
+    "카카오톡 / 유선",
+    "",
+    "욕실 파티션 전문",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "전기",
+    "A팀",
+    "운영 중",
+    "전기 전반 (대응빠름 / 단가우위 / 경험多 / 우성 단독)",
+    "최성필 반장",
+    "010-3713-7845",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "전기",
+    "B팀",
+    "운영 중",
+    "전기 기초작업 / 조명 세팅",
+    "차정률 팀장",
+    "010-8734-8586",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "줄눈",
+    "미지정",
+    "운영 중",
+    "폴리, 케라폭시 줄눈 전반",
+    "조한수 사장",
+    "010-9513-9317",
+    "유선 / 문자",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "혜성크린",
+    "시공",
+    "줄눈",
+    "미지정",
+    "확인 필요",
+    "퍼플렉스 줄눈 전문 (기존 거래처)",
+    "이정윤 팀장",
+    "",
+    "송과장님 직발주",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "이상곤",
+    "시공",
+    "철거",
+    "A팀",
+    "운영 중",
+    "가스관 철거 / 이설 전반",
+    "이상곤",
+    "010-9426-3877",
+    "유선 / 문자",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "인스",
+    "시공",
+    "철거, 마루",
+    "A팀",
+    "운영 중",
+    "바닥철거 전반 / 보유팀 다수 / 일정소화 우수",
+    "이철상 / 이영완(아드님)",
+    "010-8207-8204 / 010-8240-5404",
+    "유선 / 문자",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 3:51"
+  ],
+  [
+    "한샘인력",
+    "시공",
+    "철거, 인력",
+    "A팀",
+    "운영 중",
+    "방통현장 긴호흡 / 인력 supply",
+    "인력소장",
+    "010-3778-9374",
+    "유선",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "철거, 현장",
+    "A팀",
+    "운영 중",
+    "철거 / 1차방수 / 양중 / 현장정리 / 시공 대모도 등 (경험다수, 기존호흡)",
+    "이수현 반장",
+    "010-2231-0645",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "가인",
+    "시공",
+    "청소",
+    "A팀",
+    "운영 중",
+    "준공청소 (기존호흡)",
+    "차영태 팀장",
+    "010-6727-9612",
+    "카카오톡 / 유선 / 문자",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "그린청소",
+    "시공",
+    "청소",
+    "B팀",
+    "보류",
+    "준공청소 (기존 거래처, 최근 거래 없음)",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "타일",
+    "A팀",
+    "운영 중",
+    "타일 전반 (팀원 3명 / 떠발이 가능 / 기존호흡)",
+    "정종락 소장",
+    "010-3757-9677",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "타일원",
+    "시공",
+    "타일",
+    "B팀",
+    "운영 중",
+    "타일 (3개 팀 운영 / FM식 시공 / 다양한 스킬 보유)",
+    "안준혁 팀장",
+    "010-5557-9513",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "시공",
+    "필름",
+    "A팀",
+    "운영 중",
+    "필름 마감 (기존호흡 / AS우수 / 야간대응 가능)",
+    "조성일 반장",
+    "010-3120-4729",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "개인",
+    "외주",
+    "가구",
+    "미지정",
+    "운영 중",
+    "사제 창고장 시공 전문 (단가우위 / 기존호흡)",
+    "박춘순",
+    "010-5320-5109",
+    "",
+    "",
+    "창고장 시공",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "센스",
+    "외주",
+    "가구",
+    "미지정",
+    "운영 중",
+    "수납가구 전문 (시공 깔끔 / 참우드 소개)",
+    "안동삼 대표",
+    "010-8479-5301",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "싱크팩토리",
+    "외주",
+    "가구",
+    "미지정",
+    "운영 중",
+    "주방 / 수납 (시공팀 다수 보유 / 현장마감 / 야간대응)",
+    "엄태일 실장",
+    "010-5144-1570",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "참우드",
+    "외주",
+    "가구",
+    "미지정",
+    "운영 중",
+    "주방 / 수납 (한솔, 예림 / 인근거래처 / 단가우위)",
+    "변오수 사장",
+    "010-8319-1559",
+    "카카오톡 / 유선 / 문자",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "한샘",
+    "외주",
+    "가구",
+    "미지정",
+    "운영 중",
+    "주방 / 수납 (제휴 담당 / 가구전반 대응 우수)",
+    "김정연 팀장",
+    "010-8822-8905",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "대림설비",
+    "외주",
+    "누수탐지",
+    "미지정",
+    "확인 필요",
+    "누수탐지 (우성아파트 경험 다수 / 자문)",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "선영누수",
+    "외주",
+    "누수탐지, 보수",
+    "미지정",
+    "확인 필요",
+    "빌라 누수탐지 및 보수 경험 다수",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "김경환",
+    "외주",
+    "단열시공",
+    "미지정",
+    "확인 필요",
+    "경질, 연질 우레탄 시공 (탑층 단열 전문)",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "현데코",
+    "외주",
+    "바닥",
+    "미지정",
+    "운영 중",
+    "바닥재 전반 (AS대응 우수 / 시공팀 우수)",
+    "김정섭 대표",
+    "010-8970-3974",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "박의상",
+    "외주",
+    "방충망",
+    "미지정",
+    "확인 필요",
+    "시스템 방충망 / 특수방충망 전문",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "정순애(컬러방충망)",
+    "외주",
+    "방충망",
+    "미지정",
+    "확인 필요",
+    "아파트 망갈이 (일반시공 / 단가우위)",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "심도커텐",
+    "외주",
+    "블라인드, 커튼",
+    "미지정",
+    "확인 필요",
+    "오랜 거래 / 단가우위 / 방문견적 가능",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "에이치아트",
+    "외주",
+    "블라인드, 커튼",
+    "미지정",
+    "확인 필요",
+    "블라인드 / 커튼 (주사용 거래처)",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "그린가스 보일러",
+    "외주",
+    "설비",
+    "미지정",
+    "운영 중",
+    "린나이 보일러 (기존 거래처 / 호흡 좋음)",
+    "안건호 대표",
+    "010-7701-0654",
+    "개인문자 요청",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "보일러",
+    "외주",
+    "설비",
+    "미지정",
+    "확인 필요",
+    "린나이, 경동 (스마트홈텍 연계 협력업체)",
+    "김태영 대표",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "스마트홈텍",
+    "외주",
+    "설비",
+    "미지정",
+    "운영 중",
+    "IoT / 각방조절기 / 보일러 / 구글 네스트",
+    "노재필 대표",
+    "010-9114-8195",
+    "",
+    "",
+    "카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "대한에어텍",
+    "외주",
+    "에어컨",
+    "A팀",
+    "운영 중",
+    "LG / 삼성 시스템 에어컨 전반",
+    "이철 대표",
+    "010-2867-7271",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "광성유리",
+    "외주",
+    "유리",
+    "미지정",
+    "운영 중",
+    "제작유리 전반 (인근 거래처)",
+    "이승훈",
+    "010-8936-3845",
+    "",
+    "",
+    "중문유리, 거울 / 카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "라이프인도어",
+    "외주",
+    "중문",
+    "미지정",
+    "운영 중",
+    "중문 시공 (기존 거래처)",
+    "이연휘 실장",
+    "010-5697-9894",
+    "",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "메가중문",
+    "외주",
+    "중문",
+    "미지정",
+    "운영 중",
+    "중문 시공 (신규 거래처 / 단가우위)",
+    "김민석 팀장",
+    "010-8577-3505",
+    "",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "LX 케이엘 대리점",
+    "외주",
+    "창호",
+    "LX 대리점",
+    "확인 필요",
+    "창호 전반 (본사시공 / 고객 선호도 높음)",
+    "",
+    "010-8568-0462",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "영림",
+    "외주",
+    "창호",
+    "본사",
+    "운영 중",
+    "창호 전반 (본사 직접시공 / 디자인 우수)",
+    "황우성 주임",
+    "010-6804-0039",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 / 본사 발주담당",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "홈씨씨",
+    "외주",
+    "창호",
+    "본사",
+    "운영 중",
+    "창호 전반 (더블로이 28T / 담당사원 대응 우수)",
+    "이훈섭 대리",
+    "010-5488-0612",
+    "카카오톡 / 유선",
+    "",
+    "카톡방 활성화",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:43"
+  ],
+  [
+    "충남골재",
+    "자재",
+    "골재",
+    "미지정",
+    "확인 필요",
+    "모래 / 벽돌 / 자갈 / 시멘트 (인근 거래처)",
+    "",
+    "02-863-1472",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "스마트우드",
+    "자재",
+    "목자재",
+    "C 거래처",
+    "확인 필요",
+    "온라인 거래처 (기존 양중 / 간헐적 사용)",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "영림",
+    "자재",
+    "목자재",
+    "본사",
+    "운영 중",
+    "몰딩 / 도어 / 중문 등 (본사발주 / 단가우위)",
+    "황우성 주임",
+    "010-6804-0039",
+    "",
+    "",
+    "문짝, 몰딩, 필름 카톡 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "한국목재",
+    "자재",
+    "목자재",
+    "A 거래처",
+    "운영 중",
+    "목재 전반 (사전접수 시 인근지역 무료배송)",
+    "이혁 부장님",
+    "010-8870-9881",
+    "",
+    "",
+    "카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "김동원",
+    "자재",
+    "벽지, 지물",
+    "미지정",
+    "운영 중",
+    "신한 벽지 전반",
+    "김동원",
+    "02-848-8787",
+    "유선 / 직통",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "용택모젤",
+    "자재",
+    "벽지, 지물",
+    "미지정",
+    "확인 필요",
+    "LX 벽지 전반 (오랜 거래 / 소통 원활)",
+    "",
+    "02-847-0502",
+    "사무실 유선",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "중앙지앤아이",
+    "자재",
+    "벽지, 지물",
+    "미지정",
+    "확인 필요",
+    "개나리 벽지 전반",
+    "",
+    "010-5213-0424",
+    "실장 직통",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "광명A 장문철",
+    "자재",
+    "인조대리석",
+    "미지정",
+    "확인 필요",
+    "대리석 커스텀 발주 및 시공",
+    "",
+    "010-4934-7708",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "JK전기",
+    "자재",
+    "전기, 조명",
+    "미지정",
+    "확인 필요",
+    "전기 메인거래처 (기본품목 대부분 보유)",
+    "",
+    "",
+    "",
+    "",
+    "카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "동도조명",
+    "자재",
+    "전기, 조명",
+    "미지정",
+    "운영 중",
+    "을지로 오프라인 매장 / 대응 우수",
+    "육창현 대표",
+    "02-2267-6547",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "인앤아웃",
+    "자재",
+    "전기, 조명",
+    "미지정",
+    "확인 필요",
+    "단가 우위 / 직접 시공팀 보유 / 개인거래 병행",
+    "",
+    "",
+    "",
+    "",
+    "카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "칸트",
+    "자재",
+    "전기, 조명",
+    "미지정",
+    "운영 중",
+    "T3, 마그네틱, 라인바 등 트렌디 자재 / 샘플 지원",
+    "조유현 실장",
+    "010-3295-4547",
+    "카카오톡",
+    "",
+    "카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "JK세라믹",
+    "자재",
+    "타일, 도기",
+    "미지정",
+    "운영 중",
+    "타일 기존거래처 (쇼룸 보유 / 직원 다수)",
+    "김민희 프로",
+    "010-4024-5770",
+    "",
+    "",
+    "카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "선일타일",
+    "자재",
+    "타일, 도기",
+    "미지정",
+    "운영 중",
+    "타일/도기 (쇼룸 보유 / 제품 다양)",
+    "조성돈 과장",
+    "010-5100-4185",
+    "카카오톡 / 유선 / 문자",
+    "",
+    "카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "진영도기",
+    "자재",
+    "타일, 도기",
+    "미지정",
+    "운영 중",
+    "계림 대리점 / 계림도기, 수전 취급 (단가우수)",
+    "담당자",
+    "010-2078-3771",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "타일스토어",
+    "자재",
+    "타일, 도기",
+    "미지정",
+    "확인 필요",
+    "온라인 업체 (고급수전, 싱크볼, 백조, 필로토 등)",
+    "",
+    "",
+    "카카오톡",
+    "",
+    "싱크볼, 수전 / 카톡방 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ],
+  [
+    "청도락",
+    "자재",
+    "현관부속, 철물류",
+    "미지정",
+    "운영 중",
+    "현관 철물 일체 / 도무스 대리점 / 도어락 외주",
+    "부장",
+    "010-2668-8405",
+    "카카오톡 / 유선 / 문자",
+    "",
+    "도무스, 경첩 발주",
+    "",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44",
+    "",
+    "",
+    "2026년 9월 21일 오후 1:44"
+  ]
+];
+
+
+/**
+ * 02_거래처 원본을 절대 건드리지 않고, 10개 핵심 열로 정제된 02_거래처_정리본 백업 시트 생성
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {object} 결과 객체 { success: boolean, sheetName: string, sheetId: number, url: string, rowCount: number, message: string }
+ */
+function createOrganizedPartnersBackupSheet(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+
+  // 1. 원본 02_거래처 시트 탐색 (gid=1633721368 또는 이름 02_거래처)
+  var origSheet = null;
+  var targetGid = 1633721368;
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].getSheetId() === targetGid || sheets[i].getName() === "02_거래처") {
+      origSheet = sheets[i];
+      break;
+    }
+  }
+
+  // 2. 원본 시트에서 데이터 읽기 (원본 시트는 절대 수정/삭제하지 않음 - Read Only 보장)
+  var sourceRows = [];
+  if (origSheet && origSheet.getLastRow() >= 2) {
+    var lastR = origSheet.getLastRow();
+    var lastC = Math.max(origSheet.getLastColumn(), 18);
+    sourceRows = origSheet.getRange(2, 1, lastR - 1, lastC).getValues();
+  } else if (typeof RAW_PARTNERS_FALLBACK_DATA !== "undefined" && Array.isArray(RAW_PARTNERS_FALLBACK_DATA)) {
+    sourceRows = RAW_PARTNERS_FALLBACK_DATA;
+  }
+
+  // 3. 10개 핵심 열로 데이터 정제 및 마스터 표준화 변환
+  var transformedRows = [];
+  for (var r = 0; r < sourceRows.length; r++) {
+    var rowVals = sourceRows[r];
+    var rawName = String(rowVals[0] || "").trim();
+    if (!rawName) continue; // 빈 행 건너뜀
+
+    var rawCategory = String(rowVals[1] || "").trim();
+    var rawBiz = String(rowVals[2] || "").trim();
+    var rawPriority = String(rowVals[3] || "").trim();
+    var rawStatus = String(rowVals[4] || "").trim();
+    var rawFeature = String(rowVals[5] || "").trim();
+    var rawManager = String(rowVals[6] || "").trim();
+    var rawPhone = String(rowVals[7] || "").trim();
+    var rawOrderMethod = String(rowVals[8] || "").trim();
+    var rawNote = String(rowVals[10] || "").trim();
+
+    // 1) 업체/반장명 표준화 (식별 불가한 개인 탈피)
+    var cleanName = rawName;
+    if (rawName === "개인") {
+      cleanName = rawManager ? (rawManager + " (개인)") : ("개인 (" + rawBiz + ")");
+    } else if (rawName === "(신규발굴)") {
+      cleanName = "신규발굴 (" + rawBiz + ")";
+    } else if (rawName.indexOf("(") === 0 && rawName.lastIndexOf(")") === rawName.length - 1) {
+      cleanName = rawName.slice(1, -1) + (rawManager ? " (" + rawManager + ")" : "");
+    }
+
+    // 2) 대표 공종 표준화
+    var cleanBiz = rawBiz;
+    if (cleanBiz === "철거, 현장" || cleanBiz === "철거, 마루" || cleanBiz === "철거, 인력") cleanBiz = "철거";
+    else if (cleanBiz === "SMC, 도기") cleanBiz = "SMC / 욕실";
+    else if (cleanBiz === "누수탐지, 보수") cleanBiz = "설비 / 누수";
+    else if (cleanBiz === "전기, 조명") cleanBiz = "전기";
+    else if (cleanBiz === "타일, 도기") cleanBiz = "타일";
+    else if (cleanBiz === "블라인드, 커튼") cleanBiz = "커튼 / 블라인드";
+    else if (cleanBiz === "현관부속, 철물류") cleanBiz = "철물 / 부속";
+
+    // 3) 연락처 하이픈 포맷팅
+    var cleanPhone = rawPhone.replace(/\s+/g, "");
+    if (/^010\d{8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(010)(\d{4})(\d{4})$/, "$1-$2-$3");
+    } else if (/^02\d{7,8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(02)(\d{3,4})(\d{4})$/, "$1-$2-$3");
+    }
+
+    transformedRows.push([
+      cleanName,                // A: 업체/반장명
+      cleanBiz,                 // B: 대표 공종
+      rawCategory || "시공",     // C: 대구분
+      rawPriority || "미지정",   // D: 우선순위
+      rawManager,               // E: 담당자 / 직책
+      cleanPhone,               // F: 연락처
+      rawStatus || "운영 중",    // G: 관리상태
+      rawFeature,               // H: 주력분야 및 특징
+      rawOrderMethod,           // I: 발주/접수방식
+      rawNote                   // J: 비고
+    ]);
+  }
+
+  // 4. 새 시트 02_거래처_정리본 준비 (기존 02_거래처는 절대 건드리지 않음)
+  var targetSheetName = "02_거래처_정리본";
+  var targetSheet = ss.getSheetByName(targetSheetName);
+  if (targetSheet) {
+    targetSheet.clear();
+    targetSheet.clearFormats();
+    try { targetSheet.clearConditionalFormatRules(); } catch(eClr) {}
+  } else {
+    targetSheet = ss.insertSheet(targetSheetName);
+  }
+
+  var headers = [["업체/반장명", "대표 공종", "대구분", "우선순위", "담당자 / 직책", "연락처", "관리상태", "주력분야 및 특징", "발주/접수방식", "비고"]];
+
+  // 1) 헤더 및 데이터 입력
+  targetSheet.getRange(1, 1, 1, 10).setValues(headers);
+  if (transformedRows.length > 0) {
+    targetSheet.getRange(2, 1, transformedRows.length, 10).setValues(transformedRows);
+  }
+
+  // 2) 헤더 서식 (다크 네이비 헤더 #1e293b, 흰색 볼드 텍스트)
+  var headerRange = targetSheet.getRange(1, 1, 1, 10);
+  headerRange
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#1e293b")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  targetSheet.setRowHeight(1, 38);
+  targetSheet.setFrozenRows(1);
+
+  var totalRows = transformedRows.length;
+  if (totalRows > 0) {
+    // 3) 데이터 행 정렬 및 세로 중앙 맞춤
+    targetSheet.getRange(2, 1, totalRows, 10).setVerticalAlignment("middle");
+    [1, 2, 3, 4, 5, 6, 7, 9].forEach(function(col) {
+      targetSheet.getRange(2, col, totalRows, 1).setHorizontalAlignment("center");
+    });
+    [8, 10].forEach(function(col) {
+      targetSheet.getRange(2, col, totalRows, 1).setHorizontalAlignment("left");
+    });
+
+    // 4) 열 너비 최적화
+    var colWidths = [160, 110, 80, 100, 110, 130, 90, 280, 130, 220];
+    for (var c = 0; c < colWidths.length; c++) {
+      targetSheet.setColumnWidth(c + 1, colWidths[c]);
+    }
+
+    // 5) 드롭다운 데이터 유효성 검사 적용
+    var maxR = targetSheet.getMaxRows();
+    var categories = ["시공", "외주", "자재"];
+    targetSheet.getRange(2, 3, maxR - 1, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(categories, true).setAllowInvalid(true).build()
+    );
+    var priorities = ["A팀", "B팀", "C팀", "LX 대리점", "본사", "미지정"];
+    targetSheet.getRange(2, 4, maxR - 1, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(priorities, true).setAllowInvalid(true).build()
+    );
+    var statuses = ["운영 중", "확인 필요", "신규 발굴", "보류"];
+    targetSheet.getRange(2, 7, maxR - 1, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(statuses, true).setAllowInvalid(true).build()
+    );
+
+    // 6) 조건부 서식 설정 (Notion 스타일 컬러 뱃지)
+    var rangeBiz = targetSheet.getRange(2, 2, maxR - 1, 1);
+    var rangeCat = targetSheet.getRange(2, 3, maxR - 1, 1);
+    var rangePrio = targetSheet.getRange(2, 4, maxR - 1, 1);
+    var rangeStat = targetSheet.getRange(2, 7, maxR - 1, 1);
+    var rules = [];
+
+    // [관리상태 - G열]
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("운영 중").setBackground("#dcfce7").setFontColor("#15803d").setBold(true).setRanges([rangeStat]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("확인 필요").setBackground("#fef3c7").setFontColor("#b45309").setBold(true).setRanges([rangeStat]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("신규 발굴").setBackground("#dbeafe").setFontColor("#1d4ed8").setBold(true).setRanges([rangeStat]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("보류").setBackground("#fee2e2").setFontColor("#b91c1c").setBold(true).setRanges([rangeStat]).build());
+
+    // [대구분 - C열]
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("시공").setBackground("#dbeafe").setFontColor("#1e40af").setBold(true).setRanges([rangeCat]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("외주").setBackground("#f3e8ff").setFontColor("#6b21a8").setBold(true).setRanges([rangeCat]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("자재").setBackground("#ffedd5").setFontColor("#9a3412").setBold(true).setRanges([rangeCat]).build());
+
+    // [우선순위 - D열]
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("A팀").setBackground("#dcfce7").setFontColor("#166534").setBold(true).setRanges([rangePrio]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("B팀").setBackground("#e0f2fe").setFontColor("#0369a1").setBold(true).setRanges([rangePrio]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("C팀").setBackground("#fef9c3").setFontColor("#854d0e").setBold(true).setRanges([rangePrio]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("본사").setBackground("#e0e7ff").setFontColor("#3730a3").setBold(true).setRanges([rangePrio]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("LX 대리점").setBackground("#e0e7ff").setFontColor("#3730a3").setBold(true).setRanges([rangePrio]).build());
+
+    // [대표 공종 - B열]
+    var bizColors = [
+      { keys: ["철거", "마루"], bg: "#f1f5f9", font: "#334155" },
+      { keys: ["설비", "누수"], bg: "#cffafe", font: "#0e7490" },
+      { keys: ["전기", "조명"], bg: "#fef3c7", font: "#b45309" },
+      { keys: ["목공", "목자재"], bg: "#ffedd5", font: "#9a3412" },
+      { keys: ["타일", "줄눈", "도기"], bg: "#ccfbf1", font: "#0f766e" },
+      { keys: ["필름", "도장"], bg: "#f3e8ff", font: "#7e22ce" },
+      { keys: ["도배", "벽지", "지물"], bg: "#dcfce7", font: "#15803d" },
+      { keys: ["창호", "중문", "유리", "방충망"], bg: "#dbeafe", font: "#1d4ed8" },
+      { keys: ["가구", "블라인드", "커튼"], bg: "#fce7f3", font: "#be185d" },
+      { keys: ["에어컨"], bg: "#e0f2fe", font: "#0369a1" },
+      { keys: ["청소", "마감"], bg: "#d1fae5", font: "#047857" },
+      { keys: ["욕실", "SMC"], bg: "#e0f2fe", font: "#0284c7" }
+    ];
+    bizColors.forEach(function(item) {
+      item.keys.forEach(function(k) {
+        rules.push(SpreadsheetApp.newConditionalFormatRule()
+          .whenTextContains(k)
+          .setBackground(item.bg)
+          .setFontColor(item.font)
+          .setBold(true)
+          .setRanges([rangeBiz])
+          .build());
+      });
+    });
+
+    targetSheet.setConditionalFormatRules(rules);
+
+    // 7) 필터 적용
+    try {
+      if (!targetSheet.getFilter()) {
+        targetSheet.getDataRange().createFilter();
+      }
+    } catch(eFlt) {}
+  }
+
+  var newSheetId = targetSheet.getSheetId();
+  var ssId = ss.getId();
+  var newSheetUrl = "https://docs.google.com/spreadsheets/d/" + ssId + "/edit#gid=" + newSheetId;
+
+  return {
+    success: true,
+    sheetName: targetSheetName,
+    sheetId: newSheetId,
+    url: newSheetUrl,
+    rowCount: transformedRows.length,
+    message: "성공적으로 02_거래처_정리본 시트가 생성되었습니다. (총 " + transformedRows.length + "개 거래처)"
+  };
+}
+
+/**
+ * 상단 메뉴용 트리거
+ */
+function createOrganizedPartnersBackupSheetMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var res = createOrganizedPartnersBackupSheet(ss);
+  if (res && res.success) {
+    SpreadsheetApp.getUi().alert("🤝 거래처 정리본 생성 완료", res.message + "\n\n새로운 시트 02_거래처_정리본으로 이동합니다.", SpreadsheetApp.getUi().ButtonSet.OK);
+    if (res.sheetName && ss) {
+      var s = ss.getSheetByName(res.sheetName);
+      if (s) ss.setActiveSheet(s);
+    }
+  } else {
+    SpreadsheetApp.getUi().alert("⚠️ 오류", ((res && res.error) || "시트 생성 중 오류가 발생했습니다."), SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+
+
 // ========================================================
 // 9. [현장데이터 UI 편의 기능] (아코디언, 신규 행 추가, 삭제, 서식)
 // ========================================================
@@ -7146,6 +8719,13 @@ function doGet(e) {
       cleanedCount: cleanedCnt,
       message: cleanedCnt + "개의 유령 빈 행이 정리되고 데이터가 당겨졌습니다."
     })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-3) 거래처 정리본(10열 슬림화 백업본) 시트 생성 요청 (action=createOrganizedPartnersBackupSheet)
+  if (action === "createOrganizedPartnersBackupSheet" || action === "createPartnersBackupSheet") {
+    var backupRes = createOrganizedPartnersBackupSheet(ss);
+    return ContentService.createTextOutput(JSON.stringify(backupRes))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   // [스마트 행 자동 보정 엔진]

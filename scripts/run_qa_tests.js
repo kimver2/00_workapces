@@ -7811,6 +7811,106 @@ assertTest('Step 106-4: index.html 캐시 방지 메타 태그 및 exec?v=96 파
   indexHtml106.indexOf('exec?v=96') !== -1
 );
 
+// ========================================================
+console.log('\n--- [Step 107]: 02_거래처_정리본 10열 슬림화 백업 시트 생성 엔진 QA ---');
+
+// 107-1: createOrganizedPartnersBackupSheet 및 메뉴 함수 탑재 검증
+assertTest('Step 107-1: createOrganizedPartnersBackupSheet 및 메뉴 함수 탑재 검증',
+  typeof sandbox.createOrganizedPartnersBackupSheet === 'function' &&
+  typeof sandbox.createOrganizedPartnersBackupSheetMenu === 'function'
+);
+
+// 107-2: onOpen 메뉴 및 doGet action 핸들러 연동 검증
+assertTest('Step 107-2: onOpen 메뉴 및 doGet action 핸들러 연동 검증',
+  code.indexOf('createOrganizedPartnersBackupSheetMenu') !== -1 &&
+  code.indexOf('action === "createOrganizedPartnersBackupSheet"') !== -1
+);
+
+// 107-3: 모의 환경에서 원본 시트 비훼손(Read-Only) 및 10개 열 정리본 시트 생성 검증
+let mockCreatedSheet = null;
+let insertedHeaders = null;
+let insertedData = null;
+let isOriginalSheetCleared = false;
+
+sandbox.SpreadsheetApp.newConditionalFormatRule = () => {
+  const ruleObj = {
+    whenTextContains: (txt) => { ruleObj.txt = txt; return ruleObj; },
+    whenTextEqualTo: (txt) => { ruleObj.txt = txt; return ruleObj; },
+    setBackground: (bg) => { ruleObj.bg = bg; return ruleObj; },
+    setFontColor: (fc) => { ruleObj.fc = fc; return ruleObj; },
+    setBold: (b) => { ruleObj.bold = b; return ruleObj; },
+    setRanges: (rng) => { ruleObj.rng = rng; return ruleObj; },
+    build: () => ruleObj
+  };
+  return ruleObj;
+};
+
+const mockOrigSheet107 = {
+  getSheetId: () => 1633721368,
+  getName: () => '02_거래처',
+  getLastRow: () => 3,
+  getLastColumn: () => 18,
+  getRange: () => ({
+    getValues: () => [
+      ['개인', '시공', '도배', 'A팀', '운영 중', '도배 전반', '이충호 반장', '010-3744-3901', '카카오톡', '', '메모', '', '', '', '', '', '', ''],
+      ['현대천정재', '시공', 'SMC, 도기', 'A팀', '운영 중', '천정재', '사모님', '01053358397', '유선', '', '', '', '', '', '', '', '', '']
+    ]
+  }),
+  clear: () => { isOriginalSheetCleared = true; },
+  deleteRow: () => { isOriginalSheetCleared = true; }
+};
+
+const mockTargetSheet107 = {
+  clear: () => {},
+  clearFormats: () => {},
+  clearConditionalFormatRules: () => {},
+  getRange: (r, c, nr, nc) => ({
+    setValues: (vals) => {
+      if (r === 1) insertedHeaders = vals;
+      else insertedData = vals;
+    },
+    setFontWeight: () => mockTargetSheet107.getRange(),
+    setFontColor: () => mockTargetSheet107.getRange(),
+    setBackground: () => mockTargetSheet107.getRange(),
+    setHorizontalAlignment: () => mockTargetSheet107.getRange(),
+    setVerticalAlignment: () => mockTargetSheet107.getRange(),
+    setDataValidation: () => {}
+  }),
+  setRowHeight: () => {},
+  setFrozenRows: () => {},
+  setColumnWidth: () => {},
+  getMaxRows: () => 100,
+  getLastRow: () => 3,
+  getLastColumn: () => 10,
+  setConditionalFormatRules: () => {},
+  getFilter: () => null,
+  getDataRange: () => ({ createFilter: () => {} }),
+  getSheetId: () => 888777
+};
+
+const mockSs107 = {
+  getSheets: () => [mockOrigSheet107],
+  getSheetByName: (n) => (n === '02_거래처' ? mockOrigSheet107 : null),
+  insertSheet: (n) => {
+    mockCreatedSheet = n;
+    return mockTargetSheet107;
+  },
+  getId: () => '1V6Nb5ZB8gOfwDFsN8svMDZQYWXIJjGa9tuUYrVu0JhY'
+};
+
+const backupRunRes = sandbox.createOrganizedPartnersBackupSheet(mockSs107);
+
+assertTest('Step 107-4: 02_거래처 원본 시트 절대 비훼손 & 02_거래처_정리본 10열 데이터 변환 검증',
+  backupRunRes && backupRunRes.success === true &&
+  isOriginalSheetCleared === false && // 원본 시트는 절대 clear되지 않음!
+  mockCreatedSheet === '02_거래처_정리본' &&
+  Array.isArray(insertedHeaders) && insertedHeaders[0].length === 10 &&
+  insertedHeaders[0][0] === '업체/반장명' &&
+  Array.isArray(insertedData) && insertedData.length === 2 &&
+  insertedData[0][0] === '이충호 반장 (개인)' && // '개인'이 '이충호 반장 (개인)'으로 변환됨!
+  insertedData[1][5] === '010-5335-8397' // 01053358397이 하이픈 정규화됨!
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
