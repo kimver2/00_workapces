@@ -9454,7 +9454,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .site-info-modal-header { padding: 14px 18px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; }';
   html += '  .site-info-modal-title { font-size: 15px; font-weight: 900; color: #0f172a; display: flex; align-items: center; gap: 6px; }';
   html += '  .site-info-modal-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; max-height: 75vh; overflow-y: auto; box-sizing: border-box; }';
-  html += '  .site-info-modal-footer { padding: 12px 18px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }';
+  html += '  .site-info-modal-footer { padding: 14px 18px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px; box-sizing: border-box; }';
+  html += '  .btn-site-info-cancel { flex: 1; height: 44px; border-radius: 10px; background: #f1f5f9; color: #475569; border: 1.5px solid #cbd5e1; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.15s ease; box-sizing: border-box; }';
+  html += '  .btn-site-info-cancel:hover { background: #e2e8f0; color: #1e293b; border-color: #94a3b8; }';
+  html += '  .btn-site-info-cancel:active { transform: translateY(0.5px); }';
+  html += '  .btn-site-info-save { flex: 1; height: 44px; border-radius: 10px; background: #2563eb; color: #ffffff; border: 1.5px solid #2563eb; font-size: 14px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(37,99,235,0.25); transition: all 0.15s ease; box-sizing: border-box; }';
+  html += '  .btn-site-info-save:hover { background: #1d4ed8; border-color: #1d4ed8; box-shadow: 0 4px 10px rgba(29,78,216,0.3); }';
+  html += '  .btn-site-info-save:active { transform: translateY(0.5px); }';
+  html += '  .btn-site-info-save:disabled { background: #94a3b8; border-color: #94a3b8; cursor: not-allowed; box-shadow: none; }';
   html += '  .site-info-input-group { display: flex; flex-direction: column; gap: 4px; }';
   html += '  .site-info-input-group label { font-size: 11.5px; font-weight: 800; color: #334155; }';
   html += '  .site-info-input { width: 100%; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; outline: none; box-sizing: border-box; }';
@@ -9710,7 +9717,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .site-info-modal-header { padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; }';
   html += '  .site-info-modal-title { font-size: 15px; font-weight: 900; color: #0f172a; display: flex; align-items: center; gap: 6px; }';
   html += '  .site-info-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; max-height: 75vh; overflow-y: auto; }';
-  html += '  .site-info-modal-footer { padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }';
+  html += '  .site-info-modal-footer { padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px; box-sizing: border-box; }';
   html += '  .site-info-input-group { display: flex; flex-direction: column; gap: 4px; }';
   html += '  .site-info-input-group label { font-size: 11.5px; font-weight: 800; color: #334155; }';
   html += '  .site-info-input { width: 100%; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; outline: none; box-sizing: border-box; }';
@@ -10180,8 +10187,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </div>';
   html += '    </div>';
   html += '    <div class="site-info-modal-footer">';
-  html += '      <button type="button" class="btn-delete-cancel" onclick="closeSiteInfoEditModal()">취소</button>';
-  html += '      <button type="button" class="pc-btn-primary" id="btnSaveSiteInfo" onclick="saveSiteInfoEditModal()">💾 저장하기</button>';
+  html += '      <button type="button" class="btn-site-info-cancel" onclick="closeSiteInfoEditModal()">취소</button>';
+  html += '      <button type="button" class="btn-site-info-save" id="btnSaveSiteInfo" onclick="saveSiteInfoEditModal()">💾 저장하기</button>';
   html += '    </div>';
   html += '  </div>';
   html += '</div>';
@@ -10527,7 +10534,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function closeSiteInfoEditModal(e) {';
-  html += '  if (e && e.target && e.target !== document.getElementById("siteInfoModalOverlay") && !e.target.classList.contains("sheet-close") && !e.target.classList.contains("btn-delete-cancel")) return;';
+  html += '  if (e && e.target && e.target !== document.getElementById("siteInfoModalOverlay") && !e.target.classList.contains("sheet-close") && !e.target.classList.contains("btn-delete-cancel") && !e.target.classList.contains("btn-site-info-cancel")) return;';
   html += '  const modal = document.getElementById("siteInfoModalOverlay");';
   html += '  if (modal) modal.classList.remove("active");';
   html += '}';

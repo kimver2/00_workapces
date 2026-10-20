@@ -7651,9 +7651,45 @@ assertTest('Step 101-4: openCurrentTaskPartnerGuideModal 및 openCurrentTaskSite
   dashHtml101.indexOf('function openCurrentTaskSiteDriveLink()') !== -1
 );
 
-// 101-5: index.html 내 exec?v=91 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 101-5: index.html 내 exec?v=91 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml101.indexOf('exec?v=91') !== -1
+// 101-5: index.html 내 exec?v=91 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 101-5: index.html 내 exec?v=91 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:9[1-9]|[1-9]\d{2,})/.test(indexHtml101)
+);
+
+// ========================================================
+console.log('\n--- [Step 102]: 현장 정보 관리 모달 취소/저장 버튼 동일 스타일 & 5:5 비율 QA ---');
+
+const dashHtml102 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml102 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 102-1: site-info-modal-footer 내 btn-site-info-cancel 및 btn-site-info-save 클래스 탑재 검증
+assertTest('Step 102-1: site-info-modal-footer 내 btn-site-info-cancel 및 btn-site-info-save 클래스 탑재 검증',
+  dashHtml102.indexOf('class="btn-site-info-cancel"') !== -1 &&
+  dashHtml102.indexOf('class="btn-site-info-save"') !== -1 &&
+  dashHtml102.indexOf('id="btnSaveSiteInfo"') !== -1
+);
+
+// 102-2: CSS 내 취소/저장 버튼 5:5 분할(flex: 1) 및 동일 높이(44px), 모서리 반경(10px), 폰트(14px) 검증
+assertTest('Step 102-2: 취소/저장 버튼 5:5 분할(flex: 1), 동일 높이(44px), 모서리 반경(10px), 폰트(14px) 검증',
+  dashHtml102.indexOf('.btn-site-info-cancel { flex: 1; height: 44px; border-radius: 10px;') !== -1 &&
+  dashHtml102.indexOf('.btn-site-info-save { flex: 1; height: 44px; border-radius: 10px;') !== -1
+);
+
+// 102-3: closeSiteInfoEditModal 함수 내 btn-site-info-cancel 닫기 타겟 지원 검증
+assertTest('Step 102-3: closeSiteInfoEditModal 함수 내 btn-site-info-cancel 닫기 타겟 지원 검증',
+  dashHtml102.indexOf('classList.contains("btn-site-info-cancel")') !== -1 &&
+  dashHtml102.indexOf('function closeSiteInfoEditModal(e)') !== -1
+);
+
+// 102-4: site-info-modal-footer 패딩 및 gap: 10px 균형 배치 검증
+assertTest('Step 102-4: site-info-modal-footer 패딩 및 gap: 10px 균형 배치 검증',
+  dashHtml102.indexOf('.site-info-modal-footer { padding: 14px') !== -1 &&
+  dashHtml102.indexOf('gap: 10px;') !== -1
+);
+
+// 102-5: index.html 내 exec?v=92 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 102-5: index.html 내 exec?v=92 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml102.indexOf('exec?v=92') !== -1
 );
 
 console.log('\n========================================================');
