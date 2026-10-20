@@ -575,7 +575,9 @@ assertTest('날짜 파싱 시 하드코딩 2026 폴백 완전 제거 여부 (동
 const hasHardcodedCleanupDate = code.indexOf('c2.getValue()).trim() === "2026"') !== -1 || code.indexOf('e2.getValue()).trim() === "10"') !== -1;
 assertTest('데이터 청소 시 특정 연도(2026)/월(10) 하드코딩 완전 제거 여부 (범용 정규식 적용)', !hasHardcodedCleanupDate);
 
-const cleanupFnStr = code.slice(code.indexOf('function cleanupEmptyRowsMetadata'));
+const cleanupIdx = code.indexOf('function cleanupEmptyRowsMetadata');
+const nextFnIdx = code.indexOf('\nfunction ', cleanupIdx + 10);
+const cleanupFnStr = code.slice(cleanupIdx, nextFnIdx !== -1 ? nextFnIdx : cleanupIdx + 2500);
 const hasHardcodedTaskNamesInCleanup = cleanupFnStr.indexOf('"목공"') !== -1 || cleanupFnStr.indexOf('"퍼플렉스"') !== -1;
 assertTest('B열 날짜 청소 시 특정 공종명("목공", "퍼플렉스") 하드코딩 완전 제거 여부', !hasHardcodedTaskNamesInCleanup);
 
@@ -5366,6 +5368,7 @@ clientSandbox57.document.createElement = () => ({ value: '', innerText: '' });
 mockElems57.sheetManagerSelect.appendChild = function() {};
 [
   'sheetCreateFields', 'sheetSiteSelect', 'sheetSiteCustomInput', 'sheetTaskInput',
+  'sheetTaskSelect', 'sheetTaskCustomInput', 'sheetManagerSelect2', 'sheetManagerCustomInput2',
   'sheetPartnerInput', 'sheetAddSameDateBtn', 'btnOpenAddTask', 'sheetSiteName',
   'sheetTaskName', 'sheetGoToRowBtn', 'sheetMiniGoToRowBtn', 'sheetDayNav',
   'sheetNativeDatePicker', 'sheetManagerCustomInput', 'sheetShareOn', 'sheetShareOff',
@@ -5379,6 +5382,7 @@ mockElems57.sheetManagerSelect.appendChild = function() {};
       innerHTML: '',
       options: [],
       focus: function() {},
+      appendChild: function() {},
       classList: {
         _set: new Set(),
         add: function(c) { this._set.add(c); },
@@ -7804,11 +7808,11 @@ assertTest('Step 106-3: PC 정보 패널 empty 클래스 스타일(11.5px, font-
   dashHtml106Web.indexOf('.pc-info-item-val.empty { color: #94a3b8 !important; font-weight: 500 !important; font-size: 11.5px !important; font-style: normal !important; }') !== -1
 );
 
-// 106-4: index.html 캐시 방지 메타 태그 및 exec?v=96 파라미터 갱신 검증
-assertTest('Step 106-4: index.html 캐시 방지 메타 태그 및 exec?v=96 파라미터 갱신 검증',
+// 106-4: index.html 캐시 방지 메타 태그 및 exec?v=96 이상 파라미터 갱신 검증
+assertTest('Step 106-4: index.html 캐시 방지 메타 태그 및 exec?v=96 이상 파라미터 갱신 검증',
   indexHtml106.indexOf('http-equiv="Cache-Control"') !== -1 &&
   indexHtml106.indexOf('content="no-cache, no-store, must-revalidate"') !== -1 &&
-  indexHtml106.indexOf('exec?v=96') !== -1
+  /exec\?v=(?:9[6-9]|[1-9]\d{2,})/.test(indexHtml106)
 );
 
 // ========================================================
@@ -7909,6 +7913,140 @@ assertTest('Step 107-4: 02_거래처 원본 시트 절대 비훼손 & 02_거래�
   Array.isArray(insertedData) && insertedData.length === 2 &&
   insertedData[0][0] === '이충호 반장 (개인)' && // '개인'이 '이충호 반장 (개인)'으로 변환됨!
   insertedData[1][5] === '010-5335-8397' // 01053358397이 하이픈 정규화됨!
+);
+
+console.log('\n--- [Step 108]: 04_공종 마스터 시트 연동, 공종 영구 보존(비원복), 최대 2명 담당자 및 공종 드롭다운 QA ---');
+const mainJsContent = code;
+
+assertTest('Step 108-1: findTasksSheet, isTasksSheet, createTasksSheet, createTasksSheetMenu 함수 탑재 검증',
+  typeof sandbox.findTasksSheet === 'function' &&
+  typeof sandbox.isTasksSheet === 'function' &&
+  typeof sandbox.createTasksSheet === 'function' &&
+  typeof sandbox.createTasksSheetMenu === 'function'
+);
+
+// 108-2: createTasksSheet 동작 및 헤더, 기본 공종 탑재 검증
+let tasksSheetCreated = '';
+let tasksHeaders = null;
+let tasksData = null;
+const mockTasksSheetObj = {
+  getName: () => '04_공종',
+  getSheetId: () => 888123,
+  getLastRow: () => 31,
+  clear: () => {},
+  clearFormats: () => {},
+  getRange: (r, c, nr, nc) => ({
+    setValues: (vals) => {
+      if (r === 1) tasksHeaders = vals;
+      else tasksData = vals;
+      return mockTasksSheetObj.getRange(r, c, nr, nc);
+    },
+    setFontWeight: () => mockTasksSheetObj.getRange(r, c, nr, nc),
+    setFontColor: () => mockTasksSheetObj.getRange(r, c, nr, nc),
+    setBackground: () => mockTasksSheetObj.getRange(r, c, nr, nc),
+    setHorizontalAlignment: () => mockTasksSheetObj.getRange(r, c, nr, nc),
+    setVerticalAlignment: () => mockTasksSheetObj.getRange(r, c, nr, nc)
+  }),
+  setRowHeight: () => {},
+  setFrozenRows: () => {},
+  setColumnWidth: () => {},
+  getFilter: () => null,
+  getDataRange: () => ({ createFilter: () => {} })
+};
+
+const mockSs108 = {
+  getSheetByName: (n) => (n === '04_공종' ? mockTasksSheetObj : null),
+  insertSheet: (n) => { tasksSheetCreated = n; return mockTasksSheetObj; },
+  getSheets: () => [mockTasksSheetObj],
+  getId: () => 'mockSsId108'
+};
+
+const resTSheet = sandbox.createTasksSheet(mockSs108);
+
+assertTest('Step 108-2: createTasksSheet 실행 시 04_공종 시트 헤더(공종명/구분/비고) 및 실무 30개 기본 공종 입력 검증',
+  resTSheet !== null &&
+  Array.isArray(tasksHeaders) && tasksHeaders[0][0] === '공종명' && tasksHeaders[0][1] === '구분' &&
+  Array.isArray(tasksData) && tasksData.length >= 25 &&
+  tasksData.some(row => row[0] === '철거') &&
+  tasksData.some(row => row[0] === '설비') &&
+  tasksData.some(row => row[0] === '전기') &&
+  tasksData.some(row => row[0] === '목공') &&
+  tasksData.some(row => row[0] === 'AS')
+);
+
+// 108-3: getAvailableTasks가 04_공종 시트를 최우선으로 읽고 삭제 시 원복되지 않는지 검증
+let customTasksInSheet = [['철거'], ['목공'], ['타일'], ['신규커스텀공종']]; // 4개만 남긴 경우
+const mockCustomTasksSheet = {
+  getName: () => '04_공종',
+  getLastRow: () => customTasksInSheet.length + 1,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => customTasksInSheet
+  })
+};
+const mockSsWithCustomTasks = {
+  getSheets: () => [mockCustomTasksSheet],
+  getSheetByName: (n) => (n === '04_공종' ? mockCustomTasksSheet : null),
+  getId: () => 'mockSsIdCustom'
+};
+
+const loadedAvailableTasks = sandbox.getAvailableTasks({ getParent: () => mockSsWithCustomTasks });
+
+assertTest('Step 108-3: getAvailableTasks가 04_공종 시트의 공종 목록을 최우선으로 읽어 삭제된 공종이 되살아나지 않고 신규 공종이 정확히 반영됨을 검증',
+  Array.isArray(loadedAvailableTasks) &&
+  loadedAvailableTasks.length === 4 &&
+  loadedAvailableTasks.includes('철거') &&
+  loadedAvailableTasks.includes('신규커스텀공종') &&
+  !loadedAvailableTasks.includes('도기세팅 천장') // 삭제된 항목은 절대 되살아나지 않음!
+);
+
+// 108-4: onOpen 메뉴 및 onEdit 내 04_공종 시트 연동 검증
+assertTest('Step 108-4: onOpen 상단 메뉴 [04_공종 마스터 시트 생성/최신화] 및 onEdit isTasksSheet 연동 검증',
+  mainJsContent.includes('"🏷️ \'04_공종\' 마스터 시트 생성/최신화"') &&
+  mainJsContent.includes('isTasksSheet(sheet)') &&
+  mainJsContent.includes('applySiteScheduleValidations(siteSheet2)')
+);
+
+// 108-5: formatManagerName 다중 담당자(2명) 자르지 않고 전체 반환 검증
+const testDashHtml = sandbox.buildSidebarDashboardHtml("mobile");
+
+assertTest('Step 108-5: formatManagerName이 쉼표나 슬래시로 입력된 2인의 담당자를 자르지 않고 직책 제거 후 전체 보존 검증',
+  testDashHtml.includes('const parts = String(m).split(/[,/]/).map(p => p.trim()).filter(Boolean);') &&
+  testDashHtml.includes('return cleanParts.join(", ");')
+);
+
+// 108-6: 모달 마크업 내 sheetTaskSelect, sheetManagerSelect2 탑재 및 task-quick-chips 고정 버튼 삭제 검증
+assertTest('Step 108-6: 모달 마크업 내 sheetTaskSelect, sheetManagerSelect2 탑재 및 task-quick-chips 고정 버튼 삭제 검증',
+  testDashHtml.includes('id="sheetTaskSelect"') &&
+  testDashHtml.includes('id="sheetTaskCustomInput"') &&
+  testDashHtml.includes('id="sheetManagerSelect2"') &&
+  testDashHtml.includes('id="sheetManagerCustomInput2"') &&
+  !testDashHtml.includes('class="task-quick-chips"') // 고정 칩 영역 완전 삭제 확인
+);
+
+// 108-7: populateTaskSelectOptions 및 populateManagerSelectOptions 2인 채우기 검증
+assertTest('Step 108-7: populateTaskSelectOptions 및 populateManagerSelectOptions 2인 옵션 구성 함수 검증',
+  testDashHtml.includes('function populateTaskSelectOptions(tasks)') &&
+  testDashHtml.includes('function onSheetTaskSelect(val)') &&
+  testDashHtml.includes('const sel2 = document.getElementById("sheetManagerSelect2");') &&
+  testDashHtml.includes('function onSheetManagerSelect2(val)')
+);
+
+// 108-8: saveSheetTask 내 2인 담당자 조합 및 sheetTaskSelect 수집 검증
+assertTest('Step 108-8: saveSheetTask 내 2인 담당자 조합(mgr1 + ", " + mgr2) 및 sheetTaskSelect 수집 검증',
+  testDashHtml.includes('mgrVal = (mgrVal1 === mgrVal2) ? mgrVal1 : (mgrVal1 + ", " + mgrVal2);') &&
+  testDashHtml.includes('const taskSel = document.getElementById("sheetTaskSelect");')
+);
+
+// 108-9: getSidebarDashboardData 리턴 객체 내 tasks 배열 포함 검증
+assertTest('Step 108-9: getSidebarDashboardData 리턴 객체에 최신 공종 목록(tasks) 포함 검증',
+  mainJsContent.includes('tasks: getAvailableTasks(sheet)') &&
+  mainJsContent.includes('tasks: getAvailableTasks(null)')
+);
+
+// 108-10: index.html 캐시 파라미터 v=99 갱신 검증
+const indexHtmlContent108 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 108-10: index.html 내 exec?v=99 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent108.includes('exec?v=99')
 );
 
 console.log('\n========================================================');

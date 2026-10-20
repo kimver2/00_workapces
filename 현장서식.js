@@ -33,79 +33,246 @@ var DEFAULT_CALENDAR_ID_OR_NAME = "현장 일정";
 // ========================================================
 
 /**
- * 공종 기본 드롭다운 목록 반환 (기본 50+ 공종 사전 + 시트 기존 공종 자동 병합)
+ * [공종 마스터] 시트 찾기 (04_공종, 공종, 공종목록 등)
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @param {boolean} [createIfMissing=false]
+ * @return {GoogleAppsScript.Spreadsheet.Sheet|null}
  */
-function getAvailableTasks(sheet) {
-  var baseTasks = [
-    "상담", "신고", "관리소신고", "동의서", "실측", "창호실측", "현장실측", "도면/설계",
-    "보양", "엘리베이터보양", "현관보양", "바닥보양",
-    "철거", "마루철거", "욕실철거", "확장철거", "폐기물",
-    "설비", "배관", "방수", "미장", "조적", "젠다이", "누수보수",
-    "전기", "전기입선", "전기마감", "조명", "스위치/콘센트",
-    "에어컨", "시스템에어컨", "냉매배관",
-    "목공", "목공마감", "단열", "가벽", "도어설치", "문틀", "중문", "터닝도어", "폴딩도어", "현관부속",
-    "창호", "샷시", "창호실측", "창호a/s", "유리", "난간대",
-    "타일", "줄눈", "퍼플렉스", "아덱스", "SMC", "돔천장", "도기", "도기세팅 천장", "도기세팅", "코킹", "실리콘",
-    "필름", "인테리어필름", "도장", "페인트", "탄성코트",
-    "도배", "실크도배", "바닥", "마루시공", "강마루", "장판", "데코타일",
-    "주방", "싱크대", "가구", "수납가구", "붙박이장", "신발장",
-    "마감", "잔마감", "청소", "준공청소", "입주청소", "입주", "현장촬영", "S/A", "AS", "점검"
-  ];
+function findTasksSheet(ss, createIfMissing) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
 
-  var uniqueTasks = [];
-  for (var i = 0; i < baseTasks.length; i++) {
-    if (uniqueTasks.indexOf(baseTasks[i]) === -1) {
-      uniqueTasks.push(baseTasks[i]);
+  var sheets = ss.getSheets();
+  var candidateNames = ["04_공종", "공종", "공종목록", "공종_목록", "공정", "공정목록", "tasks", "task"];
+  for (var i = 0; i < sheets.length; i++) {
+    var sName = sheets[i].getName().trim().toLowerCase();
+    for (var c = 0; c < candidateNames.length; c++) {
+      if (sName === candidateNames[c].toLowerCase() || sName.indexOf(candidateNames[c].toLowerCase()) !== -1) {
+        return sheets[i];
+      }
     }
   }
 
-  // 시트에 이미 입력된 커스텀 공종(예: 사용자가 직접 입력한 모든 공종) 자동 수집 및 병합하여 빨간 삼각형 에러 방지
-  if (sheet && typeof sheet.getLastRow === "function") {
+  if (createIfMissing) {
+    return createTasksSheet(ss);
+  }
+  return null;
+}
+
+/**
+ * 주어진 시트가 [04_공종] (또는 공종/공종목록) 시트인지 확인
+ */
+function isTasksSheet(sheet) {
+  if (!sheet) return false;
+  var sName = sheet.getName().trim().toLowerCase();
+  var candidateNames = ["04_공종", "공종", "공종목록", "공종_목록", "공정", "공정목록", "tasks", "task"];
+  for (var c = 0; c < candidateNames.length; c++) {
+    if (sName === candidateNames[c].toLowerCase() || sName.indexOf(candidateNames[c].toLowerCase()) !== -1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * [04_공종] 마스터 시트 신규 생성 및 실무 기본 데이터 탑재
+ */
+function createTasksSheet(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
+
+  var sheetName = "04_공종";
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  } else {
+    sheet.clear();
+    sheet.clearFormats();
+  }
+
+  // 1. 헤더 설정 (다크네이비 #1e293b, 백색 볼드)
+  var headers = [["공종명", "구분", "비고"]];
+  var headerRange = sheet.getRange(1, 1, 1, 3);
+  headerRange
+    .setValues(headers)
+    .setFontWeight("bold")
+    .setFontColor("#ffffff")
+    .setBackground("#1e293b")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  sheet.setRowHeight(1, 38);
+  sheet.setFrozenRows(1);
+
+  // 2. 실무 표준 기본 공종 30종 탑재
+  var defaultTasks = [
+    ["철거", "철거/설비", "현장 및 바닥 철거"],
+    ["설비", "철거/설비", "배관, 방수, 위생설비"],
+    ["누수보수", "철거/설비", "누수 탐지 및 배관 수리"],
+    ["전기", "전기/조명", "기본 전기 및 배선"],
+    ["전기입선", "전기/조명", "배선 입선 작업"],
+    ["전기마감", "전기/조명", "콘센트, 스위치 마감"],
+    ["조명", "전기/조명", "조명 기구 설치"],
+    ["에어컨", "공조/설비", "시스템/벽걸이 에어컨"],
+    ["목공", "목공/창호", "가벽, 천장, 도어틀 목공"],
+    ["도어설치", "목공/창호", "도어, 문짝 설치"],
+    ["중문", "목공/창호", "중문, 슬라이딩도어"],
+    ["창호", "목공/창호", "샷시, 창호 시공"],
+    ["창호실측", "목공/창호", "창호 제작 실측"],
+    ["타일", "타일/욕실", "벽, 바닥 타일 시공"],
+    ["줄눈", "타일/욕실", "줄눈 시공"],
+    ["도기", "타일/욕실", "도기, 수전 설치"],
+    ["SMC", "타일/욕실", "욕실 돔천장"],
+    ["필름", "마감/도장", "인테리어 필름 시공"],
+    ["도장", "마감/도장", "페인트, 탄성코트"],
+    ["도배", "마감/바닥", "실크/합지 벽지 도배"],
+    ["마루", "마감/바닥", "강마루, 원목마루"],
+    ["바닥", "마감/바닥", "장판, 데코타일"],
+    ["가구", "가구/주방", "맞춤가구, 싱크대"],
+    ["주방", "가구/주방", "주방 싱크대 시공"],
+    ["보양", "사전/준비", "승강기, 현관, 바닥 보양"],
+    ["청소", "준공/마감", "준공 입주 청소"],
+    ["마감", "준공/마감", "잔손보기, 최종 마감"],
+    ["상담", "고객/계약", "현장 미팅 및 상담"],
+    ["현장실측", "사전/준비", "착공 전 현장 정밀 실측"],
+    ["AS", "사후관리", "하자 보수"]
+  ];
+
+  sheet.getRange(2, 1, defaultTasks.length, 3).setValues(defaultTasks);
+  sheet.getRange(2, 1, defaultTasks.length, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 3, defaultTasks.length, 1).setHorizontalAlignment("left");
+  sheet.getRange(2, 1, defaultTasks.length, 3).setVerticalAlignment("middle");
+
+  // 3. 열 너비 최적화
+  sheet.setColumnWidth(1, 160);
+  sheet.setColumnWidth(2, 130);
+  sheet.setColumnWidth(3, 240);
+
+  // 4. 필터 설정
+  try {
+    if (!sheet.getFilter()) {
+      sheet.getDataRange().createFilter();
+    }
+  } catch(e) {}
+
+  return sheet;
+}
+
+/**
+ * [상단 메뉴용] 04_공종 시트 생성 메뉴 트리거
+ */
+function createTasksSheetMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = createTasksSheet(ss);
+  if (sheet) {
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+      invalidateDashboardServerCache();
+    } catch(eSync) {}
+    SpreadsheetApp.getUi().alert(
+      "🏷️ '04_공종' 마스터 시트 준비 완료",
+      "공종 마스터 시트 '04_공종'이 성공적으로 생성/최신화되었습니다!\n\n" +
+      "이 시트에서 공종을 자유롭게 추가하거나 삭제하시면,\n" +
+      "'현장데이터' 시트의 드롭다운과 웹 대시보드에 실시간으로 즉시 반영됩니다.",
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+    ss.setActiveSheet(sheet);
+  }
+}
+
+/**
+ * 공종 목록 반환 (04_공종 시트 최우선 연동 + 시트 직접 편집 영구 보존)
+ */
+function getAvailableTasks(sheet) {
+  var ss = null;
+  try {
+    ss = sheet ? (sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet()) : SpreadsheetApp.getActiveSpreadsheet();
+  } catch(e) {}
+  if (!ss) ss = getAppSpreadsheet();
+
+  var tasks = [];
+  var seen = {};
+
+  // ① [1순위: '04_공종' (또는 '공종') 마스터 시트 최우선 연동]
+  // 사용자가 공종 마스터 시트에서 공종을 삭제하면 드롭다운에서도 즉시 삭제되고, 추가하면 즉시 반영!
+  if (ss) {
+    try {
+      var tSheet = findTasksSheet(ss, false);
+      if (tSheet && tSheet.getLastRow() >= 2) {
+        var tVals = tSheet.getRange(2, 1, tSheet.getLastRow() - 1, 1).getValues();
+        for (var i = 0; i < tVals.length; i++) {
+          var tn = String(tVals[i][0] || "").trim();
+          if (tn && !seen[tn]) {
+            seen[tn] = true;
+            tasks.push(tn);
+          }
+        }
+      }
+    } catch (eT) {}
+  }
+
+  // ② [2순위: 공종 마스터 시트가 비어있는 경우, 현장데이터 시트 C열의 기존 공종들 수집]
+  if (tasks.length === 0 && sheet && typeof sheet.getLastRow === "function") {
     try {
       var lastR = sheet.getLastRow();
       if (lastR >= 2) {
         var existingVals = sheet.getRange(2, 3, lastR - 1, 1).getValues();
         for (var j = 0; j < existingVals.length; j++) {
           var t = String(existingVals[j][0] || "").trim();
-          if (t && uniqueTasks.indexOf(t) === -1) {
-            uniqueTasks.push(t);
+          if (t && !seen[t]) {
+            seen[t] = true;
+            tasks.push(t);
           }
         }
       }
     } catch (e) {}
   }
 
-  return uniqueTasks;
+  // ③ [3순위: 시스템 기본 폴백 공종]
+  if (tasks.length === 0) {
+    tasks = [
+      "상담", "신고", "관리소신고", "동의서", "실측", "창호실측", "현장실측", "도면/설계",
+      "보양", "엘리베이터보양", "현관보양", "바닥보양",
+      "철거", "마루철거", "욕실철거", "확장철거", "폐기물",
+      "설비", "배관", "방수", "미장", "조적", "젠다이", "누수보수",
+      "전기", "전기입선", "전기마감", "조명", "스위치/콘센트",
+      "에어컨", "시스템에어컨", "냉매배관",
+      "목공", "목공마감", "단열", "가벽", "도어설치", "문틀", "중문", "터닝도어", "폴딩도어", "현관부속",
+      "창호", "샷시", "창호a/s", "유리", "난간대",
+      "타일", "줄눈", "퍼플렉스", "아덱스", "SMC", "돔천장", "도기", "도기세팅 천장", "도기세팅", "코킹", "실리콘",
+      "필름", "인테리어필름",
+      "도장", "페인트", "탄성코트",
+      "도배",
+      "마루", "강마루", "원목마루", "장판", "데코타일", "바닥",
+      "가구", "싱크대", "붙박이장", "신발장",
+      "준공청소", "입주청소", "청소", "마감",
+      "마감점검", "하자보수", "AS"
+    ];
+  }
+
+  return tasks;
 }
 
 /**
  * 신규 공종 실시간 자동 학습 엔진 (Auto-Learning Task Validation)
  * 사용자가 사전에 정의되지 않은 새로운 공종을 C열에 직접 타이핑하면
- * 즉시 드롭다운 유효성 목록에 자동 추가하여 빨간 삼각형 경고를 실시간 해제합니다.
+ * 즉시 드롭다운 유효성 목록에 자동 추가하고, '04_공종' 시트에도 자동 행 추가하여 영구 보존합니다.
  */
 function ensureTasksInValidation(sheet, newTasks) {
   if (!sheet || !newTasks || newTasks.length === 0) return;
   try {
     var maxRows = Math.max(sheet.getLastRow(), (typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100));
-    var currentRule = sheet.getRange(2, 3).getDataValidation();
-    var allowedList = [];
-
-    if (currentRule && currentRule.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
-      var args = currentRule.getCriteriaValues();
-      if (args && args[0] && Array.isArray(args[0])) {
-        allowedList = args[0].slice();
-      }
-    }
-
-    if (allowedList.length === 0) {
-      allowedList = getAvailableTasks(sheet);
-    }
+    var allowedList = getAvailableTasks(sheet);
 
     var added = false;
+    var toAppendInTaskSheet = [];
     for (var i = 0; i < newTasks.length; i++) {
       var t = String(newTasks[i] || "").trim();
       if (t && allowedList.indexOf(t) === -1) {
         allowedList.push(t);
+        toAppendInTaskSheet.push(t);
         added = true;
       }
     }
@@ -116,6 +283,20 @@ function ensureTasksInValidation(sheet, newTasks) {
         .setAllowInvalid(true)
         .build();
       sheet.getRange(2, 3, maxRows - 1, 1).setDataValidation(newRule);
+
+      // '04_공종' 시트에도 자동으로 신규 공종 행 추가하여 영구 보존!
+      try {
+        var ss = sheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
+        var tSheet = findTasksSheet(ss, false);
+        if (tSheet && toAppendInTaskSheet.length > 0) {
+          var appendRows = toAppendInTaskSheet.map(function(tName) {
+            return [tName, "기타", "현장 직접 입력"];
+          });
+          var nextRow = tSheet.getLastRow() + 1;
+          tSheet.getRange(nextRow, 1, appendRows.length, 3).setValues(appendRows);
+          tSheet.getRange(nextRow, 1, appendRows.length, 2).setHorizontalAlignment("center");
+        }
+      } catch (eApp) {}
     }
   } catch (e) {
     Logger.log("공종 실시간 자동 학습 예외: " + e.toString());
@@ -399,6 +580,7 @@ function onOpen() {
       var sheet = findSiteScheduleSheet(activeSs);
       if (sheet) {
         cleanNonDelayedRowBackgroundsSilent(sheet);
+        findTasksSheet(activeSs, true);
         applySiteScheduleValidations(sheet);
       }
     }
@@ -414,6 +596,7 @@ function onOpen() {
     .addItem("📁 완료현장 시트 동일 현장별 접기", "groupCompletedSitesMenu")
     .addItem("📂 완료현장 시트 전체 펼치기", "expandCompletedSitesMenu")
     .addItem("🏢 '현장정보' 시트 열기 (주소/도어락/체크리스트)", "setupSiteInfoSheetMenu")
+    .addItem("🏷️ '04_공종' 마스터 시트 생성/최신화", "createTasksSheetMenu")
     .addItem("🤝 '02_거래처_정리본' 시트 생성 (10열 슬림화 백업본)", "createOrganizedPartnersBackupSheetMenu")
     .addSeparator()
 
@@ -1039,6 +1222,22 @@ function onEdit(e) {
       invalidateDashboardServerCache();
     } catch (eMem) {
       Logger.log("구성원 시트 편집 시 담당자 드롭다운 갱신 예외: " + eMem.toString());
+    }
+    return;
+  }
+
+  // ②-2 [04_공종 시트 변경 감지 -> 현장데이터 공종(C열) 드롭다운 즉시 실시간 갱신]
+  // 사용자가 04_공종 시트에서 공종을 추가/삭제/수정하면, 즉시 현장데이터 시트의
+  // 공종 드롭다운 유효성 검사 목록을 최신 공종 명단으로 자동 동기화합니다.
+  if (isTasksSheet(sheet)) {
+    try {
+      var siteSheet2 = findSiteScheduleSheet(ss);
+      if (siteSheet2) {
+        applySiteScheduleValidations(siteSheet2);
+      }
+      invalidateDashboardServerCache();
+    } catch (eTask) {
+      Logger.log("공종 시트 편집 시 드롭다운 갱신 예외: " + eTask.toString());
     }
     return;
   }
@@ -8728,6 +8927,49 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 0-4) 스프레드시트 디버그/진단 정보 요청 (action=debugInfo)
+  if (action === "debugInfo" || action === "getSheetsInfo") {
+    var allSheets = ss ? ss.getSheets() : [];
+    var sheetNames = allSheets.map(function(s) { return { name: s.getName(), id: s.getSheetId(), lastRow: s.getLastRow(), lastCol: s.getLastColumn() }; });
+    var valRule = sheet ? sheet.getRange(2, 3).getDataValidation() : null;
+    var valCriteria = (valRule && valRule.getCriteriaValues && valRule.getCriteriaValues()[0]) || [];
+    var curTasks = [];
+    if (sheet && sheet.getLastRow() >= 2) {
+      var tVals = sheet.getRange(2, 3, sheet.getLastRow() - 1, 1).getValues();
+      for (var ti = 0; ti < tVals.length; ti++) {
+        var tv = String(tVals[ti][0] || "").trim();
+        if (tv && curTasks.indexOf(tv) === -1) curTasks.push(tv);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({
+      sheets: sheetNames,
+      taskValidationCriteria: valCriteria,
+      currentTasksInSchedule: curTasks,
+      members: getMemberNames(ss)
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-5) '04_공종' 마스터 시트 생성/최신화 요청 (action=createTasksSheet)
+  if (action === "createTasksSheet" || action === "setupTasksSheet") {
+    var tSheet = createTasksSheet(ss);
+    var tCount = 0;
+    var tSheetId = 0;
+    if (tSheet) {
+      tSheetId = tSheet.getSheetId();
+      tCount = Math.max(0, tSheet.getLastRow() - 1);
+      if (sheet) applySiteScheduleValidations(sheet);
+      invalidateDashboardServerCache();
+    }
+    return ContentService.createTextOutput(JSON.stringify({
+      success: !!tSheet,
+      sheetName: "04_공종",
+      sheetId: tSheetId,
+      url: ss ? ("https://docs.google.com/spreadsheets/d/" + ss.getId() + "/edit#gid=" + tSheetId) : "",
+      taskCount: tCount,
+      message: "성공적으로 04_공종 마스터 시트가 준비되었습니다. (총 " + tCount + "개 공종 등록)"
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
   // [스마트 행 자동 보정 엔진]
   // 신규 현장 추가, 행 삭제, 정렬 등으로 인해 시트 행 번호가 밀린 경우 실시간 자동 재탐색
   if (sheet && (targetId || targetSite || targetTask)) {
@@ -10286,6 +10528,9 @@ function getSidebarDashboardData(forceRefresh) {
                 if (Array.isArray(parsedCache.members)) {
                   parsedCache.members = parsedCache.members.filter(function(m) { return m !== "김종혁" && m !== "영하"; });
                 }
+                if (!parsedCache.tasks || !Array.isArray(parsedCache.tasks)) {
+                  parsedCache.tasks = getAvailableTasks(null);
+                }
                 return parsedCache;
               }
             }
@@ -10634,6 +10879,7 @@ function getSidebarDashboardData(forceRefresh) {
       },
       todayStr: todayYYMMDD,
       members: getMemberNames(ss),
+      tasks: getAvailableTasks(sheet),
       holidays: getKoreanHolidaysMap(ss),
       sites: sitesList,
       siteInfoMap: getSiteInfoMap(ss)
@@ -10658,6 +10904,7 @@ function getSidebarDashboardData(forceRefresh) {
       kpi: { totalSites: 0, activeSites: 0, totalTasks: 0, todayCount: 0, delayedCount: 0 },
       todayStr: formatDateYYMMDD(new Date()),
       members: ["조항만", "송지은", "전예린", "한송이", "인경호"],
+      tasks: getAvailableTasks(null),
       holidays: getKoreanHolidaysMap(null),
       sites: [],
       siteInfoMap: {}
@@ -11634,26 +11881,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div class="sheet-field-row">';
   html += '        <div class="sheet-field-col" style="flex:1.2;">';
   html += '          <label class="sheet-field-label">🔨 공종 (작업내용)</label>';
-  html += '          <input type="text" id="sheetTaskInput" class="sheet-field-input" placeholder="공종 입력 또는 아래 버튼 선택">';
+  html += '          <div class="sheet-task-wrap">';
+  html += '            <select id="sheetTaskSelect" class="sheet-field-select" onchange="onSheetTaskSelect(this.value)">';
+  html += '              <option value="">공종을 선택하세요</option>';
+  html += '            </select>';
+  html += '            <input type="text" id="sheetTaskCustomInput" class="sheet-field-input" placeholder="공종 직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
+  html += '          </div>';
   html += '        </div>';
   html += '        <div class="sheet-field-col" style="flex:0.8;">';
   html += '          <label class="sheet-field-label">🤝 협력업체 (선택)</label>';
   html += '          <input type="text" id="sheetPartnerInput" class="sheet-field-input" placeholder="업체명">';
   html += '        </div>';
-  html += '      </div>';
-  html += '      <div class="task-quick-chips">';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'철거\')">철거</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'목공\')">목공</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'전기\')">전기</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'설비\')">설비</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'타일\')">타일</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'필름\')">필름</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'도장\')">도장</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'도배\')">도배</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'마루\')">마루</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'가구\')">가구</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'청소\')">청소</button>';
-  html += '        <button type="button" class="task-chip" onclick="pickQuickTaskName(\'AS\')">AS</button>';
   html += '      </div>';
   html += '    </div>';
   html += '    <div class="sheet-edit-box">';
@@ -11667,12 +11905,20 @@ function buildSidebarDashboardHtml(mode) {
   html += '          </div>';
   html += '        </div>';
   html += '        <div class="sheet-field-col" style="flex:1;">';
-  html += '          <label class="sheet-field-label">👤 담당자</label>';
-  html += '          <div class="sheet-manager-wrap">';
-  html += '            <select id="sheetManagerSelect" class="sheet-field-select" onchange="onSheetManagerSelect(this.value)">';
-  html += '              <option value="">(선택 안함)</option>';
-  html += '            </select>';
-  html += '            <input type="text" id="sheetManagerCustomInput" class="sheet-field-input" placeholder="직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
+  html += '          <label class="sheet-field-label">👤 담당자 (최대 2명)</label>';
+  html += '          <div style="display:flex;gap:6px;">';
+  html += '            <div class="sheet-manager-wrap" style="flex:1;">';
+  html += '              <select id="sheetManagerSelect" class="sheet-field-select" onchange="onSheetManagerSelect(this.value)">';
+  html += '                <option value="">담당자 1</option>';
+  html += '              </select>';
+  html += '              <input type="text" id="sheetManagerCustomInput" class="sheet-field-input" placeholder="직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
+  html += '            </div>';
+  html += '            <div class="sheet-manager-wrap" style="flex:1;">';
+  html += '              <select id="sheetManagerSelect2" class="sheet-field-select" onchange="onSheetManagerSelect2(this.value)">';
+  html += '                <option value="">담당자 2 (선택)</option>';
+  html += '              </select>';
+  html += '              <input type="text" id="sheetManagerCustomInput2" class="sheet-field-input" placeholder="직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
+  html += '            </div>';
   html += '          </div>';
   html += '        </div>';
   html += '      </div>';
@@ -13987,11 +14233,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function formatManagerName(m) {';
   html += '  if (!m) return "";';
-  html += '  let name = String(m).trim();';
-  html += '  if (name.indexOf(",") !== -1) name = name.split(",")[0].trim();';
-  html += '  if (name.indexOf("/") !== -1) name = name.split("/")[0].trim();';
-  html += '  name = name.replace(/[\\s\\(\\[]*(대리|과장|차장|부장|실장|팀장|이사|대표|소장|사원|주임|매니저|선임|책임|수석|실장님|소장님|대표님)[\\)\\]]*$/i, "").trim();';
-  html += '  return name;';
+  html += '  const parts = String(m).split(/[,/]/).map(p => p.trim()).filter(Boolean);';
+  html += '  const cleanParts = parts.map(p => {';
+  html += '    return p.replace(/[\\s\\(\\[]*(대리|과장|차장|부장|실장|팀장|이사|대표|소장|사원|주임|매니저|선임|책임|수석|실장님|소장님|대표님)[\\)\\]]*$/i, "").trim();';
+  html += '  }).filter(Boolean);';
+  html += '  return cleanParts.join(", ");';
   html += '}';
   html += '';
   html += 'function updateCarouselNavButtons() {';
@@ -15154,10 +15400,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function populateManagerSelectOptions(members) {';
-  html += '  const sel = document.getElementById("sheetManagerSelect");';
-  html += '  if (!sel || sel._populated) return;';
-  html += '  sel._populated = true;';
-  html += '  sel.innerHTML = \'<option value="">(선택 안함)</option>\';';
+  html += '  const sel1 = document.getElementById("sheetManagerSelect");';
+  html += '  const sel2 = document.getElementById("sheetManagerSelect2");';
   html += '  const defaultList = ["조항만", "송지은", "전예린", "한송이", "인경호"];';
   html += '  const allList = [];';
   html += '  const seen = {};';
@@ -15168,16 +15412,34 @@ function buildSidebarDashboardHtml(mode) {
   html += '      allList.push(name);';
   html += '    }';
   html += '  });';
-  html += '  allList.forEach(m => {';
-  html += '    const opt = document.createElement("option");';
-  html += '    opt.value = m;';
-  html += '    opt.innerText = m;';
-  html += '    sel.appendChild(opt);';
-  html += '  });';
-  html += '  const customOpt = document.createElement("option");';
-  html += '  customOpt.value = "__CUSTOM__";';
-  html += '  customOpt.innerText = "✏️ 직접 입력...";';
-  html += '  sel.appendChild(customOpt);';
+  html += '  if (sel1) {';
+  html += '    sel1._populated = true;';
+  html += '    sel1.innerHTML = \'<option value="">담당자 1 (선택)</option>\';';
+  html += '    allList.forEach(m => {';
+  html += '      const opt = document.createElement("option");';
+  html += '      opt.value = m;';
+  html += '      opt.innerText = m;';
+  html += '      sel1.appendChild(opt);';
+  html += '    });';
+  html += '    const customOpt = document.createElement("option");';
+  html += '    customOpt.value = "__CUSTOM__";';
+  html += '    customOpt.innerText = "✏️ 직접 입력...";';
+  html += '    sel1.appendChild(customOpt);';
+  html += '  }';
+  html += '  if (sel2) {';
+  html += '    sel2._populated = true;';
+  html += '    sel2.innerHTML = \'<option value="">담당자 2 (선택 안함)</option>\';';
+  html += '    allList.forEach(m => {';
+  html += '      const opt = document.createElement("option");';
+  html += '      opt.value = m;';
+  html += '      opt.innerText = m;';
+  html += '      sel2.appendChild(opt);';
+  html += '    });';
+  html += '    const customOpt2 = document.createElement("option");';
+  html += '    customOpt2.value = "__CUSTOM__";';
+  html += '    customOpt2.innerText = "✏️ 직접 입력...";';
+  html += '    sel2.appendChild(customOpt2);';
+  html += '  }';
   html += '}';
   html += '';
   html += 'function onSheetManagerSelect(val) {';
@@ -15190,6 +15452,63 @@ function buildSidebarDashboardHtml(mode) {
   html += '    custom.style.display = "none";';
   html += '    custom.value = "";';
   html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onSheetManagerSelect2(val) {';
+  html += '  const custom = document.getElementById("sheetManagerCustomInput2");';
+  html += '  if (!custom) return;';
+  html += '  if (val === "__CUSTOM__") {';
+  html += '    custom.style.display = "block";';
+  html += '    custom.focus();';
+  html += '  } else {';
+  html += '    custom.style.display = "none";';
+  html += '    custom.value = "";';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function populateTaskSelectOptions(tasks) {';
+  html += '  const sel = document.getElementById("sheetTaskSelect");';
+  html += '  if (!sel) return;';
+  html += '  sel._populated = true;';
+  html += '  sel.innerHTML = \'<option value="">공종을 선택하세요</option>\';';
+  html += '  const defaultTasks = [';
+  html += '    "철거", "설비", "누수보수", "전기", "전기입선", "전기마감", "조명", "에어컨",';
+  html += '    "목공", "도어설치", "중문", "창호", "창호실측", "타일", "줄눈", "도기", "SMC",';
+  html += '    "필름", "도장", "도배", "마루", "바닥", "가구", "주방", "보양", "청소", "마감",';
+  html += '    "상담", "현장실측", "AS"';
+  html += '  ];';
+  html += '  const allTasks = [];';
+  html += '  const seen = {};';
+  html += '  (tasks && tasks.length > 0 ? tasks : defaultTasks).forEach(t => {';
+  html += '    const name = String(t || "").trim();';
+  html += '    if (name && !seen[name]) {';
+  html += '      seen[name] = true;';
+  html += '      allTasks.push(name);';
+  html += '    }';
+  html += '  });';
+  html += '  allTasks.forEach(t => {';
+  html += '    const opt = document.createElement("option");';
+  html += '    opt.value = t;';
+  html += '    opt.innerText = t;';
+  html += '    sel.appendChild(opt);';
+  html += '  });';
+  html += '  const customOpt = document.createElement("option");';
+  html += '  customOpt.value = "__CUSTOM__";';
+  html += '  customOpt.innerText = "✏️ 직접 입력...";';
+  html += '  sel.appendChild(customOpt);';
+  html += '}';
+  html += '';
+  html += 'function onSheetTaskSelect(val) {';
+  html += '  const custom = document.getElementById("sheetTaskCustomInput");';
+  html += '  if (!custom) return;';
+  html += '  if (val === "__CUSTOM__") {';
+  html += '    custom.style.display = "block";';
+  html += '    custom.focus();';
+  html += '  } else {';
+  html += '    custom.style.display = "none";';
+  html += '    custom.value = "";';
+  html += '  }';
+  html += '  if (val === "AS") selectSheetStatus("AS");';
   html += '}';
   html += '';
   html += 'function openWideModalView() {';
@@ -15425,6 +15744,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function pickQuickTaskName(name) {';
+  html += '  const sel = document.getElementById("sheetTaskSelect");';
+  html += '  if (sel) sel.value = name;';
   html += '  const inp = document.getElementById("sheetTaskInput");';
   html += '  if (inp) inp.value = name;';
   html += '  if (name === "AS") selectSheetStatus("AS");';
@@ -15465,8 +15786,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "➕ 일정 등록하기"; }';
   html += '  populateSiteSelectOptions(prefillSite || "");';
   html += '  updateSheetModalSiteInfo(prefillSite || "");';
-  html += '  const taskInput = document.getElementById("sheetTaskInput");';
-  html += '  if (taskInput) taskInput.value = "";';
+  html += '  populateTaskSelectOptions(rawData ? rawData.tasks : []);';
+  html += '  const taskSelect = document.getElementById("sheetTaskSelect");';
+  html += '  const taskCustom = document.getElementById("sheetTaskCustomInput");';
+  html += '  if (taskSelect) taskSelect.value = "";';
+  html += '  if (taskCustom) { taskCustom.value = ""; taskCustom.style.display = "none"; }';
   html += '  const partnerInput = document.getElementById("sheetPartnerInput");';
   html += '  if (partnerInput) partnerInput.value = "";';
   html += '  const dateInput = document.getElementById("sheetDateInput");';
@@ -15487,11 +15811,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
   html += '  const mgrCustom = document.getElementById("sheetManagerCustomInput");';
+  html += '  const mgrSelect2 = document.getElementById("sheetManagerSelect2");';
+  html += '  const mgrCustom2 = document.getElementById("sheetManagerCustomInput2");';
   html += '  if (mgrSelect) {';
   html += '    populateManagerSelectOptions(rawData ? rawData.members : []);';
   html += '    const defaultSiteMgr = prefillSite ? findSiteDefaultManager(prefillSite) : "";';
   html += '    mgrSelect.value = defaultSiteMgr || (selectedMember && selectedMember !== "__NONE__" ? selectedMember : "");';
   html += '    if (mgrCustom) { mgrCustom.value = ""; mgrCustom.style.display = "none"; }';
+  html += '  }';
+  html += '  if (mgrSelect2) {';
+  html += '    mgrSelect2.value = "";';
+  html += '    if (mgrCustom2) { mgrCustom2.value = ""; mgrCustom2.style.display = "none"; }';
   html += '  }';
   html += '  const memoInput = document.getElementById("sheetMemoInput");';
   html += '  if (memoInput) memoInput.value = "";';
@@ -15548,27 +15878,36 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
   html += '  const mgrCustom = document.getElementById("sheetManagerCustomInput");';
+  html += '  const mgrSelect2 = document.getElementById("sheetManagerSelect2");';
+  html += '  const mgrCustom2 = document.getElementById("sheetManagerCustomInput2");';
   html += '  if (mgrSelect) {';
   html += '    populateManagerSelectOptions(rawData ? rawData.members : []);';
-  html += '    const curMgr = (task.manager || "").trim();';
-  html += '    let found = false;';
+  html += '    const curMgrRaw = (task.manager || "").trim();';
+  html += '    const mgrParts = curMgrRaw.split(/[,/]/).map(s => s.trim()).filter(Boolean);';
+  html += '    const m1 = mgrParts[0] || "";';
+  html += '    const m2 = mgrParts[1] || "";';
+  html += '    let found1 = false;';
   html += '    for (let i = 0; i < mgrSelect.options.length; i++) {';
-  html += '      if (mgrSelect.options[i].value === curMgr) {';
-  html += '        found = true;';
-  html += '        break;';
-  html += '      }';
+  html += '      if (mgrSelect.options[i].value === m1) { found1 = true; break; }';
   html += '    }';
-  html += '    if (curMgr && !found) {';
+  html += '    if (m1 && !found1) {';
   html += '      mgrSelect.value = "__CUSTOM__";';
-  html += '      if (mgrCustom) {';
-  html += '        mgrCustom.value = curMgr;';
-  html += '        mgrCustom.style.display = "block";';
-  html += '      }';
+  html += '      if (mgrCustom) { mgrCustom.value = m1; mgrCustom.style.display = "block"; }';
   html += '    } else {';
-  html += '      mgrSelect.value = curMgr;';
-  html += '      if (mgrCustom) {';
-  html += '        mgrCustom.value = "";';
-  html += '        mgrCustom.style.display = "none";';
+  html += '      mgrSelect.value = m1;';
+  html += '      if (mgrCustom) { mgrCustom.value = ""; mgrCustom.style.display = "none"; }';
+  html += '    }';
+  html += '    if (mgrSelect2) {';
+  html += '      let found2 = false;';
+  html += '      for (let j = 0; j < mgrSelect2.options.length; j++) {';
+  html += '        if (mgrSelect2.options[j].value === m2) { found2 = true; break; }';
+  html += '      }';
+  html += '      if (m2 && !found2) {';
+  html += '        mgrSelect2.value = "__CUSTOM__";';
+  html += '        if (mgrCustom2) { mgrCustom2.value = m2; mgrCustom2.style.display = "block"; }';
+  html += '      } else {';
+  html += '        mgrSelect2.value = m2;';
+  html += '        if (mgrCustom2) { mgrCustom2.value = ""; mgrCustom2.style.display = "none"; }';
   html += '      }';
   html += '    }';
   html += '  }';
@@ -15704,15 +16043,35 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const dateVal = dateInput ? dateInput.value.trim() : "";';
   html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
   html += '  const mgrCustom = document.getElementById("sheetManagerCustomInput");';
-  html += '  let mgrVal = "";';
+  html += '  const mgrSelect2 = document.getElementById("sheetManagerSelect2");';
+  html += '  const mgrCustom2 = document.getElementById("sheetManagerCustomInput2");';
+  html += '  let mgrVal1 = "";';
   html += '  if (mgrSelect) {';
-  html += '    mgrVal = (mgrSelect.value === "__CUSTOM__") ? (mgrCustom ? mgrCustom.value.trim() : "") : mgrSelect.value.trim();';
+  html += '    mgrVal1 = (mgrSelect.value === "__CUSTOM__") ? (mgrCustom ? mgrCustom.value.trim() : "") : mgrSelect.value.trim();';
+  html += '  }';
+  html += '  let mgrVal2 = "";';
+  html += '  if (mgrSelect2) {';
+  html += '    mgrVal2 = (mgrSelect2.value === "__CUSTOM__") ? (mgrCustom2 ? mgrCustom2.value.trim() : "") : mgrSelect2.value.trim();';
+  html += '  }';
+  html += '  let mgrVal = "";';
+  html += '  if (mgrVal1 && mgrVal2) {';
+  html += '    mgrVal = (mgrVal1 === mgrVal2) ? mgrVal1 : (mgrVal1 + ", " + mgrVal2);';
+  html += '  } else {';
+  html += '    mgrVal = mgrVal1 || mgrVal2;';
   html += '  }';
   html += '  if (isCreateMode) {';
   html += '    const siteSel = document.getElementById("sheetSiteSelect");';
   html += '    const siteVal = siteSel ? siteSel.value.trim() : "";';
+  html += '    const taskSel = document.getElementById("sheetTaskSelect");';
+  html += '    const taskCustom = document.getElementById("sheetTaskCustomInput");';
   html += '    const taskInp = document.getElementById("sheetTaskInput");';
-  html += '    const taskVal = taskInp ? taskInp.value.trim() : "";';
+  html += '    let taskVal = "";';
+  html += '    if (taskSel && taskSel.value) {';
+  html += '      taskVal = (taskSel.value === "__CUSTOM__") ? (taskCustom ? taskCustom.value.trim() : "") : taskSel.value.trim();';
+  html += '    }';
+  html += '    if (!taskVal && taskInp) {';
+  html += '      taskVal = taskInp.value.trim();';
+  html += '    }';
   html += '    const partnerInp = document.getElementById("sheetPartnerInput");';
   html += '    const partnerVal = partnerInp ? partnerInp.value.trim() : "";';
   html += '    if (!siteVal) { showToast("⚠️ 현장을 선택해주세요."); return; }';
