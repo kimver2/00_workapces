@@ -7734,9 +7734,9 @@ assertTest('Step 104-1: 전역 및 벤더 접두사 placeholder 규칙 탑재 �
   dashHtml104Web.indexOf('input:-ms-input-placeholder, textarea:-ms-input-placeholder') !== -1
 );
 
-// 104-2: 플레이스홀더 글자 크기(11.5px), 굵기(400), 색상(#94a3b8) 통일 검증
-assertTest('Step 104-2: 플레이스홀더 글자 크기(11.5px), 굵기(400), 색상(#94a3b8) 통일 검증',
-  dashHtml104Web.indexOf('font-size: 11.5px !important;') !== -1 &&
+// 104-2: 플레이스홀더 글자 크기(11px), 굵기(400), 색상(#94a3b8) 통일 검증
+assertTest('Step 104-2: 플레이스홀더 글자 크기(11px), 굵기(400), 색상(#94a3b8) 통일 검증',
+  dashHtml104Web.indexOf('font-size: 11px !important;') !== -1 &&
   dashHtml104Web.indexOf('font-weight: 400 !important;') !== -1 &&
   dashHtml104Web.indexOf('color: #94a3b8 !important;') !== -1
 );
@@ -7744,12 +7744,41 @@ assertTest('Step 104-2: 플레이스홀더 글자 크기(11.5px), 굵기(400), �
 // 104-3: 불투명도(opacity: 1) 및 자간(letter-spacing: -0.2px) 크로스브라우징 일관성 검증
 assertTest('Step 104-3: 불투명도(opacity: 1) 및 자간(letter-spacing: -0.2px) 크로스브라우징 일관성 검증',
   dashHtml104Web.indexOf('opacity: 1 !important;') !== -1 &&
-  dashHtml104Web.indexOf('letter-spacing: -0.2px;') !== -1
+  dashHtml104Web.indexOf('letter-spacing: -0.2px') !== -1
 );
 
-// 104-4: index.html 내 exec?v=94 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 104-4: index.html 내 exec?v=94 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml104.indexOf('exec?v=94') !== -1
+// 104-4: index.html 내 exec?v=94 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 104-4: index.html 내 exec?v=94 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:9[4-9]|[1-9]\d{2,})/.test(indexHtml104)
+);
+
+// ========================================================
+console.log('\n--- [Step 105]: 현장 정보 모달 클래스 전용 11px 플레이스홀더 오버라이드 QA ---');
+
+const dashHtml105Mobile = sandbox.buildSidebarDashboardHtml('mobile');
+const dashHtml105Web = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml105 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 105-1: .site-info-input::placeholder 및 .site-info-textarea::placeholder 클래스 레벨 11px 오버라이드 검증
+assertTest('Step 105-1: .site-info-input::placeholder 및 .site-info-textarea::placeholder 11px 오버라이드 검증',
+  dashHtml105Mobile.indexOf('.site-info-input::placeholder, .site-info-textarea::placeholder') !== -1 &&
+  dashHtml105Mobile.indexOf('font-size: 11px !important;') !== -1
+);
+
+// 105-2: -webkit-input-placeholder 벤더 접두사 클래스 레벨 탑재 검증
+assertTest('Step 105-2: -webkit-input-placeholder 벤더 접두사 클래스 레벨 탑재 검증',
+  dashHtml105Mobile.indexOf('.site-info-input::-webkit-input-placeholder, .site-info-textarea::-webkit-input-placeholder') !== -1
+);
+
+// 105-3: PC 미디어 쿼리(@media (min-width: 768px)) 내 클래스 레벨 placeholder 유지 검증
+assertTest('Step 105-3: PC 미디어 쿼리 내 클래스 레벨 placeholder 유지 검증',
+  dashHtml105Web.indexOf('.site-info-input::placeholder, .site-info-textarea::placeholder') !== -1 &&
+  dashHtml105Web.indexOf('.site-info-input::-webkit-input-placeholder, .site-info-textarea::-webkit-input-placeholder') !== -1
+);
+
+// 105-4: index.html 내 exec?v=95 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 105-4: index.html 내 exec?v=95 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml105.indexOf('exec?v=95') !== -1
 );
 
 console.log('\n========================================================');

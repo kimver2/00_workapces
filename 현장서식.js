@@ -9136,10 +9136,10 @@ function buildSidebarDashboardHtml(mode) {
   }
   html += '<style>';
   html += '* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }';
-  html += 'input::placeholder, textarea::placeholder { font-size: 11.5px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px; }';
-  html += 'input::-webkit-input-placeholder, textarea::-webkit-input-placeholder { font-size: 11.5px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px; }';
-  html += 'input::-moz-placeholder, textarea::-moz-placeholder { font-size: 11.5px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px; }';
-  html += 'input:-ms-input-placeholder, textarea:-ms-input-placeholder { font-size: 11.5px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px; }';
+  html += 'input::placeholder, textarea::placeholder, .site-info-input::placeholder, .site-info-textarea::placeholder, .sheet-field-input::placeholder, .sheet-memo-input::placeholder, .search-input::placeholder, #pcSearchInput::placeholder { font-size: 11px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; line-height: normal !important; }';
+  html += 'input::-webkit-input-placeholder, textarea::-webkit-input-placeholder, .site-info-input::-webkit-input-placeholder, .site-info-textarea::-webkit-input-placeholder, .sheet-field-input::-webkit-input-placeholder, .sheet-memo-input::-webkit-input-placeholder, .search-input::-webkit-input-placeholder, #pcSearchInput::-webkit-input-placeholder { font-size: 11px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; line-height: normal !important; }';
+  html += 'input::-moz-placeholder, textarea::-moz-placeholder { font-size: 11px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; }';
+  html += 'input:-ms-input-placeholder, textarea:-ms-input-placeholder { font-size: 11px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; }';
   html += 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; padding-bottom: ' + (isMobile ? 'calc(80px + env(safe-area-inset-bottom, 0px))' : '70px') + '; }';
   html += '.header { background: #ffffff; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 20; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }';
@@ -9472,6 +9472,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .site-info-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }';
   html += '  .site-info-textarea { width: 100%; min-height: 70px; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: #0f172a; outline: none; resize: vertical; box-sizing: border-box; font-family: inherit; }';
   html += '  .site-info-textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }';
+  html += '  .site-info-input::placeholder, .site-info-textarea::placeholder { font-size: 11px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; line-height: normal !important; }';
+  html += '  .site-info-input::-webkit-input-placeholder, .site-info-textarea::-webkit-input-placeholder { font-size: 11px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; line-height: normal !important; }';
   html += '  .partner-guide-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.55); backdrop-filter: blur(2px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }';
   html += '  .partner-guide-modal-overlay.active { display: flex !important; }';
   html += '  .partner-guide-modal-box { background: #ffffff; border-radius: 14px; width: 100%; max-width: 520px; box-shadow: 0 10px 30px rgba(0,0,0,0.22); display: flex; flex-direction: column; overflow: hidden; animation: pcModalFadeIn 0.2s cubic-bezier(0.16,1,0.3,1); box-sizing: border-box; }';
@@ -9728,6 +9730,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .site-info-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }';
   html += '  .site-info-textarea { width: 100%; min-height: 70px; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: #0f172a; outline: none; resize: vertical; box-sizing: border-box; font-family: inherit; }';
   html += '  .site-info-textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }';
+  html += '  .site-info-input::placeholder, .site-info-textarea::placeholder { font-size: 11px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; line-height: normal !important; }';
+  html += '  .site-info-input::-webkit-input-placeholder, .site-info-textarea::-webkit-input-placeholder { font-size: 11px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; line-height: normal !important; }';
   html += '';
   html += '  /* 반장님 작업 안내문 확인 및 수정 모달 */';
   html += '  .partner-guide-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(2px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 16px; }';
