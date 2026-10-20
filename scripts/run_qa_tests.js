@@ -7715,9 +7715,41 @@ assertTest('Step 103-3: 직통 전화 연결(href="tel:) 링크 정상 유지 �
   dashHtml103Mobile.indexOf('href="tel:') !== -1
 );
 
-// 103-4: index.html 내 exec?v=93 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 103-4: index.html 내 exec?v=93 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml103.indexOf('exec?v=93') !== -1
+// 103-4: index.html 내 exec?v=93 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 103-4: index.html 내 exec?v=93 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:9[3-9]|[1-9]\d{2,})/.test(indexHtml103)
+);
+
+// ========================================================
+console.log('\n--- [Step 104]: 플레이스홀더 글자 크기(11.5px) 축소 및 전역 스타일 통일 QA ---');
+
+const dashHtml104Web = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml104 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 104-1: 전역 및 벤더 접두사 placeholder 규칙 탑재 검증
+assertTest('Step 104-1: 전역 및 벤더 접두사 placeholder 규칙 탑재 검증',
+  dashHtml104Web.indexOf('input::placeholder, textarea::placeholder') !== -1 &&
+  dashHtml104Web.indexOf('input::-webkit-input-placeholder, textarea::-webkit-input-placeholder') !== -1 &&
+  dashHtml104Web.indexOf('input::-moz-placeholder, textarea::-moz-placeholder') !== -1 &&
+  dashHtml104Web.indexOf('input:-ms-input-placeholder, textarea:-ms-input-placeholder') !== -1
+);
+
+// 104-2: 플레이스홀더 글자 크기(11.5px), 굵기(400), 색상(#94a3b8) 통일 검증
+assertTest('Step 104-2: 플레이스홀더 글자 크기(11.5px), 굵기(400), 색상(#94a3b8) 통일 검증',
+  dashHtml104Web.indexOf('font-size: 11.5px !important;') !== -1 &&
+  dashHtml104Web.indexOf('font-weight: 400 !important;') !== -1 &&
+  dashHtml104Web.indexOf('color: #94a3b8 !important;') !== -1
+);
+
+// 104-3: 불투명도(opacity: 1) 및 자간(letter-spacing: -0.2px) 크로스브라우징 일관성 검증
+assertTest('Step 104-3: 불투명도(opacity: 1) 및 자간(letter-spacing: -0.2px) 크로스브라우징 일관성 검증',
+  dashHtml104Web.indexOf('opacity: 1 !important;') !== -1 &&
+  dashHtml104Web.indexOf('letter-spacing: -0.2px;') !== -1
+);
+
+// 104-4: index.html 내 exec?v=94 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 104-4: index.html 내 exec?v=94 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml104.indexOf('exec?v=94') !== -1
 );
 
 console.log('\n========================================================');

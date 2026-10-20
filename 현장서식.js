@@ -9136,6 +9136,10 @@ function buildSidebarDashboardHtml(mode) {
   }
   html += '<style>';
   html += '* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }';
+  html += 'input::placeholder, textarea::placeholder { font-size: 11.5px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px; }';
+  html += 'input::-webkit-input-placeholder, textarea::-webkit-input-placeholder { font-size: 11.5px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px; }';
+  html += 'input::-moz-placeholder, textarea::-moz-placeholder { font-size: 11.5px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px; }';
+  html += 'input:-ms-input-placeholder, textarea:-ms-input-placeholder { font-size: 11.5px !important; font-weight: 400 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px; }';
   html += 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; padding-bottom: ' + (isMobile ? 'calc(80px + env(safe-area-inset-bottom, 0px))' : '70px') + '; }';
   html += '.header { background: #ffffff; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 20; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
   html += '.title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }';
