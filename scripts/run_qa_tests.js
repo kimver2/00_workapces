@@ -7427,11 +7427,10 @@ assertTest('Step 96-3: buildPartnerWorkGuideText 내 오늘 일정 자동 추출
   dashHtml96.indexOf('mgrSet.join(", ")') !== -1
 );
 
-// 96-4: 버튼 라벨 '📋 안내문 확인' (PC/모바일/바텀시트) 갱신 검증
-assertTest('Step 96-4: 버튼 라벨 "📋 안내문 확인" (PC/모바일/바텀시트) 갱신 검증',
-  dashHtml96.indexOf('📋 안내문 확인') !== -1 &&
-  dashHtml96.indexOf('onclick="openCurrentTaskPartnerGuideModal()"') !== -1 &&
-  dashHtml96.indexOf('openPartnerWorkGuideModal(decodeURIComponent(') !== -1
+// 96-4: 버튼 라벨 '📋 안내문 확인' (PC/모바일) 갱신 검증
+assertTest('Step 96-4: 버튼 라벨 "📋 안내문 확인" (PC/모바일) 갱신 검증',
+  dashHtml96.indexOf('안내문 확인') !== -1 &&
+  dashHtml96.indexOf('openPartnerWorkGuideModal(') !== -1
 );
 
 // 96-5: handleGlobalEscape 내 partnerGuideModalOverlay Escape 닫기 연동 검증
@@ -7519,11 +7518,10 @@ assertTest('Step 98-2: getSiteInfoMap 및 saveFullSiteInfoFromWeb driveUrl 매�
   fsMainJs.indexOf('infoObj.driveUrl !== undefined') !== -1
 );
 
-// 98-3: 대시보드 내 "📁 현장 자료" 버튼 탑재 검증 (PC, 모바일 카드, 바텀시트 3개 영역)
-assertTest('Step 98-3: 대시보드 내 "📁 현장 자료" 버튼 탑재 검증 (PC, 모바일 카드, 바텀시트)',
+// 98-3: 대시보드 내 "📁 현장 자료" 버튼 탑재 검증 (PC, 모바일 카드)
+assertTest('Step 98-3: 대시보드 내 "📁 현장 자료" 버튼 탑재 검증 (PC, 모바일 카드)',
   dashHtml98.indexOf('btn-site-drive-link') !== -1 &&
-  dashHtml98.indexOf('📁</span> 현장 자료') !== -1 &&
-  dashHtml98.indexOf('id="sheetSiteDriveBtn"') !== -1
+  dashHtml98.indexOf('📁</span> 현장 자료') !== -1
 );
 
 // 98-4: PC 상세 뷰 5번째 아이템 "📁 드라이브 링크" 바로가기 마크업 검증
@@ -7618,9 +7616,44 @@ assertTest('Step 100-4: 모바일 카드 내 정보 수정 버튼(btn-site-info-
   dashHtml100Mobile.indexOf('openSiteInfoEditModal') !== -1
 );
 
-// 100-5: index.html 내 exec?v=90 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 100-5: index.html 내 exec?v=90 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml100.indexOf('exec?v=90') !== -1
+// 100-5: index.html 내 exec?v=90 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 100-5: index.html 내 exec?v=90 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:9[0-9]|[1-9]\d{2,})/.test(indexHtml100)
+);
+
+// ========================================================
+console.log('\n--- [Step 101]: 공정 상세 바텀시트 모달 헤더 현장 자료/안내문 확인 버튼 제거 및 화면 간결화 QA ---');
+
+const dashHtml101 = sandbox.buildSidebarDashboardHtml('mobile');
+const indexHtml101 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 101-1: sheetOverlay 헤더에 sheetSiteDriveBtn 및 sheetCopyPartnerGuideBtn 버튼이 제거되어 상세 모달에서 미노출 검증
+assertTest('Step 101-1: sheetOverlay 헤더에 sheetSiteDriveBtn 및 sheetCopyPartnerGuideBtn 버튼이 제거되어 상세 모달에서 미노출 검증',
+  dashHtml101.indexOf('id="sheetSiteDriveBtn"') === -1 &&
+  dashHtml101.indexOf('id="sheetCopyPartnerGuideBtn"') === -1
+);
+
+// 101-2: 상세 모달에 꼭 필요한 sheetMiniGoToRowBtn(📍 시트 행 이동) 및 sheetAddSameDateBtn(➕ 같은 날 추가) 정상 유지 검증
+assertTest('Step 101-2: 상세 모달에 꼭 필요한 sheetMiniGoToRowBtn(📍 시트 행 이동) 및 sheetAddSameDateBtn(➕ 같은 날 추가) 정상 유지 검증',
+  dashHtml101.indexOf('id="sheetMiniGoToRowBtn"') !== -1 &&
+  dashHtml101.indexOf('id="sheetAddSameDateBtn"') !== -1
+);
+
+// 101-3: PC 상세 뷰 및 모바일 현장 카드에는 '📁 현장 자료' 및 '📋 안내문 확인' 버튼 정상 유지 검증
+assertTest('Step 101-3: PC 상세 뷰 및 모바일 현장 카드에는 "📁 현장 자료" 및 "📋 안내문 확인" 버튼 정상 유지 검증',
+  dashHtml101.indexOf('class="btn-site-drive-link"') !== -1 &&
+  dashHtml101.indexOf('class="btn-partner-guide"') !== -1
+);
+
+// 101-4: openCurrentTaskPartnerGuideModal 및 openCurrentTaskSiteDriveLink 함수 호환성 유지 검증
+assertTest('Step 101-4: openCurrentTaskPartnerGuideModal 및 openCurrentTaskSiteDriveLink 함수 호환성 유지 검증',
+  dashHtml101.indexOf('function openCurrentTaskPartnerGuideModal()') !== -1 &&
+  dashHtml101.indexOf('function openCurrentTaskSiteDriveLink()') !== -1
+);
+
+// 101-5: index.html 내 exec?v=91 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 101-5: index.html 내 exec?v=91 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml101.indexOf('exec?v=91') !== -1
 );
 
 console.log('\n========================================================');

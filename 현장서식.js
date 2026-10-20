@@ -10009,8 +10009,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div>';
   html += '        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
   html += '          <div class="sheet-site" id="sheetSiteName">-</div>';
-  html += '          <button type="button" id="sheetSiteDriveBtn" class="btn-sheet-goto-mini" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;font-weight:700;" onclick="openCurrentTaskSiteDriveLink()" title="현장 구글 드라이브 도면 / 사진 / 계약서 자료실 열기">📁 현장 자료</button>';
-  html += '          <button type="button" id="sheetCopyPartnerGuideBtn" class="btn-sheet-goto-mini" style="background:#eff6ff;color:#1d4ed8;border-color:#93c5fd;font-weight:700;" onclick="openCurrentTaskPartnerGuideModal()" title="시공 반장님/협력업체 전용 카카오톡 작업 안내문 확인 및 편집">📋 안내문 확인</button>';
   html += '          <button type="button" id="sheetMiniGoToRowBtn" class="btn-sheet-goto-mini" onclick="goToCurrentTaskSheetRow()" title="현장데이터 시트에서 해당 행으로 이동">📍 시트 행 이동</button>';
   html += '          <button type="button" id="sheetAddSameDateBtn" class="btn-sheet-goto-mini" style="background:#ecfdf5;color:#047857;border-color:#a7f3d0;" onclick="openNewTaskOnCurrentDate()" title="이 날짜에 새 공정 일정 추가">➕ 같은 날 추가</button>';
   html += '        </div>';
