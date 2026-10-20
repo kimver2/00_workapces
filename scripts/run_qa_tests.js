@@ -7687,9 +7687,37 @@ assertTest('Step 102-4: site-info-modal-footer 패딩 및 gap: 10px 균형 배�
   dashHtml102.indexOf('gap: 10px;') !== -1
 );
 
-// 102-5: index.html 내 exec?v=92 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 102-5: index.html 내 exec?v=92 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml102.indexOf('exec?v=92') !== -1
+// 102-5: index.html 내 exec?v=92 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 102-5: index.html 내 exec?v=92 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:9[2-9]|[1-9]\d{2,})/.test(indexHtml102)
+);
+
+// ========================================================
+console.log('\n--- [Step 103]: 관리사무소 전화번호 뒤 중복 전화 아이콘(📞) 제거 QA ---');
+
+const dashHtml103Mobile = sandbox.buildSidebarDashboardHtml('mobile');
+const indexHtml103 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 103-1: 바텀시트 현장 정보 배너(updateSheetModalSiteInfo) 내 뒷 전화 아이콘 제거 검증
+assertTest('Step 103-1: 바텀시트 현장 정보 배너 내 뒷 전화 아이콘 제거 검증',
+  dashHtml103Mobile.indexOf('escapeHtml(sInfo.officePhone) + \'</a></span>\'') !== -1 &&
+  dashHtml103Mobile.indexOf('📞</a>') === -1
+);
+
+// 103-2: 모바일 현장 카드 내 뒷 전화 아이콘 제거 검증
+assertTest('Step 103-2: 모바일 현장 카드 내 뒷 전화 아이콘 제거 검증',
+  dashHtml103Mobile.indexOf('escapeHtml(mobPhone) + \'</a>\'') !== -1 &&
+  dashHtml103Mobile.indexOf('escapeHtml(mobPhone) + \' 📞</a>\'') === -1
+);
+
+// 103-3: 직통 전화 연결(href="tel:) 링크 정상 유지 검증
+assertTest('Step 103-3: 직통 전화 연결(href="tel:) 링크 정상 유지 검증',
+  dashHtml103Mobile.indexOf('href="tel:') !== -1
+);
+
+// 103-4: index.html 내 exec?v=93 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 103-4: index.html 내 exec?v=93 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml103.indexOf('exec?v=93') !== -1
 );
 
 console.log('\n========================================================');

@@ -13186,7 +13186,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    html += \'          <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:7px;padding:6px 9px;">\';';
   html += '    html += \'            <span style="font-size:10px;font-weight:800;color:#64748b;display:block;">📞 관리사무소</span>\';';
   html += '    if (mobPhone) {';
-  html += '      html += \'            <a href="tel:\' + escapeHtml(mobPhone) + \'" style="font-size:12px;font-weight:700;color:#0f172a;text-decoration:none;display:inline-flex;align-items:center;gap:3px;" onclick="event.stopPropagation()">\' + escapeHtml(mobPhone) + \' 📞</a>\';';
+  html += '      html += \'            <a href="tel:\' + escapeHtml(mobPhone) + \'" style="font-size:12px;font-weight:700;color:#0f172a;text-decoration:none;display:inline-flex;align-items:center;gap:3px;" onclick="event.stopPropagation()">\' + escapeHtml(mobPhone) + \'</a>\';';
   html += '    } else {';
   html += '      html += \'            <span style="font-size:12px;font-weight:600;color:#94a3b8;">-</span>\';';
   html += '    }';
@@ -13763,7 +13763,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    bHtml += \'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;">\';';
   html += '    if (sInfo.address) bHtml += \'<span>📍 <strong>\' + escapeHtml(sInfo.address) + \'</strong></span>\';';
   html += '    if (sInfo.doorPassword) bHtml += \'<span>🔑 비번: <strong style="color:#2563eb;">\' + escapeHtml(sInfo.doorPassword) + \'</strong></span>\';';
-  html += '    if (sInfo.officePhone) bHtml += \'<span>📞 <a href="tel:\' + escapeHtml(sInfo.officePhone) + \'" style="color:#0f172a;text-decoration:none;" onclick="event.stopPropagation()">\' + escapeHtml(sInfo.officePhone) + \' 📞</a></span>\';';
+  html += '    if (sInfo.officePhone) bHtml += \'<span>📞 <a href="tel:\' + escapeHtml(sInfo.officePhone) + \'" style="color:#0f172a;text-decoration:none;" onclick="event.stopPropagation()">\' + escapeHtml(sInfo.officePhone) + \'</a></span>\';';
   html += '    bHtml += \'</div>\';';
   html += '    bHtml += \'<button type="button" class="btn-site-info-edit" style="padding:2px 7px;font-size:10.5px;" data-site="\' + encodeURIComponent(cleanVal) + \'" onclick="openSiteInfoEditModal(decodeURIComponent(this.dataset.site), event)">✏️ 수정</button>\';';
   html += '    bHtml += \'</div>\';';
