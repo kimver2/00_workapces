@@ -7734,10 +7734,10 @@ assertTest('Step 104-1: 전역 및 벤더 접두사 placeholder 규칙 탑재 �
   dashHtml104Web.indexOf('input:-ms-input-placeholder, textarea:-ms-input-placeholder') !== -1
 );
 
-// 104-2: 플레이스홀더 글자 크기(11px), 굵기(400), 색상(#94a3b8) 통일 검증
-assertTest('Step 104-2: 플레이스홀더 글자 크기(11px), 굵기(400), 색상(#94a3b8) 통일 검증',
-  dashHtml104Web.indexOf('font-size: 11px !important;') !== -1 &&
-  dashHtml104Web.indexOf('font-weight: 400 !important;') !== -1 &&
+// 104-2: 플레이스홀더 글자 크기(11.5px), 굵기(500), 색상(#94a3b8) 통일 검증
+assertTest('Step 104-2: 플레이스홀더 글자 크기(11.5px), 굵기(500), 색상(#94a3b8) 통일 검증',
+  dashHtml104Web.indexOf('font-size: 11.5px !important;') !== -1 &&
+  dashHtml104Web.indexOf('font-weight: 500 !important;') !== -1 &&
   dashHtml104Web.indexOf('color: #94a3b8 !important;') !== -1
 );
 
@@ -7753,16 +7753,16 @@ assertTest('Step 104-4: index.html 내 exec?v=94 이상 캐시 버스팅 파라�
 );
 
 // ========================================================
-console.log('\n--- [Step 105]: 현장 정보 모달 클래스 전용 11px 플레이스홀더 오버라이드 QA ---');
+console.log('\n--- [Step 105]: 현장 정보 모달 클래스 전용 11.5px 플레이스홀더 오버라이드 QA ---');
 
 const dashHtml105Mobile = sandbox.buildSidebarDashboardHtml('mobile');
 const dashHtml105Web = sandbox.buildSidebarDashboardHtml('web');
 const indexHtml105 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 
-// 105-1: .site-info-input::placeholder 및 .site-info-textarea::placeholder 클래스 레벨 11px 오버라이드 검증
-assertTest('Step 105-1: .site-info-input::placeholder 및 .site-info-textarea::placeholder 11px 오버라이드 검증',
+// 105-1: .site-info-input::placeholder 및 .site-info-textarea::placeholder 클래스 레벨 11.5px 오버라이드 검증
+assertTest('Step 105-1: .site-info-input::placeholder 및 .site-info-textarea::placeholder 11.5px 오버라이드 검증',
   dashHtml105Mobile.indexOf('.site-info-input::placeholder, .site-info-textarea::placeholder') !== -1 &&
-  dashHtml105Mobile.indexOf('font-size: 11px !important;') !== -1
+  dashHtml105Mobile.indexOf('font-size: 11.5px !important;') !== -1
 );
 
 // 105-2: -webkit-input-placeholder 벤더 접두사 클래스 레벨 탑재 검증
@@ -7776,9 +7776,39 @@ assertTest('Step 105-3: PC 미디어 쿼리 내 클래스 레벨 placeholder 유
   dashHtml105Web.indexOf('.site-info-input::-webkit-input-placeholder, .site-info-textarea::-webkit-input-placeholder') !== -1
 );
 
-// 105-4: index.html 내 exec?v=95 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 105-4: index.html 내 exec?v=95 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml105.indexOf('exec?v=95') !== -1
+// 105-4: index.html 내 exec?v=95 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 105-4: index.html 내 exec?v=95 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:9[5-9]|[1-9]\d{2,})/.test(indexHtml105)
+);
+
+// ========================================================
+console.log('\n--- [Step 106]: 카드 미등록 빈 값 & 플레이스홀더를 [특이사항 없음] 스타일(11.5px, 500, #94a3b8)로 완벽 통일 QA ---');
+
+const dashHtml106Mobile = sandbox.buildSidebarDashboardHtml('mobile');
+const dashHtml106Web = sandbox.buildSidebarDashboardHtml('web');
+const indexHtml106 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+
+// 106-1: 모바일 카드 내 도어락 비번 미등록 시 11.5px, font-weight 500, color #94a3b8 적용 검증
+assertTest('Step 106-1: 모바일 카드 내 도어락 비번 미등록 시 11.5px, font-weight 500, color #94a3b8 적용 검증',
+  dashHtml106Mobile.indexOf('(mobPwd ? "font-size:13px;font-weight:900;color:#2563eb;" : "font-size:11.5px;font-weight:500;color:#94a3b8;")') !== -1
+);
+
+// 106-2: 모바일 카드 내 주소 미등록 및 관리실 '-' 시 11.5px, font-weight 500, color #94a3b8 적용 검증
+assertTest('Step 106-2: 모바일 카드 내 주소 미등록 및 관리실 - 시 11.5px, font-weight 500, color #94a3b8 적용 검증',
+  dashHtml106Mobile.indexOf('(mobAddr ? "font-size:12px;font-weight:700;color:#0f172a;" : "font-size:11.5px;font-weight:500;color:#94a3b8;")') !== -1 &&
+  dashHtml106Mobile.indexOf('font-size:11.5px;font-weight:500;color:#94a3b8;display:block;margin-top:2px;">-</span>') !== -1
+);
+
+// 106-3: PC 정보 패널 empty 클래스 스타일(11.5px, font-weight 500, color #94a3b8) 적용 검증
+assertTest('Step 106-3: PC 정보 패널 empty 클래스 스타일(11.5px, font-weight 500, color #94a3b8) 적용 검증',
+  dashHtml106Web.indexOf('.pc-info-item-val.empty { color: #94a3b8 !important; font-weight: 500 !important; font-size: 11.5px !important; font-style: normal !important; }') !== -1
+);
+
+// 106-4: index.html 캐시 방지 메타 태그 및 exec?v=96 파라미터 갱신 검증
+assertTest('Step 106-4: index.html 캐시 방지 메타 태그 및 exec?v=96 파라미터 갱신 검증',
+  indexHtml106.indexOf('http-equiv="Cache-Control"') !== -1 &&
+  indexHtml106.indexOf('content="no-cache, no-store, must-revalidate"') !== -1 &&
+  indexHtml106.indexOf('exec?v=96') !== -1
 );
 
 console.log('\n========================================================');
