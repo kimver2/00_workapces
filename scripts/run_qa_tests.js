@@ -56,6 +56,8 @@ const sandbox = {
       };
       return builder;
     },
+    GroupControlTogglePosition: { BEFORE: 'BEFORE', AFTER: 'AFTER' },
+    BorderStyle: { SOLID: 'SOLID' },
     getActiveSpreadsheet: () => ({
       getUrl: () => 'https://docs.google.com/spreadsheets/d/test-sheet-id/edit',
       getSheets: () => [],
@@ -8394,7 +8396,7 @@ assertTest('Step 111-3: getSidebarDashboardData 실행 시 진행현장 AS 사�
 // 111-4: index.html 내 exec?v=102 이상 캐시 버스팅 파라미터 갱신 검증
 const indexHtmlContent111 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
 assertTest('Step 111-4: index.html 내 exec?v=102 이상 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent111.includes('exec?v=102') || indexHtmlContent111.includes('exec?v=103')
+  indexHtmlContent111.includes('exec?v=102') || indexHtmlContent111.includes('exec?v=103') || indexHtmlContent111.includes('exec?v=104')
 );
 
 // ========================================================
@@ -8659,10 +8661,173 @@ assertTest('Step 112-9: getSidebarDashboardData 실행 시 scopeCounts(site, sin
   dashData112.sites.some(s => s.scope === 'as' && s.siteName === '반포자이 105동')
 );
 
-// 112-10: index.html 내 exec?v=103 캐시 버스팅 파라미터 갱신 검증
+// 112-10: index.html 내 exec?v=103 이상 캐시 버스팅 파라미터 갱신 검증
 const indexHtmlContent112 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
-assertTest('Step 112-10: index.html 내 exec?v=103 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent112.includes('exec?v=103')
+assertTest('Step 112-10: index.html 내 exec?v=103 이상 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent112.includes('exec?v=103') || indexHtmlContent112.includes('exec?v=104')
+);
+
+// ========================================================
+// 113. [단건 및 AS 시트 동일 현장별 행 그룹화(아코디언) 엔진 및 상단 메뉴 연동 QA]
+// ========================================================
+console.log('\n📁 [Step 113]: 단건 및 AS 시트 동일 현장별 행 그룹화(아코디언) 엔진 및 상단 메뉴 연동 QA ---');
+
+// 113-1: groupSheetRowsBySite, groupCategorySheetsBySite, groupCategorySheetsMenu 함수 존재 검증
+assertTest('Step 113-1: groupSheetRowsBySite 및 groupCategorySheetsBySite, 메뉴 함수 정의 검증',
+  typeof sandbox.groupSheetRowsBySite === 'function' &&
+  typeof sandbox.groupCategorySheetsBySite === 'function' &&
+  typeof sandbox.groupCategorySheetsMenu === 'function' &&
+  typeof sandbox.expandCategorySheetsMenu === 'function' &&
+  typeof sandbox.collapseCategorySheetsMenu === 'function'
+);
+
+// 113-2: 사용자 스크린샷 5개 행 동일 현장 ((단품) 보라매경남 109동 702호) 그룹화 검증
+let groupControlPosition113 = '';
+let shiftDepthCalls113 = [];
+let collapsedGroups113 = [];
+let borderCalls113 = [];
+
+const mockSingleRows113 = [
+  ['(단품) 보라매경남 109동 702호', '2025. 11. 11.', '견적'],
+  ['(단품) 보라매경남 109동 702호', '2025. 11. 11.', '철거'],
+  ['(단품) 보라매경남 109동 702호', '2025. 11. 11.', '전기'],
+  ['(단품) 보라매경남 109동 702호', '2025. 11. 11.', '타일'],
+  ['(단품) 보라매경남 109동 702호', '2025. 11. 11.', '가구']
+];
+
+const mockSingleSheet113 = {
+  getName: () => '단건',
+  getLastRow: () => 6, // 1행 헤더 + 5행 데이터
+  setRowGroupControlPosition: (pos) => { groupControlPosition113 = pos; },
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => mockSingleRows113,
+    shiftRowGroupDepth: (depth) => { shiftDepthCalls113.push({ row: r, count: nr, depth: depth }); },
+    collapseGroups: () => { collapsedGroups113.push({ row: r, count: nr }); },
+    setBorder: (...args) => { borderCalls113.push({ row: r, count: nr, args: args }); }
+  })
+};
+
+const groupCount113 = sandbox.groupSheetRowsBySite(mockSingleSheet113, false);
+assertTest('Step 113-2: 5개 행 동일 현장 groupSheetRowsBySite 실행 시 토글 위치 BEFORE 및 1개 블록 정상 그룹화 검증',
+  groupCount113 === 1 &&
+  groupControlPosition113 === 'BEFORE' &&
+  shiftDepthCalls113.some(call => call.row === 3 && call.count === 4 && call.depth === 1) &&
+  borderCalls113.some(b => b.row === 2 && b.count === 5)
+);
+
+// 113-3: 복수 현장 및 순수 빈 행 블록 분리 검증
+shiftDepthCalls113 = [];
+borderCalls113 = [];
+const mockMultiSiteRows113 = [
+  ['서초 래미안', '2026.10.20', '도배'],
+  ['서초 래미안', '2026.10.21', '마루'],
+  ['서초 래미안', '2026.10.22', '조명'], // 블록 1: 3행 (2행부터 4행)
+  ['반포 자이', '2026.10.23', '철거'],   // 블록 2: 1행 (5행, 그룹화 대상 제외)
+  ['', '', ''],                          // 빈 행 (6행, 블록 마감)
+  ['송파 헬리오', '2026.10.24', '타일'],   // 블록 3: 2행 (7~8행)
+  ['송파 헬리오', '2026.10.25', '위생도기']
+];
+
+const mockMultiSheet113 = {
+  getName: () => 'AS',
+  getLastRow: () => 8,
+  setRowGroupControlPosition: () => {},
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => mockMultiSiteRows113,
+    shiftRowGroupDepth: (depth) => { shiftDepthCalls113.push({ row: r, count: nr, depth: depth }); },
+    collapseGroups: () => {},
+    setBorder: (...args) => { borderCalls113.push({ row: r, count: nr }); }
+  })
+};
+
+const multiGroupCount113 = sandbox.groupSheetRowsBySite(mockMultiSheet113, false);
+assertTest('Step 113-3: 다중 현장(3행/1행/빈행/2행) 중 2행 이상 현장(서초, 송파)만 정확히 2개 그룹화 검증',
+  multiGroupCount113 === 2 &&
+  shiftDepthCalls113.some(call => call.row === 3 && call.count === 2 && call.depth === 1) &&
+  shiftDepthCalls113.some(call => call.row === 8 && call.count === 1 && call.depth === 1)
+);
+
+// 113-4: groupCategorySheetsBySite 일괄 실행 검증
+const mockSs113 = {
+  getSheetByName: (name) => {
+    if (name === '단건') {
+      return {
+        getName: () => '단건',
+        getLastRow: () => 4,
+        setRowGroupControlPosition: () => {},
+        getRange: () => ({
+          getValues: () => [
+            ['현장A', '10.20', '작업1'],
+            ['현장A', '10.21', '작업2'],
+            ['현장A', '10.22', '작업3']
+          ],
+          shiftRowGroupDepth: () => {},
+          setBorder: () => {}
+        })
+      };
+    }
+    if (name === 'AS') {
+      return {
+        getName: () => 'AS',
+        getLastRow: () => 3,
+        setRowGroupControlPosition: () => {},
+        getRange: () => ({
+          getValues: () => [
+            ['현장B', '10.20', 'AS1'],
+            ['현장B', '10.21', 'AS2']
+          ],
+          shiftRowGroupDepth: () => {},
+          setBorder: () => {}
+        })
+      };
+    }
+    return null;
+  }
+};
+
+const catRes113 = sandbox.groupCategorySheetsBySite(mockSs113, false);
+assertTest('Step 113-4: groupCategorySheetsBySite 실행 시 단건 1개 현장 및 AS 1개 현장 일괄 그룹화 반환 검증',
+  catRes113 && catRes113.singleGroups === 1 && catRes113.asGroups === 1
+);
+
+// 113-5: ensureCustomCategorySheets 실행 시 groupCategorySheetsBySite 연동 및 singleGroups/asGroups 반환 검증
+const ensureRes113 = sandbox.ensureCustomCategorySheets(mockSs113);
+assertTest('Step 113-5: ensureCustomCategorySheets 반환 객체에 singleGroups 및 asGroups 포함 검증',
+  ensureRes113 &&
+  typeof ensureRes113.singleGroups === 'number' &&
+  typeof ensureRes113.asGroups === 'number'
+);
+
+// 113-6: onOpen 상단 메뉴에 groupCategorySheetsMenu 및 expandCategorySheetsMenu 탑재 검증
+const code113 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+assertTest('Step 113-6: onOpen 상단 메뉴에 동일 현장 묶기(groupCategorySheetsMenu) 및 전체 펼치기(expandCategorySheetsMenu) 탑재 검증',
+  code113.includes('groupCategorySheetsMenu') &&
+  code113.includes('expandCategorySheetsMenu') &&
+  code113.includes('collapseCategorySheetsMenu')
+);
+
+// 113-7: initCategorySheetFormat 내 BEFORE 토글 위치 지정 탑재 검증
+assertTest('Step 113-7: initCategorySheetFormat 내 GroupControlTogglePosition.BEFORE 설정 탑재 검증',
+  code113.includes('newSheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE)')
+);
+
+// 113-8: runHourlyAutoSortTrigger 내 단건 및 AS 시트 그룹화 연동 검증
+assertTest('Step 113-8: runHourlyAutoSortTrigger 내 단건 및 AS 시트 그룹화 자동 유지 연동 검증',
+  code113.includes('consolidateSplitSiteRows(singleSheet)') &&
+  code113.includes('groupSheetRowsBySite(singleSheet, false)') &&
+  code113.includes('consolidateSplitSiteRows(asSheet)') &&
+  code113.includes('groupSheetRowsBySite(asSheet, false)')
+);
+
+// 113-9: doGet action=groupCategorySheets 엔드포인트 지원 검증
+assertTest('Step 113-9: doGet action=groupCategorySheets 엔드포인트 지원 검증',
+  code113.includes('action === "groupCategorySheets"')
+);
+
+// 113-10: index.html 내 exec?v=104 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent113 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 113-10: index.html 내 exec?v=104 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent113.includes('exec?v=104')
 );
 
 console.log('\n========================================================');

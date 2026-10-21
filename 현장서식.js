@@ -851,6 +851,8 @@ function onOpen() {
     .addItem("🏷️ '04_공종' 마스터 시트 생성/최신화", "createTasksSheetMenu")
     .addItem("🤝 '02_거래처_정리본' 시트 생성 (10열 슬림화 백업본)", "createOrganizedPartnersBackupSheetMenu")
     .addItem("📑 '단건', 'AS' 시트 생성 및 서식 동기화", "ensureCustomCategorySheetsMenu")
+    .addItem("📁 '단건'/'AS' 동일 현장 묶기 (접기/펼치기)", "groupCategorySheetsMenu")
+    .addItem("📖 '단건'/'AS' 전체 펼치기", "expandCategorySheetsMenu")
     .addItem("🛡️ '현장데이터' 빨간 에러표시(유효성 경고) 전체 제거", "cleanAllValidationErrorsMenu")
     .addSeparator()
 
@@ -867,6 +869,9 @@ function onOpen() {
       .addItem("📦 완료 현장 시트로 이동 (블록 전체 완료 현장 아카이브)", "archiveCompletedSitesMenu")
       .addItem("📁 완료현장 동일 현장별 접기 (아코디언)", "groupCompletedSitesMenu")
       .addItem("📂 완료현장 전체 펼치기", "expandCompletedSitesMenu")
+      .addItem("📁 '단건'/'AS' 동일 현장별 묶기 (아코디언)", "groupCategorySheetsMenu")
+      .addItem("📖 '단건'/'AS' 전체 펼치기", "expandCategorySheetsMenu")
+      .addItem("📁 '단건'/'AS' 전체 접기", "collapseCategorySheetsMenu")
       .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
       .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
       .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
@@ -956,12 +961,32 @@ function runHourlyAutoSortTrigger() {
     var sheet = findSiteScheduleSheet(ss);
     if (!sheet) return;
 
-    // 1. 분리된 동일 현장 행 병합 + 현장별 날짜 오름차순 자동 정렬 (무음 실행)
+    // 1. 분리된 동일 현장 행 병합 + 현장별 날짜 오름차순 자동 정렬 + 아코디언 그룹화 (무음 실행)
     var movedCount = 0;
     try {
       movedCount = consolidateSplitSiteRows(sheet);
     } catch (eCons) {}
     var sortedCount = sortSiteScheduleTasksByDate(ss, sheet, true);
+    try {
+      groupSheetRowsBySite(sheet, false);
+    } catch (eGrpSite) {}
+
+    // '단건' 및 'AS' 시트 동일 현장 병합 및 그룹화 자동 유지
+    try {
+      var singleSheet = findSingleTaskSheet(ss, false);
+      if (singleSheet && singleSheet.getLastRow() >= 3) {
+        consolidateSplitSiteRows(singleSheet);
+        groupSheetRowsBySite(singleSheet, false);
+      }
+    } catch (eGrpSingle) {}
+
+    try {
+      var asSheet = findAsSheet(ss, false);
+      if (asSheet && asSheet.getLastRow() >= 3) {
+        consolidateSplitSiteRows(asSheet);
+        groupSheetRowsBySite(asSheet, false);
+      }
+    } catch (eGrpAs) {}
 
     if (movedCount > 0 || sortedCount > 0) {
       invalidateDashboardServerCache();
@@ -1527,6 +1552,14 @@ function onEdit(e) {
     try {
       var aStartCol = e.range.getColumn();
       var aEndCol = e.range.getLastColumn ? e.range.getLastColumn() : aStartCol;
+
+      // 현장명(A열) 편집 시 동일 현장 자동 묶기 (접기/펼치기 아코디언)
+      if (aStartCol <= 1 && aEndCol >= 1 && sheet.getLastRow() >= 3) {
+        try {
+          groupSheetRowsBySite(sheet, false);
+        } catch(eGAs) {}
+      }
+
       if (aStartCol <= 8 && aEndCol >= 8) {
         var aEditedVals = e.range.getValues ? e.range.getValues() : [[e.range.getValue()]];
         for (var aer = 0; aer < aEditedVals.length; aer++) {
@@ -1550,9 +1583,17 @@ function onEdit(e) {
     }
   }
 
-  // ⑤ [단건 시트 편집 감지 -> 완료되어도 완료시트로 이동하지 않고 단건 시트 내 보존]
+  // ⑤ [단건 시트 편집 감지 -> 현장명(A열) 편집 시 동일 현장 자동 묶기 & 완료되어도 단건 시트 내 보존]
   if (isSingleTaskSheet(sheet)) {
-    // 단건은 완료되어도 완료현장 시트로 가지 않고 단건 시트 내에서 완료 상태 유지
+    try {
+      var sStartCol = e.range.getColumn();
+      var sEndCol = e.range.getLastColumn ? e.range.getLastColumn() : sStartCol;
+      if (sStartCol <= 1 && sEndCol >= 1 && sheet.getLastRow() >= 3) {
+        try {
+          groupSheetRowsBySite(sheet, false);
+        } catch(eGSingle) {}
+      }
+    } catch(eSingleEdit) {}
   }
 
   // 캘린더 연동 제거 완료: 시트 입력 시 팝업 및 지연(렉) 0% 보장
@@ -3184,17 +3225,22 @@ function initCategorySheetFormat(newSheet, ss, typeName) {
     setupSiteSheetConditionalFormatting(newSheet);
   } catch(eFmt) {}
 
+  // 아코디언 토글 위치를 상단(BEFORE)으로 설정 (대표 행에 [-]/[+] 표시)
+  try {
+    newSheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE);
+  } catch(ePos) {}
+
   SpreadsheetApp.flush();
 }
 
 /**
- * '단건' 및 'AS' 시트 존재 여부 검사 및 자동 생성/서식 동기화
+ * '단건' 및 'AS' 시트 존재 여부 검사 및 자동 생성/서식 동기화 + 동일 현장 자동 묶기
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
- * @return {object} { singleSheetCreated: boolean, asSheetCreated: boolean, singleSheetId: number, asSheetId: number }
+ * @return {object} { singleSheetCreated: boolean, asSheetCreated: boolean, singleSheetId: number, asSheetId: number, singleGroups: number, asGroups: number }
  */
 function ensureCustomCategorySheets(ss) {
   if (!ss) ss = getAppSpreadsheet();
-  if (!ss) return { singleSheetCreated: false, asSheetCreated: false };
+  if (!ss) return { singleSheetCreated: false, asSheetCreated: false, singleGroups: 0, asGroups: 0 };
 
   var singleCreated = false;
   var asCreated = false;
@@ -3211,25 +3257,39 @@ function ensureCustomCategorySheets(ss) {
     asCreated = true;
   }
 
+  var groupRes = { singleGroups: 0, asGroups: 0 };
+  try {
+    groupRes = groupCategorySheetsBySite(ss, false);
+  } catch(eGrpInit) {}
+
   return {
     singleSheetCreated: singleCreated,
     asSheetCreated: asCreated,
     singleSheetId: (singleSheet && typeof singleSheet.getSheetId === "function") ? singleSheet.getSheetId() : null,
-    asSheetId: (asSheet && typeof asSheet.getSheetId === "function") ? asSheet.getSheetId() : null
+    asSheetId: (asSheet && typeof asSheet.getSheetId === "function") ? asSheet.getSheetId() : null,
+    singleGroups: groupRes.singleGroups || 0,
+    asGroups: groupRes.asGroups || 0
   };
 }
 
 /**
- * [상단 메뉴 전용] '단건', 'AS' 시트 자동 생성 및 서식 동기화
+ * [상단 메뉴 전용] '단건', 'AS' 시트 자동 생성 및 서식 동기화 + 동일 현장 묶기
  */
 function ensureCustomCategorySheetsMenu() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) ss = getAppSpreadsheet();
   var res = ensureCustomCategorySheets(ss);
+  var groupInfo = "";
+  if (res.singleGroups > 0 || res.asGroups > 0) {
+    groupInfo = "\n\n📁 동일 현장 묶기 결과:\n" +
+                "• '단건' 시트: " + res.singleGroups + "개 현장 묶음 완료\n" +
+                "• 'AS' 시트: " + res.asGroups + "개 현장 묶음 완료";
+  }
   var msg = "📑 '단건' 및 'AS' 시트 준비 완료!\n\n" +
             "• '단건' 시트: " + (res.singleSheetCreated ? "신규 생성됨" : "이미 존재함 (서식 검증 완료)") + "\n" +
             "• 'AS' 시트: " + (res.asSheetCreated ? "신규 생성됨" : "이미 존재함 (서식 검증 완료)") + "\n\n" +
-            "현장데이터 시트와 동일한 10개 열(A~J열) 서식 및 드롭다운, 조건부 서식이 완벽하게 적용되었습니다.";
+            "현장데이터 시트와 동일한 10개 열(A~J열) 서식 및 드롭다운, 조건부 서식, 동일 현장 그룹화(아코디언)가 완벽하게 적용되었습니다." +
+            groupInfo;
   SpreadsheetApp.getUi().alert("📑 시트 준비 완료", msg, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
@@ -5766,38 +5826,58 @@ function archiveCompletedSiteBlocks(isManual) {
 }
 
 /**
- * [신규] 완료현장 시트 동일 현장별 행 그룹화(접기/아코디언) 엔진
- * - 동일 현장명으로 묶인 복수 행(2행 이상)을 감지하여 첫 행 아래의 하위 행들을 그룹화
- * - collapseGroups()를 적용하여 동일 현장이면 자동으로 접어서 보여줌 (좌측 [+] 클릭 시 전체 공종 펼침)
+ * [범용] 지정된 시트의 동일 현장별 행 그룹화(접기/아코디언) 엔진
+ * - '현장데이터', '완료현장', '단건', 'AS' 시트 모두 지원
+ * - 동일 현장명으로 묶인 복수 행(2행 이상)을 감지하여 첫 행 아래의 하위 행들(2번째~끝)을 그룹화
+ * - sheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE) 설정으로 대표 행에 [-]/[+] 토글 배치
+ * - collapse가 true이면 collapseGroups() 호출 (기본값: false로 펼친 상태에서 그룹[-] 표시)
+ * 
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet 대상 시트
+ * @param {boolean} [collapse=false] 그룹 생성 후 자동 접기 여부
+ * @return {number} 그룹화된 현장 블록 개수
  */
-function groupCompletedSitesBySite(sheet) {
-  if (!sheet) {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    if (!ss) ss = getAppSpreadsheet();
-    if (!ss) return;
-    sheet = findCompletedSitesSheet(ss, false);
-  }
-  if (!sheet) return;
+function groupSheetRowsBySite(sheet, collapse) {
+  if (!sheet) return 0;
 
   var lastRow = sheet.getLastRow();
-  if (lastRow < 3) return; // 데이터가 1행 이하이면 접을 하위 행 없음
+  if (lastRow < 3) return 0; // 데이터가 1행 이하이면 접을 하위 행 없음
 
   try {
+    // 0단계: 토글 버튼 위치를 상단(BEFORE)으로 설정 (대표 행에 [-]/[+] 표시)
+    try {
+      sheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE);
+    } catch(ePos) {}
+
     // 1단계: 기존 행 그룹화 깊이 초기화 (중복 깊이 누적 방지)
     try {
       sheet.getRange(2, 1, lastRow - 1, 1).shiftRowGroupDepth(-8);
     } catch(eReset) {}
 
     // 2단계: 동일 현장명 연속 구간 판별
-    var siteVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    // (A열이 명시되어 있거나, 상위 행의 현장명을 상속하는 연속 블록 탐색, 순수 빈 행은 블록 분리)
+    var checkRange = sheet.getRange(2, 1, lastRow - 1, 3);
+    var checkVals = (checkRange && typeof checkRange.getValues === "function") ? checkRange.getValues() : [];
     var blocks = [];
     var curSite = "";
     var curStartRow = -1;
     var curCount = 0;
 
-    for (var i = 0; i < siteVals.length; i++) {
+    for (var i = 0; i < checkVals.length; i++) {
       var rowNum = i + 2;
-      var rawS = String(siteVals[i][0] || "").trim();
+      var rawS = String(checkVals[i][0] || "").trim();
+      var hasDT = Boolean(String(checkVals[i][1] || "").trim() || String(checkVals[i][2] || "").trim());
+
+      // 현장명도 없고 날짜/공종도 없는 완전한 빈 행인 경우 현장 블록 마감
+      if (!rawS && !hasDT) {
+        if (curSite && curCount > 0) {
+          blocks.push({ site: curSite, startRow: curStartRow, count: curCount });
+        }
+        curSite = "";
+        curStartRow = -1;
+        curCount = 0;
+        continue;
+      }
+
       if (rawS) {
         if (curSite === "") {
           curSite = rawS;
@@ -5821,7 +5901,8 @@ function groupCompletedSitesBySite(sheet) {
       blocks.push({ site: curSite, startRow: curStartRow, count: curCount });
     }
 
-    // 3단계: 2행 이상인 현장 블록에 대해 2번째 행부터 끝 행까지 그룹화 후 접기(collapse)
+    var groupedCount = 0;
+    // 3단계: 2행 이상인 현장 블록에 대해 2번째 행부터 끝 행까지 그룹화
     for (var b = 0; b < blocks.length; b++) {
       var blk = blocks[b];
       if (blk.count > 1) {
@@ -5830,14 +5911,127 @@ function groupCompletedSitesBySite(sheet) {
         try {
           var rng = sheet.getRange(subStart, 1, subCount, 1);
           rng.shiftRowGroupDepth(1);
-          rng.collapseGroups();
+          if (collapse === true) {
+            rng.collapseGroups();
+          }
+          groupedCount++;
         } catch(eSubGrp) {}
+
+        // 블록 단위 테두리 적용 (A~H열 테두리 격자 보존)
+        try {
+          sheet.getRange(blk.startRow, 1, blk.count, 8)
+            .setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+        } catch(eBrd) {}
       }
     }
     SpreadsheetApp.flush();
+    return groupedCount;
   } catch(e) {
-    Logger.log("groupCompletedSitesBySite 에러: " + e.toString());
+    Logger.log("groupSheetRowsBySite 에러: " + e.toString());
+    return 0;
   }
+}
+
+/**
+ * [신규] 완료현장 시트 동일 현장별 행 그룹화(접기/아코디언) 엔진
+ * - 동일 현장명으로 묶인 복수 행(2행 이상)을 감지하여 첫 행 아래의 하위 행들을 그룹화
+ * - collapseGroups()를 적용하여 동일 현장이면 자동으로 접어서 보여줌 (좌측 [+] 클릭 시 전체 공종 펼침)
+ */
+function groupCompletedSitesBySite(sheet) {
+  if (!sheet) {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    if (!ss) return 0;
+    sheet = findCompletedSitesSheet(ss, false);
+  }
+  if (!sheet) return 0;
+  return groupSheetRowsBySite(sheet, true);
+}
+
+/**
+ * '단건' 및 'AS' 시트 동일 현장별 행 그룹화(아코디언) 일괄 실행
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @param {boolean} [collapse=false]
+ * @return {object} { singleGroups: number, asGroups: number }
+ */
+function groupCategorySheetsBySite(ss, collapse) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { singleGroups: 0, asGroups: 0 };
+
+  var res = { singleGroups: 0, asGroups: 0 };
+  var singleSheet = findSingleTaskSheet(ss, false);
+  if (singleSheet && singleSheet.getLastRow() >= 3) {
+    try {
+      consolidateSplitSiteRows(singleSheet);
+    } catch(eConsSingle) {}
+    res.singleGroups = groupSheetRowsBySite(singleSheet, collapse === true);
+  }
+
+  var asSheet = findAsSheet(ss, false);
+  if (asSheet && asSheet.getLastRow() >= 3) {
+    try {
+      consolidateSplitSiteRows(asSheet);
+    } catch(eConsAs) {}
+    res.asGroups = groupSheetRowsBySite(asSheet, collapse === true);
+  }
+
+  return res;
+}
+
+/**
+ * '단건' 및 'AS' 시트 동일 현장별 묶기 메뉴 함수
+ */
+function groupCategorySheetsMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  var res = groupCategorySheetsBySite(ss, false);
+  ss.toast("'단건' 시트 " + res.singleGroups + "개 현장, 'AS' 시트 " + res.asGroups + "개 현장이 그룹화되었습니다. (좌측 [-]/[+] 토글로 접고 펼칠 수 있습니다)", "📁 동일 현장 묶기 완료", 4);
+}
+
+/**
+ * '단건' 및 'AS' 시트 전체 펼치기 메뉴 함수
+ */
+function expandCategorySheetsMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  var singleSheet = findSingleTaskSheet(ss, false);
+  if (singleSheet && singleSheet.getLastRow() >= 2) {
+    try {
+      singleSheet.showRows(1, singleSheet.getMaxRows());
+      singleSheet.expandAllRowGroups();
+    } catch(eExp1) {}
+  }
+  var asSheet = findAsSheet(ss, false);
+  if (asSheet && asSheet.getLastRow() >= 2) {
+    try {
+      asSheet.showRows(1, asSheet.getMaxRows());
+      asSheet.expandAllRowGroups();
+    } catch(eExp2) {}
+  }
+  SpreadsheetApp.flush();
+  ss.toast("'단건' 및 'AS' 시트의 모든 공종 행이 펼쳐졌습니다.", "📖 전체 펼치기 완료", 3);
+}
+
+/**
+ * '단건' 및 'AS' 시트 전체 접기 메뉴 함수
+ */
+function collapseCategorySheetsMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  var singleSheet = findSingleTaskSheet(ss, false);
+  if (singleSheet && singleSheet.getLastRow() >= 2) {
+    try {
+      singleSheet.collapseAllRowGroups();
+    } catch(eCol1) {}
+  }
+  var asSheet = findAsSheet(ss, false);
+  if (asSheet && asSheet.getLastRow() >= 2) {
+    try {
+      asSheet.collapseAllRowGroups();
+    } catch(eCol2) {}
+  }
+  SpreadsheetApp.flush();
+  ss.toast("'단건' 및 'AS' 시트가 대표 현장명으로 접혔습니다.", "📁 전체 접기 완료", 3);
 }
 
 /**
@@ -6586,6 +6780,10 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
       }
     } catch (eSortAfterAdd) {}
 
+    try {
+      groupSheetRowsBySite(sheet, false);
+    } catch (eGrpAfterAdd) {}
+
     SpreadsheetApp.flush();
     invalidateDashboardServerCache();
 
@@ -6672,11 +6870,25 @@ function doGet(e) {
     ensureHourlySortTriggerInstalled();
     var movedCnt = sheet ? consolidateSplitSiteRows(sheet) : 0;
     var sortedCnt = (ss && sheet) ? sortSiteScheduleTasksByDate(ss, sheet, true) : 0;
+    if (sheet) {
+      try { groupSheetRowsBySite(sheet, false); } catch(eGrpCons) {}
+    }
     invalidateDashboardServerCache();
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
       consolidatedCount: movedCnt,
       sortedBlockCount: sortedCnt
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-1-2) '단건' 및 'AS' 시트 동일 현장별 묶기 요청 (action=groupCategorySheets)
+  if (action === "groupCategorySheets") {
+    var catRes = groupCategorySheetsBySite(ss, false);
+    invalidateDashboardServerCache();
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      singleGroups: catRes.singleGroups,
+      asGroups: catRes.asGroups
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
