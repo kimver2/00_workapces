@@ -8306,10 +8306,93 @@ assertTest('Step 110-8: doGet action removeCalendarSync 엔드포인트 지원 �
   code.includes('removeAllCalendarTriggers(ss)')
 );
 
-// 110-9: index.html 내 exec?v=101 캐시 버스팅 파라미터 갱신 검증
+// 110-9: index.html 내 exec?v=101 이상 캐시 버스팅 파라미터 갱신 검증
 const indexHtmlContent110 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
-assertTest('Step 110-9: index.html 내 exec?v=101 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent110.includes('exec?v=101')
+assertTest('Step 110-9: index.html 내 exec?v=101 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(?:10[1-9]|[1-9]\d{2,})/.test(indexHtmlContent110)
+);
+
+// ========================================================
+console.log('\n--- [Step 111]: 완료현장 시트 아카이브 사이트 독립 보존 & 진행현장 동일 현장명 AS 분리 표출 QA ---');
+
+// 111-1: ARCHIVED:: 접두사를 통한 동일 현장명 격리 로직 검증
+assertTest('Step 111-1: compSheet 로드 시 ARCHIVED:: 접두사 키를 사용하여 현장데이터 시트와 분리 저장 검증',
+  code.includes('var cSiteKey = "ARCHIVED::" + cSiteName;') &&
+  code.includes('sitesMap[cSiteKey]') &&
+  code.includes('siteOrder.push(cSiteKey)')
+);
+
+// 111-2: isArchived 사이트의 100% 완료 및 100% 진척률 강제 보장 검증
+assertTest('Step 111-2: isArchived 사이트의 isAllCompleted=true 및 progressRate=100 자동 보장 검증',
+  code.includes('var isAllCompleted = (siteObj.isArchived === true) ||') &&
+  code.includes('if (isAllCompleted || siteObj.isArchived)')
+);
+
+// 111-3: 모의 환경에서 진행현장에 AS 1건, 완료현장에 공정 27건이 있을 때 각각 1건과 27건으로 정확히 2개 사이트 분리 생성되는지 검증
+const mockSs111 = {
+  getSheetByName: (n) => {
+    if (n === '완료현장') return mockCompSheet111;
+    return mockSiteSheet111;
+  },
+  getSheets: () => [mockSiteSheet111, mockCompSheet111]
+};
+
+const mockSiteSheet111 = {
+  getName: () => '현장데이터',
+  getLastRow: () => 2,
+  getRange: () => ({
+    getValues: () => [
+      ['보라매경남 102동 1104호', '2026.10.25', 'AS', '', false, '', '인경호', '예정', '', '']
+    ]
+  }),
+  getParent: () => mockSs111
+};
+
+const mockCompSheet111 = {
+  getName: () => '완료현장',
+  getLastRow: () => 3,
+  getRange: () => ({
+    getValues: () => [
+      ['보라매경남 102동 1104호', '2026.07.13', '철거', '이수현', true, '', '전예린', '완료', '', ''],
+      ['', '2026.07.14', '설비', '', true, '', '조항만', '완료', '', '']
+    ]
+  }),
+  getParent: () => mockSs111
+};
+
+const freshSandbox111 = {
+  Logger: { log: () => {} },
+  SpreadsheetApp: {
+    getActiveSpreadsheet: () => mockSs111,
+    flush: () => {}
+  },
+  PropertiesService: {
+    getDocumentProperties: () => ({ getProperty: () => '', setProperty: () => {}, deleteProperty: () => {} }),
+    getScriptProperties: () => ({ getProperty: () => '', setProperty: () => {}, deleteProperty: () => {} })
+  },
+  CacheService: {
+    getScriptCache: () => null
+  }
+};
+vm.createContext(freshSandbox111);
+vm.runInContext(code, freshSandbox111);
+freshSandbox111.findSiteScheduleSheet = () => mockSiteSheet111;
+freshSandbox111.findCompletedSitesSheet = () => mockCompSheet111;
+freshSandbox111.getAppSpreadsheet = () => mockSs111;
+
+const res111 = freshSandbox111.getSidebarDashboardData(true);
+const activeSite111 = res111.sites.find(s => s.siteName === '보라매경남 102동 1104호' && !s.isArchived);
+const doneSite111 = res111.sites.find(s => s.siteName === '보라매경남 102동 1104호' && s.isArchived);
+
+assertTest('Step 111-3: getSidebarDashboardData 실행 시 진행현장 AS 사이트와 완료현장 아카이브 사이트가 공존하여 누락 없이 모두 반환 검증',
+  !!activeSite111 && activeSite111.tasks.length === 1 && activeSite111.isAllCompleted === false &&
+  !!doneSite111 && doneSite111.tasks.length === 2 && doneSite111.isAllCompleted === true && doneSite111.isArchived === true
+);
+
+// 111-4: index.html 내 exec?v=102 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent111 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 111-4: index.html 내 exec?v=102 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent111.includes('exec?v=102')
 );
 
 console.log('\n========================================================');

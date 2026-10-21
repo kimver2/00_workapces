@@ -6348,6 +6348,13 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 0-8) 대시보드 원시 데이터 JSON 조회 (action=getDashboardData || action=getSidebarData)
+  if (action === "getDashboardData" || action === "getSidebarData") {
+    var dashData = getSidebarDashboardData(true);
+    return ContentService.createTextOutput(JSON.stringify(dashData))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   // [스마트 행 자동 보정 엔진]
   // 신규 현장 추가, 행 삭제, 정렬 등으로 인해 시트 행 번호가 밀린 경우 실시간 자동 재탐색
   if (sheet && (targetId || targetSite || targetTask)) {
@@ -8097,10 +8104,11 @@ function getSidebarDashboardData(forceRefresh) {
             cEndDateStr = cey + "-" + (cem < 10 ? "0" + cem : cem) + "-" + (ced < 10 ? "0" + ced : ced);
           }
 
-          if (!sitesMap[cSiteName]) {
+          var cSiteKey = "ARCHIVED::" + cSiteName;
+          if (!sitesMap[cSiteKey]) {
             var cColorCode = "9";
             try { cColorCode = getCalendarColorForSite(cSiteName, compSheet); } catch(eC) {}
-            sitesMap[cSiteName] = {
+            sitesMap[cSiteKey] = {
               siteName: cSiteName,
               colorCode: cColorCode,
               colorHex: getHexColorForCalendarCode(cColorCode),
@@ -8108,10 +8116,10 @@ function getSidebarDashboardData(forceRefresh) {
               isArchived: true,
               initialOrder: siteOrder.length
             };
-            siteOrder.push(cSiteName);
+            siteOrder.push(cSiteKey);
           }
 
-          sitesMap[cSiteName].tasks.push({
+          sitesMap[cSiteKey].tasks.push({
             row: ci + 2,
             taskName: cTaskName,
             dateDisplay: cDateDisplay,
@@ -8178,13 +8186,13 @@ function getSidebarDashboardData(forceRefresh) {
         return st.indexOf("완료") === -1 && st.indexOf("취소") === -1;
       });
 
-      var isAllCompleted = (siteObj.tasks.length > 0) && (activeTasks.length === 0);
+      var isAllCompleted = (siteObj.isArchived === true) || ((siteObj.tasks.length > 0) && (activeTasks.length === 0));
       var totalTasksCount = siteObj.tasks.length;
       var validTasksCount = totalTasksCount - canceledCount;
 
       var progressRate = 0;
       if (validTasksCount > 0) {
-        if (isAllCompleted) {
+        if (isAllCompleted || siteObj.isArchived) {
           progressRate = 100;
         } else {
           progressRate = Math.min(100, Math.max(0, Math.round((completedCount / validTasksCount) * 100)));
