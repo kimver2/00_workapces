@@ -843,7 +843,7 @@ function onOpen() {
     // [사용자 지정 최상위 핵심 기능 노출]
     .addItem("대시보드 사이드바 열기", "openSiteScheduleSidebar")
     .addItem("대시보드 팝업 열기", "openSiteScheduleModal")
-    .addItem("📅 현장별 날짜 오름차순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
+    .addItem("📅 현장별 날짜 최신순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
     .addItem("📦 완료 현장 시트로 이동 (아카이브)", "archiveCompletedSitesMenu")
     .addItem("📁 완료현장 시트 동일 현장별 접기", "groupCompletedSitesMenu")
     .addItem("📂 완료현장 시트 전체 펼치기", "expandCompletedSitesMenu")
@@ -861,11 +861,10 @@ function onOpen() {
       // 1. 색상 복구 및 날짜 일괄 정비
       .addItem("⚠️ 지연 공정 강조 및 서식 복구/검사", "checkAndHighlightDelayedSchedules")
       .addItem("📅 전체 날짜 2026.00.00 형식 일괄 변환", "formatAllDatesInSheetToYYYYMMDD")
-      .addItem("🔄 대시보드 달력 새로고침", "syncAllSiteSchedulesToDashboard")
       .addSeparator()
 
       // 2. 현장 데이터 편집 / 보기 편의 기능
-      .addItem("📅 현장별 날짜 오름차순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
+      .addItem("📅 현장별 날짜 최신순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
       .addItem("📦 완료 현장 시트로 이동 (블록 전체 완료 현장 아카이브)", "archiveCompletedSitesMenu")
       .addItem("📁 완료현장 동일 현장별 접기 (아코디언)", "groupCompletedSitesMenu")
       .addItem("📂 완료현장 전체 펼치기", "expandCompletedSitesMenu")
@@ -875,7 +874,6 @@ function onOpen() {
       .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
       .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
       .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
-      .addItem("🎯 오늘 날짜로 이동 (Today)", "goToToday")
       .addSeparator()
 
       // 3. 모닝 브리핑 관리
@@ -898,25 +896,26 @@ function onOpen() {
 }
 
 /**
- * [상단 메뉴 전용] 현장데이터 시트 현장별 날짜 오름차순 즉시 정렬
+ * [상단 메뉴 전용] '현장데이터', '단건', 'AS' 시트 첫 번째 일정 최신순 즉시 정렬
  */
 function sortSiteScheduleTasksByDateMenu() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) ss = getAppSpreadsheet();
   if (!ss) return;
-  var sheet = findSiteScheduleSheet(ss);
-  if (!sheet) return;
 
-  var count = sortSiteScheduleTasksByDate(ss, sheet, false);
-  setupSiteSheetConditionalFormatting(sheet);
-  refreshDashboardCalendar(ss);
+  var totalSorted = sortAllScheduleSheetsByDate(ss, false);
+  try {
+    var siteSheet = findSiteScheduleSheet(ss);
+    if (siteSheet) setupSiteSheetConditionalFormatting(siteSheet);
+  } catch(e) {}
 
-  if (count === 0) {
+  if (totalSorted === 0) {
     try {
-      ss.toast("모든 현장의 공정이 이미 날짜 빠른 순으로 완벽하게 정렬되어 있습니다.", "📅 정렬 상태 완벽", 3);
+      ss.toast("모든 현장의 일정이 이미 최신순으로 완벽하게 정렬되어 있습니다.", "📅 정렬 상태 완벽", 3);
     } catch(e) {}
   }
 }
+
 
 /**
  * 1시간 주기 현장데이터 시트 날짜 오름차순 자동 정렬 및 담당자 서식 동기화 엔진
@@ -958,54 +957,17 @@ function runHourlyAutoSortTrigger() {
     if (!ss) ss = getAppSpreadsheet();
     if (!ss) return;
 
+    // '현장데이터', '단건', 'AS' 시트 동일 현장 병합 + 최신순 정렬 + 아코디언 그룹화 일괄 실행 (무음)
+    var sortedCount = sortAllScheduleSheetsByDate(ss, true);
+
     var sheet = findSiteScheduleSheet(ss);
-    if (!sheet) return;
+    if (sheet) {
+      setupSiteSheetConditionalFormatting(sheet);
+    }
 
-    // 1. 분리된 동일 현장 행 병합 + 현장별 날짜 오름차순 자동 정렬 + 아코디언 그룹화 (무음 실행)
-    var movedCount = 0;
-    try {
-      movedCount = consolidateSplitSiteRows(sheet);
-    } catch (eCons) {}
-    var sortedCount = sortSiteScheduleTasksByDate(ss, sheet, true);
-    try {
-      groupSheetRowsBySite(sheet, false);
-    } catch (eGrpSite) {}
-
-    // '단건' 및 'AS' 시트 동일 현장 병합 및 그룹화 자동 유지
-    try {
-      var singleSheet = findSingleTaskSheet(ss, false);
-      if (singleSheet && singleSheet.getLastRow() >= 3) {
-        consolidateSplitSiteRows(singleSheet);
-        groupSheetRowsBySite(singleSheet, false);
-      }
-    } catch (eGrpSingle) {}
-
-    try {
-      var asSheet = findAsSheet(ss, false);
-      if (asSheet && asSheet.getLastRow() >= 3) {
-        consolidateSplitSiteRows(asSheet);
-        groupSheetRowsBySite(asSheet, false);
-      }
-    } catch (eGrpAs) {}
-
-    if (movedCount > 0 || sortedCount > 0) {
+    if (sortedCount > 0) {
       invalidateDashboardServerCache();
     }
-
-    var now = new Date();
-    var hour = now.getHours();
-    var isNightTime = (hour >= 22 || hour < 7);
-
-    // 심야 시간(22시~07시)에는 병합/정렬 변경사항이 없을 때 서식·달력 재렌더링 생략
-    if (isNightTime && movedCount === 0 && sortedCount === 0) {
-      return;
-    }
-
-    // 2. 담당자 조건부 서식 동적 최신화 (새로 등록된 담당자 색상 자동 생성)
-    setupSiteSheetConditionalFormatting(sheet);
-
-    // 3. 대시보드 달력 최신화
-    refreshDashboardCalendar(ss);
   } catch (err) {
     Logger.log("1시간 주기 자동 정렬 에러: " + err.toString());
   }
@@ -1287,6 +1249,7 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
 
   // 현장 블록 단위로 그룹핑
   var blocks = [];
+  var emptyRows = [];
   var currentBlock = null;
   var lastKnownSite = "";
 
@@ -1302,6 +1265,7 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
         currentBlock = null;
       }
       lastKnownSite = "";
+      emptyRows.push({ vals: rowVals, bg: backgrounds[i] });
       continue;
     }
 
@@ -1360,92 +1324,152 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     blocks.push(currentBlock);
   }
 
-  var sortedBlockCount = 0;
-  var anyChanged = false;
+  if (blocks.length === 0) return 0;
 
-  // 각 블록별 날짜 오름차순 정렬 및 시트 반영
+  // 1단계: 각 블록 내부 공정들을 날짜 오름차순(시작일 빠른 순)으로 정렬 & 첫 번째 대표 일정(firstDateMs) 산출
   for (var b = 0; b < blocks.length; b++) {
     var blk = blocks[b];
-    if (blk.items.length <= 1) continue; // 1개 행 이하는 정렬 불필요
+    blk.initialIdx = b;
 
-    // 정렬 필요 여부 확인: 이미 날짜 오름차순으로 정렬되어 있는지 검사
-    var isSorted = true;
-    for (var c = 0; c < blk.items.length - 1; c++) {
-      var curMs = blk.items[c].dateMs;
-      var nextMs = blk.items[c + 1].dateMs;
-      // 날짜가 있는 경우: 앞 날짜가 뒷 날짜보다 크면 정렬 필요!
-      if (curMs && nextMs && curMs > nextMs) {
-        isSorted = false;
+    if (blk.items.length > 1) {
+      blk.items.sort(function(itemA, itemB) {
+        var aMs = itemA.dateMs || 0;
+        var bMs = itemB.dateMs || 0;
+        if (aMs && bMs) {
+          if (aMs !== bMs) return aMs - bMs;
+        } else if (aMs) {
+          return -1;
+        } else if (bMs) {
+          return 1;
+        }
+        return itemA.idx - itemB.idx;
+      });
+
+      for (var s = 0; s < blk.items.length; s++) {
+        if (blk.hasExplicitSiteInAllRows) {
+          blk.items[s].vals[0] = blk.siteName;
+        } else {
+          blk.items[s].vals[0] = (s === 0) ? blk.siteName : "";
+        }
+      }
+    }
+
+    // 블록의 첫 번째 유효 일정 날짜 계산
+    var firstMs = 0;
+    for (var fi = 0; fi < blk.items.length; fi++) {
+      if (blk.items[fi].dateMs > 0) {
+        firstMs = blk.items[fi].dateMs;
         break;
       }
-      // 앞은 날짜가 없고 뒤는 날짜가 있으면 정렬 필요! (날짜 있는 것이 앞으로)
-      if (!curMs && nextMs) {
-        isSorted = false;
-        break;
-      }
     }
-
-    if (isSorted) continue; // 이미 정렬되어 있으면 건너뜀
-
-    // Stable Sort 수행
-    var sortedItems = blk.items.slice();
-    sortedItems.sort(function(itemA, itemB) {
-      var aMs = itemA.dateMs || 0;
-      var bMs = itemB.dateMs || 0;
-
-      // 둘 다 날짜가 있는 경우: 날짜 빠른 순(오름차순)
-      if (aMs && bMs) {
-        if (aMs !== bMs) return aMs - bMs;
-      } else if (aMs) {
-        return -1; // a는 날짜 있고 b는 없으면 a가 앞
-      } else if (bMs) {
-        return 1;  // b는 날짜 있고 a는 없으면 b가 앞
-      }
-      // 날짜가 같거나 둘 다 없으면: 원래의 상대적 인덱스 순서 유지
-      return itemA.idx - itemB.idx;
-    });
-
-    // A열 현장명 보존 처리:
-    // 모든 행에 현장명이 적혀 있던 패턴이었다면 모든 행에 현장명 유지!
-    // 첫 행에만 적혀 있고 나머지가 빈칸인 아코디언 패턴이었다면 1번째 행에만 현장명 기입
-    for (var s = 0; s < sortedItems.length; s++) {
-      if (blk.hasExplicitSiteInAllRows) {
-        sortedItems[s].vals[0] = blk.siteName;
-      } else {
-        sortedItems[s].vals[0] = (s === 0) ? blk.siteName : "";
-      }
-    }
-
-    // values 및 backgrounds 배열에 정렬 결과 반영
-    for (var r = 0; r < blk.items.length; r++) {
-      var targetRowIdx = blk.items[r].idx; // 원래 행 위치
-      values[targetRowIdx] = sortedItems[r].vals;
-      backgrounds[targetRowIdx] = sortedItems[r].bg;
-    }
-
-    sortedBlockCount++;
-    anyChanged = true;
+    blk.firstDateMs = firstMs;
   }
 
-  // 변경 사항이 있는 경우에만 시트에 1회 배치 쓰기
+  // 2단계: 현장 블록들 자체를 '첫 번째 일정이 최신인 순'(내림차순)으로 정렬
+  // - 날짜가 있는 현장: 최신 날짜가 위로 (내림차순: blkB - blkA)
+  // - 날짜가 없는 현장: 맨 아래로
+  // - 날짜가 같거나 둘 다 없는 경우: 원래 상대적 순서 보존 (Stable Sort)
+  blocks.sort(function(blkA, blkB) {
+    var aDate = blkA.firstDateMs || 0;
+    var bDate = blkB.firstDateMs || 0;
+
+    if (aDate && bDate) {
+      if (aDate !== bDate) return bDate - aDate; // 최신 날짜순 (내림차순)
+    } else if (aDate) {
+      return -1;
+    } else if (bDate) {
+      return 1;
+    }
+    return blkA.initialIdx - blkB.initialIdx;
+  });
+
+  // 3단계: 정렬된 블록들과 빈 행들을 합쳐 newValues 및 newBackgrounds 구성
+  var newValues = [];
+  var newBackgrounds = [];
+  for (var sb = 0; sb < blocks.length; sb++) {
+    var bItem = blocks[sb];
+    for (var si = 0; si < bItem.items.length; si++) {
+      newValues.push(bItem.items[si].vals);
+      newBackgrounds.push(bItem.items[si].bg);
+    }
+  }
+  for (var er = 0; er < emptyRows.length; er++) {
+    newValues.push(emptyRows[er].vals);
+    newBackgrounds.push(emptyRows[er].bg);
+  }
+
+  // 4단계: Diff 검사 - 변경 사항이 있는 경우에만 시트에 1회 배치 쓰기
+  var anyChanged = false;
+  if (newValues.length !== values.length) {
+    anyChanged = true;
+  } else {
+    for (var ch = 0; ch < values.length; ch++) {
+      var vRow = values[ch];
+      var nvRow = newValues[ch];
+      for (var col = 0; col < 10; col++) {
+        if (vRow[col] !== nvRow[col]) {
+          anyChanged = true;
+          break;
+        }
+      }
+      if (anyChanged) break;
+    }
+  }
+
+  var sortedBlockCount = 0;
   if (anyChanged) {
-    rangeAll.setValues(values);
-    rangeAll.setBackgrounds(backgrounds);
+    rangeAll.setValues(newValues);
+    rangeAll.setBackgrounds(newBackgrounds);
     SpreadsheetApp.flush();
-    Logger.log("✅ 현장데이터 시트 날짜 정렬 완료: 총 " + sortedBlockCount + "개 현장 블록 재정렬");
+    try {
+      groupSheetRowsBySite(sheet, false);
+    } catch(eGrpAfterSort) {}
+    sortedBlockCount = blocks.length;
+    Logger.log("✅ 시트 첫 번째 일정 최신순 정렬 완료: 총 " + sortedBlockCount + "개 현장 정렬됨");
   }
 
   if (anyChanged || consolidatedCount > 0) {
     invalidateDashboardServerCache();
   }
 
-  if (!silent && sortedBlockCount > 0) {
+  if (!silent && anyChanged) {
     try {
-      ss.toast("총 " + sortedBlockCount + "개 현장의 공정이 날짜 빠른 순으로 자동 정렬되었습니다.", "📅 날짜 순 정렬 완료", 3);
+      ss.toast("현장 목록이 첫 번째 일정 최신순으로 정렬되었습니다.", "📅 최신순 정렬 완료", 3);
     } catch(e) {}
   }
 
   return sortedBlockCount;
+}
+
+/**
+ * '현장데이터', '단건', 'AS' 시트 3개 모두에 대해 첫 번째 일정 최신순 정렬 일괄 실행
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @param {boolean} [silent=true]
+ * @return {object} { siteCount: number, singleCount: number, asCount: number }
+ */
+function sortAllScheduleSheetsByDate(ss, silent) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { siteCount: 0, singleCount: 0, asCount: 0 };
+
+  var res = { siteCount: 0, singleCount: 0, asCount: 0 };
+
+  var siteSheet = findSiteScheduleSheet(ss);
+  if (siteSheet) {
+    res.siteCount = sortSiteScheduleTasksByDate(ss, siteSheet, silent !== false);
+    try { setupSiteSheetConditionalFormatting(siteSheet); } catch(eFmt) {}
+  }
+
+  var singleSheet = findSingleTaskSheet(ss, false);
+  if (singleSheet && singleSheet.getLastRow() >= 2) {
+    res.singleCount = sortSiteScheduleTasksByDate(ss, singleSheet, silent !== false);
+  }
+
+  var asSheet = findAsSheet(ss, false);
+  if (asSheet && asSheet.getLastRow() >= 2) {
+    res.asCount = sortSiteScheduleTasksByDate(ss, asSheet, silent !== false);
+  }
+
+  return res;
 }
 
 
@@ -1461,25 +1485,7 @@ function onEdit(e) {
   var row = e.range.getRow();
   var ss = e.source || SpreadsheetApp.getActiveSpreadsheet();
 
-  // ① [대시보드 시트]
-  if (isDashboardSheet(sheet)) {
-    var a1 = e.range.getA1Notation();
-    // G2 체크박스 또는 H2 클릭 시 Today 동작 실행
-    if ((a1 === "G2" || a1 === "H2") && e.range.getValue() === true) {
-      e.range.setValue(false);
-      goToToday();
-      return;
-    }
-    // 상단 컨트롤(1~3행)의 년도 또는 월 변경 시 대시보드 달력 즉시 갱신
-    if (row <= 3) {
-      refreshDashboardCalendar(ss);
-      return;
-    }
-  }
-
-  // ② [구성원 시트 변경 감지 -> 현장데이터 담당자(G열) 드롭다운 즉시 실시간 갱신]
-  // 사용자가 구성원 시트에 새로운 인원을 추가하거나 이름을 수정하면, 즉시 현장데이터 시트의
-  // 담당자 드롭다운 유효성 검사 목록을 최신 구성원 명단으로 자동 동기화합니다.
+  // ① [구성원 시트 변경 감지 -> 현장데이터 담당자(G열) 드롭다운 즉시 실시간 갱신]
   if (isMembersSheet(sheet)) {
     try {
       var siteSheet = findSiteScheduleSheet(ss);
@@ -1493,9 +1499,7 @@ function onEdit(e) {
     return;
   }
 
-  // ②-2 [04_공종 시트 변경 감지 -> 현장데이터 공종(C열) 드롭다운 즉시 실시간 갱신]
-  // 사용자가 04_공종 시트에서 공종을 추가/삭제/수정하면, 즉시 현장데이터 시트의
-  // 공종 드롭다운 유효성 검사 목록을 최신 공종 명단으로 자동 동기화합니다.
+  // ② [04_공종 시트 변경 감지 -> 현장데이터 공종(C열) 드롭다운 즉시 실시간 갱신]
   if (isTasksSheet(sheet)) {
     try {
       var siteSheet2 = findSiteScheduleSheet(ss);
@@ -1509,26 +1513,26 @@ function onEdit(e) {
     return;
   }
 
-  // ③ [현장데이터 시트 편집 감지 -> 담당자(G열) 및 공종(C열) 유효성 자동학습 + 무팝업 초고속 캐시 무효화]
+  // ③ [현장데이터 시트 편집 감지 -> 담당자/공종 유효성 자동학습 + 날짜(B열) 편집 시 최신순 무음 자동 정렬]
   if (isSiteScheduleSheet(sheet)) {
     try {
       var startCol = e.range.getColumn();
       var endCol = e.range.getLastColumn ? e.range.getLastColumn() : startCol;
-      // G열 담당자 직접 편집 감지 -> 담당자 목록에 자동 등록 및 유효성 검사 자동학습으로 에러 방지
-      if (startCol <= 7 && endCol >= 7) {
-        var editedVals = e.range.getValues ? e.range.getValues() : [[e.range.getValue()]];
-        var editedMgrs = [];
-        for (var er = 0; er < editedVals.length; er++) {
-          var colOffset = 7 - startCol;
-          if (colOffset >= 0 && colOffset < editedVals[er].length) {
-            var val = String(editedVals[er][colOffset] || "").trim();
-            if (val) editedMgrs.push(val);
-          }
-        }
-        if (editedMgrs.length > 0) {
-          ensureManagersInValidation(sheet, editedMgrs);
-        }
+
+      // 현장명(A열) 편집 감지 -> 동일 현장 자동 묶기 (접기/펼치기 아코디언)
+      if (startCol <= 1 && endCol >= 1 && sheet.getLastRow() >= 3) {
+        try {
+          groupSheetRowsBySite(sheet, false);
+        } catch(eGSite) {}
       }
+
+      // 날짜(B열) 편집 감지 -> 첫 번째 일정 최신순(내림차순) 무음 자동 정렬
+      if (startCol <= 2 && endCol >= 2 && row >= 2) {
+        try {
+          sortSiteScheduleTasksByDate(ss, sheet, true);
+        } catch(eSortSite) {}
+      }
+
       // C열 공종 직접 편집 감지 -> 04_공종 시트에 자동 등록 및 유효성 검사 자동학습으로 에러 방지
       if (startCol <= 3 && endCol >= 3) {
         var editedTaskVals = e.range.getValues ? e.range.getValues() : [[e.range.getValue()]];
@@ -1544,10 +1548,26 @@ function onEdit(e) {
           ensureTasksInValidation(sheet, editedTasks);
         }
       }
+
+      // G열 담당자 직접 편집 감지 -> 담당자 목록에 자동 등록 및 유효성 검사 자동학습으로 에러 방지
+      if (startCol <= 7 && endCol >= 7) {
+        var editedVals = e.range.getValues ? e.range.getValues() : [[e.range.getValue()]];
+        var editedMgrs = [];
+        for (var er = 0; er < editedVals.length; er++) {
+          var colOffset = 7 - startCol;
+          if (colOffset >= 0 && colOffset < editedVals[er].length) {
+            var val = String(editedVals[er][colOffset] || "").trim();
+            if (val) editedMgrs.push(val);
+          }
+        }
+        if (editedMgrs.length > 0) {
+          ensureManagersInValidation(sheet, editedMgrs);
+        }
+      }
     } catch(eSheetEdit) {}
   }
 
-  // ④ [AS 시트 편집 감지 -> 진행상태가 '완료'로 변경 시 완료현장 시트로 자동 이동 및 동일 현장 그룹 편입]
+  // ④ [AS 시트 편집 감지 -> 날짜(B열) 편집 시 최신순 자동 정렬 + 완료 시 완료현장 시트로 자동 이동]
   if (isAsSheet(sheet)) {
     try {
       var aStartCol = e.range.getColumn();
@@ -1560,6 +1580,14 @@ function onEdit(e) {
         } catch(eGAs) {}
       }
 
+      // 날짜(B열) 편집 시 첫 번째 일정 최신순(내림차순) 무음 자동 정렬
+      if (aStartCol <= 2 && aEndCol >= 2 && row >= 2) {
+        try {
+          sortSiteScheduleTasksByDate(ss, sheet, true);
+        } catch(eSortAs) {}
+      }
+
+      // H열 진행상태 '완료' 시 완료현장 시트로 자동 이동
       if (aStartCol <= 8 && aEndCol >= 8) {
         var aEditedVals = e.range.getValues ? e.range.getValues() : [[e.range.getValue()]];
         for (var aer = 0; aer < aEditedVals.length; aer++) {
@@ -1583,20 +1611,29 @@ function onEdit(e) {
     }
   }
 
-  // ⑤ [단건 시트 편집 감지 -> 현장명(A열) 편집 시 동일 현장 자동 묶기 & 완료되어도 단건 시트 내 보존]
+  // ⑤ [단건 시트 편집 감지 -> 날짜(B열) 편집 시 최신순 자동 정렬 & 현장명(A열) 편집 시 동일 현장 자동 묶기]
   if (isSingleTaskSheet(sheet)) {
     try {
       var sStartCol = e.range.getColumn();
       var sEndCol = e.range.getLastColumn ? e.range.getLastColumn() : sStartCol;
+
+      // 현장명(A열) 편집 시 동일 현장 자동 묶기
       if (sStartCol <= 1 && sEndCol >= 1 && sheet.getLastRow() >= 3) {
         try {
           groupSheetRowsBySite(sheet, false);
         } catch(eGSingle) {}
       }
+
+      // 날짜(B열) 편집 시 첫 번째 일정 최신순(내림차순) 무음 자동 정렬
+      if (sStartCol <= 2 && sEndCol >= 2 && row >= 2) {
+        try {
+          sortSiteScheduleTasksByDate(ss, sheet, true);
+        } catch(eSortSingle) {}
+      }
     } catch(eSingleEdit) {}
   }
 
-  // 캘린더 연동 제거 완료: 시트 입력 시 팝업 및 지연(렉) 0% 보장
+  // 캐시 무효화 (무음 실행, 팝업/딜레이 0%)
   invalidateDashboardServerCache();
 }
 
@@ -1706,14 +1743,14 @@ function ensureRealtimeTriggerInstalledSilent() {
 }
 
 /**
- * 시트 구조 변경 감지 (행 삭제 시 대시보드 새로고침 및 유효성 검사 유지)
+ * 시트 구조 변경 감지 (행 삭제 시 캐시 무효화 및 유효성 검사 유지, 팝업/토스트 0%)
  */
 function handleSheetChangeTrigger(e) {
   if (!e || e.changeType !== "REMOVE_ROW") return;
   try {
     var ss = e.source || getAppSpreadsheet();
     if (!ss) return;
-    refreshDashboardCalendar(ss);
+    invalidateDashboardServerCache();
     var siteSheetForVal = findSiteScheduleSheet(ss);
     if (siteSheetForVal) {
       applySiteScheduleValidations(siteSheetForVal);
@@ -2170,382 +2207,63 @@ function fixStatusDropdownValidation() {
 // ========================================================
 
 /**
- * 선택된 연도/월 기준으로 대시보드 달력 내용 전체 재구성
+ * /**
+ * [레거시 호환 스텁] 00_calendar 시트 완전 폐기됨. Web 대시보드 캐시 무효화만 무음 수행 (토스트/팝업 0%)
  */
 function refreshDashboardCalendar(ss) {
-  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) ss = getAppSpreadsheet();
-  if (!ss) return;
-
-  var dashSheet = findDashboardSheet(ss);
-  var siteSheet = findSiteScheduleSheet(ss);
-  if (!dashSheet || !siteSheet) return;
-
-  // [절대 방어 가드 1] 대시보드 시트와 현장데이터 시트가 동일 시트이면 즉시 중단 (시트 오염 원천 차단)
-  if (dashSheet.getSheetId() === siteSheet.getSheetId()) {
-    Logger.log("⚠️ 경고: 대시보드 시트와 현장데이터 시트가 동일 시트로 판정되어 대시보드 갱신을 중단합니다.");
-    return;
-  }
-
-  // [절대 방어 가드 2] 대시보드 시트에 요일 헤더가 없으면 즉시 중단
-  if (!hasDayOfWeekHeader(dashSheet)) {
-    Logger.log("⚠️ 경고: 대시보드 시트에서 요일 헤더를 찾을 수 없어 대시보드 갱신을 중단합니다.");
-    return;
-  }
-
-  // 구글 시트 수식(새 월 날짜 계산) 강제 반영
-  SpreadsheetApp.flush();
-
-  // 1. 요일 헤더 행 찾기 (예: 4행)
-  var dowRow = findDayOfWeekRow(dashSheet);
-
-  // 2. 대시보드 상단에서 선택된 연도와 월 읽기
-  var dashYM = getDashboardSelectedYearMonth(dashSheet, dowRow);
-  var targetYear = dashYM.year;
-  var targetMonth = dashYM.month;
-
-  // 3. 상단 헤더 영역(드롭다운 밑) 청소
-  cleanupDashboardHeaderArea(dashSheet, dowRow);
-
-  // 4. 달력의 모든 일정 내용 칸을 깨끗하게 비움 (기존 월 일정 완전 삭제)
-  clearAllDashboardContentCells(dashSheet, dowRow);
-
-  // 5. 현장데이터 시트에서 전체 데이터 읽기 (1~8열: 현장, 날짜, 공종, 협력업체, 공유, 비고, 담당자, 진행상태)
-  var lastRow = siteSheet.getLastRow();
-  if (lastRow < 2) return;
-
-  var siteData = siteSheet.getRange(2, 1, lastRow - 1, 8).getValues();
-
-  // 6. 현재 대시보드 달력의 날짜 위치 맵 구성: map[day] = { row, col }
-  var cellPositions = buildCalendarCellMap(dashSheet, dowRow, targetMonth);
-
-  // 7. 현장데이터 중 '선택된 연도 및 월'에 해당하는 일정만 수집
-  var schedulesByDay = {};
-  var matchedCount = 0;
-  var lastKnownSite = ""; // [핵심 보완] 아코디언 하위 행 현장명 자동 계승
-
-  for (var i = 0; i < siteData.length; i++) {
-    var rawSite = String(siteData[i][0] || "").trim();
-    if (rawSite) lastKnownSite = rawSite;
-
-    var dateVal = siteData[i][1];
-    var taskName = String(siteData[i][2] || "").trim();
-    var siteName = rawSite || ((dateVal || taskName) ? lastKnownSite : "");
-    var status = String(siteData[i][7] || "").trim(); // H열: 진행상태 (인덱스 7)
-
-    if (!siteName || !dateVal || !taskName) continue;
-
-    var rangeInfo = parseScheduleDateRange(dateVal);
-    if (!rangeInfo) continue;
-
-    // E열: 공유 (인덱스 4) -> 🟦 / 🟥 아이콘
-    var rawShare = siteData[i][4];
-    var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
-    var prefixIcon = isShared ? "🟦 " : "🟥 ";
-
-    // 상태별 아이콘 (예정='', 진행중='▶️ ', 완료='✅ ', AS='🛠️ ')
-    var statusClean = status.replace(/\s+/g, "");
-    var statusIcon = "";
-    if (statusClean.indexOf("완료") !== -1 || statusClean.indexOf("✅") !== -1) {
-      statusIcon = "✅ ";
-    } else if (statusClean.indexOf("진행") !== -1 || statusClean.indexOf("▶") !== -1) {
-      statusIcon = "▶️ ";
-    } else if (statusClean.indexOf("AS") !== -1 || statusClean.indexOf("A/S") !== -1 || statusClean.indexOf("as") !== -1 || statusClean.indexOf("🛠") !== -1) {
-      statusIcon = "🛠️ ";
-    }
-
-    // 공정 지연 자동 감지 (Feature 2)
-    var isDelayed = isScheduleDelayed(rangeInfo, statusClean);
-    var delayPrefix = isDelayed ? "⚠️ [지연] " : "";
-
-    // 시간 정보가 있는 경우 시간 표기 추가 (예: 15:00)
-    var timeDisplay = (rangeInfo.hasTime && rangeInfo.timeStr) ? " (" + rangeInfo.timeStr + ")" : "";
-
-    // 대시보드 일정 텍스트 포맷 (지연경고 + 상태아이콘 + 공유아이콘 + 현장명 + 공종 + 시간, 비고 제외)
-    var itemText = delayPrefix + statusIcon + prefixIcon + "[" + siteName + "] " + taskName + timeDisplay;
-
-    // 기간 일정(예: 10/7 ~ 10/9) 처리
-    if (rangeInfo.isRange && rangeInfo.displayEndDate) {
-      var curD = new Date(rangeInfo.startDate.getFullYear(), rangeInfo.startDate.getMonth(), rangeInfo.startDate.getDate());
-      var endD = new Date(rangeInfo.displayEndDate.getFullYear(), rangeInfo.displayEndDate.getMonth(), rangeInfo.displayEndDate.getDate());
-      var anyMatched = false;
-      var maxRangeLoop = 366; // 무한루프 및 비정상 기간 방어 (최대 1년)
-      while (curD <= endD && --maxRangeLoop >= 0) {
-        var cYear = curD.getFullYear();
-        var cMonth = curD.getMonth() + 1;
-        var cDay = curD.getDate();
-
-        if ((!targetYear || cYear === targetYear) && cMonth === targetMonth) {
-          if (!schedulesByDay[cDay]) schedulesByDay[cDay] = [];
-          schedulesByDay[cDay].push(itemText);
-          anyMatched = true;
-        }
-        curD.setDate(curD.getDate() + 1);
-      }
-      if (anyMatched) matchedCount++;
-    } else {
-      // 단일 날짜
-      if (rangeInfo.year && targetYear && rangeInfo.year !== targetYear) continue;
-      if (rangeInfo.month !== targetMonth) continue;
-
-      var day = rangeInfo.day;
-      if (!schedulesByDay[day]) schedulesByDay[day] = [];
-      schedulesByDay[day].push(itemText);
-      matchedCount++;
-    }
-  }
-
-  // 8. 해당 월의 일정들을 달력의 해당 날짜 밑 칸에 쓰기 (주차별 행 단위 배치 일괄 쓰기 가속)
-  var rowsToUpdate = {};
-  for (var day in schedulesByDay) {
-    var pos = cellPositions[day];
-    if (pos) {
-      if (!rowsToUpdate[pos.row]) {
-        rowsToUpdate[pos.row] = dashSheet.getRange(pos.row, 2, 1, 7).getValues()[0];
-      }
-      rowsToUpdate[pos.row][pos.col - 2] = schedulesByDay[day].join("\n");
-    }
-  }
-
-  for (var rNum in rowsToUpdate) {
-    dashSheet.getRange(parseInt(rNum, 10), 2, 1, 7).setValues([rowsToUpdate[rNum]]);
-  }
-
-  SpreadsheetApp.flush();
-  if (matchedCount > 0) {
-    ss.toast(targetMonth + "월 일정 " + matchedCount + "건이 대시보드에 반영되었습니다.", "대시보드 갱신 완료", 2);
-  } else {
-    ss.toast(targetMonth + "월은 등록된 현장 일정이 없습니다. (달력 비움 완료)", "대시보드 갱신 완료", 2);
-  }
+  try {
+    invalidateDashboardServerCache();
+  } catch(e) {}
 }
 
 /**
- * 메뉴용 대시보드 수동 동기화 실행 함수
+ * [레거시 호환 스텁] 메뉴용 대시보드 동기화 스텁
  */
 function syncAllSiteSchedulesToDashboard() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  refreshDashboardCalendar(ss);
+  refreshDashboardCalendar();
 }
 
 /**
- * 대시보드 [Today] 실행: 현재 연도/월로 변경 및 오늘 날짜 셀로 포커스 이동
+ * [레거시 호환 스텁] 00_calendar 시트 Today 이동 스텁 (시트 폐기됨)
  */
 function goToToday() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var dashSheet = findDashboardSheet(ss);
-  if (!dashSheet || isSiteScheduleSheet(dashSheet)) {
-    SpreadsheetApp.getUi().alert(
-      "⚠️ 대시보드 시트를 찾을 수 없습니다.",
-      "현재 대시보드(달력) 시트의 탭 이름을 찾지 못했습니다.\n\n대시보드 탭 이름을 '대시보드' 또는 'dashboard'로 지정해주세요.",
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-    return;
-  }
-  ss.setActiveSheet(dashSheet);
-
-  var today = new Date();
-  var curYear = today.getFullYear();
-  var curMonth = today.getMonth() + 1;
-  var curDay = today.getDate();
-
-  // 1. 대시보드 상단에서 '년도'와 '월' 셀 위치 찾기
-  var yearCell = dashSheet.getRange("C2");
-  var monthCell = dashSheet.getRange("E2");
-
-  var dowRow = findDayOfWeekRow(dashSheet);
-  var maxSearchRows = Math.max(dowRow - 1, 3);
-  var values = dashSheet.getRange(1, 1, maxSearchRows, Math.min(dashSheet.getLastColumn(), 10)).getValues();
-  for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < values[r].length; c++) {
-      var val = String(values[r][c] || "").trim();
-      if ((val === "년도" || val === "연도" || val === "Year") && c + 1 < values[r].length) {
-        yearCell = dashSheet.getRange(r + 1, c + 2);
-      }
-      if ((val === "월" || val === "Month") && c + 1 < values[r].length) {
-        monthCell = dashSheet.getRange(r + 1, c + 2);
-      }
-    }
-  }
-
-  // G2 체크박스가 있다면 false로 초기화 (클릭 피드백)
-  try {
-    var g2 = dashSheet.getRange("G2");
-    if (typeof g2.getValue() === "boolean") {
-      g2.setValue(false);
-    }
-  } catch(e) {}
-
-  // 2. 연도와 월 설정
-  yearCell.setValue(curYear);
-  monthCell.setValue(curMonth);
-  SpreadsheetApp.flush();
-
-  // 3. 대시보드 달력 새로고침 (선택된 월 일정 렌더링)
-  refreshDashboardCalendar(ss);
-
-  // 4. 오늘 날짜 셀로 정확한 포커스 이동
-  var cellPositions = buildCalendarCellMap(dashSheet, dowRow, curMonth);
-  if (cellPositions && cellPositions[curDay]) {
-    var pos = cellPositions[curDay];
-    // 날짜 헤더 셀(숫자 적힌 셀)로 활성화
-    var targetRange = dashSheet.getRange(pos.row - 1, pos.col);
-    dashSheet.setActiveRange(targetRange);
-  }
-
-  ss.toast("오늘(" + curYear + "년 " + curMonth + "월 " + curDay + "일)로 이동했습니다.", "📅 Today", 3);
+  // 00_calendar 시트 완전 폐기됨 - no-op
 }
 
 /**
- * 달력의 모든 일정 내용 칸 깨끗하게 비우기 (수식 셀 보존)
+ * [레거시 호환 스텁] 00_calendar 시트 내용 비우기 스텁
  */
 function clearAllDashboardContentCells(dashSheet, dowRow) {
-  var maxRows = Math.min(dashSheet.getMaxRows(), 35);
-  for (var r = dowRow + 2; r <= maxRows; r += 2) {
-    var range = dashSheet.getRange(r, 2, 1, 7); // B(일) ~ H(토)
-    var formulas = range.getFormulas()[0];
-    var vals = range.getValues()[0];
-    var needsClear = false;
-
-    for (var i = 0; i < vals.length; i++) {
-      if (!formulas[i] && vals[i] !== "") {
-        needsClear = true;
-        break;
-      }
-    }
-    if (needsClear) {
-      range.clearContent();
-    }
-  }
+  // no-op
 }
 
 /**
- * 대시보드 달력 그리드의 날짜 셀 위치 맵 구성
- * map[day] = { row: contentRow, col: col } (반드시 이번 달 날짜만 매핑)
+ * [레거시 호환 스텁] 00_calendar 시트 날짜 셀 맵 스텁
  */
 function buildCalendarCellMap(dashSheet, dowRow, currentMonth) {
-  var totalRows = Math.min(dashSheet.getMaxRows(), 35);
-  var values = dashSheet.getRange(1, 1, totalRows, 8).getValues();
-  var map = {};
-  var startIdx = dowRow; // dowRow 행 바로 다음이 1주차 날짜 행
-
-  for (var r = startIdx; r < values.length; r += 2) {
-    var contentRow = r + 2; // 날짜 바로 밑 내용 행 (1-indexed)
-
-    for (var c = 1; c <= 7; c++) { // B(1) ~ H(7)
-      var cellVal = values[r][c];
-      if (cellVal === "" || cellVal === null || cellVal === undefined) continue;
-
-      var numVal = null;
-      var cellMonth = currentMonth;
-
-      // Date 객체인 경우
-      if (cellVal instanceof Date && !isNaN(cellVal.getTime())) {
-        cellMonth = cellVal.getMonth() + 1;
-        numVal = cellVal.getDate();
-      } else {
-        // 숫자 정수인 경우
-        var parsed = parseInt(cellVal, 10);
-        if (!isNaN(parsed) && parsed >= 1 && parsed <= 31) {
-          numVal = parsed;
-          if (r === startIdx && numVal > 20) {
-            cellMonth = currentMonth === 1 ? 12 : currentMonth - 1;
-          }
-          if (r >= startIdx + 8 && numVal <= 10) {
-            cellMonth = currentMonth === 12 ? 1 : currentMonth + 1;
-          }
-        }
-      }
-
-      if (numVal && cellMonth === currentMonth) {
-        map[numVal] = { row: contentRow, col: c + 1 };
-      }
-    }
-  }
-
-  return map;
+  return {};
 }
 
 /**
- * 대시보드 상단 헤더 영역 청소
+ * [레거시 호환 스텁] 00_calendar 시트 헤더 청소 스텁
  */
 function cleanupDashboardHeaderArea(dashSheet, dowRow) {
-  if (dowRow <= 2) return;
-  var range = dashSheet.getRange(1, 1, dowRow - 1, Math.min(dashSheet.getLastColumn(), 15));
-  var values = range.getValues();
-  var changed = false;
-
-  for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < values[r].length; c++) {
-      var val = String(values[r][c] || "");
-      if (val.indexOf("[") !== -1 && (val.indexOf("호]") !== -1 || val.indexOf("현장]") !== -1 || val.indexOf("] ") !== -1)) {
-        values[r][c] = "";
-        changed = true;
-      }
-    }
-  }
-  if (changed) {
-    range.setValues(values);
-  }
+  // no-op
 }
 
 /**
- * 요일 헤더 행('일', '월'...) 위치 찾기
+ * [레거시 호환 스텁] 요일 헤더 행 찾기 스텁
  */
 function findDayOfWeekRow(dashSheet) {
-  var maxRows = Math.min(dashSheet.getLastRow(), 15);
-  var maxCols = Math.min(dashSheet.getLastColumn(), 10);
-  if (maxRows < 1 || maxCols < 1) return 4;
-
-  var values = dashSheet.getRange(1, 1, maxRows, maxCols).getValues();
-  for (var r = 0; r < values.length; r++) {
-    var matchCount = 0;
-    for (var c = 0; c < values[r].length; c++) {
-      var str = String(values[r][c] || "").trim();
-      if (str === "일" || str === "월" || str === "화" || str === "수" || str === "목" || str === "금" || str === "토" ||
-          str === "일요일" || str === "월요일" || str === "SUN" || str === "MON") {
-        matchCount++;
-      }
-    }
-    if (matchCount >= 4) return r + 1;
-  }
   return 4;
 }
 
 /**
- * 대시보드 상단 선택 연도/월 읽기
+ * [레거시 호환 스텁] 대시보드 상단 선택 연도/월 읽기 스텁
  */
 function getDashboardSelectedYearMonth(dashSheet, dowRow) {
   var now = new Date();
-  var defYear = now.getFullYear();
-  var defMonth = now.getMonth() + 1;
-  if (dowRow <= 1) return { year: defYear, month: defMonth };
-
-  var values = dashSheet.getRange(1, 1, dowRow - 1, Math.min(dashSheet.getLastColumn(), 10)).getValues();
-  var foundYear = null;
-  var foundMonth = null;
-
-  for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < values[r].length; c++) {
-      var val = String(values[r][c] || "").trim();
-      if (val === "년도" || val === "연도" || val === "Year") {
-        if (c + 1 < values[r].length && parseInt(values[r][c + 1], 10) >= 2000) {
-          foundYear = parseInt(values[r][c + 1], 10);
-        }
-      }
-      if (val === "월" || val === "Month") {
-        if (c + 1 < values[r].length) {
-          var m = parseInt(values[r][c + 1], 10);
-          if (m >= 1 && m <= 12) foundMonth = m;
-        }
-      }
-      var n = parseInt(val, 10);
-      if (n >= 2000 && n <= 2099 && !foundYear) {
-        foundYear = n;
-      }
-    }
-  }
-
-  return { year: foundYear || defYear, month: foundMonth || defMonth };
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
 
@@ -2960,12 +2678,10 @@ function isAsSheet(sheet) {
 }
 
 /**
- * 대시보드(달력) 시트인지 판별 (반드시 요일 헤더 '일, 월, 화...'가 있어야만 함!)
+ * [레거시 호환 스텁] 대시보드(달력) 시트 판별 스텁 (00_calendar 완전 폐기됨)
  */
 function isDashboardSheet(sheet) {
-  if (!sheet) return false;
-  // 요일 헤더가 상단에 없는 시트는 탭 이름이 무엇이든 절대로 대시보드 시트가 아님!
-  return hasDayOfWeekHeader(sheet);
+  return false;
 }
 
 /**
@@ -3001,23 +2717,10 @@ function getAppSpreadsheet() {
   return ss;
 }
 
+/**
+ * [레거시 호환 스텁] 대시보드 시트 검색 스텁 (00_calendar 완전 폐기됨)
+ */
 function findDashboardSheet(ss) {
-  if (!ss) ss = getAppSpreadsheet();
-  if (!ss) return null;
-  var sheets = ss.getSheets();
-
-  // 1순위: 요일 헤더 구조를 갖춘 진짜 대시보드 달력 시트 찾기
-  for (var i = 0; i < sheets.length; i++) {
-    if (isDashboardSheet(sheets[i])) return sheets[i];
-  }
-
-  // 2순위: 탭 이름 후보 중 요일 헤더를 갖춘 시트
-  var candidates = ["dashboard", "Dashboard", "대시보드", "00_대시보드", "만년달력", "달력", "00_Calendar", "Calendar"];
-  for (var k = 0; k < candidates.length; k++) {
-    var s = ss.getSheetByName(candidates[k]);
-    if (s && hasDayOfWeekHeader(s)) return s;
-  }
-
   return null;
 }
 
@@ -8438,15 +8141,14 @@ function getHexColorForCalendarCode(code) {
 
 /**
  * 대한민국 법정 공휴일 맵 반환 ({ "YYYY-MM-DD": "공휴일명" })
- * - 1순위: 스프레드시트 내 00_Calendar 시트의 X열(날짜)/Y열(명칭) 캐시 데이터
- * - 2순위: 2024~2027 기본 법정 공휴일 & 대체공휴일 내장 데이터 (오프라인/단독 환경 100% 보장)
+ * - 2024~2027 기본 법정 공휴일 & 대체공휴일 내장 데이터 (오프라인/독립 웹 환경 100% 보장)
  * @param {Spreadsheet} [ss]
  * @returns {Object} { [dateStr]: holidayName }
  */
 function getKoreanHolidaysMap(ss) {
   var holidayMap = {};
 
-  // 1) 2024~2027 법정공휴일 및 대체공휴일 기본 베이스 데이터
+  // 2024~2027 법정공휴일 및 대체공휴일 기본 베이스 데이터
   var defaultList = [
     // 2024
     ["2024-01-01", "신정"], ["2024-02-09", "설날연휴"], ["2024-02-10", "설날"], ["2024-02-11", "설날연휴"], ["2024-02-12", "대체공휴일"],
@@ -8473,36 +8175,6 @@ function getKoreanHolidaysMap(ss) {
   for (var i = 0; i < defaultList.length; i++) {
     holidayMap[defaultList[i][0]] = defaultList[i][1];
   }
-
-  // 2) 00_Calendar 시트의 X열/Y열 공휴일 캐시가 있다면 최신 데이터로 병합
-  try {
-    if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
-    if (!ss) ss = getAppSpreadsheet();
-    if (ss) {
-      var calSheet = ss.getSheetByName("00_Calendar") || ss.getSheetByName("캘린더") || ss.getSheetByName("Calendar");
-      if (calSheet) {
-        var lastR = calSheet.getLastRow();
-        if (lastR >= 1) {
-          var checkRows = Math.min(lastR, 300);
-          var vals = calSheet.getRange(1, 24, checkRows, 2).getValues(); // X열(24), Y열(25)
-          for (var r = 0; r < vals.length; r++) {
-            var rawD = vals[r][0];
-            var name = String(vals[r][1] || "").trim();
-            if (rawD && name) {
-              var dObj = (rawD instanceof Date) ? rawD : new Date(rawD);
-              if (!isNaN(dObj.getTime())) {
-                var y = dObj.getFullYear();
-                var m = dObj.getMonth() + 1;
-                var d = dObj.getDate();
-                var key = y + "-" + (m < 10 ? "0" + m : m) + "-" + (d < 10 ? "0" + d : d);
-                holidayMap[key] = name;
-              }
-            }
-          }
-        }
-      }
-    }
-  } catch (eSheet) {}
 
   return holidayMap;
 }

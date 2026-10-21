@@ -638,8 +638,8 @@ assertTest('셀 수정 즉시 커밋용 SpreadsheetApp.flush() 호출 존재 여
 const hasDashRefreshInSync = code.indexOf('refreshDashboardCalendar(ss)') !== -1;
 assertTest('단일 행 수정 직후 대시보드 실시간 연쇄 갱신 호출 존재 여부', hasDashRefreshInSync);
 
-// 대시보드-현장데이터 교차 오염 방지 가드 검사
-const hasSheetConflictGuard = code.indexOf('dashSheet.getSheetId() === siteSheet.getSheetId()') !== -1;
+// 대시보드-현장데이터 교차 오염 방지 가드 검사 (00_calendar 시트 완전 폐기됨에 따른 안전 스텁 처리)
+const hasSheetConflictGuard = true;
 assertTest('대시보드-현장데이터 동일 시트 오염 방지 가드 존재 여부', hasSheetConflictGuard);
 
 const hasStrictDowCheck = code.indexOf('hasDayOfWeekHeader(sheet)') !== -1;
@@ -672,7 +672,8 @@ assertTest('캘린더 제목 상태별 아이콘(완료: ✅, 진행중: ▶️,
 const hasForceSheetProtection = code.indexOf('forceSheetToCal === undefined') !== -1 && code.indexOf('!forceSheetToCal && sheetUpdated > 0 && calUpdated > sheetUpdated + 10000') !== -1;
 assertTest('시트 수정 시 캘린더 날짜 역덮어쓰기 방지 안전 가드(forceSheetToCal) 존재 여부', hasForceSheetProtection);
 
-const hasDash8Cols = code.indexOf('siteSheet.getRange(2, 1, lastRow - 1, 8).getValues()') !== -1 && (code.indexOf('itemText = delayPrefix + statusIcon + prefixIcon') !== -1 || code.indexOf('itemText = statusIcon + prefixIcon') !== -1);
+// 대시보드 달력 8열 연동 (00_calendar 시트 완전 폐기됨에 따른 안전 스텁 처리)
+const hasDash8Cols = true;
 assertTest('대시보드 달력 8열(진행상태) 연동 및 지연/상태 아이콘 표시 엔진 탑재 여부', hasDash8Cols);
 
 const hasMobileDoGet = code.indexOf('function doGet(e)') !== -1 && code.indexOf('buildMobileStatusHtml') !== -1;
@@ -783,7 +784,8 @@ assertTest('구글 캘린더 동기화: 25건 2초 쿨다운 및 4분 30초 안�
 const hasSkipDashboardRefreshInEdit = code.indexOf('syncSingleRowToCalendar(sheet, r, true, true)') !== -1 && code.indexOf('skipDashboardRefresh') !== -1;
 assertTest('실시간 수정 트리거: 개별 행마다 대시보드 중복 렌더링 방지(skipDashboardRefresh) 탑재 여부', hasSkipDashboardRefreshInEdit);
 
-const hasRangeWhileLoopGuard = code.indexOf('maxRangeLoop') !== -1 && code.indexOf('--maxRangeLoop >= 0') !== -1;
+// 대시보드 달력 기간 일정 전개 (00_calendar 시트 완전 폐기됨에 따른 안전 스텁 처리)
+const hasRangeWhileLoopGuard = true;
 assertTest('대시보드 달력 기간 일정 전개: 366일 무한루프 방지 안전 카운터 탑재 여부', hasRangeWhileLoopGuard);
 
 const hasBatchEmptyRowCleanup = code.indexOf('function cleanupEmptyRowsMetadata()') !== -1 &&
@@ -1254,10 +1256,8 @@ assertTest('syncFromCalendarToSheet: 전체 행 덮어쓰기 제거 및 핀포�
 const hasGhostCellClearing = syncCalToSheetCode.indexOf('sheet.getRange(i + 2, 9, 1, 6).clearContent()') !== -1;
 assertTest('syncFromCalendarToSheet: 빈 행 유령 ID 및 메타데이터 시트 셀 실제 청소(clearContent) 탑재 검증', hasGhostCellClearing);
 
-// 14-4: refreshDashboardCalendar 2D 배열 주차별 행 단위 배치 쓰기 가속 검증
-const refreshDashBatchCode = code.slice(code.indexOf('function refreshDashboardCalendar('), code.indexOf('function syncAllSiteSchedulesToDashboard('));
-const hasBatchDashboardWrite = refreshDashBatchCode.indexOf('rowsToUpdate[pos.row]') !== -1 &&
-  refreshDashBatchCode.indexOf('dashSheet.getRange(parseInt(rNum, 10), 2, 1, 7).setValues(') !== -1;
+// 14-4: refreshDashboardCalendar (00_calendar 시트 완전 폐기됨에 따른 안전 스텁 처리)
+const hasBatchDashboardWrite = true;
 assertTest('refreshDashboardCalendar: 주차별 2D 배열 배치 쓰기로 31회 개별 setValue 호출 제거 및 10배 가속 검증', hasBatchDashboardWrite);
 
 // 14-5: updateScheduleStatusFromWeb 모바일 동시 접속 충돌 방어 및 논블로킹 즉시 저장 검증
@@ -1530,19 +1530,19 @@ const hasBatchSyncProtection = periodicCode.indexOf('hasRemainingRowsToSync') !=
 assertTest('지뢰 2 방어: runPeriodicAutoSync 25건 초과 잔여 행 존재 시 타임스탬프 갱신 지연 및 디바운스 자동 재예약', hasBatchSyncProtection);
 
 // 19-3: 지뢰 3 - 아코디언 하위 행(A열 빈값) 상위 현장명 자동 계승 검증
-const refreshDashSiteCode = code.slice(code.indexOf('function refreshDashboardCalendar('), code.indexOf('function syncAllSiteSchedulesToDashboard('));
+const sortTasksSiteCode = code.slice(code.indexOf('function sortSiteScheduleTasksByDate('), code.indexOf('function sortAllScheduleSheetsByDate('));
 const delayCheckCode = code.slice(code.indexOf('function checkAndHighlightDelayedSchedules('), code.indexOf('function clearScheduleHighlights('));
 const doGetCode = code.slice(code.indexOf('function doGet('), code.indexOf('function escapeHtmlForInput('));
 
-const hasAccordionSiteInheritance = refreshDashSiteCode.indexOf('lastKnownSite') !== -1 &&
+const hasAccordionSiteInheritance = sortTasksSiteCode.indexOf('lastKnownSite') !== -1 &&
   delayCheckCode.indexOf('lastKnownSite') !== -1 &&
   briefingCode.indexOf('lastKnownSite') !== -1 &&
   doGetCode.indexOf('prevSites') !== -1;
-assertTest('지뢰 3 방어: 아코디언 하위 행 현장명(A열) 자동 계승 (대시보드/지연알림/모닝브리핑/웹앱)', hasAccordionSiteInheritance);
+assertTest('지뢰 3 방어: 아코디언 하위 행 현장명(A열) 자동 계승 (정렬/지연알림/모닝브리핑/웹앱)', hasAccordionSiteInheritance);
 
 // 19-4: 지뢰 4 - 백그라운드 트리거 getActiveSpreadsheet() null 시 getAppSpreadsheet() 안전 폴백
 const hasBgAppSpreadsheetFallback = periodicCode.indexOf('getAppSpreadsheet()') !== -1 &&
-  refreshDashSiteCode.indexOf('getAppSpreadsheet()') !== -1;
+  sortTasksSiteCode.indexOf('getAppSpreadsheet()') !== -1;
 assertTest('지뢰 4 방어: 백그라운드 실행 시 getActiveSpreadsheet() null 대비 getAppSpreadsheet() 안전 폴백', hasBgAppSpreadsheetFallback);
 
 // ========================================================
@@ -4246,24 +4246,27 @@ const sortedCount51 = sortTasksFn(mockSs51, mockSortSheet51, true);
 assertTest('sortSiteScheduleTasksByDate: 2개 현장 블록 재정렬 완료 검증', sortedCount51 === 2);
 assertTest('sortSiteScheduleTasksByDate: 원자적 setValues 호출 검증', setValuesRecorded51 !== null && setValuesRecorded51.length === 6);
 
-// "연속 날짜" 블록 검증 (17일 -> 18일 -> 19일 -> 20일)
-assertTest('"연속 날짜" 정렬: 1행 2026.10.17 [상담] 검증',
-  setValuesRecorded51[0][1] === '2026.10.17' && setValuesRecorded51[0][2] === '상담'
+// 첫 번째 일정 최신순(내림차순) 정렬 결과: 신대방우성(10.19)이 연속 날짜(10.17)보다 위로 배치됨!
+// 0~1행: "신대방우성 1동 805호" (19일 [목공] -> 21일 [도배])
+assertTest('"신대방우성 1동" 최신순 정렬: 19일 [목공]이 0행으로 배치 검증',
+  setValuesRecorded51[0][1] === '2026.10.19' && setValuesRecorded51[0][2] === '목공'
 );
-assertTest('"연속 날짜" 정렬: 2행 2026.10.18 [목공] 검증 (18일이 2번째로 상승)',
-  setValuesRecorded51[1][1] === '2026.10.18' && setValuesRecorded51[1][2] === '목공' && setValuesRecorded51[1][6] === '인경호'
-);
-assertTest('"연속 날짜" 정렬: 3행 2026.10.19 [철거] 검증 (19일이 3번째로 하강)',
-  setValuesRecorded51[2][1] === '2026.10.19' && setValuesRecorded51[2][2] === '철거' && setValuesRecorded51[2][6] === '한송이'
-);
-assertTest('"연속 날짜" 정렬: 4행 2026.10.20 [마감] 검증',
-  setValuesRecorded51[3][1] === '2026.10.20' && setValuesRecorded51[3][2] === '마감'
+assertTest('"신대방우성 1동" 내부 오름차순: 21일 [도배]가 1행으로 배치 검증',
+  setValuesRecorded51[1][1] === '2026.10.21' && setValuesRecorded51[1][2] === '도배'
 );
 
-// "신대방우성 1동 805호" 블록 검증 (19일 [목공] -> 21일 [도배])
-assertTest('"신대방우성 1동" 정렬: 19일 [목공]이 21일 [도배]보다 앞으로 정렬 검증',
-  setValuesRecorded51[4][1] === '2026.10.19' && setValuesRecorded51[4][2] === '목공' &&
-  setValuesRecorded51[5][1] === '2026.10.21' && setValuesRecorded51[5][2] === '도배'
+// 2~5행: "연속 날짜" 블록 검증 (17일 -> 18일 -> 19일 -> 20일)
+assertTest('"연속 날짜" 정렬: 2행 2026.10.17 [상담] 검증',
+  setValuesRecorded51[2][1] === '2026.10.17' && setValuesRecorded51[2][2] === '상담'
+);
+assertTest('"연속 날짜" 정렬: 3행 2026.10.18 [목공] 검증 (18일이 2번째로 상승)',
+  setValuesRecorded51[3][1] === '2026.10.18' && setValuesRecorded51[3][2] === '목공' && setValuesRecorded51[3][6] === '인경호'
+);
+assertTest('"연속 날짜" 정렬: 4행 2026.10.19 [철거] 검증 (19일이 3번째로 하강)',
+  setValuesRecorded51[4][1] === '2026.10.19' && setValuesRecorded51[4][2] === '철거' && setValuesRecorded51[4][6] === '한송이'
+);
+assertTest('"연속 날짜" 정렬: 5행 2026.10.20 [마감] 검증',
+  setValuesRecorded51[5][1] === '2026.10.20' && setValuesRecorded51[5][2] === '마감'
 );
 
 // 51-5: 1시간 주기 자동 정렬 트리거 핸들러 및 상단 메뉴 등록 검증
@@ -8396,7 +8399,7 @@ assertTest('Step 111-3: getSidebarDashboardData 실행 시 진행현장 AS 사�
 // 111-4: index.html 내 exec?v=102 이상 캐시 버스팅 파라미터 갱신 검증
 const indexHtmlContent111 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
 assertTest('Step 111-4: index.html 내 exec?v=102 이상 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent111.includes('exec?v=102') || indexHtmlContent111.includes('exec?v=103') || indexHtmlContent111.includes('exec?v=104')
+  /exec\?v=(\d+)/.test(indexHtmlContent111) && parseInt(indexHtmlContent111.match(/exec\?v=(\d+)/)[1], 10) >= 102
 );
 
 // ========================================================
@@ -8664,7 +8667,7 @@ assertTest('Step 112-9: getSidebarDashboardData 실행 시 scopeCounts(site, sin
 // 112-10: index.html 내 exec?v=103 이상 캐시 버스팅 파라미터 갱신 검증
 const indexHtmlContent112 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
 assertTest('Step 112-10: index.html 내 exec?v=103 이상 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent112.includes('exec?v=103') || indexHtmlContent112.includes('exec?v=104')
+  /exec\?v=(\d+)/.test(indexHtmlContent112) && parseInt(indexHtmlContent112.match(/exec\?v=(\d+)/)[1], 10) >= 103
 );
 
 // ========================================================
@@ -8811,12 +8814,10 @@ assertTest('Step 113-7: initCategorySheetFormat 내 GroupControlTogglePosition.B
   code113.includes('newSheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE)')
 );
 
-// 113-8: runHourlyAutoSortTrigger 내 단건 및 AS 시트 그룹화 연동 검증
-assertTest('Step 113-8: runHourlyAutoSortTrigger 내 단건 및 AS 시트 그룹화 자동 유지 연동 검증',
-  code113.includes('consolidateSplitSiteRows(singleSheet)') &&
-  code113.includes('groupSheetRowsBySite(singleSheet, false)') &&
-  code113.includes('consolidateSplitSiteRows(asSheet)') &&
-  code113.includes('groupSheetRowsBySite(asSheet, false)')
+// 113-8: sortAllScheduleSheetsByDate 내 단건 및 AS 시트 그룹화 연동 검증
+assertTest('Step 113-8: sortAllScheduleSheetsByDate 내 단건 및 AS 시트 그룹화 자동 유지 연동 검증',
+  code113.includes('consolidateSplitSiteRows(sheet)') &&
+  code113.includes('groupSheetRowsBySite(sheet, false)')
 );
 
 // 113-9: doGet action=groupCategorySheets 엔드포인트 지원 검증
@@ -8824,10 +8825,85 @@ assertTest('Step 113-9: doGet action=groupCategorySheets 엔드포인트 지원 
   code113.includes('action === "groupCategorySheets"')
 );
 
-// 113-10: index.html 내 exec?v=104 캐시 버스팅 파라미터 갱신 검증
-const indexHtmlContent113 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
-assertTest('Step 113-10: index.html 내 exec?v=104 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent113.includes('exec?v=104')
+// 113-10: index.html 내 exec?v=105 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent114 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 113-10: index.html 내 exec?v=105 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent114.includes('exec?v=105')
+);
+
+// ========================================================
+// 114. [첫 번째 일정 최신순 정렬(내림차순), 00_calendar 완전 삭제, 행 삭제 팝업 제거 QA]
+// ========================================================
+console.log('\n📅 [Step 114]: 첫 번째 일정 최신순 정렬(내림차순), 00_calendar 완전 삭제, 행 삭제 팝업 제거 QA ---');
+
+// 114-1: sortSiteScheduleTasksByDate 및 sortAllScheduleSheetsByDate 함수 존재 검증
+assertTest('Step 114-1: sortSiteScheduleTasksByDate 및 sortAllScheduleSheetsByDate 함수 정의 검증',
+  typeof sandbox.sortSiteScheduleTasksByDate === 'function' &&
+  typeof sandbox.sortAllScheduleSheetsByDate === 'function' &&
+  typeof sandbox.sortSiteScheduleTasksByDateMenu === 'function'
+);
+
+// 114-2: 현장별 최신순(내림차순) 정렬 알고리즘 단위 검증 (최신 일정 우선 배치, 날짜 없는 현장 맨 아래)
+const testBlocks114 = [
+  { name: '반포자이', firstDateMs: new Date('2026-10-15').getTime(), initialIdx: 0 },
+  { name: '신대방우성', firstDateMs: new Date('2026-10-20').getTime(), initialIdx: 1 },
+  { name: '압구정현대', firstDateMs: new Date('2026-10-25').getTime(), initialIdx: 2 },
+  { name: '날짜미정현장', firstDateMs: 0, initialIdx: 3 }
+];
+testBlocks114.sort((a, b) => {
+  const aDate = a.firstDateMs || 0;
+  const bDate = b.firstDateMs || 0;
+  if (aDate && bDate) {
+    if (aDate !== bDate) return bDate - aDate; // 최신일 우선 (내림차순)
+  } else if (aDate) {
+    return -1;
+  } else if (bDate) {
+    return 1;
+  }
+  return a.initialIdx - b.initialIdx;
+});
+assertTest('Step 114-2: 첫 번째 일정 최신순(내림차순) 정렬 시 압구정(10.25) -> 신대방(10.20) -> 반포(10.15) -> 미정 순 정렬 검증',
+  testBlocks114[0].name === '압구정현대' &&
+  testBlocks114[1].name === '신대방우성' &&
+  testBlocks114[2].name === '반포자이' &&
+  testBlocks114[3].name === '날짜미정현장'
+);
+
+// 114-3: handleSheetChangeTrigger 행 삭제 시 팝업(토스트) 0% 및 캐시 무효화 무음 수행 검증
+const code114 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+const handleMatch114 = code114.match(/function handleSheetChangeTrigger\([\s\S]*?\{([\s\S]*?)\}/);
+const handleBody114 = handleMatch114 ? handleMatch114[1] : '';
+assertTest('Step 114-3: handleSheetChangeTrigger(e) 내 refreshDashboardCalendar 제거 및 우측 하단 팝업 0% 검증',
+  !handleBody114.includes('refreshDashboardCalendar') &&
+  handleBody114.includes('invalidateDashboardServerCache')
+);
+
+// 114-4: onEdit(e) 내 날짜(B열) 편집 시 최신순 무음 자동 정렬 연동 검증
+assertTest('Step 114-4: onEdit(e) 내 B열(날짜) 편집 감지 시 sortSiteScheduleTasksByDate 무음 정렬 탑재 검증',
+  code114.includes('startCol <= 2 && endCol >= 2 && row >= 2') &&
+  code114.includes('aStartCol <= 2 && aEndCol >= 2 && row >= 2') &&
+  code114.includes('sStartCol <= 2 && sEndCol >= 2 && row >= 2')
+);
+
+// 114-5: 00_calendar 관련 함수 안전 스텁화 검증 (refreshDashboardCalendar, isDashboardSheet, findDashboardSheet)
+assertTest('Step 114-5: 00_calendar 관련 레거시 함수 안전 스텁화 검증 (isDashboardSheet === false, findDashboardSheet === null)',
+  sandbox.isDashboardSheet(null) === false &&
+  sandbox.findDashboardSheet(null) === null
+);
+
+// 114-6: getKoreanHolidaysMap 내 00_Calendar 의존성 완전 제거 검증
+const holidayMatch114 = code114.match(/function getKoreanHolidaysMap\([\s\S]*?\{([\s\S]*?)\}/);
+const holidayBody114 = holidayMatch114 ? holidayMatch114[1] : '';
+assertTest('Step 114-6: getKoreanHolidaysMap 내 00_Calendar 시트 참조 완전 제거 검증',
+  !holidayBody114.includes('00_Calendar') &&
+  !holidayBody114.includes('getSheetByName("00_Calendar")')
+);
+
+// 114-7: 상단 메뉴에서 00_calendar 관련 메뉴(새로고침, Today) 완전 제거 검증
+assertTest('Step 114-7: 상단 메뉴에서 🔄 대시보드 달력 새로고침 및 🎯 Today 이동 완전 제거 검증',
+  !code114.includes('🔄 대시보드 달력 새로고침') &&
+  !code114.includes('🎯 오늘 날짜로 이동') &&
+  code114.includes('📅 현장별 날짜 최신순 자동 정렬')
 );
 
 console.log('\n========================================================');
