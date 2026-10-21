@@ -5712,16 +5712,16 @@ function groupCategorySheetsBySite(ss, collapse) {
   var singleSheet = findSingleTaskSheet(ss, false);
   if (singleSheet && singleSheet.getLastRow() >= 3) {
     try {
-      consolidateSplitSiteRows(singleSheet);
-    } catch(eConsSingle) {}
+      sortSiteScheduleTasksByDate(ss, singleSheet, true);
+    } catch(eSortSingle) {}
     res.singleGroups = groupSheetRowsBySite(singleSheet, collapse === true);
   }
 
   var asSheet = findAsSheet(ss, false);
   if (asSheet && asSheet.getLastRow() >= 3) {
     try {
-      consolidateSplitSiteRows(asSheet);
-    } catch(eConsAs) {}
+      sortSiteScheduleTasksByDate(ss, asSheet, true);
+    } catch(eSortAs) {}
     res.asGroups = groupSheetRowsBySite(asSheet, collapse === true);
   }
 
@@ -5747,15 +5747,17 @@ function expandCategorySheetsMenu() {
   var singleSheet = findSingleTaskSheet(ss, false);
   if (singleSheet && singleSheet.getLastRow() >= 2) {
     try {
-      singleSheet.showRows(1, singleSheet.getMaxRows());
-      singleSheet.expandAllRowGroups();
+      var maxRows1 = (typeof singleSheet.getMaxRows === "function") ? singleSheet.getMaxRows() : singleSheet.getLastRow();
+      if (typeof singleSheet.showRows === "function") singleSheet.showRows(1, maxRows1);
+      if (typeof singleSheet.expandAllRowGroups === "function") singleSheet.expandAllRowGroups();
     } catch(eExp1) {}
   }
   var asSheet = findAsSheet(ss, false);
   if (asSheet && asSheet.getLastRow() >= 2) {
     try {
-      asSheet.showRows(1, asSheet.getMaxRows());
-      asSheet.expandAllRowGroups();
+      var maxRows2 = (typeof asSheet.getMaxRows === "function") ? asSheet.getMaxRows() : asSheet.getLastRow();
+      if (typeof asSheet.showRows === "function") asSheet.showRows(1, maxRows2);
+      if (typeof asSheet.expandAllRowGroups === "function") asSheet.expandAllRowGroups();
     } catch(eExp2) {}
   }
   SpreadsheetApp.flush();
