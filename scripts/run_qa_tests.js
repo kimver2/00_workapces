@@ -2884,10 +2884,10 @@ assertTest('cleanNonDelayedRowBackgroundsSilent 함수 탑재 여부',
 const mockSheetRows = [
   // [현장명, 날짜, 공종, 협력업체, 공유, 비고, 담당자, 진행상태]
   ['보경102동', '2026.08.10', '철거', '', true, '', '전예린', '완료'],      // 107행: 과거 완료 -> 흰색 복구 대상
-  ['보경102동', '2026.10.21', '상담', '', true, '1차 샘플링', '전예린', '예정'], // 109행: 미래 예정 -> 흰색 복구 대상!
+  ['보경102동', '2026.11.21', '상담', '', true, '1차 샘플링', '전예린', '예정'], // 109행: 미래 예정 -> 흰색 복구 대상!
   ['보경102동', '2026.09.22', '창호실측', '', true, '', '전예린', '완료'],   // 111행: A열 흰색, B~F열만 수동 칠해진 행!
   ['보경102동', '2026.10.15', '타일', '', false, '', '전예린', '예정'],       // 121행: 마감 경과(지연) -> 붉은색 유지 대상!
-  ['보경102동', '2026.10.20', '타일', '', false, '', '전예린', '예정']        // 122행: 미래 예정 -> 흰색 유지 대상
+  ['보경102동', '2026.11.20', '타일', '', false, '', '전예린', '예정']        // 122행: 미래 예정 -> 흰색 유지 대상
 ];
 const mockBackgrounds = [
   ['#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2', '#fff1f2'], // 이전 분홍 잔여물
@@ -2911,7 +2911,7 @@ sandbox.cleanNonDelayedRowBackgroundsSilent(mockSheetObj);
 assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 107행 완료 공정이 흰색(#ffffff)으로 자동 복구 검증',
   updatedBg && updatedBg[0][0] === '#ffffff'
 );
-assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 109행 미래 일정(2026.10.21)이 흰색(#ffffff)으로 자동 복구 검증',
+assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: 109행 미래 일정(2026.11.21)이 흰색(#ffffff)으로 자동 복구 검증',
   updatedBg && updatedBg[1][0] === '#ffffff'
 );
 assertTest('cleanNonDelayedRowBackgroundsSilent 시뮬레이션: A열은 흰색이고 B~F열만 수동 채색된 111행의 B열 및 F열이 흰색(#ffffff)으로 완벽 복구 검증',
@@ -4233,11 +4233,18 @@ const mockBackgrounds51 = [
 
 const mockSortSheet51 = {
   getLastRow: () => 7,
+  getMaxRows: () => 10,
+  showRows: () => {},
+  expandAllRowGroups: () => {},
+  collapseAllRowGroups: () => {},
+  setRowGroupControlPosition: () => {},
   getRange: (r, c, nr, nc) => ({
     getValues: () => mockValues51.map(row => row.slice()),
     getBackgrounds: () => mockBackgrounds51.map(row => row.slice()),
     setValues: (vals) => { setValuesRecorded51 = vals; },
-    setBackgrounds: (bgs) => { setBackgroundsRecorded51 = vals => bgs; }
+    setBackgrounds: (bgs) => { setBackgroundsRecorded51 = vals => bgs; },
+    shiftRowGroupDepth: () => {},
+    setBorder: () => {}
   })
 };
 
@@ -8825,10 +8832,10 @@ assertTest('Step 113-9: doGet action=groupCategorySheets 엔드포인트 지원 
   code113.includes('action === "groupCategorySheets"')
 );
 
-// 113-10: index.html 내 exec?v=105 캐시 버스팅 파라미터 갱신 검증
+// 113-10: index.html 내 exec?v=105 이상 캐시 버스팅 파라미터 갱신 검증
 const indexHtmlContent114 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
-assertTest('Step 113-10: index.html 내 exec?v=105 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent114.includes('exec?v=105')
+assertTest('Step 113-10: index.html 내 exec?v=105 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent114) && parseInt(indexHtmlContent114.match(/exec\?v=(\d+)/)[1], 10) >= 105
 );
 
 // ========================================================
@@ -8904,6 +8911,80 @@ assertTest('Step 114-7: 상단 메뉴에서 🔄 대시보드 달력 새로고�
   !code114.includes('🔄 대시보드 달력 새로고침') &&
   !code114.includes('🎯 오늘 날짜로 이동') &&
   code114.includes('📅 현장별 날짜 최신순 자동 정렬')
+);
+
+// ========================================================
+// 115. [현장데이터 동일 현장명 100% 묶기(통합), 행 숨김 해제 및 아코디언 정상화 QA]
+// ========================================================
+console.log('\n📁 [Step 115]: 현장데이터 동일 현장명 100% 묶기(통합), 행 숨김 해제 및 아코디언 정상화 QA ---');
+
+// 115-1: groupSheetRowsBySite 시작 시 showRows, expandAllRowGroups 및 shiftRowGroupDepth 반복 초기화 검증
+const code115 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+const grpFnMatch115 = code115.match(/function groupSheetRowsBySite\([\s\S]*?\{([\s\S]*?)\n\}/);
+const grpFnBody115 = grpFnMatch115 ? grpFnMatch115[1] : '';
+assertTest('Step 115-1: groupSheetRowsBySite 내 showRows(1, maxRows) 및 expandAllRowGroups 탑재 검증',
+  grpFnBody115.includes('sheet.showRows(1, maxRows)') &&
+  grpFnBody115.includes('sheet.expandAllRowGroups()')
+);
+
+// 115-2: groupSheetRowsBySite 기본 종료 시 expandAllRowGroups 호출로 전체 펼침 보장 검증
+assertTest('Step 115-2: groupSheetRowsBySite collapse===false 시 expandAllRowGroups로 전체 펼침 보장 검증',
+  grpFnBody115.includes('sheet.expandAllRowGroups()') &&
+  grpFnBody115.includes('sheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE)')
+);
+
+// 115-3: sortSiteScheduleTasksByDate 내 메모리 siteGroups 기반 동일 현장명 100% 묶기 검증
+// (보라매경남이 1행, 5행에 분리되어 있어도 단 1개의 블록으로 묶이고 내부 시작일 오름차순 정렬)
+const mockSplitValues115 = [
+  ['보라매경남 102동 502호', '2026.11.09', '잔마감', '', false, '', '인경호', '예정', '', 1000],
+  ['신대방우성 12동 1110호', '2026.12.21', '철거', '', false, '', '전예린', '예정', '', 2000],
+  ['신대방우성 16동 902호', '2026.11.16', '타일', '', false, '', '전예린', '예정', '', 3000],
+  ['보라매경남 102동 502호', '2026.09.22', '상담', '', false, '', '전예린', '완료', '', 4000]
+];
+let recordedSortedValues115 = null;
+const mockSplitSheet115 = {
+  getLastRow: () => 5,
+  getMaxRows: () => 10,
+  showRows: () => {},
+  expandAllRowGroups: () => {},
+  collapseAllRowGroups: () => {},
+  setRowGroupControlPosition: () => {},
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => mockSplitValues115.map(row => row.slice()),
+    getBackgrounds: () => mockSplitValues115.map(() => ['#fff','#fff','#fff','#fff','#fff','#fff','#fff','#fff','#fff','#fff']),
+    setValues: (v) => { recordedSortedValues115 = v; },
+    setBackgrounds: () => {},
+    shiftRowGroupDepth: () => {},
+    setBorder: () => {}
+  })
+};
+const splitSortCount115 = sandbox.sortSiteScheduleTasksByDate(mockSs113, mockSplitSheet115, true);
+assertTest('Step 115-3: 분리된 보라매경남 2개 행이 단일 블록으로 100% 통합되고 내부 9.22->11.9 오름차순 정렬 검증',
+  recordedSortedValues115 !== null &&
+  recordedSortedValues115[0][0] === '신대방우성 12동 1110호' &&
+  recordedSortedValues115[1][0] === '신대방우성 16동 902호' &&
+  recordedSortedValues115[2][0] === '보라매경남 102동 502호' &&
+  recordedSortedValues115[2][1] === '2026.09.22' && recordedSortedValues115[2][2] === '상담' &&
+  recordedSortedValues115[3][1] === '2026.11.09' && recordedSortedValues115[3][2] === '잔마감'
+);
+
+// 115-4: groupSiteScheduleMenu 함수 탑재 및 상단 메뉴 등록 검증
+assertTest('Step 115-4: groupSiteScheduleMenu 함수 정의 및 onOpen 상단 메뉴 등록 검증',
+  typeof sandbox.groupSiteScheduleMenu === 'function' &&
+  code115.includes('groupSiteScheduleMenu') &&
+  code115.includes('expandAllSites')
+);
+
+// 115-5: doGet action=sortScheduleSheets 및 action=fixSheetGrouping 지원 검증
+assertTest('Step 115-5: doGet action=sortScheduleSheets / fixSheetGrouping 엔드포인트 지원 검증',
+  code115.includes('action === "sortScheduleSheets"') &&
+  code115.includes('action === "fixSheetGrouping"')
+);
+
+// 115-6: index.html 내 exec?v=106 이상 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent115 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 115-6: index.html 내 exec?v=106 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent115) && parseInt(indexHtmlContent115.match(/exec\?v=(\d+)/)[1], 10) >= 106
 );
 
 console.log('\n========================================================');

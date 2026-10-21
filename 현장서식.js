@@ -844,6 +844,8 @@ function onOpen() {
     .addItem("대시보드 사이드바 열기", "openSiteScheduleSidebar")
     .addItem("대시보드 팝업 열기", "openSiteScheduleModal")
     .addItem("📅 현장별 날짜 최신순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
+    .addItem("📁 '현장데이터' 동일 현장 묶기 (아코디언 정상화)", "groupSiteScheduleMenu")
+    .addItem("📖 '현장데이터' 모든 현장 펼치기 (숨겨진 행 표시)", "expandAllSites")
     .addItem("📦 완료 현장 시트로 이동 (아카이브)", "archiveCompletedSitesMenu")
     .addItem("📁 완료현장 시트 동일 현장별 접기", "groupCompletedSitesMenu")
     .addItem("📂 완료현장 시트 전체 펼치기", "expandCompletedSitesMenu")
@@ -915,6 +917,23 @@ function sortSiteScheduleTasksByDateMenu() {
     } catch(e) {}
   }
 }
+
+/**
+ * [상단 메뉴 전용] 현장데이터 시트 동일 현장 묶기 & 아코디언 정상화
+ */
+function groupSiteScheduleMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return;
+  var sheet = findSiteScheduleSheet(ss);
+  if (!sheet) return;
+
+  var count = groupSheetRowsBySite(sheet, false);
+  try {
+    ss.toast("현장데이터 시트 " + count + "개 현장이 동일 현장별로 그룹화되었습니다. (모든 행 펼침 완료)", "📁 현장 묶기 완료", 3);
+  } catch(e) {}
+}
+
 
 
 /**
@@ -1233,13 +1252,17 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return 0;
 
-  var consolidatedCount = 0;
-  try {
-    consolidatedCount = consolidateSplitSiteRows(sheet);
-    if (consolidatedCount > 0) {
-      lastRow = sheet.getLastRow();
+  // 0단계: 정렬 전 기존에 꼬여있던 모든 행 그룹 및 행 숨김 완전 해제 (행 건너뜀 원천 차단)
+  var maxRows = (typeof sheet.getMaxRows === "function") ? sheet.getMaxRows() : (sheet.getLastRow ? sheet.getLastRow() : 100);
+  if (typeof sheet.showRows === "function") { try { sheet.showRows(1, maxRows); } catch(eShow) {} }
+  if (typeof sheet.expandAllRowGroups === "function") { try { sheet.expandAllRowGroups(); } catch(eExp) {} }
+  for (var d = 0; d < 8; d++) {
+    try {
+      sheet.getRange(1, 1, maxRows, 1).shiftRowGroupDepth(-1);
+    } catch(eReset) {
+      break;
     }
-  } catch (eCons) {}
+  }
 
   // 전체 데이터 읽기 (1~10열: A~J열)
   var totalRows = lastRow - 1;
@@ -1247,10 +1270,10 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
   var values = rangeAll.getValues();
   var backgrounds = rangeAll.getBackgrounds();
 
-  // 현장 블록 단위로 그룹핑
-  var blocks = [];
+  // 1단계: 모든 행을 순회하며 현장명별로 행들을 100% 하나로 묶기 (동일 현장명 완전 통합)
+  var siteOrder = [];
+  var siteGroups = {};
   var emptyRows = [];
-  var currentBlock = null;
   var lastKnownSite = "";
 
   for (var i = 0; i < values.length; i++) {
@@ -1260,39 +1283,17 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
 
     // 완전 빈 행 (현장명도 없고 날짜/공종도 없음)
     if (!rawSite && !hasDateOrTask) {
-      if (currentBlock && currentBlock.items.length > 0) {
-        blocks.push(currentBlock);
-        currentBlock = null;
-      }
-      lastKnownSite = "";
       emptyRows.push({ vals: rowVals, bg: backgrounds[i] });
+      lastKnownSite = "";
       continue;
     }
 
     var effectiveSite = rawSite || lastKnownSite;
     if (rawSite) lastKnownSite = rawSite;
 
-    // 새로운 현장 시작 여부 판별:
-    // 현장명이 명시되었고, 기존 블록이 없거나 기존 블록의 현장명과 다를 때
-    if (rawSite && (!currentBlock || currentBlock.siteName !== rawSite)) {
-      if (currentBlock && currentBlock.items.length > 0) {
-        blocks.push(currentBlock);
-      }
-      currentBlock = {
-        siteName: rawSite,
-        hasExplicitSiteInAllRows: true,
-        items: []
-      };
-    } else if (!currentBlock && effectiveSite) {
-      currentBlock = {
-        siteName: effectiveSite,
-        hasExplicitSiteInAllRows: false,
-        items: []
-      };
-    }
-
-    if (!rawSite && currentBlock) {
-      currentBlock.hasExplicitSiteInAllRows = false;
+    if (!effectiveSite) {
+      emptyRows.push({ vals: rowVals, bg: backgrounds[i] });
+      continue;
     }
 
     // 날짜 파싱하여 밀리초 계산
@@ -1309,66 +1310,93 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
       }
     }
 
-    if (currentBlock) {
-      currentBlock.items.push({
-        idx: i,
-        vals: rowVals,
-        bg: backgrounds[i],
-        dateMs: dateMs,
-        taskName: String(rowVals[2] || "").trim()
-      });
+    if (!siteGroups[effectiveSite]) {
+      siteGroups[effectiveSite] = {
+        siteName: effectiveSite,
+        items: [],
+        explicitCount: 0,
+        firstRowIdx: i,
+        defaultManager: ""
+      };
+      siteOrder.push(effectiveSite);
     }
+
+    var mgrVal = String(rowVals[6] || "").trim();
+    if (mgrVal && !siteGroups[effectiveSite].defaultManager) {
+      siteGroups[effectiveSite].defaultManager = mgrVal;
+    }
+
+    if (rawSite) {
+      siteGroups[effectiveSite].explicitCount++;
+    }
+
+    siteGroups[effectiveSite].items.push({
+      origIdx: i,
+      vals: rowVals,
+      bg: backgrounds[i],
+      dateMs: dateMs,
+      taskName: String(rowVals[2] || "").trim(),
+      rawSite: rawSite
+    });
   }
 
-  if (currentBlock && currentBlock.items.length > 0) {
-    blocks.push(currentBlock);
-  }
+  if (siteOrder.length === 0) return 0;
 
-  if (blocks.length === 0) return 0;
+  // 2단계: 각 현장 블록 내부 공정들을 날짜 오름차순(시작일 빠른 순)으로 정렬 & 첫 번째 대표 일정(firstDateMs) 산출
+  var blocks = [];
+  for (var s = 0; s < siteOrder.length; s++) {
+    var sName = siteOrder[s];
+    var grp = siteGroups[sName];
+    if (!grp || grp.items.length === 0) continue;
 
-  // 1단계: 각 블록 내부 공정들을 날짜 오름차순(시작일 빠른 순)으로 정렬 & 첫 번째 대표 일정(firstDateMs) 산출
-  for (var b = 0; b < blocks.length; b++) {
-    var blk = blocks[b];
-    blk.initialIdx = b;
-
-    if (blk.items.length > 1) {
-      blk.items.sort(function(itemA, itemB) {
+    if (grp.items.length > 1) {
+      grp.items.sort(function(itemA, itemB) {
         var aMs = itemA.dateMs || 0;
         var bMs = itemB.dateMs || 0;
         if (aMs && bMs) {
-          if (aMs !== bMs) return aMs - bMs;
+          if (aMs !== bMs) return aMs - bMs; // 빠른 날짜순
         } else if (aMs) {
           return -1;
         } else if (bMs) {
           return 1;
         }
-        return itemA.idx - itemB.idx;
+        return itemA.origIdx - itemB.origIdx;
       });
+    }
 
-      for (var s = 0; s < blk.items.length; s++) {
-        if (blk.hasExplicitSiteInAllRows) {
-          blk.items[s].vals[0] = blk.siteName;
-        } else {
-          blk.items[s].vals[0] = (s === 0) ? blk.siteName : "";
+    // 현장명 표기:
+    // 원래 행들의 과반수에 현장명이 적혀있었으면 모든 행에 현장명 유지,
+    // 첫 행에만 적혀있었으면 첫 행에만 현장명을 두고 나머지 행은 빈칸으로 둠 (아코디언 표준)
+    var isAllExplicit = (grp.explicitCount > 1 && grp.explicitCount >= grp.items.length * 0.5);
+    for (var r = 0; r < grp.items.length; r++) {
+      grp.items[r].vals[0] = (isAllExplicit || r === 0) ? grp.siteName : "";
+    }
+
+    // 담당자 자동 상속: 해당 현장의 대표 담당자가 있고, 특정 행의 담당자가 비어있으면 자동 상속
+    if (grp.defaultManager) {
+      for (var mr = 0; mr < grp.items.length; mr++) {
+        if (!String(grp.items[mr].vals[6] || "").trim()) {
+          grp.items[mr].vals[6] = grp.defaultManager;
         }
       }
     }
 
-    // 블록의 첫 번째 유효 일정 날짜 계산
+    // 첫 번째 유효 일정 날짜(firstDateMs) 산출
     var firstMs = 0;
-    for (var fi = 0; fi < blk.items.length; fi++) {
-      if (blk.items[fi].dateMs > 0) {
-        firstMs = blk.items[fi].dateMs;
+    for (var fi = 0; fi < grp.items.length; fi++) {
+      if (grp.items[fi].dateMs > 0) {
+        firstMs = grp.items[fi].dateMs;
         break;
       }
     }
-    blk.firstDateMs = firstMs;
+    grp.firstDateMs = firstMs;
+    blocks.push(grp);
   }
 
-  // 2단계: 현장 블록들 자체를 '첫 번째 일정이 최신인 순'(내림차순)으로 정렬
-  // - 날짜가 있는 현장: 최신 날짜가 위로 (내림차순: blkB - blkA)
+  // 3단계: 현장 블록들 자체를 '첫 번째 일정이 최신인 순'(내림차순, DESC)으로 정렬
+  // - 날짜가 있는 현장: 최신 날짜 우선 (blkB.firstDateMs - blkA.firstDateMs)
   // - 날짜가 없는 현장: 맨 아래로
-  // - 날짜가 같거나 둘 다 없는 경우: 원래 상대적 순서 보존 (Stable Sort)
+  // - 날짜가 같거나 둘 다 없는 경우: 원래 등장 순서(firstRowIdx) 보존
   blocks.sort(function(blkA, blkB) {
     var aDate = blkA.firstDateMs || 0;
     var bDate = blkB.firstDateMs || 0;
@@ -1380,10 +1408,10 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     } else if (bDate) {
       return 1;
     }
-    return blkA.initialIdx - blkB.initialIdx;
+    return blkA.firstRowIdx - blkB.firstRowIdx;
   });
 
-  // 3단계: 정렬된 블록들과 빈 행들을 합쳐 newValues 및 newBackgrounds 구성
+  // 4단계: 정렬된 블록들과 빈 행들을 합쳐 newValues 및 newBackgrounds 구성
   var newValues = [];
   var newBackgrounds = [];
   for (var sb = 0; sb < blocks.length; sb++) {
@@ -1398,7 +1426,7 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     newBackgrounds.push(emptyRows[er].bg);
   }
 
-  // 4단계: Diff 검사 - 변경 사항이 있는 경우에만 시트에 1회 배치 쓰기
+  // 5단계: Diff 검사 - 변경 사항이 있는 경우에만 시트에 1회 배치 쓰기
   var anyChanged = false;
   if (newValues.length !== values.length) {
     anyChanged = true;
@@ -1416,25 +1444,26 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     }
   }
 
-  var sortedBlockCount = 0;
+  var sortedBlockCount = blocks.length;
   if (anyChanged) {
     rangeAll.setValues(newValues);
     rangeAll.setBackgrounds(newBackgrounds);
     SpreadsheetApp.flush();
-    try {
-      groupSheetRowsBySite(sheet, false);
-    } catch(eGrpAfterSort) {}
-    sortedBlockCount = blocks.length;
-    Logger.log("✅ 시트 첫 번째 일정 최신순 정렬 완료: 총 " + sortedBlockCount + "개 현장 정렬됨");
+    Logger.log("✅ 시트 동일 현장 묶기 & 첫 번째 일정 최신순 정렬 완료: 총 " + sortedBlockCount + "개 현장 정렬됨");
   }
 
-  if (anyChanged || consolidatedCount > 0) {
+  // 6단계: 쓰기 완료 후 항상 동일 현장 아코디언 행 그룹을 새 행 위치에 맞게 정상화하고 전체 펼침 보장
+  try {
+    groupSheetRowsBySite(sheet, false);
+  } catch(eGrpAfterSort) {}
+
+  if (anyChanged) {
     invalidateDashboardServerCache();
   }
 
   if (!silent && anyChanged) {
     try {
-      ss.toast("현장 목록이 첫 번째 일정 최신순으로 정렬되었습니다.", "📅 최신순 정렬 완료", 3);
+      ss.toast("현장 목록이 동일 현장별로 묶이고 첫 번째 일정 최신순으로 정렬되었습니다.", "📅 최신순 정렬 완료", 3);
     } catch(e) {}
   }
 
@@ -5546,18 +5575,28 @@ function groupSheetRowsBySite(sheet, collapse) {
   if (lastRow < 3) return 0; // 데이터가 1행 이하이면 접을 하위 행 없음
 
   try {
-    // 0단계: 토글 버튼 위치를 상단(BEFORE)으로 설정 (대표 행에 [-]/[+] 표시)
-    try {
-      sheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE);
-    } catch(ePos) {}
+    // 0단계: 숨겨진 모든 행 완전 표시 & 모든 행 그룹 펼치기 (행 건너뜀 및 오염 방어)
+    var maxRows = (typeof sheet.getMaxRows === "function") ? sheet.getMaxRows() : (sheet.getLastRow ? sheet.getLastRow() : 100);
+    if (typeof sheet.showRows === "function") { try { sheet.showRows(1, maxRows); } catch(eShow) {} }
+    if (typeof sheet.expandAllRowGroups === "function") { try { sheet.expandAllRowGroups(); } catch(eExp) {} }
 
-    // 1단계: 기존 행 그룹화 깊이 초기화 (중복 깊이 누적 방지)
-    try {
-      sheet.getRange(2, 1, lastRow - 1, 1).shiftRowGroupDepth(-8);
-    } catch(eReset) {}
+    // 토글 버튼 위치를 상단(BEFORE)으로 설정 (대표 행에 [-]/[+] 표시)
+    if (typeof sheet.setRowGroupControlPosition === "function" && typeof SpreadsheetApp !== "undefined" && SpreadsheetApp.GroupControlTogglePosition) {
+      try {
+        sheet.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE);
+      } catch(ePos) {}
+    }
+
+    // 1단계: 기존 행 그룹화 깊이 완전 초기화 (모든 중복/꼬인 깊이 제거)
+    for (var d = 0; d < 8; d++) {
+      try {
+        sheet.getRange(1, 1, maxRows, 1).shiftRowGroupDepth(-1);
+      } catch(eReset) {
+        break;
+      }
+    }
 
     // 2단계: 동일 현장명 연속 구간 판별
-    // (A열이 명시되어 있거나, 상위 행의 현장명을 상속하는 연속 블록 탐색, 순수 빈 행은 블록 분리)
     var checkRange = sheet.getRange(2, 1, lastRow - 1, 3);
     var checkVals = (checkRange && typeof checkRange.getValues === "function") ? checkRange.getValues() : [];
     var blocks = [];
@@ -5614,8 +5653,8 @@ function groupSheetRowsBySite(sheet, collapse) {
         try {
           var rng = sheet.getRange(subStart, 1, subCount, 1);
           rng.shiftRowGroupDepth(1);
-          if (collapse === true) {
-            rng.collapseGroups();
+          if (collapse === true && typeof rng.collapseGroups === "function") {
+            try { rng.collapseGroups(); } catch(eColRng) {}
           }
           groupedCount++;
         } catch(eSubGrp) {}
@@ -5627,6 +5666,14 @@ function groupSheetRowsBySite(sheet, collapse) {
         } catch(eBrd) {}
       }
     }
+
+    // 4단계: 접기/펼치기 상태 결정 (기본값은 무조건 전체 펼침으로 행 숨김 건너뜀 방지)
+    if (collapse === true) {
+      try { sheet.collapseAllRowGroups(); } catch(eCol) {}
+    } else {
+      try { sheet.expandAllRowGroups(); } catch(eExpAll) {}
+    }
+
     SpreadsheetApp.flush();
     return groupedCount;
   } catch(e) {
@@ -6568,18 +6615,16 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 0-1) 현장별 병합 및 날짜 정렬 + 1시간 트리거 보장 요청 (action=consolidateAndSort)
-  if (action === "consolidateAndSort") {
+  // 0-1) 현장별 병합 및 날짜 최신순 정렬 + 아코디언 정상화 요청 (action=consolidateAndSort / sortScheduleSheets / fixSheetGrouping)
+  if (action === "consolidateAndSort" || action === "sortScheduleSheets" || action === "fixSheetGrouping") {
     ensureHourlySortTriggerInstalled();
-    var movedCnt = sheet ? consolidateSplitSiteRows(sheet) : 0;
-    var sortedCnt = (ss && sheet) ? sortSiteScheduleTasksByDate(ss, sheet, true) : 0;
+    var sortedCnt = ss ? sortAllScheduleSheetsByDate(ss, true) : 0;
     if (sheet) {
       try { groupSheetRowsBySite(sheet, false); } catch(eGrpCons) {}
     }
     invalidateDashboardServerCache();
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
-      consolidatedCount: movedCnt,
       sortedBlockCount: sortedCnt
     })).setMimeType(ContentService.MimeType.JSON);
   }
