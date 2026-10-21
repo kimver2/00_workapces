@@ -6946,10 +6946,12 @@ const dashHtml84 = sandbox.buildSidebarDashboardHtml("WEB_DESKTOP");
 const rawCode84 = fs.readFileSync(path.join(__dirname, '../현장서식.js'), 'utf8');
 const indexHtml84 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 
-// 84-1: PC 상단 바 좌측 사이드바 너비(260px) 및 세로 구분선(border-right: 1px solid #e2e8f0) 수직 정렬 검증
-assertTest('Step 84-1: PC 상단 바 좌측 너비(260px) 및 구분선(border-right) 사이드바 수직 일치 검증',
-  dashHtml84.indexOf('.pc-top-left { display: flex; align-items: center; width: 260px; height: 100%; border-right: 1px solid #e2e8f0;') !== -1 &&
-  dashHtml84.indexOf('.pc-sidebar { display: flex !important; flex-direction: column; width: 260px;') !== -1
+// 84-1: PC 상단 바 좌측 사이드바 너비(260px/300px) 및 세로 구분선(border-right: 1px solid #e2e8f0) 수직 정렬 검증
+assertTest('Step 84-1: PC 상단 바 좌측 너비(260px/300px) 및 구분선(border-right) 사이드바 수직 일치 검증',
+  (dashHtml84.indexOf('.pc-top-left { display: flex; align-items: center; width: 260px; height: 100%; border-right: 1px solid #e2e8f0;') !== -1 ||
+   dashHtml84.indexOf('.pc-top-left { display: flex; align-items: center; width: 300px; height: 100%; border-right: 1px solid #e2e8f0;') !== -1) &&
+  (dashHtml84.indexOf('.pc-sidebar { display: flex !important; flex-direction: column; width: 260px;') !== -1 ||
+   dashHtml84.indexOf('.pc-sidebar { display: flex !important; flex-direction: column; width: 300px;') !== -1)
 );
 
 // 84-2: 상단 바 날짜 네비게이션 배치 순서([년도월] [ < ] [ > ] [오늘]) 재배치 검증
@@ -8389,10 +8391,278 @@ assertTest('Step 111-3: getSidebarDashboardData 실행 시 진행현장 AS 사�
   !!doneSite111 && doneSite111.tasks.length === 2 && doneSite111.isAllCompleted === true && doneSite111.isArchived === true
 );
 
-// 111-4: index.html 내 exec?v=102 캐시 버스팅 파라미터 갱신 검증
+// 111-4: index.html 내 exec?v=102 이상 캐시 버스팅 파라미터 갱신 검증
 const indexHtmlContent111 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
-assertTest('Step 111-4: index.html 내 exec?v=102 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent111.includes('exec?v=102')
+assertTest('Step 111-4: index.html 내 exec?v=102 이상 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent111.includes('exec?v=102') || indexHtmlContent111.includes('exec?v=103')
+);
+
+// ========================================================
+// 📑 [Step 112]: 단건/AS 시트 10열 서식 동기화, AS 완료 시 완료현장 자동 편입, 3개 탭(현장/단건/AS) 스코프 필터, 캘린더 연동, 300px 사이드바 QA
+// ========================================================
+console.log('\n--- [Step 112]: 단건/AS 시트 생성, 서식 동기화, AS 완료 시 완료현장 동일 현장 자동 편입 & 3개 탭(현장/단건/AS) 스코프 필터 QA ---');
+
+// 112-1: 단건 및 AS 시트 헬퍼 함수 및 onOpen 상단 메뉴 등록 검증
+assertTest('Step 112-1: 단건/AS 시트 탐색 및 생성 헬퍼 함수 정의 검증',
+  typeof sandbox.findSingleTaskSheet === 'function' &&
+  typeof sandbox.findAsSheet === 'function' &&
+  typeof sandbox.isSingleTaskSheet === 'function' &&
+  typeof sandbox.isAsSheet === 'function' &&
+  typeof sandbox.ensureCustomCategorySheets === 'function' &&
+  typeof sandbox.ensureCustomCategorySheetsMenu === 'function' &&
+  typeof sandbox.initCategorySheetFormat === 'function' &&
+  typeof sandbox.moveAsTaskToCompletedSheet === 'function'
+);
+
+// 112-2: isSiteScheduleSheet에서 '단건' 및 'AS' 시트 완전 배제 검증
+assertTest('Step 112-2: isSiteScheduleSheet에서 단건 및 AS 시트 완전 배제 검증',
+  sandbox.isSiteScheduleSheet({ getName: () => '단건' }) === false &&
+  sandbox.isSiteScheduleSheet({ getName: () => 'AS' }) === false &&
+  sandbox.isSiteScheduleSheet({ getName: () => '현장데이터', getLastRow: () => 10, getLastColumn: () => 10, getRange: () => ({ getValues: () => [['현장명', '날짜', '공종', '협력업체', '공유', '비고', '담당자', '진행상태', '캘린더ID', '최종수정일시']] }) }) === true
+);
+
+// 112-3: ensureCustomCategorySheets 실행 시 단건/AS 시트 신규 생성 및 10열 헤더 서식 적용 검증
+const mockSs112 = {
+  sheets: [],
+  getSheetByName: function(name) { return this.sheets.find(s => s.getName() === name) || null; },
+  getSheets: function() { return this.sheets; },
+  insertSheet: function(name) {
+    const s = {
+      _name: name,
+      _rows: [],
+      getName: function() { return this._name; },
+      getSheetId: function() { return 12345; },
+      getLastRow: function() { return this._rows.length + 1; },
+      getRange: function(r, c, nr, nc) {
+        return {
+          setValues: function(vals) { return this; },
+          setBackground: function() { return this; },
+          setFontColor: function() { return this; },
+          setFontWeight: function() { return this; },
+          setHorizontalAlignment: function() { return this; },
+          setVerticalAlignment: function() { return this; },
+          setDataValidation: function() { return this; },
+          setNumberFormat: function() { return this; },
+          clearFormat: function() { return this; }
+        };
+      },
+      setRowHeight: function() {},
+      setFrozenRows: function() {},
+      setColumnWidth: function() {},
+      hideColumns: function() {},
+      clearConditionalFormatRules: function() {},
+      setConditionalFormatRules: function() {}
+    };
+    this.sheets.push(s);
+    return s;
+  }
+};
+const ensureRes112 = sandbox.ensureCustomCategorySheets(mockSs112);
+assertTest('Step 112-3: ensureCustomCategorySheets 실행 시 단건 및 AS 시트 정상 생성 검증',
+  ensureRes112.singleSheetCreated === true &&
+  ensureRes112.asSheetCreated === true &&
+  mockSs112.sheets.some(s => s.getName() === '단건') &&
+  mockSs112.sheets.some(s => s.getName() === 'AS')
+);
+
+// 112-4: AS 완료 시 완료현장 시트 내 동일 현장명 블록 끝으로 이동(insertRowAfter) 및 AS 시트에서 삭제 시뮬레이션
+const mockAsRows112 = [
+  ['광명 하안주공 1221동 1404호', '2026.10.22', '도배 AS', '대림도배', true, '하자보수', '전예린', '완료', '', '']
+];
+let asDeletedRow112 = null;
+const mockAsSheet112 = {
+  getName: () => 'AS',
+  getLastRow: () => 2,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => [mockAsRows112[0]],
+    setBackground: () => {},
+    setFontColor: () => {},
+    setFontWeight: () => {},
+    setHorizontalAlignment: () => {},
+    setVerticalAlignment: () => {},
+    setDataValidation: () => {},
+    setNumberFormat: () => {},
+    setValues: () => {}
+  }),
+  deleteRow: (r) => { asDeletedRow112 = r; }
+};
+
+const mockCompRows112 = [
+  ['광명 하안주공 1221동 1404호', '2026.09.10', '철거', '김철거', true, '', '전예린', '완료', '', ''],
+  ['', '2026.09.11', '설비', '박설비', true, '', '조항만', '완료', '', ''],
+  ['목동 7단지 702동 301호', '2026.08.01', '전체완료', '', true, '', '이수현', '완료', '', '']
+];
+let insertedAfterRow112 = null;
+let insertedVals112 = null;
+const mockCompSheet112 = {
+  getName: () => '완료현장',
+  getLastRow: () => 4,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => {
+      if (r === 2 && nr === 3) return mockCompRows112;
+      return [mockCompRows112[0]];
+    },
+    setValues: (vals) => { insertedVals112 = vals; },
+    setBackground: () => {},
+    setFontColor: () => {},
+    setFontWeight: () => {},
+    setHorizontalAlignment: () => {},
+    setVerticalAlignment: () => {},
+    setDataValidation: () => {},
+    setNumberFormat: () => {}
+  }),
+  insertRowAfter: (afterRow) => { insertedAfterRow112 = afterRow; },
+  appendRow: () => {}
+};
+
+const moveRes112 = sandbox.moveAsTaskToCompletedSheet(
+  {
+    getSheetByName: (n) => n === '완료현장' ? mockCompSheet112 : mockAsSheet112,
+    getSheets: () => [mockCompSheet112, mockAsSheet112]
+  },
+  mockAsSheet112,
+  2,
+  '광명 하안주공 1221동 1404호',
+  '도배 AS'
+);
+
+assertTest('Step 112-4: AS 일정 완료 시 완료현장의 기존 동일 현장 블록 끝(3행 뒤)에 삽입 및 AS 시트 2행 영구 삭제 검증',
+  moveRes112.success === true &&
+  insertedAfterRow112 === 3 &&
+  asDeletedRow112 === 2 &&
+  insertedVals112[0][0] === '광명 하안주공 1221동 1404호' &&
+  insertedVals112[0][2] === '도배 AS' &&
+  insertedVals112[0][7] === '완료'
+);
+
+// 112-5: AS 일정이 완료현장에 존재하지 않는 현장인 경우 완료현장 맨 끝에 신규 현장 블록으로 setValues 검증
+let insertedValsNew112 = null;
+const mockAsSheetNewSite112 = {
+  getName: () => 'AS',
+  getLastRow: () => 2,
+  getRange: () => ({
+    getValues: () => [['신규 AS 현장 101호', '2026.10.22', '샤시 AS', '', true, '', '전예린', '완료', '', '']]
+  }),
+  deleteRow: () => {}
+};
+const mockCompSheetNewSite112 = {
+  getName: () => '완료현장',
+  getLastRow: () => 2,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => [['타현장', '2026.01.01', '철거', '', true, '', '조항만', '완료', '', '']],
+    setValues: (vals) => { insertedValsNew112 = vals; },
+    setBackground: () => {},
+    setFontColor: () => {},
+    setFontWeight: () => {},
+    setHorizontalAlignment: () => {},
+    setVerticalAlignment: () => {},
+    setDataValidation: () => {},
+    setNumberFormat: () => {},
+    setBorder: () => {},
+    insertCheckboxes: () => {}
+  }),
+  insertRowAfter: () => {}
+};
+const moveResNew112 = sandbox.moveAsTaskToCompletedSheet(
+  {
+    getSheetByName: (n) => n === '완료현장' ? mockCompSheetNewSite112 : mockAsSheetNewSite112,
+    getSheets: () => [mockCompSheetNewSite112, mockAsSheetNewSite112]
+  },
+  mockAsSheetNewSite112,
+  2,
+  '신규 AS 현장 101호',
+  '샤시 AS'
+);
+assertTest('Step 112-5: 완료현장에 없는 신규 AS 현장 완료 시 맨 아래에 현장명 포함 setValues 실행 검증',
+  moveResNew112.success === true &&
+  insertedValsNew112 !== null &&
+  insertedValsNew112[0][0] === '신규 AS 현장 101호'
+);
+
+// 112-6: PC UI 300px 사이드바 너비 및 담당자와 진행현장 사이 3개 탭(.pc-scope-tabs-container) 마크업 검증
+const dashHtml112 = sandbox.buildSidebarDashboardHtml("WEB_DESKTOP");
+assertTest('Step 112-6: PC 사이드바 너비 300px 및 3개 탭(현장/단건/AS) 스코프 필터 컨테이너 검증',
+  dashHtml112.indexOf('width: 300px;') !== -1 &&
+  dashHtml112.indexOf('pc-scope-tabs-container') !== -1 &&
+  dashHtml112.indexOf('data-scope="site"') !== -1 &&
+  dashHtml112.indexOf('data-scope="single"') !== -1 &&
+  dashHtml112.indexOf('data-scope="as"') !== -1 &&
+  dashHtml112.indexOf('id="pcScopeBadgeSite"') !== -1 &&
+  dashHtml112.indexOf('id="pcScopeBadgeSingle"') !== -1 &&
+  dashHtml112.indexOf('id="pcScopeBadgeAs"') !== -1
+);
+
+// 112-7: 모바일 UI 담당자 필터 바 바로 아래 3개 탭(#mobileScopeTabsWrapper) 마크업 검증
+const dashMobileHtml112 = sandbox.buildSidebarDashboardHtml("WEB_MOBILE");
+const memberBarPos112 = dashMobileHtml112.indexOf('id="memberFilterBar"');
+const mobileTabsPos112 = dashMobileHtml112.indexOf('id="mobileScopeTabsWrapper"');
+const contentAreaPos112 = dashMobileHtml112.indexOf('id="contentArea"');
+assertTest('Step 112-7: 모바일 담당자 필터 바로 아래 및 카드 목록 위에 mobileScopeTabsWrapper 3개 탭 위치 검증',
+  memberBarPos112 !== -1 &&
+  mobileTabsPos112 !== -1 &&
+  contentAreaPos112 !== -1 &&
+  memberBarPos112 < mobileTabsPos112 &&
+  mobileTabsPos112 < contentAreaPos112
+);
+
+// 112-8: 캘린더 렌더링 시 현재 선택된 탭(currentScope)에 해당하는 데이터만 필터링 노출 검증
+assertTest('Step 112-8: 캘린더 렌더링(renderCalendar/renderWeeklyCalendar) 시 currentScope 필터링 적용 검증',
+  dashHtml112.indexOf('(s.scope || "site") === currentScope') !== -1 &&
+  dashHtml112.indexOf('function setDashboardScope(newScope)') !== -1
+);
+
+// 112-9: getSidebarDashboardData가 scopeCounts: { site, single, as }를 반환하고 시트별 scope 속성 부여 검증
+const freshSandbox112 = {
+  Logger: { log: () => {} },
+  SpreadsheetApp: {
+    getActiveSpreadsheet: () => mockSs112,
+    flush: () => {}
+  },
+  PropertiesService: {
+    getDocumentProperties: () => ({ getProperty: () => '', setProperty: () => {}, deleteProperty: () => {} }),
+    getScriptProperties: () => ({ getProperty: () => '', setProperty: () => {}, deleteProperty: () => {} })
+  },
+  CacheService: { getScriptCache: () => null }
+};
+vm.createContext(freshSandbox112);
+vm.runInContext(code, freshSandbox112);
+freshSandbox112.findSiteScheduleSheet = () => ({
+  getName: () => '현장데이터',
+  getLastRow: () => 2,
+  getRange: () => ({ getValues: () => [['상도래미안 101동', '2026.10.20', '목공', '', true, '', '조항만', '진행 중', '', '']] })
+});
+freshSandbox112.findSingleTaskSheet = () => ({
+  getName: () => '단건',
+  getLastRow: () => 2,
+  getRange: () => ({ getValues: () => [['개포자이 201호', '2026.10.21', '도어락 교체', '', true, '', '전예린', '예정', '', '']] })
+});
+freshSandbox112.findAsSheet = () => ({
+  getName: () => 'AS',
+  getLastRow: () => 2,
+  getRange: () => ({ getValues: () => [['반포자이 105동', '2026.10.22', '마루 AS', '', true, '', '이수현', '예정', '', '']] })
+});
+freshSandbox112.findCompletedSitesSheet = () => ({
+  getName: () => '완료현장',
+  getLastRow: () => 1,
+  getRange: () => ({ getValues: () => [] })
+});
+freshSandbox112.getAppSpreadsheet = () => mockSs112;
+
+const dashData112 = freshSandbox112.getSidebarDashboardData(true);
+assertTest('Step 112-9: getSidebarDashboardData 실행 시 scopeCounts(site, single, as) 및 시트별 scope 속성 완벽 분리 검증',
+  dashData112.scopeCounts &&
+  dashData112.scopeCounts.site === 1 &&
+  dashData112.scopeCounts.single === 1 &&
+  dashData112.scopeCounts.as === 1 &&
+  dashData112.sites.some(s => s.scope === 'site' && s.siteName === '상도래미안 101동') &&
+  dashData112.sites.some(s => s.scope === 'single' && s.siteName === '개포자이 201호') &&
+  dashData112.sites.some(s => s.scope === 'as' && s.siteName === '반포자이 105동')
+);
+
+// 112-10: index.html 내 exec?v=103 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent112 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 112-10: index.html 내 exec?v=103 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent112.includes('exec?v=103')
 );
 
 console.log('\n========================================================');
