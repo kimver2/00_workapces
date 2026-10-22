@@ -11097,16 +11097,18 @@ function getSidebarDashboardData(forceRefresh) {
     var singleActiveCount = 0;
     var asActiveCount = 0;
     var newSiteActiveCount = 0;
+    var newSiteDoneCount = 0;
 
     for (var scIdx = 0; scIdx < sitesList.length; scIdx++) {
       var scSite = sitesList[scIdx];
       if (!scSite.isArchived) {
-        if (scSite.scope === "newSite") {
-          newSiteActiveCount++;
-        } else if (!scSite.isAllCompleted) {
+        if (!scSite.isAllCompleted) {
           if (scSite.scope === "single") singleActiveCount++;
           else if (scSite.scope === "as") asActiveCount++;
+          else if (scSite.scope === "newSite") newSiteActiveCount++;
           else siteActiveCount++;
+        } else if (scSite.scope === "newSite") {
+          newSiteDoneCount++;
         }
       }
     }
@@ -11123,7 +11125,8 @@ function getSidebarDashboardData(forceRefresh) {
         site: siteActiveCount,
         single: singleActiveCount,
         as: asActiveCount,
-        newSite: newSiteActiveCount
+        newSite: newSiteActiveCount,
+        newSiteDone: newSiteDoneCount
       },
       todayStr: todayYYMMDD,
       members: getMemberNames(ss),
@@ -12742,6 +12745,7 @@ function buildSidebarDashboardHtml(mode) {
   html += 'function setDashboardScope(newScope) {';
   html += '  if (newScope !== "site" && newScope !== "single" && newScope !== "as" && newScope !== "newSite") newScope = "site";';
   html += '  currentScope = newScope;';
+  html += '  currentFilter = "all";';
   html += '  if (newScope === "newSite" && pcSiteSortMode !== "inquiry" && pcSiteSortMode !== "priority") {';
   html += '    pcSiteSortMode = "priority";';
   html += '  } else if (newScope !== "newSite" && (pcSiteSortMode === "inquiry" || pcSiteSortMode === "priority")) {';
@@ -12781,12 +12785,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (!rawData || !Array.isArray(rawData.sites)) return;';
   html += '  let siteCnt = 0, singleCnt = 0, asCnt = 0, newSiteCnt = 0;';
   html += '  rawData.sites.forEach(s => {';
-  html += '    if (s.scope === "newSite") {';
-  html += '      newSiteCnt++;';
-  html += '    } else if (!s.isArchived && !s.isAllCompleted) {';
+  html += '    if (!s.isArchived && !s.isAllCompleted) {';
   html += '      const sc = s.scope || "site";';
   html += '      if (sc === "single") singleCnt++;';
   html += '      else if (sc === "as") asCnt++;';
+  html += '      else if (sc === "newSite") newSiteCnt++;';
   html += '      else siteCnt++;';
   html += '    }';
   html += '  });';
@@ -13819,7 +13822,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const siteName = decodeURIComponent(siteEnc);';
   html += '  if (currentScope === "newSite") {';
   html += '    selectedPcSiteName = siteName;';
-  html += '    currentFilter = "all";';
+  html += '    currentFilter = "done";';
   html += '    pcSiteDetailFilter = "all";';
   html += '    pcSiteTaskSearchQuery = "";';
   html += '    switchToPcView("list");';
@@ -15438,6 +15441,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  selectedPcSiteName = "";';
   html += '  pcSiteDetailFilter = "all";';
   html += '  pcSiteTaskSearchQuery = "";';
+  html += '  if (currentFilter === "done") pcSidebarDoneOpen = true;';
+  html += '  if (typeof renderPcSidebarSites === "function") renderPcSidebarSites();';
   html += '  renderList();';
   html += '}';
   html += '';
@@ -15739,15 +15744,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '  html += \'      </div>\';';
   html += '  html += \'    </div>\';';
   html += '  html += \'  </div>\';';
+  html += '  const isDoneViewTable = (currentFilter === "done");';
+  html += '  const tableTitle = isDoneViewTable ? "신규견적 계약 완료 데이터 현황" : "신규견적 시트 전체 데이터 현황";';
   html += '  html += \'  <div class="pc-est-table-card">\';';
   html += '  html += \'    <div class="pc-est-table-header">\';';
   html += '  html += \'      <div style="display:flex;align-items:center;gap:8px;">\';';
-  html += '  html += \'        <span style="font-size:16px;">📋</span>\';';
-  html += '  html += \'        <h3 style="margin:0;font-size:15px;font-weight:800;color:#0f172a;">신규견적 시트 전체 데이터 현황</h3>\';';
-  html += '  html += \'        <span class="pc-est-table-count">\' + (sitesList ? sitesList.length : 10) + \'건</span>\';';
+  html += '  html += \'        <span style="font-size:16px;">\' + (isDoneViewTable ? "🎉" : "📋") + \'</span>\';';
+  html += '  html += \'        <h3 style="margin:0;font-size:15px;font-weight:800;color:#0f172a;">\' + tableTitle + \'</h3>\';';
+  html += '  html += \'        <span class="pc-est-table-count">\' + (sitesList ? sitesList.length : 0) + \'건</span>\';';
   html += '  html += \'      </div>\';';
   html += '  html += \'      <div style="display:flex;align-items:center;gap:8px;">\';';
-  html += '  html += \'        <input type="text" id="pcEstimateSearchInput" placeholder="현장명, 고객명, 메모 검색..." oninput="onFilterEstimateTable(this.value)" style="padding:6px 12px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:200px;">\';';
+  html += '  html += \'        <input type="text" id="pcEstimateSearchInput" placeholder="현장명, 고객명, 연락처 검색..." oninput="onFilterEstimateTable(this.value)" style="padding:6px 12px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:200px;">\';';
   html += '  html += \'        <button type="button" class="btn-cal-filter-reset" onclick="openSpreadsheetEstimateSheet()" style="padding:5px 10px;font-size:11.5px;">스프레드시트 열기 ↗</button>\';';
   html += '  html += \'      </div>\';';
   html += '  html += \'    </div>\';';
@@ -15756,12 +15763,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '  html += \'        <thead>\';';
   html += '  html += \'          <tr>\';';
   html += '  html += \'            <th style="width:40px;text-align:center;">No</th>\';';
-  html += '  html += \'            <th style="min-width:160px;">현장 / 고객명</th>\';';
+  html += '  html += \'            <th style="min-width:160px;">현장명</th>\';';
   html += '  html += \'            <th style="width:105px;text-align:center;">진행 단계</th>\';';
   html += '  html += \'            <th style="width:80px;text-align:center;">우선순위</th>\';';
   html += '  html += \'            <th style="width:95px;text-align:center;">공사 범위</th>\';';
   html += '  html += \'            <th style="width:85px;text-align:center;">유입 경로</th>\';';
-  html += '  html += \'            <th style="min-width:130px;">고객 / 연락처</th>\';';
+  html += '  html += \'            <th style="min-width:90px;text-align:center;">고객명</th>\';';
+  html += '  html += \'            <th style="min-width:125px;text-align:center;">연락처</th>\';';
   html += '  html += \'            <th style="width:75px;text-align:center;">담당자</th>\';';
   html += '  html += \'            <th style="min-width:110px;text-align:right;">예상 공사금액</th>\';';
   html += '  html += \'            <th style="width:100px;text-align:center;">공사 예정일</th>\';';
@@ -15774,7 +15782,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const e = s.estimateData || {};';
   html += '    const isSelected = (s.siteName === selectedPcSiteName);';
   html += '    const rowAmtStr = formatEstimateAmtStr(e.expectedAmount);';
-  html += '    const rowClient = [e.clientName, e.clientPhone].filter(Boolean).join(" / ");';
+  html += '    const phoneClean = (e.clientPhone || "").replace(/[^0-9+]/g, "");';
   html += '    const searchStr = (s.siteName + " " + (e.clientName || "") + " " + (e.clientPhone || "") + " " + (e.memo || "") + " " + (e.nextAction || "") + " " + (e.manager || "") + " " + (e.scope || "") + " " + (e.status || "")).toLowerCase();';
   html += '    html += \'          <tr class="pc-est-table-row\' + (isSelected ? \' selected-row\' : \'\') + \'" data-search="\' + escapeHtml(searchStr) + \'" data-sitename="\' + encodeURIComponent(s.siteName) + \'" onclick="selectPcSite(decodeURIComponent(this.dataset.sitename))" title="클릭 시 상단 상세 화면으로 이동">\';';
   html += '    html += \'            <td style="text-align:center;color:#94a3b8;font-weight:700;">\' + (idx + 1) + \'</td>\';';
@@ -15783,7 +15791,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("priority", e.priority || "보통") + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("scope", e.scope || "전체공사") + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("source", e.source || "온라인") + \'</td>\';';
-  html += '    html += \'            <td>\' + (rowClient ? escapeHtml(rowClient) : \'<span style="color:#94a3b8;">-</span>\') + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;font-weight:600;color:#1e293b;">\' + (e.clientName ? escapeHtml(e.clientName) : \'<span style="color:#94a3b8;">-</span>\') + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;font-size:12px;">\' + (e.clientPhone ? (\'<a href="tel:\' + escapeHtml(phoneClean) + \'" style="color:#2563eb;text-decoration:none;font-weight:600;" onclick="event.stopPropagation();" title="고객 전화 걸기">📞 \' + escapeHtml(e.clientPhone) + \'</a>\') : \'<span style="color:#94a3b8;">-</span>\') + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;"><span class="pc-manager-pill"><span>\' + escapeHtml(e.manager || "조항만") + \'</span></span></td>\';';
   html += '    html += \'            <td style="text-align:right;font-weight:700;color:#2563eb;">\' + rowAmtStr + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;font-size:12px;color:#475569;">\' + escapeHtml(formatEstimateDateYMD(e.expectedDate)) + \'</td>\';';
@@ -15952,7 +15961,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'      <div class="pc-carousel-title-group">\';';
   html += '  dHtml += \'        <div class="pc-carousel-status-tabs">\';';
   html += '  if (curScopeName === "신규현장" || currentScope === "newSite") {';
-  html += '    dHtml += \'          <button type="button" class="pc-c-status-tab active" title="전체 신규현장 보기">📋 전체 신규현장 <span class="pc-badge-count">\' + (sitesList ? sitesList.length : 10) + \'</span></button>\';';
+  html += '    dHtml += \'          <button type="button" class="pc-c-status-tab\' + (!isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'active\\\')" title="진행 신규현장 보기">📋 신규현장 <span class="pc-badge-count">\' + curScopeActiveSites + \'</span></button>\';';
+  html += '    dHtml += \'          <button type="button" class="pc-c-status-tab done-tab\' + (isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'done\\\')" title="계약 완료 보기">🎉 계약 완료 <span class="pc-badge-count-done">\' + curScopeDoneSites + \'</span></button>\';';
   html += '  } else {';
   html += '    dHtml += \'          <button type="button" class="pc-c-status-tab\' + (!isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'active\\\')" title="진행 \' + curScopeName + \' 보기">\' + curScopeIcon + \' 진행 \' + curScopeName + \' <span class="pc-badge-count">\' + curScopeActiveSites + \'</span></button>\';';
   html += '    dHtml += \'          <button type="button" class="pc-c-status-tab done-tab\' + (isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'done\\\')" title="완료 \' + curScopeName + \' 보기">✅ 완료 \' + curScopeName + \' <span class="pc-badge-count-done">\' + curScopeDoneSites + \'</span></button>\';';
@@ -16303,6 +16313,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (!site.isAllCompleted && !site.isArchived) return;';
   html += '    } else {';
   html += '      if (currentScope !== "newSite" && (site.isAllCompleted || site.isArchived)) return;';
+  html += '      if (currentScope === "newSite" && (site.isAllCompleted || site.isArchived)) return;';
   html += '    }';
 
   html += '    const filteredTasks = site.tasks.filter(t => {';

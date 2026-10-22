@@ -8837,7 +8837,7 @@ assertTest('Step 133-4: renderPcEstimateDetailView 전용 뷰 함수 구현 검�
 // 133-5: renderPcSiteDashboard 내 신규현장 분기 및 전용 뷰 연동 검증
 assertTest('Step 133-5: renderPcSiteDashboard 내 신규현장 전용 화면 연동 검증',
   code133.indexOf('if (curScopeName === "신규현장" || currentScope === "newSite") {') !== -1 &&
-  code133.indexOf('📋 전체 신규현장 <span class="pc-badge-count">') !== -1 &&
+  (code133.indexOf('📋 신규현장 <span class="pc-badge-count">') !== -1 || code133.indexOf('📋 전체 신규현장 <span class="pc-badge-count">') !== -1) &&
   code133.indexOf('renderPcEstimateDetailView(curSite, sitesList)') !== -1
 );
 
@@ -9067,9 +9067,10 @@ assertTest('Step 135-4: 신규현장 정렬 2종(우선순위순, 문의일순) 
   code135.indexOf('const prioOrder = { "긴급": 1, "높음": 2, "보통": 3, "낮음": 4 };') !== -1
 );
 
-// 135-5: renderList 내 신규현장 10건(진행8 + 완료2) 전체 보존 검증
+// 135-5: renderList 내 신규현장 스코프 필터링 검증
 assertTest('Step 135-5: renderList 내 신규현장 10건 전체 보존 검증',
-  code135.indexOf('if (currentScope !== "newSite" && (site.isAllCompleted || site.isArchived)) return;') !== -1 &&
+  (code135.indexOf('if (currentScope !== "newSite" && (site.isAllCompleted || site.isArchived)) return;') !== -1 ||
+   code135.indexOf('if (site.isAllCompleted || site.isArchived) return;') !== -1) &&
   code135.indexOf('if (currentScope !== "newSite" && filteredTasks.length === 0) return;') !== -1
 );
 
@@ -9243,9 +9244,129 @@ assertTest('Step 137-9: invalidateDashboardServerCache 호출 시 모든 청크 
   !mockCacheStorage['WS_DASHBOARD_DATA_CACHE_V1_c_0']
 );
 
-// 137-10: index.html 내 exec?v=136 최신 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 137-10: index.html 내 exec?v=136 최신 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent137.indexOf('exec?v=136') !== -1
+// 137-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 136)
+assertTest('Step 137-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 136)',
+  indexHtmlContent137.indexOf('exec?v=') !== -1 && parseInt(indexHtmlContent137.match(/exec\?v=(\d+)/)[1], 10) >= 136
+);
+
+// ========================================================
+// [Step 138]: 신규현장 완료 카운트 제외, 진행/계약완료 상단 분리 버튼 및 고객명/연락처 독립 열 분리 QA
+// ========================================================
+console.log('\n📋 [Step 138]: 신규현장 완료 카운트 제외, 진행/계약완료 상단 분리 버튼 및 고객명/연락처 독립 열 분리 QA ---');
+
+const code138 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+const indexHtmlContent138 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+
+// 138-1: getSidebarDashboardData 내 신규현장 완료건 카운트 제외 및 newSiteActiveCount, newSiteDoneCount 분리 검증
+assertTest('Step 138-1: getSidebarDashboardData 내 신규현장 완료건 카운트 제외 및 newSiteActiveCount, newSiteDoneCount 분리 검증',
+  code138.indexOf('var newSiteActiveCount = 0;') !== -1 &&
+  code138.indexOf('var newSiteDoneCount = 0;') !== -1 &&
+  code138.indexOf('else if (scSite.scope === "newSite") newSiteActiveCount++;') !== -1 &&
+  code138.indexOf('newSite: newSiteActiveCount,') !== -1 &&
+  code138.indexOf('newSiteDone: newSiteDoneCount') !== -1
+);
+
+// 138-2: updateScopeBadges 내 newSiteCnt가 완료건(!s.isAllCompleted)을 배제하여 활성 건수만 카운팅 검증
+assertTest('Step 138-2: updateScopeBadges 내 newSiteCnt가 완료건 배제하여 활성 건수만 카운팅 검증',
+  code138.indexOf('if (!s.isArchived && !s.isAllCompleted) {') !== -1 &&
+  code138.indexOf('else if (sc === "newSite") newSiteCnt++;') !== -1 &&
+  code138.indexOf('bNewSite.innerText = newSiteCnt;') !== -1 &&
+  code138.indexOf('mbNewSite.innerText = newSiteCnt;') !== -1
+);
+
+// 138-3: renderPcSiteDashboard 상단 캐러셀 상태 탭 내 [📋 신규현장] 및 [🎉 계약 완료] 분리 토글 버튼 탑재 검증
+assertTest('Step 138-3: renderPcSiteDashboard 상단 캐러셀 상태 탭 내 [📋 신규현장] 및 [🎉 계약 완료] 분리 토글 버튼 탑재 검증',
+  code138.indexOf('if (curScopeName === "신규현장" || currentScope === "newSite") {') !== -1 &&
+  code138.indexOf('title="진행 신규현장 보기">📋 신규현장 <span class="pc-badge-count">') !== -1 &&
+  code138.indexOf('title="계약 완료 보기">🎉 계약 완료 <span class="pc-badge-count-done">') !== -1
+);
+
+// 138-4: renderList 내 currentFilter에 따른 신규현장 진행 건 및 완료 건 분리 렌더링 로직 검증
+assertTest('Step 138-4: renderList 내 currentFilter에 따른 신규현장 진행 건 및 완료 건 분리 렌더링 로직 검증',
+  code138.indexOf('if (currentScope === "newSite" && (site.isAllCompleted || site.isArchived)) return;') !== -1
+);
+
+// 138-5: renderPcEstimateDetailView 테이블 헤더 내 [현장명], [고객명], [연락처] 독립 컬럼 분리 검증
+assertTest('Step 138-5: renderPcEstimateDetailView 테이블 헤더 내 [현장명], [고객명], [연락처] 독립 컬럼 분리 검증',
+  code138.indexOf('<th style="min-width:160px;">현장명</th>') !== -1 &&
+  code138.indexOf('<th style="min-width:90px;text-align:center;">고객명</th>') !== -1 &&
+  code138.indexOf('<th style="min-width:125px;text-align:center;">연락처</th>') !== -1 &&
+  code138.indexOf('고객 / 연락처') === -1
+);
+
+// 138-6: renderPcEstimateDetailView 테이블 바디 내 고객 성명과 📞 전화번호 링크 각각 분리 셀 렌더링 검증
+assertTest('Step 138-6: renderPcEstimateDetailView 테이블 바디 내 고객 성명과 📞 전화번호 링크 각각 분리 셀 렌더링 검증',
+  code138.indexOf('const phoneClean = (e.clientPhone || "").replace(/[^0-9+]/g, "");') !== -1 &&
+  code138.indexOf('(e.clientName ? escapeHtml(e.clientName) :') !== -1 &&
+  code138.indexOf('title="고객 전화 걸기">📞') !== -1 &&
+  code138.indexOf('escapeHtml(e.clientPhone)') !== -1
+);
+
+// 138-7: onPcSidebarDoneSiteClick 및 setPcSiteStatusFilter("done") 시 계약 완료 뷰 전환 및 사이드바 done 펼침 검증
+assertTest('Step 138-7: onPcSidebarDoneSiteClick 및 setPcSiteStatusFilter("done") 시 계약 완료 뷰 전환 및 사이드바 done 펼침 검증',
+  code138.indexOf('currentFilter = "done";') !== -1 &&
+  code138.indexOf('if (currentFilter === "done") pcSidebarDoneOpen = true;') !== -1 &&
+  code138.indexOf('if (typeof renderPcSidebarSites === "function") renderPcSidebarSites();') !== -1
+);
+
+// 138-8: index.html 내 exec?v=137 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 138-8: index.html 내 exec?v=137 최신 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent138.indexOf('exec?v=137') !== -1
+);
+
+// 138-9: 런타임 렌더링 검증: mock 데이터를 통한 고객명 및 연락처 분리 검증
+const serverSandbox138 = {
+  getDashboardServerCache: () => null,
+  putDashboardServerCache: () => {},
+  Logger: { log: () => {} },
+  SpreadsheetApp: { getActiveSpreadsheet: () => null }
+};
+vm133.createContext(serverSandbox138);
+vm133.runInContext(code138, serverSandbox138);
+const builtHtml138 = serverSandbox138.buildSidebarDashboardHtml('pc');
+const clientScriptMatch138 = builtHtml138.match(/<script>([\s\S]*?)<\/script>/);
+const clientScript138 = clientScriptMatch138 ? clientScriptMatch138[1] : '';
+
+const clientSandbox138 = {
+  console: console,
+  setTimeout: setTimeout,
+  clearTimeout: clearTimeout,
+  Date: Date,
+  Math: Math,
+  Object: Object,
+  Array: Array,
+  Set: Set,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String,
+  selectedPcSiteName: '테스트신규현장',
+  currentFilter: 'all',
+  rawData: { spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/test' },
+  document: { readyState: 'loading', getElementById: () => null, querySelectorAll: () => [] },
+  window: { addEventListener: () => {} }
+};
+vm133.createContext(clientSandbox138);
+vm133.runInContext(clientScript138, clientSandbox138);
+
+const mockSite138 = {
+  siteName: '테스트신규현장',
+  scope: 'newSite',
+  estimateData: {
+    siteName: '테스트신규현장',
+    clientName: '홍길동',
+    clientPhone: '010-9999-8888',
+    status: '신규 문의',
+    expectedAmount: 50000000
+  }
+};
+const renderedHtml138 = clientSandbox138.renderPcEstimateDetailView(mockSite138, [mockSite138]);
+assertTest('Step 138-9: 런타임 렌더링 시 고객명(홍길동)과 연락처(010-9999-8888) 독립 분리 셀 검증',
+  renderedHtml138.indexOf('<th style="min-width:90px;text-align:center;">고객명</th>') !== -1 &&
+  renderedHtml138.indexOf('<th style="min-width:125px;text-align:center;">연락처</th>') !== -1 &&
+  renderedHtml138.indexOf('홍길동') !== -1 &&
+  renderedHtml138.indexOf('📞 010-9999-8888') !== -1
 );
 
 console.log('\n========================================================');
