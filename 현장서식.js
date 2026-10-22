@@ -1587,7 +1587,7 @@ function onOpen() {
       .addItem("🧹 K~N열 (작성자/수정자 열) 영구 삭제", "removeAuditColumnsKtoN")
       .addItem("🧹 빈 행 유령 데이터/ID 일괄 청소", "cleanupEmptyRowsMetadata")
       .addItem("🛡️ 구글 캘린더 연동 잔여 트리거 완전 제거", "removeAllCalendarTriggersMenu")
-      .addItem("⏰ 1시간 주기 자동 정렬 트리거 점검 / 활성화", "ensureHourlySortTriggerInstalledMenu")
+      .addItem("🌙 새벽 자동 정렬 트리거 점검 / 활성화 (새벽 4시)", "ensureDailySortTriggerInstalledMenu")
     )
     .addToUi();
 }
@@ -1596,7 +1596,7 @@ function onOpen() {
  * [상단 메뉴 전용] '현장데이터', '단건', 'AS', '완료현장' 시트 첫 번째 일정 최신순 즉시 정렬
  */
 function sortSiteScheduleTasksByDateMenu() {
-  ensureHourlySortTriggerInstalled();
+  ensureDailySortTriggerInstalled();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) ss = getAppSpreadsheet();
   if (!ss) return;
@@ -1622,16 +1622,20 @@ function sortSiteScheduleTasksByDateMenu() {
 }
 
 /**
- * [상단 메뉴 전용] 1시간 주기 자동 정렬 트리거 점검 / 재설치
+ * [상단 메뉴 전용] 매일 새벽 4시 자동 정렬 트리거 점검 / 재설치
  */
-function ensureHourlySortTriggerInstalledMenu() {
+function ensureDailySortTriggerInstalledMenu() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  ensureHourlySortTriggerInstalled(true);
+  ensureDailySortTriggerInstalled(true);
   try {
     if (ss && typeof ss.toast === "function") {
-      ss.toast("현장데이터, 단건, AS, 완료현장 4개 시트의 1시간 주기 자동 정렬 트리거가 정상 확인/설치되었습니다.", "⏰ 1시간 정렬 트리거 활성화", 4);
+      ss.toast("현장데이터, 단건, AS, 완료현장 4개 시트의 매일 새벽(04:00) 자동 정렬 트리거가 정상 확인/설치되었습니다.", "🌙 새벽 정렬 트리거 활성화", 4);
     }
   } catch(e) {}
+}
+
+function ensureHourlySortTriggerInstalledMenu() {
+  return ensureDailySortTriggerInstalledMenu();
 }
 
 /**
@@ -1653,48 +1657,62 @@ function groupSiteScheduleMenu() {
 
 
 /**
- * 1시간 주기 '현장데이터', '단건', 'AS', '완료현장' 4개 시트 날짜 오름차순 자동 정렬 및 서식 동기화 엔진
+ * 매일 새벽(04:00) 1회 '현장데이터', '단건', 'AS', '완료현장' 4개 시트 날짜 오름차순 자동 정렬 및 서식 동기화 엔진
  * - 작업자가 시트에서 직접 행 추가/입력 시 실시간 정렬로 행이 튀거나 사라지는 현상 방지
- * - 1시간마다 주기적으로 실행하여 시트 내 동일 현장 묶기 및 날짜 오름차순 정돈
+ * - 낮 시간대(1시간 주기 등) 잦은 정렬로 인한 작업 방해를 방지하고, 매일 새벽(04:00) 1회 일괄 정돈
+ * - 기존에 남아있는 1시간 주기 트리거가 있다면 자동으로 감지하여 청소/마이그레이션
  * - @param {boolean} [force=false] 캐시 무시하고 트리거 상태 강제 재검증 여부
  */
-function ensureHourlySortTriggerInstalled(force) {
+function ensureDailySortTriggerInstalled(force) {
   try {
     if (typeof PropertiesService === "undefined" || typeof ScriptApp === "undefined") return;
     var props = PropertiesService.getScriptProperties();
-    if (!force && props && typeof props.getProperty === "function" && props.getProperty("HOURLY_SORT_TRIGGER_VERIFIED") === "true") {
+    if (!force && props && typeof props.getProperty === "function" && props.getProperty("DAILY_SORT_TRIGGER_VERIFIED") === "true") {
       return;
     }
     if (typeof ScriptApp.getProjectTriggers !== "function" || typeof ScriptApp.newTrigger !== "function") return;
     var triggers = ScriptApp.getProjectTriggers() || [];
-    var hasHourly = false;
+    var hasDaily = false;
     for (var i = 0; i < triggers.length; i++) {
-      if (triggers[i] && typeof triggers[i].getHandlerFunction === "function" && triggers[i].getHandlerFunction() === "runHourlyAutoSortTrigger") {
-        if (!hasHourly) {
-          hasHourly = true;
+      var hFn = (triggers[i] && typeof triggers[i].getHandlerFunction === "function") ? triggers[i].getHandlerFunction() : "";
+      // 과거 1시간 주기 트리거 정리
+      if (hFn === "runHourlyAutoSortTrigger") {
+        try { ScriptApp.deleteTrigger(triggers[i]); } catch(eDelOld) {}
+        continue;
+      }
+      if (hFn === "runDailyAutoSortTrigger") {
+        if (!hasDaily) {
+          hasDaily = true;
         } else {
-          // 중복 생성된 트리거가 있을 경우 정리
+          // 중복 생성된 트리거 정리
           try { ScriptApp.deleteTrigger(triggers[i]); } catch(eDel) {}
         }
       }
     }
-    if (!hasHourly) {
-      ScriptApp.newTrigger("runHourlyAutoSortTrigger")
+    if (!hasDaily) {
+      ScriptApp.newTrigger("runDailyAutoSortTrigger")
         .timeBased()
-        .everyHours(1)
+        .everyDays(1)
+        .atHour(4)
         .create();
     }
     if (props && typeof props.setProperty === "function") {
-      props.setProperty("HOURLY_SORT_TRIGGER_VERIFIED", "true");
+      props.setProperty("DAILY_SORT_TRIGGER_VERIFIED", "true");
+      try { props.deleteProperty("HOURLY_SORT_TRIGGER_VERIFIED"); } catch(eDelP) {}
     }
   } catch (eTrig) {
-    Logger.log("1시간 자동 정렬 트리거 등록 예외: " + eTrig.toString());
+    Logger.log("새벽 자동 정렬 트리거 등록 예외: " + eTrig.toString());
   }
 }
 
-function runHourlyAutoSortTrigger() {
+// 하위 호환성 유지 alias
+function ensureHourlySortTriggerInstalled(force) {
+  return ensureDailySortTriggerInstalled(force);
+}
+
+function runDailyAutoSortTrigger() {
   // 사용자가 웹에서 저장/삭제 중일 때 정렬로 행이 뒤섞이지 않도록 쓰기 락 공유 (락 획득 실패 시 이번 회차 생략)
-  if (!__woosungWriteLockHeld_) return runWithWriteLock_(runHourlyAutoSortTrigger, this, arguments, null);
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(runDailyAutoSortTrigger, this, arguments, null);
   try {
     // [시트 직접 편집 보호 가드]: 작업자가 시트에서 직접 셀을 작성 중일 때 행이 튀는 것을 방지
     try {
@@ -1725,8 +1743,13 @@ function runHourlyAutoSortTrigger() {
       invalidateDashboardServerCache();
     }
   } catch (err) {
-    Logger.log("1시간 주기 자동 정렬 에러: " + err.toString());
+    Logger.log("새벽 자동 정렬 에러: " + err.toString());
   }
+}
+
+// 하위 호환성 유지 alias
+function runHourlyAutoSortTrigger() {
+  return runDailyAutoSortTrigger();
 }
 
 /**
@@ -2523,13 +2546,16 @@ function ensureRealtimeTriggerInstalledSilent() {
 
     var triggers = ScriptApp.getProjectTriggers();
     var hasBriefingTrigger = false;
-    var hasHourlySortTrigger = false;
+    var hasDailySortTrigger = false;
     var hasDailyArchiveTrigger = false;
 
     for (var i = 0; i < triggers.length; i++) {
       var fn = triggers[i].getHandlerFunction();
       if (fn === "sendDailySiteMorningBriefing") hasBriefingTrigger = true;
-      if (fn === "runHourlyAutoSortTrigger") hasHourlySortTrigger = true;
+      if (fn === "runDailyAutoSortTrigger") hasDailySortTrigger = true;
+      if (fn === "runHourlyAutoSortTrigger") {
+        try { ScriptApp.deleteTrigger(triggers[i]); } catch(eOld) {}
+      }
       if (fn === "runDailyCompletedSitesArchiveTrigger") hasDailyArchiveTrigger = true;
     }
 
@@ -2550,11 +2576,12 @@ function ensureRealtimeTriggerInstalledSilent() {
       }
     }
 
-    // 3. 1시간 주기 현장별 날짜 오름차순 자동 정렬 트리거 유지
-    if (!hasHourlySortTrigger) {
-      ScriptApp.newTrigger("runHourlyAutoSortTrigger")
+    // 3. 매일 새벽 4시 현장별 날짜 오름차순 자동 정렬 트리거 유지
+    if (!hasDailySortTrigger) {
+      ScriptApp.newTrigger("runDailyAutoSortTrigger")
         .timeBased()
-        .everyHours(1)
+        .everyDays(1)
+        .atHour(4)
         .create();
     }
 

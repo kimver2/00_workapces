@@ -3043,10 +3043,10 @@ assertTest('"신대방우성 1동" 내부 오름차순: 21일 [도배]가 5행�
   setValuesRecorded51[5][1] === '2026.10.21' && setValuesRecorded51[5][2] === '도배'
 );
 
-// 51-5: 1시간 주기 자동 정렬 트리거 핸들러 및 상단 메뉴 등록 검증
-const hasHourlyTriggerCode = code.indexOf('runHourlyAutoSortTrigger') !== -1 &&
-  code.indexOf('everyHours(1)') !== -1;
-assertTest('ensureRealtimeTriggerInstalledSilent: 1시간 주기 자동 정렬 트리거(everyHours(1)) 등록 검증', hasHourlyTriggerCode);
+// 51-5: 새벽 4시 일일 자동 정렬 트리거 핸들러 및 상단 메뉴 등록 검증
+const hasDailySortTriggerCode = (code.indexOf('runDailyAutoSortTrigger') !== -1 || code.indexOf('runHourlyAutoSortTrigger') !== -1) &&
+  code.indexOf('atHour(4)') !== -1 && code.indexOf('everyDays(1)') !== -1;
+assertTest('ensureDailySortTriggerInstalled: 매일 새벽 4시 자동 정렬 트리거(everyDays(1).atHour(4)) 등록 검증', hasDailySortTriggerCode);
 
 // ========================================================
 // 52. [2026년 미래 유령 일정 동적 윈도우 스캔 및 날짜 불일치 고아 일정 자동 치유 QA]
@@ -8441,6 +8441,52 @@ assertTest('Step 126-5: 카테고리 자동 감지 뱃지(sheetCategoryAutoBadge
 // 126-6: index.html 내 exec?v=125 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 126-6: index.html 내 exec?v=125 최신 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(\d+)/.test(indexHtmlContent126) && parseInt(indexHtmlContent126.match(/exec\?v=(\d+)/)[1], 10) >= 125
+);
+
+// ========================================================
+// 🌙 [Step 127]: 2번 시트 자동 정렬 주기 1시간 -> 매일 새벽 4시 1회 전환 QA
+// ========================================================
+console.log('\n🌙 [Step 127]: 시트 자동 정렬 주기 매일 새벽 4시 1회 전환 QA ---');
+
+const code127 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent127 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 127-1: ensureDailySortTriggerInstalled 함수 정의 및 매일 새벽 4시 트리거(everyDays(1).atHour(4)) 설정 검증
+assertTest('Step 127-1: ensureDailySortTriggerInstalled 정의 및 everyDays(1).atHour(4) 탑재 검증',
+  code127.indexOf('function ensureDailySortTriggerInstalled(force)') !== -1 &&
+  code127.indexOf('ScriptApp.newTrigger("runDailyAutoSortTrigger")') !== -1 &&
+  code127.indexOf('.everyDays(1)') !== -1 &&
+  code127.indexOf('.atHour(4)') !== -1
+);
+
+// 127-2: 과거 1시간 주기 트리거(runHourlyAutoSortTrigger) 감지 시 자동 삭제(마이그레이션) 검증
+assertTest('Step 127-2: 기존 1시간 주기 트리거 감지 시 자동 삭제(deleteTrigger) 마이그레이션 탑재 검증',
+  code127.indexOf('if (hFn === "runHourlyAutoSortTrigger")') !== -1 &&
+  code127.indexOf('try { ScriptApp.deleteTrigger(triggers[i]); } catch(eDelOld) {}') !== -1
+);
+
+// 127-3: runDailyAutoSortTrigger 핸들러 정의 및 15분 편집 쿨다운 유예 보존 검증
+assertTest('Step 127-3: runDailyAutoSortTrigger 정의 및 15분 편집 쿨다운 유예 로직 보존 검증',
+  code127.indexOf('function runDailyAutoSortTrigger()') !== -1 &&
+  code127.indexOf('LAST_SHEET_USER_EDIT_TIME') !== -1 &&
+  code127.indexOf('15 * 60 * 1000') !== -1
+);
+
+// 127-4: checkAllAutomationTriggers 내 새벽 4시 정렬 트리거 연동 검증
+assertTest('Step 127-4: checkAllAutomationTriggers 내 매일 새벽 4시 자동 정렬 트리거 연동 검증',
+  code127.indexOf('if (fn === "runDailyAutoSortTrigger") hasDailySortTrigger = true;') !== -1 &&
+  code127.indexOf('if (!hasDailySortTrigger)') !== -1
+);
+
+// 127-5: 상단 메뉴 ensureDailySortTriggerInstalledMenu 및 새벽 4시 안내 문구 검증
+assertTest('Step 127-5: 상단 메뉴 새벽 4시 자동 정렬 트리거 점검 / 활성화 메뉴 탑재 검증',
+  code127.indexOf('🌙 새벽 자동 정렬 트리거 점검 / 활성화 (새벽 4시)') !== -1 &&
+  code127.indexOf('function ensureDailySortTriggerInstalledMenu()') !== -1
+);
+
+// 127-6: index.html 내 exec?v=126 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 127-6: index.html 내 exec?v=126 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent127) && parseInt(indexHtmlContent127.match(/exec\?v=(\d+)/)[1], 10) >= 126
 );
 
 console.log('\n========================================================');
