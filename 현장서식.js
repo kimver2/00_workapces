@@ -1451,6 +1451,9 @@ function onOpen() {
       try {
         ensureCustomCategorySheets(activeSs);
       } catch(eCatInit) {}
+      try {
+        ensureHourlySortTriggerInstalled();
+      } catch(eTrigInit) {}
     }
   } catch(e) {}
   var ui = SpreadsheetApp.getUi();
@@ -1509,29 +1512,51 @@ function onOpen() {
       .addItem("🧹 K~N열 (작성자/수정자 열) 영구 삭제", "removeAuditColumnsKtoN")
       .addItem("🧹 빈 행 유령 데이터/ID 일괄 청소", "cleanupEmptyRowsMetadata")
       .addItem("🛡️ 구글 캘린더 연동 잔여 트리거 완전 제거", "removeAllCalendarTriggersMenu")
+      .addItem("⏰ 1시간 주기 자동 정렬 트리거 점검 / 활성화", "ensureHourlySortTriggerInstalledMenu")
     )
     .addToUi();
 }
 
 /**
- * [상단 메뉴 전용] '현장데이터', '단건', 'AS' 시트 첫 번째 일정 최신순 즉시 정렬
+ * [상단 메뉴 전용] '현장데이터', '단건', 'AS', '완료현장' 시트 첫 번째 일정 최신순 즉시 정렬
  */
 function sortSiteScheduleTasksByDateMenu() {
+  ensureHourlySortTriggerInstalled();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) ss = getAppSpreadsheet();
   if (!ss) return;
 
-  var totalSorted = sortAllScheduleSheetsByDate(ss, false);
+  var sortRes = sortAllScheduleSheetsByDate(ss, false);
   try {
     var siteSheet = findSiteScheduleSheet(ss);
     if (siteSheet) setupSiteSheetConditionalFormatting(siteSheet);
   } catch(e) {}
 
+  var totalSorted = (sortRes && typeof sortRes.totalCount === "number") ? sortRes.totalCount : (Number(sortRes) || 0);
+
   if (totalSorted === 0) {
     try {
       ss.toast("모든 현장의 일정이 이미 최신순으로 완벽하게 정렬되어 있습니다.", "📅 정렬 상태 완벽", 3);
     } catch(e) {}
+  } else {
+    try {
+      var sMsg = "정렬 완료: 현장데이터(" + (sortRes.siteCount || 0) + "), 단건(" + (sortRes.singleCount || 0) + "), AS(" + (sortRes.asCount || 0) + "), 완료현장(" + (sortRes.completedCount || 0) + ")";
+      ss.toast(sMsg, "📅 4개 시트 최신순 정렬 완료", 4);
+    } catch(e) {}
   }
+}
+
+/**
+ * [상단 메뉴 전용] 1시간 주기 자동 정렬 트리거 점검 / 재설치
+ */
+function ensureHourlySortTriggerInstalledMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureHourlySortTriggerInstalled(true);
+  try {
+    if (ss && typeof ss.toast === "function") {
+      ss.toast("현장데이터, 단건, AS, 완료현장 4개 시트의 1시간 주기 자동 정렬 트리거가 정상 확인/설치되었습니다.", "⏰ 1시간 정렬 트리거 활성화", 4);
+    }
+  } catch(e) {}
 }
 
 /**
@@ -1553,16 +1578,16 @@ function groupSiteScheduleMenu() {
 
 
 /**
- * 1시간 주기 현장데이터 시트 날짜 오름차순 자동 정렬 및 담당자 서식 동기화 엔진
- * - 작업자가 처음 뒤죽박죽 입력했더라도 1시간마다 자동으로 날짜 빠른 순으로 정돈
- * - 새로 추가된 담당자 조건부 서식도 함께 자동 최신화
- * - 심야(22시~07시) 변경 없을 시 유휴 가드로 실행 시간 절약
+ * 1시간 주기 '현장데이터', '단건', 'AS', '완료현장' 4개 시트 날짜 오름차순 자동 정렬 및 서식 동기화 엔진
+ * - 작업자가 시트에서 직접 행 추가/입력 시 실시간 정렬로 행이 튀거나 사라지는 현상 방지
+ * - 1시간마다 주기적으로 실행하여 시트 내 동일 현장 묶기 및 날짜 오름차순 정돈
+ * - @param {boolean} [force=false] 캐시 무시하고 트리거 상태 강제 재검증 여부
  */
-function ensureHourlySortTriggerInstalled() {
+function ensureHourlySortTriggerInstalled(force) {
   try {
     if (typeof PropertiesService === "undefined" || typeof ScriptApp === "undefined") return;
     var props = PropertiesService.getScriptProperties();
-    if (props && typeof props.getProperty === "function" && props.getProperty("HOURLY_SORT_TRIGGER_VERIFIED") === "true") {
+    if (!force && props && typeof props.getProperty === "function" && props.getProperty("HOURLY_SORT_TRIGGER_VERIFIED") === "true") {
       return;
     }
     if (typeof ScriptApp.getProjectTriggers !== "function" || typeof ScriptApp.newTrigger !== "function") return;
@@ -1570,8 +1595,12 @@ function ensureHourlySortTriggerInstalled() {
     var hasHourly = false;
     for (var i = 0; i < triggers.length; i++) {
       if (triggers[i] && typeof triggers[i].getHandlerFunction === "function" && triggers[i].getHandlerFunction() === "runHourlyAutoSortTrigger") {
-        hasHourly = true;
-        break;
+        if (!hasHourly) {
+          hasHourly = true;
+        } else {
+          // 중복 생성된 트리거가 있을 경우 정리
+          try { ScriptApp.deleteTrigger(triggers[i]); } catch(eDel) {}
+        }
       }
     }
     if (!hasHourly) {
@@ -1583,7 +1612,9 @@ function ensureHourlySortTriggerInstalled() {
     if (props && typeof props.setProperty === "function") {
       props.setProperty("HOURLY_SORT_TRIGGER_VERIFIED", "true");
     }
-  } catch (eTrig) {}
+  } catch (eTrig) {
+    Logger.log("1시간 자동 정렬 트리거 등록 예외: " + eTrig.toString());
+  }
 }
 
 function runHourlyAutoSortTrigger() {
@@ -1594,8 +1625,9 @@ function runHourlyAutoSortTrigger() {
     if (!ss) ss = getAppSpreadsheet();
     if (!ss) return;
 
-    // '현장데이터', '단건', 'AS' 시트 동일 현장 병합 + 최신순 정렬 + 아코디언 그룹화 일괄 실행 (무음)
-    var sortedCount = sortAllScheduleSheetsByDate(ss, true);
+    // '현장데이터', '단건', 'AS', '완료현장' 4개 시트 동일 현장 병합 + 최신순 정렬 + 아코디언 그룹화 일괄 실행 (무음)
+    var sortRes = sortAllScheduleSheetsByDate(ss, true);
+    var sortedCount = (sortRes && typeof sortRes.totalCount === "number") ? sortRes.totalCount : (Number(sortRes) || 0);
 
     var sheet = findSiteScheduleSheet(ss);
     if (sheet) {
@@ -2079,9 +2111,10 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     Logger.log("✅ 시트 동일 현장 묶기 & 첫 번째 일정 최신순 정렬 완료: 총 " + sortedBlockCount + "개 현장 정렬됨");
   }
 
-  // 6단계: 쓰기 완료 후 항상 동일 현장 아코디언 행 그룹을 새 행 위치에 맞게 정상화하고 전체 펼침 보장
+  // 6단계: 쓰기 완료 후 항상 동일 현장 아코디언 행 그룹을 새 행 위치에 맞게 정상화 (완료현장은 기본 접힘, 그 외는 전체 펼침)
   try {
-    groupSheetRowsBySite(sheet, false);
+    var isComp = (typeof isCompletedSitesSheet === "function" && isCompletedSitesSheet(sheet));
+    groupSheetRowsBySite(sheet, isComp);
   } catch(eGrpAfterSort) {}
 
   if (anyChanged) {
@@ -2098,19 +2131,19 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
 }
 
 /**
- * '현장데이터', '단건', 'AS' 시트 3개 모두에 대해 첫 번째 일정 최신순 정렬 일괄 실행
+ * '현장데이터', '단건', 'AS', '완료현장' 시트 4개 모두에 대해 첫 번째 일정 최신순 정렬 일괄 실행
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
  * @param {boolean} [silent=true]
- * @return {object} { siteCount: number, singleCount: number, asCount: number }
+ * @return {object} { siteCount: number, singleCount: number, asCount: number, completedCount: number, totalCount: number }
  */
 function sortAllScheduleSheetsByDate(ss, silent) {
   if (!ss) ss = getAppSpreadsheet();
-  if (!ss) return { siteCount: 0, singleCount: 0, asCount: 0 };
+  if (!ss) return { siteCount: 0, singleCount: 0, asCount: 0, completedCount: 0, totalCount: 0 };
 
-  var res = { siteCount: 0, singleCount: 0, asCount: 0 };
+  var res = { siteCount: 0, singleCount: 0, asCount: 0, completedCount: 0, totalCount: 0 };
 
   var siteSheet = findSiteScheduleSheet(ss);
-  if (siteSheet) {
+  if (siteSheet && siteSheet.getLastRow() >= 2) {
     res.siteCount = sortSiteScheduleTasksByDate(ss, siteSheet, silent !== false);
     try { setupSiteSheetConditionalFormatting(siteSheet); } catch(eFmt) {}
   }
@@ -2125,6 +2158,12 @@ function sortAllScheduleSheetsByDate(ss, silent) {
     res.asCount = sortSiteScheduleTasksByDate(ss, asSheet, silent !== false);
   }
 
+  var completedSheet = findCompletedSitesSheet(ss, false);
+  if (completedSheet && completedSheet.getLastRow() >= 2) {
+    res.completedCount = sortSiteScheduleTasksByDate(ss, completedSheet, silent !== false);
+  }
+
+  res.totalCount = res.siteCount + res.singleCount + res.asCount + res.completedCount;
   return res;
 }
 
@@ -2169,7 +2208,7 @@ function onEdit(e) {
     return;
   }
 
-  // ③ [현장데이터 시트 편집 감지 -> 담당자/공종 유효성 자동학습 + 날짜(B열) 편집 시 최신순 무음 자동 정렬]
+  // ③ [현장데이터 시트 편집 감지 -> 동일 현장 아코디언 묶기 + 담당자/공종 유효성 자동학습 (정렬은 1시간 주기 트리거로 분리)]
   if (isSiteScheduleSheet(sheet)) {
     try {
       var startCol = e.range.getColumn();
@@ -2182,12 +2221,8 @@ function onEdit(e) {
         } catch(eGSite) {}
       }
 
-      // 날짜(B열) 편집 감지 -> 첫 번째 일정 최신순(내림차순) 무음 자동 정렬
-      if (startCol <= 2 && endCol >= 2 && row >= 2) {
-        try {
-          sortSiteScheduleTasksByDate(ss, sheet, true);
-        } catch(eSortSite) {}
-      }
+      // [실시간 정렬 분리 안내] 작업자가 시트에서 행 추가/일정 입력 시 실시간 정렬로 행이 튀거나 사라지는 현상을
+      // 원천 방지하기 위해 실시간 정렬은 배제하고 1시간 주기 자동 정렬(runHourlyAutoSortTrigger)로 일괄 처리합니다.
 
       // C열 공종 직접 편집 감지 -> 04_공종 시트에 자동 등록 및 유효성 검사 자동학습으로 에러 방지
       if (startCol <= 3 && endCol >= 3) {
@@ -2214,7 +2249,7 @@ function onEdit(e) {
     } catch(eSheetEdit) {}
   }
 
-  // ④ [AS 시트 편집 감지 -> 날짜(B열) 편집 시 최신순 자동 정렬 + G열 스마트 2인 선택 + 완료 시 완료현장 시트로 자동 이동]
+  // ④ [AS 시트 편집 감지 -> G열 스마트 2인 선택 + 완료 시 완료현장 시트로 자동 이동 (정렬은 1시간 주기 트리거로 분리)]
   if (isAsSheet(sheet)) {
     try {
       var aStartCol = e.range.getColumn();
@@ -2225,13 +2260,6 @@ function onEdit(e) {
         try {
           groupSheetRowsBySite(sheet, false);
         } catch(eGAs) {}
-      }
-
-      // 날짜(B열) 편집 시 첫 번째 일정 최신순(내림차순) 무음 자동 정렬
-      if (aStartCol <= 2 && aEndCol >= 2 && row >= 2) {
-        try {
-          sortSiteScheduleTasksByDate(ss, sheet, true);
-        } catch(eSortAs) {}
       }
 
       // G열 담당자 편집 감지 -> 스마트 2인 다중 선택 엔진
@@ -2265,7 +2293,7 @@ function onEdit(e) {
     }
   }
 
-  // ⑤ [단건 시트 편집 감지 -> 날짜(B열) 편집 시 최신순 자동 정렬 + G열 스마트 2인 선택 & 현장명(A열) 편집 시 동일 현장 자동 묶기]
+  // ⑤ [단건 시트 편집 감지 -> G열 스마트 2인 선택 & 현장명(A열) 편집 시 동일 현장 자동 묶기 (정렬은 1시간 주기 트리거로 분리)]
   if (isSingleTaskSheet(sheet)) {
     try {
       var sStartCol = e.range.getColumn();
@@ -2276,13 +2304,6 @@ function onEdit(e) {
         try {
           groupSheetRowsBySite(sheet, false);
         } catch(eGSingle) {}
-      }
-
-      // 날짜(B열) 편집 시 첫 번째 일정 최신순(내림차순) 무음 자동 정렬
-      if (sStartCol <= 2 && sEndCol >= 2 && row >= 2) {
-        try {
-          sortSiteScheduleTasksByDate(ss, sheet, true);
-        } catch(eSortSingle) {}
       }
 
       // G열 담당자 편집 감지 -> 스마트 2인 다중 선택 엔진
@@ -7527,14 +7548,16 @@ function doGet(e) {
   // 0-1) 현장별 병합 및 날짜 최신순 정렬 + 아코디언 정상화 요청 (action=consolidateAndSort / sortScheduleSheets / fixSheetGrouping)
   if (action === "consolidateAndSort" || action === "sortScheduleSheets" || action === "fixSheetGrouping") {
     ensureHourlySortTriggerInstalled();
-    var sortedCnt = ss ? sortAllScheduleSheetsByDate(ss, true) : 0;
+    var sortRes = ss ? sortAllScheduleSheetsByDate(ss, true) : { totalCount: 0 };
+    var sortedCnt = (sortRes && typeof sortRes.totalCount === "number") ? sortRes.totalCount : (Number(sortRes) || 0);
     if (sheet) {
       try { groupSheetRowsBySite(sheet, false); } catch(eGrpCons) {}
     }
     invalidateDashboardServerCache();
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
-      sortedBlockCount: sortedCnt
+      sortedBlockCount: sortedCnt,
+      sheetCounts: sortRes
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
