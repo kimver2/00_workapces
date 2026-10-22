@@ -9309,9 +9309,9 @@ assertTest('Step 138-7: onPcSidebarDoneSiteClick 및 setPcSiteStatusFilter("done
   code138.indexOf('if (typeof renderPcSidebarSites === "function") renderPcSidebarSites();') !== -1
 );
 
-// 138-8: index.html 내 exec?v=137 최신 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 138-8: index.html 내 exec?v=137 최신 캐시 버스팅 파라미터 갱신 검증',
-  indexHtmlContent138.indexOf('exec?v=137') !== -1
+// 138-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 137)
+assertTest('Step 138-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 137)',
+  indexHtmlContent138.indexOf('exec?v=') !== -1 && parseInt(indexHtmlContent138.match(/exec\?v=(\d+)/)[1], 10) >= 137
 );
 
 // 138-9: 런타임 렌더링 검증: mock 데이터를 통한 고객명 및 연락처 분리 검증
@@ -9367,6 +9367,132 @@ assertTest('Step 138-9: 런타임 렌더링 시 고객명(홍길동)과 연락�
   renderedHtml138.indexOf('<th style="min-width:125px;text-align:center;">연락처</th>') !== -1 &&
   renderedHtml138.indexOf('홍길동') !== -1 &&
   renderedHtml138.indexOf('📞 010-9999-8888') !== -1
+);
+
+// ==========================================================================================
+// 📋 [Step 139]: 신규현장 모바일 카드화, 3단 레이아웃, 가로줄 제거, 완료스타일 통일, 시트링크 QA
+// ==========================================================================================
+console.log('\n📋 [Step 139]: 신규현장 모바일 카드화, 3단 레이아웃, 가로줄 제거, 완료스타일 통일, 시트링크 QA ---');
+const code139 = fs.readFileSync(path.resolve(__dirname, '../현장서식.js'), 'utf8');
+
+// 139-1: openSpreadsheetEstimateSheet Google Spreadsheet target URL match
+const targetSheetUrl139 = "https://docs.google.com/spreadsheets/d/1V6Nb5ZB8gOfwDFsN8svMDZQYWXIJjGa9tuUYrVu0JhY/edit?gid=760414857#gid=760414857";
+assertTest('Step 139-1: openSpreadsheetEstimateSheet 스프레드시트 지정 URL 직접 연결 검증',
+  code139.indexOf(targetSheetUrl139) !== -1 &&
+  code139.indexOf('function openSpreadsheetEstimateSheet() {') !== -1
+);
+
+// 139-2: PC carousel card status badge 1-line no-wrap & 3-line layout without progress bar
+assertTest('Step 139-2: PC 캐러셀 카드 3단 레이아웃(현장명/진행단계, 담당자/우선순위, 공사범위/예상금액) 및 가로줄 제거 검증',
+  code139.indexOf('white-space:nowrap;flex-shrink:0;') !== -1 &&
+  code139.indexOf('.pc-c-card-row') !== -1 &&
+  code139.indexOf('buildEstimateBadgeHtml("priority", eData.priority || "보통")') !== -1 &&
+  code139.indexOf('buildEstimateBadgeHtml("scope", eData.scope || "전체공사")') !== -1 &&
+  code139.indexOf('(eAmtStr !== "-" ? eAmtStr : "-")') !== -1
+);
+
+// 139-3: Sidebar 계약 완료 style matches 완료 현장
+assertTest('Step 139-3: 사이드바 계약 완료 스타일 완료현장과 동일하게 통일 (초록 형광박스 제거 및 점선 구분선) 검증',
+  code139.indexOf('border:1.5px solid #86efac;background:#f0fdf4;') === -1 &&
+  code139.indexOf('class="pc-sidebar-done-box" style="margin-top:12px;padding-top:8px;border-top:1px dashed #e2e8f0;"') !== -1
+);
+
+// 139-4: Mobile newSite view uses estimate cards (PC screen style) instead of task checklist
+assertTest('Step 139-4: 모바일 신규현장 선택 시 일정 체크리스트 대신 견적 카드 뷰(renderMobileEstimateDashboard) 전환 검증',
+  code139.indexOf('function renderMobileEstimateDashboard(') !== -1 &&
+  code139.indexOf('function toggleMobileEstimateCard(') !== -1 &&
+  code139.indexOf('renderMobileEstimateDashboard(matchedSites, query);') !== -1
+);
+
+// 139-5: index.html cache buster updated to v=138
+const indexHtml139 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+assertTest('Step 139-5: index.html 내 exec?v=138 최신 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml139.indexOf('exec?v=138') !== -1
+);
+
+// 139-6: Runtime rendering simulation for mobile estimate dashboard
+const serverSandbox139 = {
+  SpreadsheetApp: { getActiveSpreadsheet: () => ({ getUrl: () => targetSheetUrl139 }) },
+  CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+  PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+  console: console,
+  Logger: { log: () => {} },
+  Date: Date,
+  Math: Math,
+  Object: Object,
+  Array: Array,
+  Set: Set,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String
+};
+vm133.createContext(serverSandbox139);
+vm133.runInContext(code139, serverSandbox139);
+const builtHtml139 = serverSandbox139.buildSidebarDashboardHtml('pc');
+const clientScriptMatch139 = builtHtml139.match(/<script>([\s\S]*?)<\/script>/);
+const clientScript139 = clientScriptMatch139 ? clientScriptMatch139[1] : '';
+
+let mockContainerHtml = '';
+const clientSandbox139 = {
+  console: console,
+  setTimeout: setTimeout,
+  clearTimeout: clearTimeout,
+  Date: Date,
+  Math: Math,
+  Object: Object,
+  Array: Array,
+  Set: Set,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String,
+  currentFilter: 'all',
+  currentScope: 'newSite',
+  document: {
+    readyState: 'loading',
+    getElementById: (id) => {
+      if (id === 'contentArea') return { innerHTML: '', set innerHTML(val) { mockContainerHtml = val; }, get innerHTML() { return mockContainerHtml; } };
+      return null;
+    },
+    querySelectorAll: () => []
+  },
+  window: { addEventListener: () => {} }
+};
+vm133.createContext(clientSandbox139);
+vm133.runInContext(clientScript139, clientSandbox139);
+
+vm133.runInContext(`
+rawData = {
+  spreadsheetUrl: "${targetSheetUrl139}",
+  sites: [
+    {
+      siteName: "남양주 오남 신동아",
+      scope: "newSite",
+      estimateData: {
+        siteName: "남양주 오남 신동아",
+        clientName: "김고객",
+        clientPhone: "010-1234-5678",
+        status: "현장 방문 예정",
+        priority: "긴급",
+        scope: "전체공사",
+        expectedAmount: 50000000,
+        manager: "조항만"
+      }
+    }
+  ]
+};
+renderMobileEstimateDashboard(rawData.sites.map(s => ({ site: s, filteredTasks: [] })), "");
+`, clientSandbox139);
+assertTest('Step 139-6: 모바일 신규현장 렌더링 시 3단 레이아웃(현장명/진행단계, 담당자/우선순위, 공사범위/예상금액) 및 시트열기 버튼 렌더링 검증',
+  mockContainerHtml.indexOf('남양주 오남 신동아') !== -1 &&
+  mockContainerHtml.indexOf('현장 방문 예정') !== -1 &&
+  mockContainerHtml.indexOf('조항만') !== -1 &&
+  mockContainerHtml.indexOf('긴급') !== -1 &&
+  mockContainerHtml.indexOf('50,000,000원') !== -1 &&
+  mockContainerHtml.indexOf('시트 열기 ↗') !== -1
 );
 
 console.log('\n========================================================');
