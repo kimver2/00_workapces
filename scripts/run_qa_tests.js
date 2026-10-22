@@ -9407,7 +9407,7 @@ assertTest('Step 139-4: 모바일 신규현장 선택 시 일정 체크리스트
 // 139-5: index.html cache buster updated to v=138
 const indexHtml139 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
 assertTest('Step 139-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 138)',
-  indexHtml139.indexOf('exec?v=138') !== -1 || indexHtml139.indexOf('exec?v=139') !== -1 || indexHtml139.indexOf('exec?v=140') !== -1 || indexHtml139.indexOf('exec?v=141') !== -1
+  indexHtml139.indexOf('exec?v=138') !== -1 || indexHtml139.indexOf('exec?v=139') !== -1 || indexHtml139.indexOf('exec?v=140') !== -1 || indexHtml139.indexOf('exec?v=141') !== -1 || indexHtml139.indexOf('exec?v=142') !== -1
 );
 
 // 139-6: Runtime rendering simulation for mobile estimate dashboard
@@ -9674,7 +9674,7 @@ assertTest('Step 140-9: 런타임 모바일 견적 카드 상세 렌더링 시 �
 
 // 140-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 139)
 assertTest('Step 140-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 139)',
-  indexHtml140.indexOf('exec?v=139') !== -1 || indexHtml140.indexOf('exec?v=140') !== -1 || indexHtml140.indexOf('exec?v=141') !== -1
+  indexHtml140.indexOf('exec?v=139') !== -1 || indexHtml140.indexOf('exec?v=140') !== -1 || indexHtml140.indexOf('exec?v=141') !== -1 || indexHtml140.indexOf('exec?v=142') !== -1
 );
 
 // ========================================================
@@ -9684,11 +9684,11 @@ console.log('\n📋 [Step 141]: 공종 리스트 공유여부 아이콘, 실시�
 
 const code141 = fs.readFileSync(path.resolve(__dirname, '../현장서식.js'), 'utf8');
 
-// 141-1: PC table 관리 열 너비 105px 및 공유여부 아이콘(🔗 / 🔒) 노출 검증
-assertTest('Step 141-1: PC 공종 리스트 공종명 앞 공유여부 아이콘(🔗 / 🔒) 및 관리 열 너비 105px 검증',
+// 141-1: PC table 관리 열 너비 105px 및 공유여부 아이콘(파랑색 네모 / 빨간색 네모) 노출 검증
+assertTest('Step 141-1: PC 공종 리스트 공종명 앞 공유여부 아이콘 및 관리 열 너비 105px 검증',
   code141.indexOf('<th style="width:105px;text-align:center;">관리</th>') !== -1 &&
-  code141.indexOf('title="공정 공유 (ON)">🔗</span>') !== -1 &&
-  code141.indexOf('title="미공유 (OFF)">🔒</span>') !== -1
+  code141.indexOf('title="공정 공유 (ON)"') !== -1 &&
+  code141.indexOf('title="미공유 (OFF)"') !== -1
 );
 
 // 141-2: PC table 관리 열에 수정 옆 삭제 버튼 (pc-task-btn-del & confirmDeleteSingleTask) 검증
@@ -9783,7 +9783,39 @@ assertTest('Step 142-6: getSidebarDashboardData scopeCounts 내 siteDone, single
 
 // 142-7: index.html 내 exec?v=141 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 142-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 141)',
-  indexHtml142.indexOf('exec?v=141') !== -1
+  indexHtml142.indexOf('exec?v=141') !== -1 || indexHtml142.indexOf('exec?v=142') !== -1
+);
+
+// ========================================================
+// [Step 143]: 공유(파랑색 네모)/미공유(빨간색 네모), 시트 현장 블록 순서 보존 및 최하단 이동 API QA
+// ========================================================
+console.log('\n📋 [Step 143]: 공유(파랑색 네모)/미공유(빨간색 네모), 시트 현장 블록 순서 보존 및 최하단 이동 API QA ---');
+
+const code143 = fs.readFileSync(path.resolve(__dirname, '../현장서식.js'), 'utf8');
+const indexHtml143 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+
+// 143-1: PC table 공종명 앞 공유=파랑색 네모(#2563eb), 미공유=빨간색 네모(#ef4444) 검증
+assertTest('Step 143-1: PC table 공종명 앞 공유=파랑색 네모(#2563eb), 미공유=빨간색 네모(#ef4444) 렌더링 검증',
+  code143.indexOf('background:#2563eb;margin-right:7px;vertical-align:middle;box-shadow:0 1px 2px rgba(37,99,235,0.25);flex-shrink:0;" title="공정 공유 (ON)"') !== -1 &&
+  code143.indexOf('background:#ef4444;margin-right:7px;vertical-align:middle;box-shadow:0 1px 2px rgba(239,68,68,0.25);flex-shrink:0;" title="미공유 (OFF)"') !== -1
+);
+
+// 143-2: 모바일 list 공종명 앞 공유=파랑색 네모(#2563eb), 미공유=빨간색 네모(#ef4444) 검증
+assertTest('Step 143-2: 모바일 list 공종명 앞 공유=파랑색 네모(#2563eb), 미공유=빨간색 네모(#ef4444) 렌더링 검증',
+  code143.indexOf('background:#2563eb;margin-right:5px;vertical-align:middle;box-shadow:0 1px 2px rgba(37,99,235,0.25);flex-shrink:0;" title="공정 공유 (ON)"') !== -1 &&
+  code143.indexOf('background:#ef4444;margin-right:5px;vertical-align:middle;box-shadow:0 1px 2px rgba(239,68,68,0.25);flex-shrink:0;" title="미공유 (OFF)"') !== -1
+);
+
+// 143-3: moveSiteBlockToBottom 함수 정의 및 doGet action=moveSiteToBottom 라우팅 검증
+assertTest('Step 143-3: moveSiteBlockToBottom 특정 현장 시트 최하단 이동 함수 및 action=moveSiteToBottom 검증',
+  code143.indexOf('function moveSiteBlockToBottom(siteName, sheetName)') !== -1 &&
+  code143.indexOf('action === "moveSiteToBottom"') !== -1 &&
+  code143.indexOf('var combined = otherRows.concat(targetRows);') !== -1
+);
+
+// 143-4: index.html 내 exec?v=142 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 143-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 142)',
+  indexHtml143.indexOf('exec?v=142') !== -1
 );
 
 console.log('\n========================================================');

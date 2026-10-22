@@ -8194,6 +8194,61 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
  * @param {string} [scope] "site" | "single" | "as" | "newSite"
  * @return {object} { success: boolean, count: number, siteName: string, message: string }
  */
+/**
+ * 웹 대시보드 또는 관리자 요청 시 특정 현장 블록 전체를 시트 맨 아래(최하단)로 안전 이동하는 API
+ * @param {string} siteName 이동할 현장명
+ * @param {string} [sheetName] 대상 시트명 (기본값: 현장데이터)
+ * @return {object} { success: boolean, count: number, message: string }
+ */
+function moveSiteBlockToBottom(siteName, sheetName) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(moveSiteBlockToBottom, this, arguments);
+  try {
+    var cleanSite = String(siteName || "").trim();
+    if (!cleanSite) return { success: false, error: "현장명을 입력해주세요." };
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var sheet = sheetName ? ss.getSheetByName(sheetName) : findSiteScheduleSheet(ss);
+    if (!sheet) return { success: false, error: "시트를 찾을 수 없습니다." };
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, count: 0, message: "시트에 데이터가 없습니다." };
+    var numCols = Math.max(sheet.getLastColumn(), 11);
+    var vals = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+    var bgs = sheet.getRange(2, 1, lastRow - 1, numCols).getBackgrounds();
+    var targetRows = [];
+    var otherRows = [];
+    var lastKnown = "";
+    for (var i = 0; i < vals.length; i++) {
+      var rSite = String(vals[i][0] || "").trim();
+      if (rSite) lastKnown = rSite;
+      var eff = rSite || lastKnown;
+      var hasData = Boolean(String(vals[i][1] || "").trim() || String(vals[i][2] || "").trim());
+      if (eff === cleanSite && hasData) {
+        targetRows.push({ vals: vals[i], bg: bgs[i] });
+      } else {
+        otherRows.push({ vals: vals[i], bg: bgs[i] });
+      }
+    }
+    if (targetRows.length === 0) return { success: true, message: "해당 현장의 이동할 공정이 없습니다." };
+    var combined = otherRows.concat(targetRows);
+    var newVals = combined.map(function(r) { return r.vals; });
+    var newBgs = combined.map(function(r) { return r.bg; });
+    sheet.getRange(2, 1, newVals.length, numCols).setValues(newVals);
+    sheet.getRange(2, 1, newBgs.length, numCols).setBackgrounds(newBgs);
+    SpreadsheetApp.flush();
+    try { Utilities.sleep(150); } catch(eSlp) {}
+    invalidateDashboardServerCache();
+    return {
+      success: true,
+      count: targetRows.length,
+      siteName: cleanSite,
+      message: "[" + cleanSite + "] 현장(" + targetRows.length + "개 공정)이 시트 최하단으로 안전하게 이동되었습니다."
+    };
+  } catch (err) {
+    Logger.log("moveSiteBlockToBottom 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
 function deleteSiteFromWeb(siteName, scope) {
   if (!__woosungWriteLockHeld_) return runWithWriteLock_(deleteSiteFromWeb, this, arguments);
   try {
@@ -8879,6 +8934,14 @@ function doGet(e) {
     };
     var addEstRes = addEstimateRowFromWeb(estData);
     return ContentService.createTextOutput(JSON.stringify(addEstRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-3) 특정 현장 블록 전체 시트 맨 아래(최하단) 이동 요청 (action=moveSiteToBottom)
+  if (action === "moveSiteToBottom") {
+    var mSite = p.site || p.siteName || targetSite || "";
+    var mRes = moveSiteBlockToBottom(mSite);
+    return ContentService.createTextOutput(JSON.stringify(mRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -16832,7 +16895,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      dHtml += \'            <td style="text-align:center;padding:12px 4px;" onclick="event.stopPropagation()"><input type="checkbox" class="pc-site-task-cb" data-site="\' + encCurSite + \'" data-row="\' + task.row + \'" data-task="\' + escapeHtml(task.taskName || "") + \'" \' + (isTaskChecked ? \'checked\' : \'\') + \' onchange="onPcSiteTaskCheckboxChange(event)" style="cursor:pointer;width:15px;height:15px;accent-color:#2563eb;"></td>\';';
   html += '      dHtml += \'            <td style="text-align:center;"><span class="pc-status-pill \' + badgeCls + \'"><span class="pill-icon">\' + badgeIcon + \'</span><span>\' + escapeHtml(badgeText) + \'</span></span></td>\';';
   html += '      const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1" || String(task.isShared) === "Y" || String(task.isShared) === "공유");';
-  html += '      const shareIconHtml = isSh ? \'<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;background:#eff6ff;border:1px solid #bfdbfe;color:#2563eb;font-size:10px;margin-right:6px;vertical-align:middle;cursor:default;" title="공정 공유 (ON)">🔗</span>\' : \'<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;background:#f8fafc;border:1px solid #e2e8f0;color:#94a3b8;font-size:10px;margin-right:6px;vertical-align:middle;cursor:default;" title="미공유 (OFF)">🔒</span>\';';
+  html += '      const shareIconHtml = isSh ? \'<span style="display:inline-block;width:12px;height:12px;border-radius:2.5px;background:#2563eb;margin-right:7px;vertical-align:middle;box-shadow:0 1px 2px rgba(37,99,235,0.25);flex-shrink:0;" title="공정 공유 (ON)" aria-label="공유"></span>\' : \'<span style="display:inline-block;width:12px;height:12px;border-radius:2.5px;background:#ef4444;margin-right:7px;vertical-align:middle;box-shadow:0 1px 2px rgba(239,68,68,0.25);flex-shrink:0;" title="미공유 (OFF)" aria-label="미공유"></span>\';';
   html += '      dHtml += \'            <td>\' + shareIconHtml + \'<strong style="color:#0f172a;font-size:13px;vertical-align:middle;">\' + escapeHtml(task.taskName) + \'</strong></td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-weight:800;\' : \'font-weight:600;\') + \'">\' + escapeHtml(dateStr || "일정 미정") + \'</span>\' + ddayChip + \'</td>\';';
   html += '      dHtml += \'            <td style="text-align:center;">\' + (tMgr ? \'<span class="pc-manager-pill"><span class="mgr-icon">👤</span><span>\' + escapeHtml(tMgr) + \'</span></span>\' : \'<span style="color:#94a3b8;font-size:11.5px;">미등록</span>\') + \'</td>\';';
@@ -17303,7 +17366,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'  <div class="task-top" style="display:flex;align-items:center;gap:6px;">\';';
   html += '      html += \'    <input type="checkbox" class="mob-task-cb" data-site="\' + siteEnc + \'" data-row="\' + task.row + \'" \' + (isTaskChecked ? "checked" : "") + \' onclick="onMobileTaskCheckboxClick(event, this)" style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;flex-shrink:0;">\';';
   html += '      const mIsSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1" || String(task.isShared) === "Y" || String(task.isShared) === "공유");';
-  html += '      const mShareIconHtml = mIsSh ? \'<span style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:4px;background:#eff6ff;border:1px solid #bfdbfe;color:#2563eb;font-size:9.5px;margin-right:5px;vertical-align:middle;cursor:default;" title="공정 공유 (ON)">🔗</span>\' : \'<span style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:4px;background:#f8fafc;border:1px solid #e2e8f0;color:#94a3b8;font-size:9.5px;margin-right:5px;vertical-align:middle;cursor:default;" title="미공유 (OFF)">🔒</span>\';';
+  html += '      const mShareIconHtml = mIsSh ? \'<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#2563eb;margin-right:5px;vertical-align:middle;box-shadow:0 1px 2px rgba(37,99,235,0.25);flex-shrink:0;" title="공정 공유 (ON)" aria-label="공유"></span>\' : \'<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#ef4444;margin-right:5px;vertical-align:middle;box-shadow:0 1px 2px rgba(239,68,68,0.25);flex-shrink:0;" title="미공유 (OFF)" aria-label="미공유"></span>\';';
   html += '      html += \'    <span class="task-name" style="flex:1;min-width:0;display:inline-flex;align-items:center;">\' + mShareIconHtml + \'[\' + escapeHtml(task.taskName) + \']</span>\';';
   html += '      html += \'    <span class="task-date \' + dateClass + \'">\' + (task.isToday ? "🔥 오늘 " : (task.isDelayed ? "⚠️ 지연 " : "")) + escapeHtml(task.dateDisplay) + \'</span>\';';
   html += '      html += \'  </div>\';';
