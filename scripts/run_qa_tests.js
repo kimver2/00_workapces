@@ -8566,6 +8566,66 @@ assertTest('Step 129-5: index.html 내 exec?v=128 최신 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent129) && parseInt(indexHtmlContent129.match(/exec\?v=(\d+)/)[1], 10) >= 128
 );
 
+// ========================================================
+// 📋 [Step 130]: 노션 연동 '신규견적' 시트 생성, 데이터 기입 및 서식/드롭다운 무결성 QA
+// ========================================================
+console.log('\n📋 [Step 130]: 노션 연동 신규견적 시트 생성 및 서식/데이터 무결성 QA ---');
+
+const code130 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent130 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 130-1: NOTION_ESTIMATE_HEADERS 20개 컬럼 정의 검증
+assertTest('Step 130-1: NOTION_ESTIMATE_HEADERS 20개 컬럼 정의 검증',
+  code130.indexOf('var NOTION_ESTIMATE_HEADERS = [') !== -1 &&
+  code130.indexOf('"현장/고객"') !== -1 &&
+  code130.indexOf('"진행 단계"') !== -1 &&
+  code130.indexOf('"문의일"') !== -1 &&
+  code130.indexOf('"예상 공사금액"') !== -1 &&
+  code130.indexOf('"현장 주소"') !== -1
+);
+
+// 130-2: NOTION_ESTIMATE_INITIAL_ROWS 10개 행 데이터 무결성 검증
+assertTest('Step 130-2: NOTION_ESTIMATE_INITIAL_ROWS 10개 행 데이터 무결성 검증',
+  code130.indexOf('var NOTION_ESTIMATE_INITIAL_ROWS = [') !== -1 &&
+  code130.indexOf('"신대방우성 12동 1110호"') !== -1 &&
+  code130.indexOf('"신대방우성 16동 902호"') !== -1 &&
+  code130.indexOf('"신대방현대 102동 9층호"') !== -1 &&
+  code130.indexOf('"신동아 파밀리에 32PY"') !== -1 &&
+  code130.indexOf('"갑을명가"') !== -1 &&
+  code130.indexOf('"현대 관리사무소 상가 단품"') !== -1 &&
+  code130.indexOf('"신동아 욕실단품"') !== -1 &&
+  code130.indexOf('"압구정 가구단품(2동 1903호)"') !== -1 &&
+  code130.indexOf('"보라매경남 109동 702호"') !== -1 &&
+  code130.indexOf('"신대방우성 1동 1806호"') !== -1
+);
+
+// 130-3: findEstimateSheet 및 setupEstimateSheet 함수 정의 검증
+assertTest('Step 130-3: findEstimateSheet 및 setupEstimateSheet 함수 정의 검증',
+  code130.indexOf('function findEstimateSheet(ss, createIfMissing) {') !== -1 &&
+  code130.indexOf('function setupEstimateSheet(ss) {') !== -1 &&
+  code130.indexOf('function setupEstimateSheetMenu() {') !== -1
+);
+
+// 130-4: setupEstimateSheet 내 헤더/데이터 서식 및 드롭다운 유효성 검사 탑재 검증
+assertTest('Step 130-4: setupEstimateSheet 내 헤더/데이터 서식 및 드롭다운 유효성 검사 탑재 검증',
+  code130.indexOf('headerRange.setBackground("#1e3a5f");') !== -1 &&
+  code130.indexOf('sheet.setFrozenRows(1);') !== -1 &&
+  code130.indexOf('setNumberFormat("#,##0")') !== -1 &&
+  code130.indexOf('setDataValidation(statusRule)') !== -1 &&
+  code130.indexOf('setDataValidation(priorityRule)') !== -1
+);
+
+// 130-5: onOpen 메뉴 및 doGet(action === "setupEstimateSheet") 연동 검증
+assertTest('Step 130-5: onOpen 메뉴 및 doGet(action === "setupEstimateSheet") 연동 검증',
+  code130.indexOf('.addItem("📋 \'신규견적\' 시트 생성/최신화 (노션 연동)", "setupEstimateSheetMenu")') !== -1 &&
+  code130.indexOf('if (action === "setupEstimateSheet") {') !== -1
+);
+
+// 130-6: index.html 내 exec?v=129 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 130-6: index.html 내 exec?v=129 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent130) && parseInt(indexHtmlContent130.match(/exec\?v=(\d+)/)[1], 10) >= 129
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

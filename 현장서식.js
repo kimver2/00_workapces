@@ -1543,6 +1543,7 @@ function onOpen() {
     .addItem("📁 완료현장 시트 동일 현장별 접기", "groupCompletedSitesMenu")
     .addItem("📂 완료현장 시트 전체 펼치기", "expandCompletedSitesMenu")
     .addItem("🏢 '현장정보' 시트 열기 (주소/도어락/체크리스트)", "setupSiteInfoSheetMenu")
+    .addItem("📋 '신규견적' 시트 생성/최신화 (노션 연동)", "setupEstimateSheetMenu")
     .addItem("🏷️ '04_공종' 마스터 시트 생성/최신화", "createTasksSheetMenu")
     .addItem("🤝 '02_거래처_정리본' 시트 생성 (10열 슬림화 백업본)", "createOrganizedPartnersBackupSheetMenu")
     .addItem("📑 '단건', 'AS' 시트 생성 및 서식 동기화", "ensureCustomCategorySheetsMenu")
@@ -4556,6 +4557,197 @@ function setupSiteInfoSheetMenu() {
       alertMsg += "\n\n💡 [자동 정돈 완료] 유령 빈 행 " + cleaned + "개가 자동으로 정리되고 데이터가 정렬되었습니다.";
     }
     SpreadsheetApp.getUi().alert("🏢 현장정보 시트 점검 완료", alertMsg, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * [상수] 노션 연동 '신규견적' 시트 기본 헤더 (20개 컬럼)
+ */
+var NOTION_ESTIMATE_HEADERS = [
+  "현장/고객", "진행 단계", "문의일", "우선순위", "공사 범위", "상담 메모", "유입 경로",
+  "1차상담", "공사 예정일", "예상 공사금액", "견적서 전달일", "고객명", "연락처",
+  "담당자", "견적서 파일", "계약 금액", "다음 액션", "보류·실패 사유", "현장 방문일", "현장 주소"
+];
+
+/**
+ * [상수] 노션 '공사 신규견적 고객관리' 연동 초기 10개 행 데이터
+ */
+var NOTION_ESTIMATE_INITIAL_ROWS = [
+  ["신대방우성 12동 1110호", "계약 완료", "2026-09-17", "높음", "전체공사", "", "온라인", "2026-09-22", "2026-12-22", 70000000, "2026-09-28", "", "010-8560-3632", "조항만", "", "", "", "", "", ""],
+  ["신대방우성 16동 902호", "계약 완료", "", "높음", "전체공사", "", "온라인", "2026-09-29 17:00", "2026-11-09", 116930000, "2026-09-18", "", "", "", "", "", "", "", "", ""],
+  ["신대방현대 102동 9층호", "피드백 대기", "2026-09-28", "보통", "전체공사", "", "온라인", "2026-09-30", "2027-01-01", 75000000, "2026-09-30", "", "010-5346-4012", "조항만", "", "", "", "", "", ""],
+  ["신동아 파밀리에 32PY", "신규 문의", "2026-10-07", "보통", "전체공사", "우성2차 102동 702호 소유주분", "기존 고객", "2026-10-30", "2027-01-04", "", "", "", "", "", "", "", "", "", "", ""],
+  ["갑을명가", "견적 작성 중", "2026-10-01", "보통", "욕실", "욕실단품(고급)", "소개", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ["현대 관리사무소 상가 단품", "견적 작성 중", "2026-10-07", "보통", "욕실", "알미늄창호(신길동현장) 견적서 요청", "기존 고객", "", "", "", "", "상가 번영회장님", "", "조항만", "", "", "", "", "", ""],
+  ["신동아 욕실단품", "견적 작성 중", "", "낮음", "샷시·단열", "욕실 기본(소개)", "소개", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ["압구정 가구단품(2동 1903호)", "현장 방문 예정", "2026-10-07", "긴급", "붙박이·가구", "한샘가구", "기존 고객", "", "2026-10-30", "", "", "", "", "", "", "", "", "", "", ""],
+  ["보라매경남 109동 702호", "2차상담 예정", "2026-10-01", "보통", "주방", "", "블로그", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ["신대방우성 1동 1806호", "상담 중", "2026-10-05", "보통", "전체공사", "8동 1603호 현재 거주중 (1동 매수계약 완료)", "소개", "", "2027-02-01", 130000000, "", "", "", "", "", "", "", "", "", ""]
+];
+
+/**
+ * [헬퍼] '신규견적' 시트 탐색 또는 신규 생성
+ */
+function findEstimateSheet(ss, createIfMissing) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
+
+  var sheet = ss.getSheetByName("신규견적");
+  if (sheet) return sheet;
+
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var n = sheets[i].getName().trim();
+    if (n === "신규견적" || n === "04_신규견적" || n.indexOf("신규견적") !== -1) {
+      return sheets[i];
+    }
+  }
+
+  if (!createIfMissing) return null;
+
+  try {
+    sheet = ss.insertSheet("신규견적");
+    try {
+      sheet.setTabColor("#2980b9");
+    } catch(eColor) {}
+    return sheet;
+  } catch(eInsert) {
+    return ss.getSheetByName("신규견적") || null;
+  }
+}
+
+/**
+ * [핵심 함수] 노션 데이터를 바탕으로 '신규견적' 시트 생성, 데이터 기입, 서식 및 유효성 검사 적용
+ */
+function setupEstimateSheet(ss) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+
+  try {
+    var sheet = findEstimateSheet(ss, true);
+    if (!sheet) return { success: false, error: "신규견적 시트 생성 실패" };
+
+    var headers = NOTION_ESTIMATE_HEADERS;
+    var rows = NOTION_ESTIMATE_INITIAL_ROWS;
+    var numCols = headers.length;
+    var numRows = rows.length;
+
+    // 시트 초기화 (데이터 및 서식)
+    sheet.clear();
+
+    // 1) 1행 헤더 기입
+    var headerRange = sheet.getRange(1, 1, 1, numCols);
+    headerRange.setValues([headers]);
+    headerRange.setBackground("#1e3a5f");
+    headerRange.setFontColor("#ffffff");
+    headerRange.setFontWeight("bold");
+    headerRange.setFontSize(10);
+    headerRange.setHorizontalAlignment("center");
+    headerRange.setVerticalAlignment("middle");
+    sheet.setRowHeight(1, 38);
+    sheet.setFrozenRows(1);
+
+    // 2) 데이터 행 기입
+    if (numRows > 0) {
+      var dataRange = sheet.getRange(2, 1, numRows, numCols);
+      dataRange.setValues(rows);
+      dataRange.setFontSize(10);
+      dataRange.setVerticalAlignment("middle");
+
+      for (var r = 1; r <= numRows; r++) {
+        sheet.setRowHeight(r + 1, 30);
+      }
+
+      // 전체 테두리 연한 그레이 실선 적용
+      var allRange = sheet.getRange(1, 1, numRows + 1, numCols);
+      allRange.setBorder(true, true, true, true, true, true, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+      headerRange.setBorder(true, true, true, true, true, true, "#0f1f33", SpreadsheetApp.BorderStyle.SOLID);
+
+      // 열별 정렬 및 서식 지정
+      sheet.getRange(2, 1, numRows, 1).setHorizontalAlignment("left").setFontWeight("bold"); // 현장/고객
+      sheet.getRange(2, 2, numRows, 1).setHorizontalAlignment("center"); // 진행 단계
+      sheet.getRange(2, 3, numRows, 1).setHorizontalAlignment("center"); // 문의일
+      sheet.getRange(2, 4, numRows, 1).setHorizontalAlignment("center"); // 우선순위
+      sheet.getRange(2, 5, numRows, 1).setHorizontalAlignment("center"); // 공사 범위
+      sheet.getRange(2, 6, numRows, 1).setHorizontalAlignment("left");   // 상담 메모
+      sheet.getRange(2, 7, numRows, 1).setHorizontalAlignment("center"); // 유입 경로
+      sheet.getRange(2, 8, numRows, 1).setHorizontalAlignment("center"); // 1차상담
+      sheet.getRange(2, 9, numRows, 1).setHorizontalAlignment("center"); // 공사 예정일
+      sheet.getRange(2, 10, numRows, 1).setHorizontalAlignment("right").setNumberFormat("#,##0"); // 예상 공사금액
+      sheet.getRange(2, 11, numRows, 1).setHorizontalAlignment("center"); // 견적서 전달일
+      sheet.getRange(2, 12, numRows, 1).setHorizontalAlignment("center"); // 고객명
+      sheet.getRange(2, 13, numRows, 1).setHorizontalAlignment("center"); // 연락처
+      sheet.getRange(2, 14, numRows, 1).setHorizontalAlignment("center"); // 담당자
+      sheet.getRange(2, 15, numRows, 1).setHorizontalAlignment("center"); // 견적서 파일
+      sheet.getRange(2, 16, numRows, 1).setHorizontalAlignment("right").setNumberFormat("#,##0"); // 계약 금액
+      sheet.getRange(2, 17, numRows, 1).setHorizontalAlignment("left");   // 다음 액션
+      sheet.getRange(2, 18, numRows, 1).setHorizontalAlignment("center"); // 보류·실패 사유
+      sheet.getRange(2, 19, numRows, 1).setHorizontalAlignment("center"); // 현장 방문일
+      sheet.getRange(2, 20, numRows, 1).setHorizontalAlignment("left");   // 현장 주소
+    }
+
+    // 3) 최적 열 너비 설정
+    var colWidths = [180, 110, 100, 80, 100, 260, 90, 130, 100, 120, 100, 100, 120, 80, 100, 120, 150, 110, 100, 200];
+    for (var c = 0; c < colWidths.length; c++) {
+      sheet.setColumnWidth(c + 1, colWidths[c]);
+    }
+
+    // 4) 드롭다운 데이터 유효성 검사 (Data Validation) 설정 (2행~200행)
+    try {
+      var maxValRows = Math.max(numRows + 1, 100);
+
+      // 진행 단계 드롭다운
+      var statusList = ["신규 문의", "상담 중", "1차상담 예정", "2차상담 예정", "현장 방문 예정", "현장 방문 완료", "견적 작성 중", "견적서 전달", "피드백 대기", "계약 완료", "보류", "수주 실패"];
+      var statusRule = SpreadsheetApp.newDataValidation().requireValueInList(statusList, true).setAllowInvalid(true).build();
+      sheet.getRange(2, 2, maxValRows - 1, 1).setDataValidation(statusRule);
+
+      // 우선순위 드롭다운
+      var priorityList = ["긴급", "높음", "보통", "낮음"];
+      var priorityRule = SpreadsheetApp.newDataValidation().requireValueInList(priorityList, true).setAllowInvalid(true).build();
+      sheet.getRange(2, 4, maxValRows - 1, 1).setDataValidation(priorityRule);
+
+      // 공사 범위 드롭다운
+      var scopeList = ["전체공사", "주방", "욕실", "도배·마루", "붙박이·가구", "샷시·단열", "기타"];
+      var scopeRule = SpreadsheetApp.newDataValidation().requireValueInList(scopeList, true).setAllowInvalid(true).build();
+      sheet.getRange(2, 5, maxValRows - 1, 1).setDataValidation(scopeRule);
+
+      // 유입 경로 드롭다운
+      var sourceList = ["소개", "온라인", "기존 고객", "현장 문의", "워크인", "블로그", "기타"];
+      var sourceRule = SpreadsheetApp.newDataValidation().requireValueInList(sourceList, true).setAllowInvalid(true).build();
+      sheet.getRange(2, 7, maxValRows - 1, 1).setDataValidation(sourceRule);
+
+      // 보류·실패 사유 드롭다운
+      var reasonList = ["예산 차이", "일정 불일치", "연락 두절", "경쟁 업체 선택", "공사 취소", "기타"];
+      var reasonRule = SpreadsheetApp.newDataValidation().requireValueInList(reasonList, true).setAllowInvalid(true).build();
+      sheet.getRange(2, 18, maxValRows - 1, 1).setDataValidation(reasonRule);
+    } catch(eValidation) {
+      console.warn("신규견적 드롭다운 유효성 설정 중 경고: " + eValidation);
+    }
+
+    return {
+      success: true,
+      message: "'신규견적' 시트가 성공적으로 생성 및 갱신되었습니다.",
+      rowCount: numRows,
+      colCount: numCols
+    };
+  } catch(err) {
+    return { success: false, error: err.message || err.toString() };
+  }
+}
+
+/**
+ * [상단 메뉴] '신규견적' 시트 생성/최신화 메뉴 핸들러
+ */
+function setupEstimateSheetMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var res = setupEstimateSheet(ss);
+  if (res.success) {
+    var sheet = findEstimateSheet(ss, false);
+    if (sheet) ss.setActiveSheet(sheet);
+    var msg = "'신규견적' 시트 생성이 완료되었습니다.\n\n- 동기화 건수: 총 " + res.rowCount + "개 신규 견적\n- 반영 컬럼: 총 " + res.colCount + "개 (진행단계, 우선순위, 금액 등 서식 자동 적용)";
+    SpreadsheetApp.getUi().alert("📋 신규견적 시트 생성 완료", msg, SpreadsheetApp.getUi().ButtonSet.OK);
+  } else {
+    SpreadsheetApp.getUi().alert("❌ 신규견적 시트 생성 실패", res.error || "오류가 발생했습니다.", SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
@@ -7930,6 +8122,13 @@ function doGet(e) {
     var isArchBool = (p.isArchived === "true" || p.isArchived === true);
     var moveRes = moveScheduleTaskDateFromWeb(row, targetSite, targetTask, newDate, isArchBool, p.sheetName || p.targetSheetName, p.origDate || p.date, p.origMgr || p.mgr, p.taskId || targetId);
     return ContentService.createTextOutput(JSON.stringify(moveRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-3) '신규견적' 시트 생성/최신화 요청 (action=setupEstimateSheet)
+  if (action === "setupEstimateSheet") {
+    var estRes = setupEstimateSheet(ss);
+    return ContentService.createTextOutput(JSON.stringify(estRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
