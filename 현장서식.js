@@ -11619,7 +11619,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div class="partner-guide-footer-actions">';
   html += '        <button type="button" class="btn-delete-cancel" onclick="closePartnerGuideModal()">닫기</button>';
   html += '        <button type="button" class="btn-partner-guide-copy-all" id="btnDoPartnerGuideCopyAll" onclick="copyAllPartnerGuidesFromModal()" style="display:none;" title="체크된 모든 공정 안내문 한번에 복사">📑 전체 복사</button>';
-  html += '        <button type="button" class="btn-partner-guide-copy" id="btnDoPartnerGuideCopy" onclick="copyPartnerGuideFromModal()">📋 카톡 안내문 복사</button>';
+  html += '        <button type="button" class="btn-partner-guide-copy" id="btnDoPartnerGuideCopy" onclick="copyPartnerGuideFromModal()">📋 복사</button>';
   html += '      </div>';
   html += '    </div>';
   html += '  </div>';
@@ -11871,9 +11871,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (todayTasks.length > 0) {';
   html += '      dateDisp = todayFormatted;';
   html += '      const tNames = todayTasks.map(t => {';
-  html += '        let n = t.taskName || "";';
-  html += '        if (t.partner) n += " (" + t.partner + ")";';
-  html += '        return n;';
+  html += '        return t.taskName || "";';
   html += '      }).filter(Boolean);';
   html += '      taskName = tNames.join(", ");';
   html += '      const mgrSet = [];';
@@ -11913,7 +11911,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      }';
   html += '      if (fallbackTask) {';
   html += '        taskName = fallbackTask.taskName || "";';
-  html += '        partner = fallbackTask.partner ? (" (" + fallbackTask.partner + ")") : "";';
+  html += '        partner = "";';
   html += '        dateDisp = fallbackTask.dateDisplay || fallbackTask.startDateStr || todayFormatted;';
   html += '        mgr = fallbackTask.manager || (siteObj && (siteObj.primaryManager || siteObj.manager)) || "현장 담당자";';
   html += '      } else {';
@@ -11927,7 +11925,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  lines.push("[우성아이디 현장 작업 안내]");';
   html += '  lines.push("━━━━━━━━━━━━━━━━━━");';
   html += '  lines.push("■ 현장명: " + sName);';
-  html += '  if (taskName) lines.push("■ 공종: " + taskName + partner);';
+  html += '  if (taskName) lines.push("■ 공종: " + taskName);';
   html += '  lines.push("■ 작업일자: " + (dateDisp || todayFormatted));';
   html += '  let designerName = "";';
   html += '  if (taskObj) {';
@@ -12023,7 +12021,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (copyBtn) {';
   html += '    copyBtn.disabled = false;';
   html += '    copyBtn.classList.remove("copied");';
-  html += '    copyBtn.innerText = "📋 카톡 안내문 복사";';
+  html += '    copyBtn.innerText = "📋 복사";';
   html += '  }';
   html += '  const copyAllBtn = document.getElementById("btnDoPartnerGuideCopyAll");';
   html += '  if (copyAllBtn) {';
@@ -12098,7 +12096,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    setTimeout(function() {';
   html += '      if (copyBtn) {';
   html += '        copyBtn.classList.remove("copied");';
-  html += '        copyBtn.innerText = "📋 카톡 안내문 복사";';
+  html += '        copyBtn.innerText = "📋 복사";';
   html += '      }';
   html += '    }, 2000);';
   html += '  }';

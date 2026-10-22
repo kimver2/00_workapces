@@ -8489,6 +8489,42 @@ assertTest('Step 127-6: index.html 내 exec?v=126 최신 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent127) && parseInt(indexHtmlContent127.match(/exec\?v=(\d+)/)[1], 10) >= 126
 );
 
+// ========================================================
+// 📋 [Step 128]: 안내문 내 공종명 단독 노출(협력업체 배제) & 복사 버튼 문구 간소화("📋 복사") QA
+// ========================================================
+console.log('\n📋 [Step 128]: 안내문 공종명 단독 노출 및 복사 버튼 문구 간소화 QA ---');
+
+const code128 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent128 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 128-1: buildPartnerWorkGuideText 내 lines.push("■ 공종: " + taskName); 협력업체 제외 검증
+assertTest('Step 128-1: 안내문 내 공종 라인 협력업체 제외 순수 공종명만 표기(lines.push("■ 공종: " + taskName)) 검증',
+  code128.indexOf('lines.push("■ 공종: " + taskName);') !== -1 &&
+  code128.indexOf('lines.push("■ 공종: " + taskName + partner);') === -1
+);
+
+// 128-2: 모달 HTML 템플릿 내 기본 복사 버튼 문구 간소화("📋 복사") 검증
+assertTest('Step 128-2: 모달 HTML 템플릿 내 복사 버튼 문구 "📋 복사" 적용 검증',
+  code128.indexOf('id="btnDoPartnerGuideCopy" onclick="copyPartnerGuideFromModal()">📋 복사</button>') !== -1 &&
+  code128.indexOf('id="btnDoPartnerGuideCopy" onclick="copyPartnerGuideFromModal()">📋 카톡 안내문 복사</button>') === -1
+);
+
+// 128-3: renderPartnerGuideModalView 렌더링 시 copyBtn.innerText "📋 복사" 설정 검증 (1개/2개 공종 공통)
+assertTest('Step 128-3: renderPartnerGuideModalView 내 copyBtn.innerText "📋 복사" 설정 검증',
+  code128.indexOf('copyBtn.innerText = "📋 복사";') !== -1
+);
+
+// 128-4: copyPartnerGuideFromModal 복사 완료 2초 후 "📋 복사" 원상 복구 검증
+assertTest('Step 128-4: copyPartnerGuideFromModal 타이머 내 copyBtn.innerText "📋 복사" 원상 복구 검증',
+  code128.indexOf('copyBtn.innerText = "📋 복사";') !== -1 &&
+  code128.indexOf('copyBtn.innerText = "📋 카톡 안내문 복사";') === -1
+);
+
+// 128-5: index.html 내 exec?v=127 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 128-5: index.html 내 exec?v=127 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent128) && parseInt(indexHtmlContent128.match(/exec\?v=(\d+)/)[1], 10) >= 127
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
