@@ -8626,6 +8626,55 @@ assertTest('Step 130-6: index.html 내 exec?v=129 최신 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent130) && parseInt(indexHtmlContent130.match(/exec\?v=(\d+)/)[1], 10) >= 129
 );
 
+// ========================================================
+// 📋 [Step 131]: 대시보드 분류 내 '신규현장' 탭 버튼 추가 및 데이터 연동 QA
+// ========================================================
+console.log('\n📋 [Step 131]: 대시보드 분류 내 신규현장 탭 버튼 및 데이터 연동 QA ---');
+
+const code131 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent131 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 131-1: getSidebarDashboardData 내 신규견적 데이터 로드 및 scope: "newSite" 탑재 검증
+assertTest('Step 131-1: getSidebarDashboardData 내 신규견적 데이터 로드 및 scope: "newSite" 탑재 검증',
+  code131.indexOf('var estSheet = findEstimateSheet(ss, false);') !== -1 &&
+  code131.indexOf('scope: "newSite"') !== -1 &&
+  code131.indexOf('sheetName: "신규견적"') !== -1
+);
+
+// 131-2: getSidebarDashboardData 내 scopeCounts.newSite 카운팅 및 반환 검증
+assertTest('Step 131-2: getSidebarDashboardData 내 scopeCounts.newSite 카운팅 및 반환 검증',
+  code131.indexOf('var newSiteActiveCount = 0;') !== -1 &&
+  code131.indexOf('else if (scSite.scope === "newSite") newSiteActiveCount++;') !== -1 &&
+  code131.indexOf('newSite: newSiteActiveCount') !== -1
+);
+
+// 131-3: PC 및 모바일 HTML 내 data-scope="newSite" 버튼 탑재 검증
+assertTest('Step 131-3: PC 및 모바일 HTML 내 data-scope="newSite" 버튼 탑재 검증',
+  code131.indexOf('class="pc-scope-tab" data-scope="newSite"') !== -1 &&
+  code131.indexOf('id="pcScopeBadgeNewSite"') !== -1 &&
+  code131.indexOf('class="mobile-scope-tab" data-scope="newSite"') !== -1 &&
+  code131.indexOf('id="mobileScopeBadgeNewSite"') !== -1
+);
+
+// 131-4: setDashboardScope 및 updateScopeBadges 내 newSite 지원 검증
+assertTest('Step 131-4: setDashboardScope 및 updateScopeBadges 내 newSite 지원 검증',
+  code131.indexOf('newScope !== "newSite"') !== -1 &&
+  code131.indexOf('else if (newScope === "newSite") pcTitleEl.innerText = "진행 신규현장";') !== -1 &&
+  code131.indexOf('let siteCnt = 0, singleCnt = 0, asCnt = 0, newSiteCnt = 0;') !== -1 &&
+  code131.indexOf('bNewSite.innerText = newSiteCnt;') !== -1
+);
+
+// 131-5: 캐러셀 및 목록 뷰 내 newSite 스코프 카운트/라벨 지원 검증
+assertTest('Step 131-5: 캐러셀 및 목록 뷰 내 newSite 스코프 카운트/라벨 지원 검증',
+  code131.indexOf('(currentScope === "newSite") ? "신규현장" : "현장"') !== -1 &&
+  code131.indexOf('s.scope || "site") === currentScope && !s.isArchived && !s.isAllCompleted') !== -1
+);
+
+// 131-6: index.html 내 exec?v=130 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 131-6: index.html 내 exec?v=130 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent131) && parseInt(indexHtmlContent131.match(/exec\?v=(\d+)/)[1], 10) >= 130
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

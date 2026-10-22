@@ -7867,7 +7867,9 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     }
 
     var sheet = null;
-    if (category === "single" || category === "단건") {
+    if (category === "newSite" || category === "신규현장" || category === "신규견적") {
+      sheet = findEstimateSheet(ss, true);
+    } else if (category === "single" || category === "단건") {
       sheet = findSingleTaskSheet(ss, true);
     } else if (category === "as" || category === "AS") {
       sheet = findAsSheet(ss, true);
@@ -10352,6 +10354,174 @@ function getSidebarDashboardData(forceRefresh) {
       }
     } catch(eCompDash) {}
 
+    // [신규견적 시트의 신규현장 일정 및 메타데이터 로드]
+    try {
+      var estSheet = findEstimateSheet(ss, false);
+      if (estSheet && estSheet.getLastRow() >= 2) {
+        var estNumCols = Math.max((typeof estSheet.getLastColumn === "function" ? estSheet.getLastColumn() : 20), 20);
+        var estData = estSheet.getRange(2, 1, estSheet.getLastRow() - 1, estNumCols).getValues();
+        for (var ei = 0; ei < estData.length; ei++) {
+          var eRowVals = estData[ei];
+          var eSiteName = String(eRowVals[0] || "").trim();
+          if (!eSiteName) continue;
+
+          var eStatus = String(eRowVals[1] || "신규 문의").trim();
+          var eInquiryDate = eRowVals[2];
+          var ePriority = String(eRowVals[3] || "보통").trim();
+          var eScope = String(eRowVals[4] || "").trim();
+          var eMemo = String(eRowVals[5] || "").trim();
+          var eSource = String(eRowVals[6] || "").trim();
+          var eConsultDate = eRowVals[7];
+          var eExpectedDate = eRowVals[8];
+          var eExpectedAmount = eRowVals[9];
+          var eEstimateSendDate = eRowVals[10];
+          var eClientName = String(eRowVals[11] || "").trim();
+          var eClientPhone = String(eRowVals[12] || "").trim();
+          var eManager = String(eRowVals[13] || "조항만").trim();
+          var eContractAmount = eRowVals[15];
+          var eNextAction = String(eRowVals[16] || "").trim();
+          var eVisitDate = eRowVals[18];
+          var eAddress = String(eRowVals[19] || "").trim();
+
+          var isCompleted = (eStatus === "계약 완료" || eStatus === "보류" || eStatus === "수주 실패");
+          var eSiteKey = "NEWSITE::" + eSiteName;
+
+          if (!sitesMap[eSiteKey]) {
+            var eColorCode = (ePriority === "긴급" ? "11" : (ePriority === "높음" ? "6" : "1"));
+            var eColorHex = (ePriority === "긴급" ? "#ef4444" : (ePriority === "높음" ? "#f97316" : "#0284c7"));
+            sitesMap[eSiteKey] = {
+              siteKey: eSiteKey,
+              siteName: eSiteName,
+              colorCode: eColorCode,
+              colorHex: eColorHex,
+              tasks: [],
+              scope: "newSite",
+              isArchived: isCompleted,
+              initialOrder: siteOrder.length
+            };
+            siteOrder.push(eSiteKey);
+          }
+
+          var memoParts = [];
+          if (eClientName || eClientPhone) memoParts.push("고객: " + [eClientName, eClientPhone].filter(Boolean).join(" / "));
+          if (eScope) memoParts.push("공사: " + eScope);
+          if (eExpectedAmount) {
+            var amtStr = (typeof eExpectedAmount === "number") ? (eExpectedAmount.toLocaleString() + "원") : String(eExpectedAmount);
+            memoParts.push("예상금액: " + amtStr);
+          }
+          if (eSource) memoParts.push("유입: " + eSource);
+          if (eNextAction) memoParts.push("다음: " + eNextAction);
+          if (eMemo) memoParts.push("메모: " + eMemo);
+          var fullMemo = memoParts.join(" | ");
+
+          var milestones = [];
+          if (eConsultDate) {
+            milestones.push({
+              taskName: "1차상담",
+              dateVal: eConsultDate,
+              status: (eStatus === "계약 완료" ? "완료" : (eStatus === "1차상담 예정" ? "진행중" : eStatus))
+            });
+          }
+          if (eEstimateSendDate) {
+            milestones.push({
+              taskName: "견적서 전달",
+              dateVal: eEstimateSendDate,
+              status: (eStatus === "계약 완료" ? "완료" : (eStatus === "견적서 전달" ? "완료" : eStatus))
+            });
+          }
+          if (eVisitDate) {
+            milestones.push({
+              taskName: "현장 방문",
+              dateVal: eVisitDate,
+              status: (eStatus === "현장 방문 완료" ? "완료" : eStatus)
+            });
+          }
+          if (eExpectedDate) {
+            milestones.push({
+              taskName: "공사 착공(예정)",
+              dateVal: eExpectedDate,
+              status: (eStatus === "계약 완료" ? "예정" : eStatus)
+            });
+          }
+          if (eInquiryDate && milestones.length === 0) {
+            milestones.push({
+              taskName: eScope ? (eScope + " 문의") : "신규 문의",
+              dateVal: eInquiryDate,
+              status: eStatus
+            });
+          }
+          if (milestones.length === 0) {
+            milestones.push({
+              taskName: eScope ? (eScope + " (" + eStatus + ")") : eStatus,
+              dateVal: "",
+              status: eStatus
+            });
+          }
+
+          for (var mi = 0; mi < milestones.length; mi++) {
+            var msItem = milestones[mi];
+            var mDateVal = msItem.dateVal;
+            var mParsed = null;
+            try { mParsed = parseScheduleDateRange(mDateVal); } catch(eP) {}
+            var mDateDisplay = "";
+            try { mDateDisplay = formatScheduleDateDisplay(mDateVal); } catch(eD) { mDateDisplay = String(mDateVal || ""); }
+            var mDateMs = 0;
+            var mIsToday = false;
+            var mIsDelayed = false;
+            if (mParsed) {
+              if (mParsed.hasTime && mParsed.startTime) mDateMs = mParsed.startTime.getTime();
+              else if (mParsed.startDate) mDateMs = mParsed.startDate.getTime();
+              if (mParsed.startDate) {
+                mIsToday = isScheduleActiveToday(mParsed, today);
+                mIsDelayed = isScheduleDelayed(mParsed, msItem.status, today);
+              }
+            }
+            var mStartDateStr = "", mEndDateStr = "";
+            if (mParsed && mParsed.startDate) {
+              var msy = mParsed.startDate.getFullYear(), msm = mParsed.startDate.getMonth() + 1, msd = mParsed.startDate.getDate();
+              mStartDateStr = msy + "-" + (msm < 10 ? "0" + msm : msm) + "-" + (msd < 10 ? "0" + msd : msd);
+              var medObj = mParsed.displayEndDate || mParsed.endDate || mParsed.startDate;
+              var mey = medObj.getFullYear(), mem = medObj.getMonth() + 1, med = medObj.getDate();
+              mEndDateStr = mey + "-" + (mem < 10 ? "0" + mem : mem) + "-" + (med < 10 ? "0" + med : med);
+            }
+
+            if (mIsToday) todayCount++;
+            if (mIsDelayed) delayedCount++;
+            totalTasks++;
+
+            sitesMap[eSiteKey].tasks.push({
+              id: "estimate_row_" + (ei + 2) + "_" + mi,
+              taskId: "",
+              row: ei + 2,
+              taskName: msItem.taskName,
+              dateDisplay: mDateDisplay,
+              dateMs: mDateMs,
+              startDateStr: mStartDateStr,
+              endDateStr: mEndDateStr,
+              partner: eSource,
+              manager: eManager,
+              manager1: eManager,
+              manager2: "",
+              status: msItem.status,
+              isShared: false,
+              memo: fullMemo,
+              isToday: mIsToday,
+              isDelayed: mIsDelayed,
+              hasCal: false,
+              scope: "newSite",
+              sheetName: "신규견적",
+              isArchived: isCompleted,
+              clientName: eClientName,
+              clientPhone: eClientPhone,
+              expectedAmount: eExpectedAmount,
+              priority: ePriority,
+              scopeType: eScope
+            });
+          }
+        }
+      }
+    } catch(eEstDash) {}
+
     var sitesList = [];
     var activeSitesCount = 0;
 
@@ -10455,12 +10625,14 @@ function getSidebarDashboardData(forceRefresh) {
     var siteActiveCount = 0;
     var singleActiveCount = 0;
     var asActiveCount = 0;
+    var newSiteActiveCount = 0;
 
     for (var scIdx = 0; scIdx < sitesList.length; scIdx++) {
       var scSite = sitesList[scIdx];
       if (!scSite.isArchived && !scSite.isAllCompleted) {
         if (scSite.scope === "single") singleActiveCount++;
         else if (scSite.scope === "as") asActiveCount++;
+        else if (scSite.scope === "newSite") newSiteActiveCount++;
         else siteActiveCount++;
       }
     }
@@ -10476,7 +10648,8 @@ function getSidebarDashboardData(forceRefresh) {
       scopeCounts: {
         site: siteActiveCount,
         single: singleActiveCount,
-        as: asActiveCount
+        as: asActiveCount,
+        newSite: newSiteActiveCount
       },
       todayStr: todayYYMMDD,
       members: getMemberNames(ss),
@@ -10632,8 +10805,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '.member-tab:hover { background: #f1f5f9; }';
   html += '.member-tab.active { background: #0f172a; color: #ffffff; border-color: #0f172a; font-weight: 700; box-shadow: 0 1px 3px rgba(15,23,42,0.2); }';
   html += '.mobile-scope-tabs-wrapper { padding-top: 6px; padding-bottom: 2px; }';
-  html += '.mobile-scope-tabs-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }';
-  html += '.mobile-scope-tab { padding: 6px 4px; border-radius: 8px; border: 1.5px solid #cbd5e1; background: #ffffff; color: #475569; font-size: 11.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: all 0.15s; }';
+  html += '.mobile-scope-tabs-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }';
+  html += '.mobile-scope-tab { padding: 6px 2px; border-radius: 8px; border: 1.5px solid #cbd5e1; background: #ffffff; color: #475569; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; transition: all 0.15s; white-space: nowrap; }';
   html += '.mobile-scope-tab:hover { background: #f1f5f9; }';
   html += '.mobile-scope-tab.active { background: #2563eb; color: #ffffff; border-color: #2563eb; font-weight: 800; box-shadow: 0 1px 4px rgba(37,99,235,0.25); }';
   html += '.mobile-scope-badge { font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 10px; background: #f1f5f9; color: #64748b; }';
@@ -11055,8 +11228,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .pc-member-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }';
   html += '  .pc-member-select.has-member { background-color: #eff6ff !important; border-color: #2563eb !important; color: #1d4ed8 !important; font-weight: 800 !important; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2) !important; }';
   html += '  .pc-sidebar-checked-badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 10px; }';
-  html += '  .pc-scope-tabs-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }';
-  html += '  .pc-scope-tab { padding: 6px 4px; border-radius: 8px; border: 1.5px solid #cbd5e1; background: #ffffff; color: #475569; font-size: 11.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: all 0.15s; }';
+  html += '  .pc-scope-tabs-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }';
+  html += '  .pc-scope-tab { padding: 6px 2px; border-radius: 8px; border: 1.5px solid #cbd5e1; background: #ffffff; color: #475569; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; transition: all 0.15s; white-space: nowrap; }';
   html += '  .pc-scope-tab:hover { background: #f1f5f9; border-color: #94a3b8; }';
   html += '  .pc-scope-tab.active { background: #2563eb; color: #ffffff; border-color: #2563eb; font-weight: 800; box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25); }';
   html += '  .pc-scope-badge { font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 10px; background: #f1f5f9; color: #64748b; }';
@@ -11415,6 +11588,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <button type="button" class="mobile-scope-tab active" data-scope="site" onclick="setDashboardScope(\'site\')"><span>🏗️ 현장</span><span class="mobile-scope-badge" id="mobileScopeBadgeSite">0</span></button>';
   html += '      <button type="button" class="mobile-scope-tab" data-scope="single" onclick="setDashboardScope(\'single\')"><span>⚡ 단건</span><span class="mobile-scope-badge" id="mobileScopeBadgeSingle">0</span></button>';
   html += '      <button type="button" class="mobile-scope-tab" data-scope="as" onclick="setDashboardScope(\'as\')"><span>🔧 AS</span><span class="mobile-scope-badge" id="mobileScopeBadgeAs">0</span></button>';
+  html += '      <button type="button" class="mobile-scope-tab" data-scope="newSite" onclick="setDashboardScope(\'newSite\')"><span>📋 신규</span><span class="mobile-scope-badge" id="mobileScopeBadgeNewSite">0</span></button>';
   html += '    </div>';
   html += '  </div>';
   html += '  <div id="checkedActionBar" class="checked-action-bar" style="display:none;">';
@@ -11462,6 +11636,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        <button type="button" class="pc-scope-tab active" data-scope="site" onclick="setDashboardScope(\'site\')"><span>🏗️ 현장</span><span class="pc-scope-badge" id="pcScopeBadgeSite">0</span></button>';
   html += '        <button type="button" class="pc-scope-tab" data-scope="single" onclick="setDashboardScope(\'single\')"><span>⚡ 단건</span><span class="pc-scope-badge" id="pcScopeBadgeSingle">0</span></button>';
   html += '        <button type="button" class="pc-scope-tab" data-scope="as" onclick="setDashboardScope(\'as\')"><span>🔧 AS</span><span class="pc-scope-badge" id="pcScopeBadgeAs">0</span></button>';
+  html += '        <button type="button" class="pc-scope-tab" data-scope="newSite" onclick="setDashboardScope(\'newSite\')"><span>📋 신규현장</span><span class="pc-scope-badge" id="pcScopeBadgeNewSite">0</span></button>';
   html += '      </div>';
   html += '    </div>';
   html += '    <div class="pc-sidebar-section pc-sidebar-section-sites">';
@@ -11597,6 +11772,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '            </label>';
   html += '            <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;cursor:pointer;">';
   html += '              <input type="radio" name="sheetCategory" value="as" onchange="onSheetCategoryChange(this.value)"> 🔧 AS';
+  html += '            </label>';
+  html += '            <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;cursor:pointer;">';
+  html += '              <input type="radio" name="sheetCategory" value="newSite" onchange="onSheetCategoryChange(this.value)"> 📋 신규현장';
   html += '            </label>';
   html += '          </div>';
   html += '        </div>';
@@ -11890,7 +12068,7 @@ function buildSidebarDashboardHtml(mode) {
   html += 'let activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS);';
   html += '';
   html += 'function setDashboardScope(newScope) {';
-  html += '  if (newScope !== "site" && newScope !== "single" && newScope !== "as") newScope = "site";';
+  html += '  if (newScope !== "site" && newScope !== "single" && newScope !== "as" && newScope !== "newSite") newScope = "site";';
   html += '  currentScope = newScope;';
   html += '  if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {';
   html += '    document.querySelectorAll(".pc-scope-tab").forEach(tab => {';
@@ -11904,6 +12082,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (pcTitleEl) {';
   html += '    if (newScope === "single") pcTitleEl.innerText = "진행 단건";';
   html += '    else if (newScope === "as") pcTitleEl.innerText = "진행 AS";';
+  html += '    else if (newScope === "newSite") pcTitleEl.innerText = "진행 신규현장";';
   html += '    else pcTitleEl.innerText = "진행 현장";';
   html += '  }';
   html += '  checkedSites.clear();';
@@ -11919,27 +12098,32 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function updateScopeBadges() {';
   html += '  if (!rawData || !Array.isArray(rawData.sites)) return;';
-  html += '  let siteCnt = 0, singleCnt = 0, asCnt = 0;';
+  html += '  let siteCnt = 0, singleCnt = 0, asCnt = 0, newSiteCnt = 0;';
   html += '  rawData.sites.forEach(s => {';
   html += '    if (!s.isArchived && !s.isAllCompleted) {';
   html += '      const sc = s.scope || "site";';
   html += '      if (sc === "single") singleCnt++;';
   html += '      else if (sc === "as") asCnt++;';
+  html += '      else if (sc === "newSite") newSiteCnt++;';
   html += '      else siteCnt++;';
   html += '    }';
   html += '  });';
   html += '  const bSite = document.getElementById("pcScopeBadgeSite");';
   html += '  const bSingle = document.getElementById("pcScopeBadgeSingle");';
   html += '  const bAs = document.getElementById("pcScopeBadgeAs");';
+  html += '  const bNewSite = document.getElementById("pcScopeBadgeNewSite");';
   html += '  if (bSite) bSite.innerText = siteCnt;';
   html += '  if (bSingle) bSingle.innerText = singleCnt;';
   html += '  if (bAs) bAs.innerText = asCnt;';
+  html += '  if (bNewSite) bNewSite.innerText = newSiteCnt;';
   html += '  const mbSite = document.getElementById("mobileScopeBadgeSite");';
   html += '  const mbSingle = document.getElementById("mobileScopeBadgeSingle");';
   html += '  const mbAs = document.getElementById("mobileScopeBadgeAs");';
+  html += '  const mbNewSite = document.getElementById("mobileScopeBadgeNewSite");';
   html += '  if (mbSite) mbSite.innerText = siteCnt;';
   html += '  if (mbSingle) mbSingle.innerText = singleCnt;';
   html += '  if (mbAs) mbAs.innerText = asCnt;';
+  html += '  if (mbNewSite) mbNewSite.innerText = newSiteCnt;';
   html += '}';
   html += '';
   html += 'function updateScopeKpis() {';
@@ -14668,8 +14852,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (!container) return;';
   html += '  if (!matchedSites || matchedSites.length === 0) {';
   html += '    const isDoneTab = (currentFilter === "done");';
-  html += '    const scopeName = (currentScope === "single") ? "단건" : ((currentScope === "as") ? "AS" : "현장");';
-  html += '    const emptyIcon = isDoneTab ? "✅" : ((currentScope === "single") ? "⚡" : ((currentScope === "as") ? "🔧" : "🏗️"));';
+  html += '    const scopeName = (currentScope === "single") ? "단건" : ((currentScope === "as") ? "AS" : ((currentScope === "newSite") ? "신규현장" : "현장"));';
+  html += '    const emptyIcon = isDoneTab ? "✅" : ((currentScope === "single") ? "⚡" : ((currentScope === "as") ? "🔧" : ((currentScope === "newSite") ? "📋" : "🏗️")));';
   html += '    const emptyMsg = isDoneTab ? ("조건에 맞는 완료 " + scopeName + "이(가) 없습니다.") : ("조건에 맞는 진행 " + scopeName + "이(가) 없습니다.");';
   html += '    container.innerHTML = \'<div class="empty-state" style="padding:60px 20px;text-align:center;"><div style="font-size:36px;margin-bottom:12px;">\' + emptyIcon + \'</div><p style="font-size:14px;font-weight:700;color:#64748b;margin-bottom:12px;">\' + emptyMsg + \'</p><button type="button" class="btn-cal-filter-reset" onclick="resetAllCalendarFilters()" style="margin:0 auto;">🔄 필터 초기화하고 전체 \' + scopeName + \' 보기</button></div>\';';
   html += '    return;';
@@ -14776,16 +14960,20 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const pctPlan = (100 - parseFloat(pctDone) - parseFloat(pctProg) - parseFloat(pctDelay)).toFixed(1);';
   html += '  const curManagerName = formatManagerName(curSite.primaryManager || curSite.manager || (allCurTasks[0] ? allCurTasks[0].manager : ""));';
   html += '  const statusInfo = getSiteStatusInfo(curSite, todayStr);';
+  html += '  const curScopeName = (currentScope === "single") ? "단건" : ((currentScope === "as") ? "AS" : ((currentScope === "newSite") ? "신규현장" : "현장"));';
+  html += '  const curScopeIcon = (currentScope === "single") ? "⚡" : ((currentScope === "as") ? "🔧" : ((currentScope === "newSite") ? "📋" : "🏗️"));';
   html += '  const totalActiveSites = (rawData && Array.isArray(rawData.sites)) ? rawData.sites.filter(s => !s.isArchived && !s.isAllCompleted).length : 0;';
   html += '  const totalDoneSites = (rawData && Array.isArray(rawData.sites)) ? rawData.sites.filter(s => s.isAllCompleted || s.isArchived).length : 0;';
+  html += '  const curScopeActiveSites = (rawData && Array.isArray(rawData.sites)) ? rawData.sites.filter(s => (s.scope || "site") === currentScope && !s.isArchived && !s.isAllCompleted).length : 0;';
+  html += '  const curScopeDoneSites = (rawData && Array.isArray(rawData.sites)) ? rawData.sites.filter(s => (s.scope || "site") === currentScope && (s.isAllCompleted || s.isArchived)).length : 0;';
   html += '';
   html += '  let dHtml = \'<div class="pc-site-dashboard-layout">\';';
   html += '  dHtml += \'  <div class="pc-site-carousel-bar">\';';
   html += '  dHtml += \'    <div class="pc-carousel-head">\';';
   html += '  dHtml += \'      <div class="pc-carousel-title-group">\';';
   html += '  dHtml += \'        <div class="pc-carousel-status-tabs">\';';
-  html += '  dHtml += \'          <button type="button" class="pc-c-status-tab\' + (!isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'active\\\')" title="진행 현장 보기">🏗️ 진행 현장 <span class="pc-badge-count">\' + totalActiveSites + \'</span></button>\';';
-  html += '  dHtml += \'          <button type="button" class="pc-c-status-tab done-tab\' + (isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'done\\\')" title="완료 현장 보기">✅ 완료 현장 <span class="pc-badge-count-done">\' + totalDoneSites + \'</span></button>\';';
+  html += '  dHtml += \'          <button type="button" class="pc-c-status-tab\' + (!isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'active\\\')" title="진행 \' + curScopeName + \' 보기">\' + curScopeIcon + \' 진행 \' + curScopeName + \' <span class="pc-badge-count">\' + curScopeActiveSites + \'</span></button>\';';
+  html += '  dHtml += \'          <button type="button" class="pc-c-status-tab done-tab\' + (isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'done\\\')" title="완료 \' + curScopeName + \' 보기">✅ 완료 \' + curScopeName + \' <span class="pc-badge-count-done">\' + curScopeDoneSites + \'</span></button>\';';
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'        <div class="pc-carousel-sorts">\';';
   html += '  dHtml += \'          <button type="button" class="pc-c-sort-btn\' + (pcSiteSortMode === "rate" ? " active" : "") + \'" onclick="setPcSiteSortMode(\\\'rate\\\')" title="공정 진척률이 높은 순서로 정렬합니다">진척률순</button>\';';
@@ -15328,7 +15516,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });';
 
   html += '  if (visibleSitesCount === 0) {';
-  html += '    const scopeName = (currentScope === "single") ? "단건" : ((currentScope === "as") ? "AS" : "현장");';
+  html += '    const scopeName = (currentScope === "single") ? "단건" : ((currentScope === "as") ? "AS" : ((currentScope === "newSite") ? "신규현장" : "현장"));';
   html += '    if (currentFilter === "checked") {';
   html += '      container.innerHTML = \'<div class="empty-state">☑️ 선택된 \' + scopeName + \'이(가) 없습니다.<br><small style="color:#64748b;font-size:11px;">체크박스를 선택 후 다시 확인해보세요.</small><br><button type="button" class="btn-cal-filter-reset" style="margin-top:12px;" onclick="resetAllCalendarFilters()">🔄 전체 \' + scopeName + \' 보기</button></div>\';';
   html += '    } else if (currentFilter === "done") {';
