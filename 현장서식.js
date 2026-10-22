@@ -730,15 +730,17 @@ function cleanAllValidationErrors(ss) {
     tSheet.getRange(nextRow, 1, tasksToAppend.length, 2).setHorizontalAlignment("center");
   }
 
-  // 2. '현장데이터' 시트 C열, G열, H열 유효성 검사 일괄 재적용 (구성원 5인 담당자 드롭다운 적용 & 기존 2인 데이터 보존)
+  // 2. '현장데이터' 시트 C열, G열(담당자 1), H열(담당자 2), I열(진행상태) 유효성 검사 및 배경색 잔여물 초기화
+  try { siteSheet.getRange(2, 7, maxRows - 1, 2).setBackground(null).setFontColor(null); } catch(eC1) {}
   applySiteScheduleValidations(siteSheet, 2, maxRows - 1);
 
-  // 3. '단건' 및 'AS' 시트 G열 담당자 드롭다운 및 유효성 검사 동기화
+  // 3. '단건' 및 'AS' 시트 담당자 드롭다운 및 유효성 검사 동기화
   var singleSheet = findSingleTaskSheet(ss, false);
   if (singleSheet) {
     try {
       var sLastR = Math.max((typeof singleSheet.getLastRow === "function" ? singleSheet.getLastRow() : 2), 2);
       var sMaxR = Math.max((typeof singleSheet.getMaxRows === "function" ? singleSheet.getMaxRows() : sLastR), 50);
+      try { singleSheet.getRange(2, 7, sMaxR - 1, 2).setBackground(null).setFontColor(null); } catch(eC2) {}
       applySiteScheduleValidations(singleSheet, 2, sMaxR - 1);
     } catch(eSingleVal) {}
   }
@@ -748,6 +750,7 @@ function cleanAllValidationErrors(ss) {
     try {
       var asLastR = Math.max((typeof asSheet.getLastRow === "function" ? asSheet.getLastRow() : 2), 2);
       var asMaxR = Math.max((typeof asSheet.getMaxRows === "function" ? asSheet.getMaxRows() : asLastR), 50);
+      try { asSheet.getRange(2, 7, asMaxR - 1, 2).setBackground(null).setFontColor(null); } catch(eC3) {}
       applySiteScheduleValidations(asSheet, 2, asMaxR - 1);
     } catch(eAsVal) {}
   }
@@ -878,8 +881,13 @@ function migrateSingleSheetToTwoManagers(sheet) {
     sheet.hideColumns(10, 2);
   } catch(eHide) {}
 
-  // 유효성 검사 및 조건부 서식 재적용
+  // 7열(담당자 1) 및 8열(담당자 2)의 직접 셀 배경색/글자색 잔여물 완전 초기화 (열 삽입 시 왼쪽 열에서 복사된 잔여 색상 말끔히 청소)
   var maxRows = Math.max((typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100), 100);
+  try {
+    sheet.getRange(2, 7, maxRows - 1, 2).setBackground(null).setFontColor(null);
+  } catch(eClearBg) {}
+
+  // 유효성 검사 및 조건부 서식 재적용
   applySiteScheduleValidations(sheet, 2, maxRows - 1);
 
   return { migrated: true, inserted: didInsert, count: migratedRowsCount };
@@ -1053,7 +1061,15 @@ function setupSiteSheetConditionalFormatting(sheet) {
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("AS").setFontColor("#b91c1c").setBackground("#fee2e2").setBold(true).setRanges([statusRange]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("예정").setFontColor("#b45309").setBackground("#fef3c7").setBold(true).setRanges([statusRange]).build());
 
-  // 2. 담당자 인물 뱃지 색상 (담당자 1 및 담당자 2 범위 모두 적용)
+  // 7열(담당자 1) 및 8열(담당자 2)의 직접 셀 배경색 잔여물 완전 초기화
+  // (열 삽입 시 왼쪽 열에서 복사되어 남아있던 잔여 색상을 완벽 제거하여 빈칸일 때 100% 기본 흰색 유지)
+  try {
+    if (typeof rangeG.setBackground === "function") {
+      rangeG.setBackground(null);
+      if (typeof rangeG.setFontColor === "function") rangeG.setFontColor(null);
+    }
+  } catch(eClearDirectBg) {}
+
   var managerColorMap = getManagerColorMap(ss, sheet);
   managerColorMap.forEach(function(item) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
