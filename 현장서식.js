@@ -1696,6 +1696,18 @@ function runHourlyAutoSortTrigger() {
   // 사용자가 웹에서 저장/삭제 중일 때 정렬로 행이 뒤섞이지 않도록 쓰기 락 공유 (락 획득 실패 시 이번 회차 생략)
   if (!__woosungWriteLockHeld_) return runWithWriteLock_(runHourlyAutoSortTrigger, this, arguments, null);
   try {
+    // [시트 직접 편집 보호 가드]: 작업자가 시트에서 직접 셀을 작성 중일 때 행이 튀는 것을 방지
+    try {
+      if (typeof PropertiesService !== "undefined" && PropertiesService && typeof PropertiesService.getScriptProperties === "function") {
+        var props = PropertiesService.getScriptProperties();
+        var lastEditMs = Number(props ? props.getProperty("LAST_SHEET_USER_EDIT_TIME") : 0) || 0;
+        if (lastEditMs > 0 && Date.now() - lastEditMs < 15 * 60 * 1000) {
+          Logger.log("최근 시트 사용자 편집 감지 (15분 이내) -> 자동 정렬 유예 (작업자 편집 보호)");
+          return;
+        }
+      }
+    } catch (eCool) {}
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) ss = getAppSpreadsheet();
     if (!ss) return;
@@ -2096,11 +2108,10 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     }
 
     // 현장명 표기:
-    // 원래 행들의 과반수에 현장명이 적혀있었으면 모든 행에 현장명 유지,
-    // 첫 행에만 적혀있었으면 첫 행에만 현장명을 두고 나머지 행은 빈칸으로 둠 (아코디언 표준)
-    var isAllExplicit = (grp.explicitCount > 1 && grp.explicitCount >= grp.items.length * 0.5);
+    // [데이터 무결성 보장]: 구글 시트 필터/정렬 및 행 복사/삽입 시 공정이 분리되는 현상을 방지하기 위해
+    // 모든 행의 A열에 소속 현장명을 100% 항상 유지 (구글 시트 아코디언 [-]/[+] 그룹은 A열이 채워져 있어도 완벽 작동)
     for (var r = 0; r < grp.items.length; r++) {
-      grp.items[r].vals[0] = (isAllExplicit || r === 0) ? grp.siteName : "";
+      grp.items[r].vals[0] = grp.siteName;
     }
 
     // 담당자 자동 상속: 해당 현장의 대표 담당자가 있고, 특정 행의 담당자가 비어있으면 자동 상속
@@ -2127,16 +2138,20 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     blocks.push(grp);
   }
 
-  // 3단계: 현장 블록들 자체를 '첫 번째 일정이 최신인 순'(내림차순, DESC)으로 정렬
-  // - 날짜가 있는 현장: 최신 날짜 우선 (blkB.firstDateMs - blkA.firstDateMs)
+  // 3단계: 현장 블록들 자체 정렬
+  // - 완료현장 시트: 최근 완료된 현장 우선 (내림차순, DESC)
+  // - 일반 현장 시트(현장데이터, 단건, AS): 빠른 시작일 우선 (오름차순, ASC - 웹앱과 100% 일치)
   // - 날짜가 없는 현장: 맨 아래로
   // - 날짜가 같거나 둘 다 없는 경우: 원래 등장 순서(firstRowIdx) 보존
+  var isCompletedSheet = (typeof isCompletedSitesSheet === "function" && isCompletedSitesSheet(sheet));
   blocks.sort(function(blkA, blkB) {
     var aDate = blkA.firstDateMs || 0;
     var bDate = blkB.firstDateMs || 0;
 
     if (aDate && bDate) {
-      if (aDate !== bDate) return bDate - aDate; // 최신 날짜순 (내림차순)
+      if (aDate !== bDate) {
+        return isCompletedSheet ? (bDate - aDate) : (aDate - bDate);
+      }
     } else if (aDate) {
       return -1;
     } else if (bDate) {
@@ -2254,6 +2269,13 @@ function onEdit(e) {
   var sheet = e.range.getSheet();
   var row = e.range.getRow();
   var ss = e.source || SpreadsheetApp.getActiveSpreadsheet();
+
+  // 사용자 시트 직접 편집 타임스탬프 기록 (자동 정렬 15분 쿨다운 보호)
+  try {
+    if (typeof PropertiesService !== "undefined" && PropertiesService && typeof PropertiesService.getScriptProperties === "function") {
+      PropertiesService.getScriptProperties().setProperty("LAST_SHEET_USER_EDIT_TIME", String(Date.now()));
+    }
+  } catch (ePropEdit) {}
 
   // ① [구성원 시트 변경 감지 -> 현장데이터 담당자(G열) 드롭다운 즉시 실시간 갱신]
   if (isMembersSheet(sheet)) {
@@ -3531,6 +3553,22 @@ function getAppSpreadsheet() {
  */
 function findDashboardSheet(ss) {
   return null;
+}
+
+/**
+ * 특정 시트에 해당 현장명이 이미 존재하는지 검사 (시트 분할 방지 가드)
+ */
+function isSiteInSheet(sheet, siteName) {
+  if (!sheet || !siteName) return false;
+  var lRow = sheet.getLastRow();
+  if (lRow < 2) return false;
+  var sVals = sheet.getRange(2, 1, lRow - 1, 1).getValues();
+  var cSite = String(siteName).trim().toLowerCase();
+  for (var i = 0; i < sVals.length; i++) {
+    var s = String(sVals[i][0] || "").trim().toLowerCase();
+    if (s && (s === cSite || s.indexOf(cSite) !== -1 || cSite.indexOf(s) !== -1)) return true;
+  }
+  return false;
 }
 
 function findSiteScheduleSheet(ss) {
@@ -7039,13 +7077,15 @@ function showMobileDashboardUrl() {
  * 정렬·병합·행 삽입/삭제 등으로 행 번호가 변경되었을 때
  * 현장명(siteName), 공종명(taskName), 날짜(dateStr)를 기반으로 시트 내 실제 행 번호를 실시간 추적·보정
  */
-function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
+function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr, origManager, taskId, origMemo) {
   var rowNum = parseInt(rowNumber, 10) || -1;
   if (!sheet) return rowNum;
 
   var cleanSite = String(siteName || "").trim();
   var cleanTask = String(taskName || "").trim();
-  if (!cleanSite && !cleanTask) return rowNum;
+  var cleanTaskId = String(taskId || "").trim();
+  var cleanOrigMgr = String(origManager || "").trim();
+  var cleanOrigMemo = String(origMemo || "").trim();
 
   var lastRow = 0;
   try {
@@ -7055,14 +7095,28 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
   }
   if (lastRow < 2) return rowNum;
 
+  var colCount = Math.max(10, (typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 11) || 11);
   var allVals = null;
   try {
-    var rng = sheet.getRange(2, 1, lastRow - 1, 10);
+    var rng = sheet.getRange(2, 1, lastRow - 1, colCount);
     if (rng && typeof rng.getValues === "function") {
       allVals = rng.getValues();
     }
   } catch (eVals) {}
   if (!Array.isArray(allVals) || allVals.length === 0) return rowNum;
+
+  // 0순위: 공종 고유 ID (Task ID, J열/10열) 1:1 완벽 일치 탐색
+  if (cleanTaskId && cleanTaskId !== "undefined" && cleanTaskId !== "null") {
+    var idColIdx = (colCount >= 11) ? 9 : 8; // 10열 (0-index: 9)
+    for (var ti = 0; ti < allVals.length; ti++) {
+      var cellId = String(allVals[ti][idColIdx] || "").trim();
+      if (cellId && cellId === cleanTaskId) {
+        return ti + 2;
+      }
+    }
+  }
+
+  if (!cleanSite && !cleanTask) return rowNum;
 
   var normTargetDate = "";
   if (dateStr) {
@@ -7079,9 +7133,15 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
     var rawS = String(r[0] || "").trim();
     var rawD = r[1];
     var rawT = String(r[2] || "").trim();
+    var rawP = String(r[3] || "").trim();
+    var rawM = String(r[5] || "").trim();
+    var rawMgr = String(r[6] || "").trim();
+    if (colCount >= 11 && String(r[7] || "").trim()) {
+      rawMgr = rawMgr ? rawMgr + ", " + String(r[7]).trim() : String(r[7]).trim();
+    }
     if (!rawS && !String(rawD || "").trim() && !rawT) {
       lastKnownSite = "";
-      rowMeta.push({ row: i + 2, site: "", task: "", dateNorm: "" });
+      rowMeta.push({ row: i + 2, site: "", task: "", dateNorm: "", manager: "", memo: "", partner: "" });
       continue;
     }
     if (rawS) lastKnownSite = rawS;
@@ -7099,7 +7159,10 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
       row: i + 2,
       site: effS,
       task: rawT,
-      dateNorm: dNorm
+      dateNorm: dNorm,
+      manager: rawMgr,
+      memo: rawM,
+      partner: rawP
     });
   }
 
@@ -7119,7 +7182,7 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
     }
   }
 
-  // 2) 행 번호가 정렬 등으로 변경된 경우: (현장명 + 공종명) 일치 후보 탐색 후 날짜 일치 우선 선택
+  // 2) 행 번호가 정렬 등으로 변경된 경우: (현장명 + 공종명) 일치 후보 탐색 후 다중 속성 가중치 채점
   var siteTaskMatches = [];
   for (var j = 0; j < rowMeta.length; j++) {
     var m = rowMeta[j];
@@ -7131,21 +7194,41 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
     }
   }
 
-  if (normTargetDate) {
-    for (var k = 0; k < siteTaskMatches.length; k++) {
-      if (isDateMatch(siteTaskMatches[k].dateNorm)) {
-        return siteTaskMatches[k].row;
-      }
+  if (siteTaskMatches.length === 0) {
+    return (curRowSiteTaskOk) ? rowNum : -1;
+  }
+
+  if (siteTaskMatches.length === 1) {
+    return siteTaskMatches[0].row;
+  }
+
+  // 3) 후보가 여러 개(동일 현장 내 목공 3개 등 동명 공종)인 경우: 날짜, 담당자, 비고, 원래 행 근접도 복합 스코어링
+  var bestRow = -1;
+  var bestScore = -9999;
+  for (var k = 0; k < siteTaskMatches.length; k++) {
+    var cand = siteTaskMatches[k];
+    var score = 0;
+    if (normTargetDate && isDateMatch(cand.dateNorm)) {
+      score += 100; // 날짜 일치 가중치 최고
+    }
+    if (cleanOrigMgr && cand.manager && (cand.manager.indexOf(cleanOrigMgr) !== -1 || cleanOrigMgr.indexOf(cand.manager) !== -1)) {
+      score += 30; // 기존 담당자 일치
+    }
+    if (cleanOrigMemo && cand.memo && (cand.memo.indexOf(cleanOrigMemo) !== -1 || cleanOrigMemo.indexOf(cand.memo) !== -1)) {
+      score += 20; // 기존 비고 메모 일치
+    }
+    if (rowNum >= 2) {
+      score += Math.max(0, 15 - Math.abs(cand.row - rowNum)); // 원래 행 번호와의 근접도
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestRow = cand.row;
     }
   }
 
-  // [데이터 무결성 가드] 날짜로 특정하지 못한 경우:
-  // - 전달받은 행이 여전히 동일 현장/공종이면 그 행을 신뢰 (엉뚱한 첫 번째 동명 공종 행으로 튀는 오작동 방지)
-  // - 후보가 정확히 1개일 때만 그 행으로 보정
-  // - 후보가 없거나 2개 이상(모호)하면 -1 반환 → 호출부에서 저장/삭제를 거부 (다른 일정 덮어쓰기/삭제 원천 차단)
+  if (bestRow !== -1) return bestRow;
   if (curRowSiteTaskOk) return rowNum;
-  if (siteTaskMatches.length === 1) return siteTaskMatches[0].row;
-  return -1;
+  return siteTaskMatches[0].row; // 최소 1개 일치 후보 반환
 }
 
 /**
@@ -7232,8 +7315,11 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     var origTaskForMatch = (arguments.length > 12 && arguments[12] !== undefined && arguments[12] !== null && String(arguments[12]).trim() !== "")
       ? String(arguments[12]).trim()
       : (taskName ? String(taskName).trim() : "");
-    if (siteName || origTaskForMatch) {
-      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, origTaskForMatch, origDateForMatch);
+    var origMgrForMatch = (arguments.length > 13 && arguments[13] !== undefined && arguments[13] !== null) ? String(arguments[13]) : "";
+    var taskIdForMatch = (arguments.length > 14 && arguments[14] !== undefined && arguments[14] !== null) ? String(arguments[14]) : "";
+    var origMemoForMatch = (arguments.length > 15 && arguments[15] !== undefined && arguments[15] !== null) ? String(arguments[15]) : "";
+    if (siteName || origTaskForMatch || taskIdForMatch) {
+      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, origTaskForMatch, origDateForMatch, origMgrForMatch, taskIdForMatch, origMemoForMatch);
     }
     if (rowNum < 2 || rowNum > sheet.getLastRow()) {
       return { success: false, error: "수정할 일정을 시트에서 찾을 수 없습니다. (다른 사용자가 변경/삭제했을 수 있습니다) 새로고침 후 다시 시도해주세요." };
@@ -7392,8 +7478,11 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
     }
 
     // 1단계: 행 번호 실시간 자동 보정 (정렬 또는 행 변동 대비)
-    if (siteName || taskName) {
-      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName);
+    var origDateForDel = (arguments.length > 6 && arguments[6] !== undefined && arguments[6] !== null) ? String(arguments[6]) : "";
+    var origMgrForDel = (arguments.length > 7 && arguments[7] !== undefined && arguments[7] !== null) ? String(arguments[7]) : "";
+    var taskIdForDel = (arguments.length > 8 && arguments[8] !== undefined && arguments[8] !== null) ? String(arguments[8]) : (eventId || "");
+    if (siteName || taskName || taskIdForDel) {
+      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName, origDateForDel, origMgrForDel, taskIdForDel);
     }
     if (rowNum < 2 || rowNum > sheet.getLastRow()) {
       return { success: false, error: "삭제할 해당 일정을 시트에서 찾을 수 없습니다." };
@@ -7493,8 +7582,11 @@ function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchive
     }
     if (!sheet) return { success: false, error: (targetSheetName || (isArchived === true ? "완료현장" : "현장데이터")) + " 시트를 찾을 수 없습니다." };
 
-    if (siteName || taskName) {
-      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName);
+    var origDateForMove = (arguments.length > 6 && arguments[6] !== undefined && arguments[6] !== null) ? String(arguments[6]) : "";
+    var origMgrForMove = (arguments.length > 7 && arguments[7] !== undefined && arguments[7] !== null) ? String(arguments[7]) : "";
+    var taskIdForMove = (arguments.length > 8 && arguments[8] !== undefined && arguments[8] !== null) ? String(arguments[8]) : "";
+    if (siteName || taskName || taskIdForMove) {
+      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName, origDateForMove, origMgrForMove, taskIdForMove);
     }
     if (rowNum < 2 || rowNum > sheet.getLastRow()) {
       return { success: false, error: "이동할 해당 일정을 시트에서 찾을 수 없습니다." };
@@ -7550,13 +7642,18 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     if (!ss) ss = getAppSpreadsheet();
     if (!ss) return { success: false, error: "스프레드시트에 연결할 수 없습니다." };
 
+    var mainSiteSheet = findSiteScheduleSheet(ss);
+    if (mainSiteSheet && isSiteInSheet(mainSiteSheet, cleanSite)) {
+      category = "site";
+    }
+
     var sheet = null;
     if (category === "single" || category === "단건") {
       sheet = findSingleTaskSheet(ss, true);
     } else if (category === "as" || category === "AS") {
       sheet = findAsSheet(ss, true);
     } else {
-      sheet = findSiteScheduleSheet(ss);
+      sheet = mainSiteSheet || findSiteScheduleSheet(ss);
     }
     if (!sheet) return { success: false, error: "대상 시트를 찾을 수 없습니다." };
 
@@ -7574,6 +7671,7 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     var cleanManager = String(manager || "").trim();
     var cleanStatus = String(status || "예정").trim() || "예정";
     var nowMs = Date.now();
+    var taskId = "task_" + nowMs + "_" + Math.random().toString(36).substring(2, 7);
 
     ensureHourlySortTriggerInstalled();
 
@@ -7630,15 +7728,15 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
       cleanManager = siteDefaultManager;
     }
 
-    var siteColVal = (siteStartRow !== -1 && !hasExplicitSiteInAllRows) ? "" : cleanSite;
+    var siteColVal = cleanSite; // [데이터 무결성]: 항상 소속 현장명을 100% 명시 기록
     var newRowValues = [];
     if (is11Col) {
       var mgrParts = parseManagerNamesList(cleanManager);
       var m1 = mgrParts[0] || "";
       var m2 = mgrParts[1] || "";
-      newRowValues = [siteColVal, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, m1, m2, cleanStatus, "", nowMs];
+      newRowValues = [siteColVal, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, m1, m2, cleanStatus, taskId, nowMs];
     } else {
-      newRowValues = [siteColVal, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, cleanManager, cleanStatus, "", nowMs];
+      newRowValues = [siteColVal, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, cleanManager, cleanStatus, taskId, nowMs];
     }
     var newRow = Math.max(2, lastRow + 1);
 
@@ -7733,6 +7831,8 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     return {
       success: true,
       row: newRow,
+      id: taskId,
+      taskId: taskId,
       siteName: cleanSite,
       taskName: cleanTask,
       date: finalDate,
@@ -7781,7 +7881,7 @@ function doGet(e) {
   // 0-0) 일정 삭제 요청 (action=deleteScheduleTask)
   if (action === "deleteScheduleTask") {
     var isArchBool = (p.isArchived === "true" || p.isArchived === true);
-    var delRes = deleteScheduleTaskFromWeb(row, targetSite, targetTask, targetId, isArchBool, p.sheetName || p.targetSheetName);
+    var delRes = deleteScheduleTaskFromWeb(row, targetSite, targetTask, targetId, isArchBool, p.sheetName || p.targetSheetName, p.origDate || p.date, p.origMgr || p.mgr, p.taskId || targetId);
     return ContentService.createTextOutput(JSON.stringify(delRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -7801,7 +7901,7 @@ function doGet(e) {
   // 0-0-2) 캘린더 드래그 앤 드롭 일정 날짜 이동 요청 (action=moveScheduleTaskDate)
   if (action === "moveScheduleTaskDate" || action === "moveTaskDate") {
     var isArchBool = (p.isArchived === "true" || p.isArchived === true);
-    var moveRes = moveScheduleTaskDateFromWeb(row, targetSite, targetTask, newDate, isArchBool, p.sheetName || p.targetSheetName);
+    var moveRes = moveScheduleTaskDateFromWeb(row, targetSite, targetTask, newDate, isArchBool, p.sheetName || p.targetSheetName, p.origDate || p.date, p.origMgr || p.mgr, p.taskId || targetId);
     return ContentService.createTextOutput(JSON.stringify(moveRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -9720,6 +9820,8 @@ function getSidebarDashboardData(forceRefresh) {
       }
 
       sitesMap[siteName].tasks.push({
+        id: calId || ("task_row_" + row),
+        taskId: calId || "",
         row: row,
         taskName: taskName,
         dateDisplay: dateDisplay,
@@ -9811,6 +9913,8 @@ function getSidebarDashboardData(forceRefresh) {
           }
 
           sitesMap[sSiteKey].tasks.push({
+            id: sCalId || ("single_row_" + (si + 2)),
+            taskId: sCalId || "",
             row: si + 2,
             taskName: sTaskName,
             dateDisplay: sDateDisplay,
@@ -9906,6 +10010,8 @@ function getSidebarDashboardData(forceRefresh) {
           }
 
           sitesMap[asSiteKey].tasks.push({
+            id: asCalId || ("as_row_" + (ai + 2)),
+            taskId: asCalId || "",
             row: ai + 2,
             taskName: asTaskName,
             dateDisplay: asDateDisplay,
@@ -9996,6 +10102,8 @@ function getSidebarDashboardData(forceRefresh) {
           }
 
           sitesMap[cSiteKey].tasks.push({
+            id: cCalId || ("comp_row_" + (ci + 2)),
+            taskId: cCalId || "",
             row: ci + 2,
             taskName: cTaskName,
             dateDisplay: cDateDisplay,
@@ -11269,10 +11377,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </div>';
   html += '      <div class="sheet-field-row" style="margin-bottom:8px;">';
   html += '        <div class="sheet-field-col" style="flex:1;">';
-  html += '          <label class="sheet-field-label">🏠 현장명</label>';
+  html += '          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
+  html += '            <label class="sheet-field-label" style="margin:0;">🏠 현장명</label>';
+  html += '            <span id="sheetCategoryAutoBadge" style="display:none;font-size:11px;font-weight:700;color:#2563eb;background:#eff6ff;padding:2px 7px;border-radius:10px;border:1px solid #bfdbfe;">✨ 자동 감지</span>';
+  html += '          </div>';
   html += '          <select id="sheetSiteSelect" class="sheet-field-select" onchange="onSheetSiteChange(this.value)">';
   html += '            <option value="">현장을 선택하세요</option>';
   html += '          </select>';
+  html += '          <input type="text" id="sheetSiteCustomInput" class="sheet-field-input" placeholder="새 현장명 직접 입력 (예: 반포자이 105동 802호)" style="display:none;margin-top:6px;" oninput="onSheetSiteCustomInput(this.value)">';
   html += '        </div>';
   html += '      </div>';
   html += '      <div class="sheet-field-row">';
@@ -13675,13 +13787,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '      renderCurrentCalendarView();';
   html += '    }';
   html += '  };';
+  html += '  const moveOrigDate = oldDateDisplay || oldStartStr || "";';
+  html += '  const moveOrigMgr = (targetTask && targetTask.manager) || (data && data.manager) || "";';
+  html += '  const moveTaskId = (targetTask && (targetTask.taskId || targetTask.id)) || (data && (data.taskId || data.id)) || "";';
+  html += '  const moveSheetName = (targetTask && targetTask.sheetName) || (data && data.sheetName) || (data.isArchived ? "완료현장" : "현장데이터");';
   html += '  if (typeof google !== "undefined" && google.script && google.script.run) {';
   html += '    google.script.run';
   html += '      .withSuccessHandler(onMoveDone)';
   html += '      .withFailureHandler(onMoveFail)';
-  html += '      .moveScheduleTaskDateFromWeb(data.row, data.siteName, data.taskName, finalDateParam, data.isArchived);';
+  html += '      .moveScheduleTaskDateFromWeb(data.row, data.siteName, data.taskName, finalDateParam, data.isArchived, moveSheetName, moveOrigDate, moveOrigMgr, moveTaskId);';
   html += '  } else {';
-  html += '    const apiUrl = (window.API_BASE_URL || window.location.pathname) + "?action=moveScheduleTaskDate&row=" + encodeURIComponent(data.row) + "&site=" + encodeURIComponent(data.siteName) + "&task=" + encodeURIComponent(data.taskName) + "&date=" + encodeURIComponent(finalDateParam) + "&isArchived=" + (data.isArchived ? "true" : "false") + "&format=json";';
+  html += '    const apiUrl = (window.API_BASE_URL || window.location.pathname) + "?action=moveScheduleTaskDate&row=" + encodeURIComponent(data.row) + "&site=" + encodeURIComponent(data.siteName) + "&task=" + encodeURIComponent(data.taskName) + "&date=" + encodeURIComponent(finalDateParam) + "&isArchived=" + (data.isArchived ? "true" : "false") + "&sheetName=" + encodeURIComponent(moveSheetName) + "&origDate=" + encodeURIComponent(moveOrigDate) + "&origMgr=" + encodeURIComponent(moveOrigMgr) + "&taskId=" + encodeURIComponent(moveTaskId) + "&format=json";';
   html += '    fetch(apiUrl)';
   html += '      .then(function(r) { return r.json(); })';
   html += '      .then(onMoveDone)';
@@ -15841,14 +15957,24 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
   html += '';
-  html += 'function populateSiteSelectOptions(prefillSite) {';
+  html += 'function populateSiteSelectOptions(prefillSite, filterScope) {';
   html += '  const sel = document.getElementById("sheetSiteSelect");';
   html += '  if (!sel) return;';
+  html += '  const customInp = document.getElementById("sheetSiteCustomInput");';
+  html += '  const autoBadge = document.getElementById("sheetCategoryAutoBadge");';
+  html += '  let curScope = filterScope;';
+  html += '  if (!curScope) {';
+  html += '    const catRadio = (typeof document !== "undefined" && typeof document.querySelector === "function")';
+  html += '      ? document.querySelector(\'input[name="sheetCategory"]:checked\') : null;';
+  html += '    curScope = catRadio ? catRadio.value : (currentScope || "site");';
+  html += '  }';
   html += '  let optsHtml = \'<option value="">현장을 선택하세요</option>\';';
-  html += '  const siteNames = [];';
+  html += '  const matchingSites = [];';
+  html += '  const otherSites = [];';
   html += '  if (rawData && Array.isArray(rawData.sites)) {';
   html += '    rawData.sites.forEach(s => {';
   html += '      if (!s || !s.siteName || s.isArchived || s.isAllCompleted) return;';
+  html += '      const sScope = s.scope || "site";';
   html += '      const tasks = Array.isArray(s.tasks) ? s.tasks : [];';
   html += '      if (tasks.length > 0) {';
   html += '        const hasActive = tasks.some(t => {';
@@ -15857,19 +15983,113 @@ function buildSidebarDashboardHtml(mode) {
   html += '        });';
   html += '        if (!hasActive) return;';
   html += '      }';
-  html += '      if (siteNames.indexOf(s.siteName) === -1) {';
-  html += '        siteNames.push(s.siteName);';
+  html += '      if (curScope === "all" || sScope === curScope) {';
+  html += '        if (matchingSites.indexOf(s.siteName) === -1) matchingSites.push(s.siteName);';
+  html += '      } else {';
+  html += '        if (otherSites.indexOf(s.siteName) === -1) otherSites.push(s.siteName);';
   html += '      }';
   html += '    });';
   html += '  }';
-  html += '  siteNames.sort().forEach(name => {';
+  html += '  matchingSites.sort();';
+  html += '  matchingSites.forEach(name => {';
   html += '    optsHtml += \'<option value="\' + escapeHtml(name) + \'">\' + escapeHtml(name) + \'</option>\';';
   html += '  });';
+  html += '  if (otherSites.length > 0) {';
+  html += '    otherSites.sort();';
+  html += '    optsHtml += \'<optgroup label="── 다른 분류 현장 ──">\';';
+  html += '    otherSites.forEach(name => {';
+  html += '      optsHtml += \'<option value="\' + escapeHtml(name) + \'">\' + escapeHtml(name) + \'</option>\';';
+  html += '    });';
+  html += '    optsHtml += \'</optgroup>\';';
+  html += '  }';
+  html += '  optsHtml += \'<option value="__CUSTOM__">➕ 새 현장 직접 입력...</option>\';';
   html += '  sel.innerHTML = optsHtml;';
-  html += '  if (prefillSite && siteNames.indexOf(prefillSite) !== -1) {';
-  html += '    sel.value = prefillSite;';
+  html += '  if (prefillSite) {';
+  html += '    let exists = false;';
+  html += '    for (let i = 0; i < sel.options.length; i++) {';
+  html += '      if (sel.options[i].value === prefillSite) { exists = true; break; }';
+  html += '    }';
+  html += '    if (exists) {';
+  html += '      sel.value = prefillSite;';
+  html += '      if (customInp) { customInp.style.display = "none"; customInp.value = ""; }';
+  html += '    } else {';
+  html += '      sel.value = "__CUSTOM__";';
+  html += '      if (customInp) {';
+  html += '        customInp.value = prefillSite;';
+  html += '        customInp.style.display = "block";';
+  html += '      }';
+  html += '    }';
   html += '  } else {';
   html += '    sel.value = "";';
+  html += '    if (customInp) { customInp.style.display = "none"; customInp.value = ""; }';
+  html += '    if (autoBadge) autoBadge.style.display = "none";';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onSheetSiteChange(siteVal) {';
+  html += '  const customInp = document.getElementById("sheetSiteCustomInput");';
+  html += '  const autoBadge = document.getElementById("sheetCategoryAutoBadge");';
+  html += '  if (siteVal === "__CUSTOM__") {';
+  html += '    if (customInp) {';
+  html += '      customInp.style.display = "block";';
+  html += '      customInp.value = "";';
+  html += '      customInp.focus();';
+  html += '    }';
+  html += '    if (autoBadge) autoBadge.style.display = "none";';
+  html += '    updateSheetModalSiteInfo("");';
+  html += '    return;';
+  html += '  }';
+  html += '  if (customInp) {';
+  html += '    customInp.style.display = "none";';
+  html += '    customInp.value = "";';
+  html += '  }';
+  html += '  if (!siteVal) {';
+  html += '    if (autoBadge) autoBadge.style.display = "none";';
+  html += '    updateSheetModalSiteInfo("");';
+  html += '    return;';
+  html += '  }';
+  html += '  let detectedScope = "";';
+  html += '  if (rawData && Array.isArray(rawData.sites)) {';
+  html += '    const detectedSite = rawData.sites.find(s => s.siteName === siteVal);';
+  html += '    if (detectedSite) {';
+  html += '      detectedScope = detectedSite.scope || "site";';
+  html += '    }';
+  html += '  }';
+  html += '  if (detectedScope) {';
+  html += '    const targetRadio = document.querySelector(\'input[name="sheetCategory"][value="\' + detectedScope + \'"]\');';
+  html += '    if (targetRadio) {';
+  html += '      targetRadio.checked = true;';
+  html += '      if (autoBadge) {';
+  html += '        const scopeLabel = (detectedScope === "single") ? "단건" : ((detectedScope === "as") ? "AS" : "종합현장");';
+  html += '        autoBadge.innerText = "✨ " + scopeLabel + " 자동 감지";';
+  html += '        autoBadge.style.display = "inline-block";';
+  html += '        setTimeout(() => {';
+  html += '          if (autoBadge) autoBadge.style.display = "none";';
+  html += '        }, 3500);';
+  html += '      }';
+  html += '    }';
+  html += '  } else {';
+  html += '    if (autoBadge) autoBadge.style.display = "none";';
+  html += '  }';
+  html += '  updateSheetModalSiteInfo(siteVal);';
+  html += '}';
+  html += '';
+  html += 'function onSheetSiteCustomInput(customVal) {';
+  html += '  updateSheetModalSiteInfo(customVal);';
+  html += '}';
+  html += '';
+  html += 'function onSheetCategoryChange(cat) {';
+  html += '  const autoBadge = document.getElementById("sheetCategoryAutoBadge");';
+  html += '  if (autoBadge) autoBadge.style.display = "none";';
+  html += '  const sel = document.getElementById("sheetSiteSelect");';
+  html += '  const curVal = sel ? sel.value : "";';
+  html += '  const customInp = document.getElementById("sheetSiteCustomInput");';
+  html += '  const customVal = customInp ? customInp.value : "";';
+  html += '  const effectiveSite = (curVal === "__CUSTOM__") ? (customVal || "__CUSTOM__") : curVal;';
+  html += '  populateSiteSelectOptions(effectiveSite === "__CUSTOM__" ? "" : effectiveSite, cat);';
+  html += '  if (effectiveSite === "__CUSTOM__") {';
+  html += '    if (sel) sel.value = "__CUSTOM__";';
+  html += '    if (customInp) { customInp.style.display = "block"; customInp.value = customVal; }';
   html += '  }';
   html += '}';
   html += '';
@@ -16219,7 +16439,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const catEl = (typeof document !== "undefined" && typeof document.querySelector === "function") ? document.querySelector(\'input[name="sheetCategory"]:checked\') : null;';
   html += '    const catVal = (catEl && catEl.value) ? catEl.value : currentScope;';
   html += '    const siteSel = document.getElementById("sheetSiteSelect");';
-  html += '    const siteVal = siteSel ? siteSel.value.trim() : "";';
+  html += '    let siteVal = siteSel ? siteSel.value.trim() : "";';
+  html += '    if (siteVal === "__CUSTOM__") {';
+  html += '      const siteCustom = document.getElementById("sheetSiteCustomInput");';
+  html += '      siteVal = siteCustom ? siteCustom.value.trim() : "";';
+  html += '    }';
   html += '    const taskSel = document.getElementById("sheetTaskSelect");';
   html += '    const taskCustom = document.getElementById("sheetTaskCustomInput");';
   html += '    const taskInp = document.getElementById("sheetTaskInput");';
@@ -16231,17 +16455,29 @@ function buildSidebarDashboardHtml(mode) {
   html += '      taskVal = taskInp.value.trim();';
   html += '    }';
   html += '    const partnerVal = getSelectedPartnerValue(true);';
-  html += '    if (!siteVal) { showToast("⚠️ 현장을 선택해주세요."); return; }';
+  html += '    if (!siteVal) { showToast("⚠️ 현장명을 선택하거나 직접 입력해주세요."); return; }';
   html += '    if (!taskVal) { showToast("⚠️ 공종(작업내용)을 입력해주세요."); return; }';
   html += '    if (!dateVal) { showToast("⚠️ 일정(날짜)을 입력해주세요."); return; }';
   html += '    if (!mgrVal) mgrVal = findSiteDefaultManager(siteVal);';
   html += '    const tempSheetName = (catVal === "single") ? "단건" : ((catVal === "as") ? "AS" : "현장데이터");';
   html += '    const tempTask = { row: 99999, taskName: taskVal, partner: partnerVal, manager: mgrVal, status: selectedStatus, isShared: selectedShare, memo: memoVal, dateDisplay: dateVal, startDateStr: "", endDateStr: "", dateMs: 0, scope: catVal, sheetName: tempSheetName };';
   html += '    let targetSiteObj = null;';
+  html += '    let isBrandNewSite = false;';
   html += '    if (rawData && Array.isArray(rawData.sites)) {';
   html += '      targetSiteObj = rawData.sites.find(s => s.siteName === siteVal && (s.scope || "site") === catVal && !s.isArchived && !s.isAllCompleted);';
   html += '      if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
   html += '        targetSiteObj.tasks.push(tempTask);';
+  html += '      } else if (!targetSiteObj) {';
+  html += '        isBrandNewSite = true;';
+  html += '        targetSiteObj = {';
+  html += '          siteName: siteVal,';
+  html += '          scope: catVal,';
+  html += '          isArchived: false,';
+  html += '          isAllCompleted: false,';
+  html += '          defaultManager: mgrVal || "",';
+  html += '          tasks: [tempTask]';
+  html += '        };';
+  html += '        rawData.sites.unshift(targetSiteObj);';
   html += '      }';
   html += '    }';
   html += '    applyOptimisticTaskUpdate(tempTask, selectedStatus, selectedShare, memoVal, dateVal, mgrVal);';
@@ -16266,11 +16502,16 @@ function buildSidebarDashboardHtml(mode) {
   html += '      .withSuccessHandler(res => {';
   html += '        if (res && res.success) {';
   html += '          if (res.row) tempTask.row = res.row;';
+  html += '          if (res.id || res.taskId) tempTask.taskId = res.taskId || res.id;';
   html += '          loadDataSilently();';
   html += '        } else {';
   html += '          if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
   html += '            const idx = targetSiteObj.tasks.indexOf(tempTask);';
   html += '            if (idx !== -1) targetSiteObj.tasks.splice(idx, 1);';
+  html += '            if (isBrandNewSite && targetSiteObj.tasks.length === 0 && rawData && Array.isArray(rawData.sites)) {';
+  html += '              const sIdx = rawData.sites.indexOf(targetSiteObj);';
+  html += '              if (sIdx !== -1) rawData.sites.splice(sIdx, 1);';
+  html += '            }';
   html += '          }';
   html += '          if (rawData) renderDashboardPayload(rawData);';
   html += '          showToast("⚠️ 일정 추가 실패: " + ((res && res.error) || "알 수 없는 오류"));';
@@ -16280,6 +16521,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '        if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
   html += '          const idx = targetSiteObj.tasks.indexOf(tempTask);';
   html += '          if (idx !== -1) targetSiteObj.tasks.splice(idx, 1);';
+  html += '          if (isBrandNewSite && targetSiteObj.tasks.length === 0 && rawData && Array.isArray(rawData.sites)) {';
+  html += '            const sIdx = rawData.sites.indexOf(targetSiteObj);';
+  html += '            if (sIdx !== -1) rawData.sites.splice(sIdx, 1);';
+  html += '          }';
   html += '        }';
   html += '        if (rawData) renderDashboardPayload(rawData);';
   html += '        showToast("⚠️ 에러: " + ((err && err.message) || err));';
@@ -16349,10 +16594,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '    });';
   html += '  const targetSheetNameForSave = (curTaskObj && curTaskObj.sheetName) ? curTaskObj.sheetName : (curTaskObj && curTaskObj.isArchived ? "완료현장" : "현장데이터");';
   html += '  const origDateForSave = prevSnapshot.dateDisplay || prevSnapshot.startDateStr || "";';
+  html += '  const origMgrForSave = prevSnapshot.manager || "";';
+  html += '  const taskIdForSave = (curTaskObj && (curTaskObj.taskId || curTaskObj.id)) || "";';
   html += '  if (curTaskObj.isArchived) {';
-  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true, siteNameForSave, taskNameForSave, partnerValForSave, targetSheetNameForSave, origDateForSave, origTaskNameForSave);';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true, siteNameForSave, taskNameForSave, partnerValForSave, targetSheetNameForSave, origDateForSave, origTaskNameForSave, origMgrForSave, taskIdForSave, prevSnapshot.memo || "");';
   html += '  } else {';
-  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, false, siteNameForSave, taskNameForSave, partnerValForSave, targetSheetNameForSave, origDateForSave, origTaskNameForSave);';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, false, siteNameForSave, taskNameForSave, partnerValForSave, targetSheetNameForSave, origDateForSave, origTaskNameForSave, origMgrForSave, taskIdForSave, prevSnapshot.memo || "");';
   html += '  }';
   html += '}';
   html += '';
@@ -16432,13 +16679,16 @@ function buildSidebarDashboardHtml(mode) {
   html += '    loadData();';
   html += '  };';
   html += '  const targetSheetNameForDel = (curTaskObj && curTaskObj.sheetName) ? curTaskObj.sheetName : (isArchived ? "완료현장" : "현장데이터");';
+  html += '  const delOrigDate = (curTaskObj && (curTaskObj.dateDisplay || curTaskObj.startDateStr || curTaskObj.date)) || "";';
+  html += '  const delOrigMgr = (curTaskObj && curTaskObj.manager) || "";';
+  html += '  const delTaskId = (curTaskObj && (curTaskObj.taskId || curTaskObj.id)) || eid || "";';
   html += '  if (typeof google !== "undefined" && google.script && google.script.run) {';
   html += '    google.script.run';
   html += '      .withSuccessHandler(onDone)';
   html += '      .withFailureHandler(onFail)';
-  html += '      .deleteScheduleTaskFromWeb(targetRow, site, task, eid, isArchived, targetSheetNameForDel);';
+  html += '      .deleteScheduleTaskFromWeb(targetRow, site, task, eid, isArchived, targetSheetNameForDel, delOrigDate, delOrigMgr, delTaskId);';
   html += '  } else {';
-  html += '    const apiUrl = (window.API_BASE_URL || window.location.pathname) + "?action=deleteScheduleTask&row=" + encodeURIComponent(targetRow) + "&site=" + encodeURIComponent(site) + "&task=" + encodeURIComponent(task) + "&id=" + encodeURIComponent(eid) + "&isArchived=" + (isArchived ? "true" : "false") + "&sheetName=" + encodeURIComponent(targetSheetNameForDel) + "&format=json";';
+  html += '    const apiUrl = (window.API_BASE_URL || window.location.pathname) + "?action=deleteScheduleTask&row=" + encodeURIComponent(targetRow) + "&site=" + encodeURIComponent(site) + "&task=" + encodeURIComponent(task) + "&id=" + encodeURIComponent(eid) + "&isArchived=" + (isArchived ? "true" : "false") + "&sheetName=" + encodeURIComponent(targetSheetNameForDel) + "&origDate=" + encodeURIComponent(delOrigDate) + "&origMgr=" + encodeURIComponent(delOrigMgr) + "&taskId=" + encodeURIComponent(delTaskId) + "&format=json";';
   html += '    fetch(apiUrl)';
   html += '      .then(function(r) { return r.json(); })';
   html += '      .then(onDone)';

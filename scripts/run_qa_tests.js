@@ -3020,27 +3020,27 @@ const sortedCount51 = sortTasksFn(mockSs51, mockSortSheet51, true);
 assertTest('sortSiteScheduleTasksByDate: 2개 현장 블록 재정렬 완료 검증', sortedCount51 === 2);
 assertTest('sortSiteScheduleTasksByDate: 원자적 setValues 호출 검증', setValuesRecorded51 !== null && setValuesRecorded51.length === 6);
 
-// 첫 번째 일정 최신순(내림차순) 정렬 결과: 신대방우성(10.19)이 연속 날짜(10.17)보다 위로 배치됨!
-// 0~1행: "신대방우성 1동 805호" (19일 [목공] -> 21일 [도배])
-assertTest('"신대방우성 1동" 최신순 정렬: 19일 [목공]이 0행으로 배치 검증',
-  setValuesRecorded51[0][1] === '2026.10.19' && setValuesRecorded51[0][2] === '목공'
+// 첫 번째 일정 오름차순(빠른 시작일 순) 정렬 결과: 연속 날짜(10.17)가 신대방우성(10.19)보다 위로 배치됨!
+// 0~3행: "연속 날짜" 블록 검증 (17일 -> 18일 -> 19일 -> 20일)
+assertTest('"연속 날짜" 오름차순 정렬: 0행 2026.10.17 [상담] 검증',
+  setValuesRecorded51[0][1] === '2026.10.17' && setValuesRecorded51[0][2] === '상담'
 );
-assertTest('"신대방우성 1동" 내부 오름차순: 21일 [도배]가 1행으로 배치 검증',
-  setValuesRecorded51[1][1] === '2026.10.21' && setValuesRecorded51[1][2] === '도배'
+assertTest('"연속 날짜" 정렬: 1행 2026.10.18 [목공] 검증 (18일이 2번째로 배치)',
+  setValuesRecorded51[1][1] === '2026.10.18' && setValuesRecorded51[1][2] === '목공' && setValuesRecorded51[1][6] === '인경호'
+);
+assertTest('"연속 날짜" 정렬: 2행 2026.10.19 [철거] 검증 (19일이 3번째로 배치)',
+  setValuesRecorded51[2][1] === '2026.10.19' && setValuesRecorded51[2][2] === '철거' && setValuesRecorded51[2][6] === '한송이'
+);
+assertTest('"연속 날짜" 정렬: 3행 2026.10.20 [마감] 검증',
+  setValuesRecorded51[3][1] === '2026.10.20' && setValuesRecorded51[3][2] === '마감'
 );
 
-// 2~5행: "연속 날짜" 블록 검증 (17일 -> 18일 -> 19일 -> 20일)
-assertTest('"연속 날짜" 정렬: 2행 2026.10.17 [상담] 검증',
-  setValuesRecorded51[2][1] === '2026.10.17' && setValuesRecorded51[2][2] === '상담'
+// 4~5행: "신대방우성 1동 805호" (19일 [목공] -> 21일 [도배])
+assertTest('"신대방우성 1동" 오름차순 정렬: 19일 [목공]이 4행으로 배치 검증',
+  setValuesRecorded51[4][1] === '2026.10.19' && setValuesRecorded51[4][2] === '목공'
 );
-assertTest('"연속 날짜" 정렬: 3행 2026.10.18 [목공] 검증 (18일이 2번째로 상승)',
-  setValuesRecorded51[3][1] === '2026.10.18' && setValuesRecorded51[3][2] === '목공' && setValuesRecorded51[3][6] === '인경호'
-);
-assertTest('"연속 날짜" 정렬: 4행 2026.10.19 [철거] 검증 (19일이 3번째로 하강)',
-  setValuesRecorded51[4][1] === '2026.10.19' && setValuesRecorded51[4][2] === '철거' && setValuesRecorded51[4][6] === '한송이'
-);
-assertTest('"연속 날짜" 정렬: 5행 2026.10.20 [마감] 검증',
-  setValuesRecorded51[5][1] === '2026.10.20' && setValuesRecorded51[5][2] === '마감'
+assertTest('"신대방우성 1동" 내부 오름차순: 21일 [도배]가 5행으로 배치 검증',
+  setValuesRecorded51[5][1] === '2026.10.21' && setValuesRecorded51[5][2] === '도배'
 );
 
 // 51-5: 1시간 주기 자동 정렬 트리거 핸들러 및 상단 메뉴 등록 검증
@@ -4134,12 +4134,11 @@ assertTest('UI 버튼 렌더링(1번·5번): 현장 카드 "+ 공정" 버튼(.bt
 // ============================================================================
 console.log('\n--- [Step 61] 일정 추가 시 완료 현장/새 현장 제외 및 담당자 "영하" 완전 삭제 무결성 검증 ---');
 
-// 1) 코드단에서 sheetSiteCustomInput, onSheetSiteSelect, __NEW_SITE__, createdNewSite 완전 삭제 검증
-assertTest('buildSidebarDashboardHtml: 새 현장 직접 입력 UI(sheetSiteCustomInput, __NEW_SITE__, onSheetSiteSelect) 코드 완전 삭제 검증',
-  dashHtml57.indexOf('sheetSiteCustomInput') === -1 &&
-  dashHtml57.indexOf('__NEW_SITE__') === -1 &&
-  dashHtml57.indexOf('onSheetSiteSelect') === -1 &&
-  dashHtml57.indexOf('새 현장 직접 입력') === -1
+// 1) 2번 요구사항에 따라 신규 현장 직접 입력 UI(sheetSiteCustomInput, __CUSTOM__) 탑재 검증
+assertTest('buildSidebarDashboardHtml: 신규 현장 직접 입력 UI(sheetSiteCustomInput, __CUSTOM__) 공식 지원 검증',
+  dashHtml57.indexOf('sheetSiteCustomInput') !== -1 &&
+  dashHtml57.indexOf('__CUSTOM__') !== -1 &&
+  dashHtml57.indexOf('새 현장 직접 입력') !== -1
 );
 
 // 2) 일정 추가 모달 현장 목록(populateSiteSelectOptions)에서 완료된 현장(isAllCompleted / isArchived / 전 공정 완료) 제외 검증
@@ -7478,13 +7477,13 @@ const mockSplitSheet115 = {
   })
 };
 const splitSortCount115 = sandbox.sortSiteScheduleTasksByDate(mockSs113, mockSplitSheet115, true);
-assertTest('Step 115-3: 분리된 보라매경남 2개 행이 단일 블록으로 100% 통합되고 내부 9.22->11.9 오름차순 정렬 검증',
+assertTest('Step 115-3: 분리된 보라매경남 2개 행이 단일 블록으로 100% 통합되고 오름차순(9.22 보라매경남이 1순위) 정렬 검증',
   recordedSortedValues115 !== null &&
-  recordedSortedValues115[0][0] === '신대방우성 12동 1110호' &&
-  recordedSortedValues115[1][0] === '신대방우성 16동 902호' &&
-  recordedSortedValues115[2][0] === '보라매경남 102동 502호' &&
-  recordedSortedValues115[2][1] === '2026.09.22' && recordedSortedValues115[2][2] === '상담' &&
-  recordedSortedValues115[3][1] === '2026.11.09' && recordedSortedValues115[3][2] === '잔마감'
+  recordedSortedValues115[0][0] === '보라매경남 102동 502호' &&
+  recordedSortedValues115[0][1] === '2026.09.22' && recordedSortedValues115[0][2] === '상담' &&
+  recordedSortedValues115[1][1] === '2026.11.09' && recordedSortedValues115[1][2] === '잔마감' &&
+  recordedSortedValues115[2][0] === '신대방우성 16동 902호' &&
+  recordedSortedValues115[3][0] === '신대방우성 12동 1110호'
 );
 
 // 115-4: groupSiteScheduleMenu 함수 탑재 및 상단 메뉴 등록 검증
@@ -8392,6 +8391,56 @@ assertTest('Step 125-5: renderPartnerGuideModalView 내 isPc 가드로 모바일
 // 125-6: index.html 내 exec?v=124 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 125-6: index.html 내 exec?v=124 최신 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(\d+)/.test(indexHtmlContent124) && parseInt(indexHtmlContent124.match(/exec\?v=(\d+)/)[1], 10) >= 124
+);
+
+// ========================================================
+// 🛠️ [Step 126]: 현장일정 5대 핵심 문제 전면 해결 QA (정렬 역전 해소, 신규현장 직접입력, 동명공종 taskId 매핑, A열 현장명 보존, 카테고리 자동감지)
+// ========================================================
+console.log('\n🛠️ [Step 126]: 현장일정 5대 문제 전면 해결 QA ---');
+
+const code126 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent126 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 126-1: 1번/4번 스프레드시트 정렬 기준 오름차순 통일 및 A열 현장명 100% 항상 유지 검증
+assertTest('Step 126-1: 시트 일정 정렬 오름차순 통일(aDate - bDate) 및 A열 현장명 100% 항시 보존 로직 탑재 검증',
+  code126.indexOf('isCompletedSheet ? (bDate - aDate) : (aDate - bDate)') !== -1 &&
+  code126.indexOf('grp.items[r].vals[0] = grp.siteName;') !== -1 &&
+  code126.indexOf('grp.items[r].vals[0] = "";') === -1
+);
+
+// 126-2: 2번 시트 사용자 직접 편집 감지 및 15분 자동 정렬 쿨다운 방어 로직 검증
+assertTest('Step 126-2: 시트 편집 감지(LAST_SHEET_USER_EDIT_TIME) 및 15분 자동 정렬 유예 쿨다운 가드 탑재 검증',
+  code126.indexOf('LAST_SHEET_USER_EDIT_TIME') !== -1 &&
+  code126.indexOf('15 * 60 * 1000') !== -1 &&
+  code126.indexOf('runHourlyAutoSortTrigger') !== -1
+);
+
+// 126-3: 3번 J열 고유 taskId 영구 매핑 및 동명 공종 복합 속성 스코어링(resolveActualSheetRow) 검증
+assertTest('Step 126-3: J열 고유 taskId 생성 영구 기록 및 resolveActualSheetRow 복합 스코어링 체계 탑재 검증',
+  code126.indexOf('var taskId = "task_" + nowMs + "_"') !== -1 &&
+  code126.indexOf('resolveActualSheetRow') !== -1 &&
+  code126.indexOf('bestScore') !== -1
+);
+
+// 126-4: 2번 웹앱 모달 신규 현장 직접 입력 및 낙관적 UI 즉시 반영 지원 검증
+assertTest('Step 126-4: 신규 현장 직접 입력 필드(sheetSiteCustomInput, __CUSTOM__) 및 onSheetSiteCustomInput 함수 탑재 검증',
+  code126.indexOf('id="sheetSiteCustomInput"') !== -1 &&
+  code126.indexOf('value="__CUSTOM__">➕ 새 현장 직접 입력...') !== -1 &&
+  code126.indexOf('onSheetSiteCustomInput(this.value)') !== -1 &&
+  code126.indexOf('isBrandNewSite = true;') !== -1
+);
+
+// 126-5: 5번 현장 선택 시 카테고리 자동 감지/전환 및 서버 측 시트 분할 방어 가드(isSiteInSheet) 검증
+assertTest('Step 126-5: 카테고리 자동 감지 뱃지(sheetCategoryAutoBadge) 및 서버 측 시트 분할 가드(isSiteInSheet) 탑재 검증',
+  code126.indexOf('id="sheetCategoryAutoBadge"') !== -1 &&
+  code126.indexOf('자동 감지') !== -1 &&
+  code126.indexOf('function isSiteInSheet(sheet, siteName)') !== -1 &&
+  code126.indexOf('isSiteInSheet(mainSiteSheet, cleanSite)') !== -1
+);
+
+// 126-6: index.html 내 exec?v=125 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 126-6: index.html 내 exec?v=125 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent126) && parseInt(indexHtmlContent126.match(/exec\?v=(\d+)/)[1], 10) >= 125
 );
 
 console.log('\n========================================================');
