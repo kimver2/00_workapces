@@ -417,9 +417,9 @@ function getMemberNames(ss) {
 
 /**
  * 담당자 드롭다운 목록 반환 (구성원 시트 연동 + 모든 2인 조합 + 시트 실제 작성값 자동 포함)
- * - 개별 인원 명단 (김종혁·영하 제외)
- * - 2인 담당자 조합 (예: "조항만, 송지은", "조항만 / 송지은" 등)
- * - 현장데이터 시트 G열에 이미 작성된 모든 담당자 값 (빨간 삼각형 에러표시 100% 원천 차단)
+ * - 개별 인원 명단 (김종혁·영하 제외, 오직 구성원 시트에 등록된 순수 이름만 노출)
+ * - 드롭다운을 열었을 때 조합(쉼표/슬래시) 없이 구성원 이름만 깔끔하게 노출
+ * - '현장데이터', '단건', 'AS' 시트 G열 드롭다운은 이 목록을 기준으로 표시되며, 최대 2명까지 스마트 선택 지원
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
  * @param {GoogleAppsScript.Spreadsheet.Sheet} [sheet]
  * @return {string[]}
@@ -436,82 +436,118 @@ function getAvailableManagers(ss, sheet) {
     }
   }
 
-  // 예외 폴백 (구성원 시트가 없거나 비어있는 경우)
+  // 예외 폴백 (구성원 시트가 없거나 비어있는 경우 표준 5인)
   if (managers.length === 0) {
     managers = ["조항만", "송지은", "전예린", "한송이", "인경호"];
-  }
-
-  // ① 2인 담당자 조합 (쉼표 및 슬래시 표기) 모두 자동 생성하여 유효성 목록에 포함!
-  var pairCombinations = [];
-  for (var a = 0; a < managers.length; a++) {
-    for (var b = 0; b < managers.length; b++) {
-      if (a !== b) {
-        pairCombinations.push(managers[a] + ", " + managers[b]);
-        pairCombinations.push(managers[a] + " / " + managers[b]);
-      }
-    }
-  }
-  for (var p = 0; p < pairCombinations.length; p++) {
-    if (managers.indexOf(pairCombinations[p]) === -1) {
-      managers.push(pairCombinations[p]);
-    }
-  }
-
-  // ② 현장데이터 시트 G열(7열)에 이미 작성된 모든 기존 담당자 값들도 자동 포함 (빨간 삼각형 원천 차단)
-  if (!sheet && ss && typeof ss.getSheets === "function") {
-    try {
-      sheet = findSiteScheduleSheet(ss);
-    } catch(eFind) {}
-  }
-  if (sheet && typeof sheet.getLastRow === "function") {
-    try {
-      var lastR = sheet.getLastRow();
-      if (lastR >= 2) {
-        var gVals = sheet.getRange(2, 7, lastR - 1, 1).getValues();
-        for (var gi = 0; gi < gVals.length; gi++) {
-          var gVal = String(gVals[gi][0] || "").trim();
-          if (gVal && managers.indexOf(gVal) === -1) {
-            managers.push(gVal);
-          }
-        }
-      }
-    } catch(eG) {}
   }
 
   return managers;
 }
 
 /**
- * 담당자 실시간 자동 학습 엔진 (Auto-Learning Manager Validation)
- * 사용자가 시트 G열에 새로운 2인 조합이나 인원을 직접 입력했을 때
- * 즉시 드롭다운 유효성 목록에 추가하여 빨간 삼각형 경고를 실시간 해제합니다.
+ * 콤마/슬래시 등으로 연결된 담당자 문자열에서 유효한 인원 이름 배열 추출
+ * @param {string} raw
+ * @return {string[]}
+ */
+function parseManagerNamesList(raw) {
+  if (!raw) return [];
+  var parts = String(raw).split(/[,/]/);
+  var result = [];
+  var seen = {};
+  for (var i = 0; i < parts.length; i++) {
+    var name = parts[i].trim();
+    if (name && !seen[name]) {
+      seen[name] = true;
+      result.push(name);
+    }
+  }
+  return result;
+}
+
+/**
+ * [스마트 2인 담당자 다중 선택 엔진]
+ * '현장데이터', '단건', 'AS' 시트 G열(담당자) 셀 편집 감지 시 동작:
+ * 1) 드롭다운에서 1명 선택 후 또 1명 선택 시 최대 2명까지 "이름1, 이름2"로 자동 결합
+ * 2) 이미 2명이 지정된 상태에서 3번째 사람 선택 시 기존 2명 유지 및 최대 2인 안내
+ * 3) 이미 지정된 사람을 다시 선택하면 해당 인원 토글 해제 (1명만 남김)
+ * 4) 3명 이상이 한꺼번에 입력된 경우(다중 선택 칩셋 등) 앞의 2명만 취하고 안내
+ *
+ * @param {GoogleAppsScript.Events.SheetsOnEdit} e
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} row
+ * @param {number} col
+ */
+function handleManagerMultiSelectEdit(e, ss, sheet, row, col) {
+  if (!e || !e.range || col !== 7 || row < 2) return;
+
+  var rawNewVal = (e.value !== undefined) ? String(e.value).trim() : String(e.range.getValue() || "").trim();
+  var rawOldVal = (e.oldValue !== undefined) ? String(e.oldValue).trim() : "";
+
+  // 빈칸으로 지운 경우 아무 작업 안 함 (지우기 허용)
+  if (!rawNewVal) return;
+
+  // 1) 쉼표/슬래시 등으로 이미 복수 인원이 입력된 경우 (예: 구글 시트 칩 다중 선택 또는 수동 입력)
+  var parsedNames = parseManagerNamesList(rawNewVal);
+  if (parsedNames.length > 2) {
+    var limited = parsedNames.slice(0, 2);
+    var limitedStr = limited.join(", ");
+    e.range.setValue(limitedStr);
+    try {
+      ss.toast("담당자는 최대 2명까지만 선택할 수 있습니다. (" + limitedStr + ")", "⚠️ 최대 2인 제한", 3);
+    } catch(eTst) {}
+    return;
+  }
+
+  // 2) 일반 단일 선택 드롭다운으로 선택한 경우 (e.oldValue가 존재하고 단일 선택값이 들어온 경우)
+  if (rawOldVal && parsedNames.length === 1) {
+    var singleSelected = parsedNames[0];
+    var oldList = parseManagerNamesList(rawOldVal);
+
+    // 이미 포함된 사람을 다시 선택한 경우 -> 토글 해제 (해당 사람 제외)
+    if (oldList.indexOf(singleSelected) !== -1) {
+      var filtered = oldList.filter(function(name) { return name !== singleSelected; });
+      var finalStr = filtered.join(", ");
+      e.range.setValue(finalStr);
+      try {
+        if (finalStr) {
+          ss.toast("담당자 1명 지정: " + finalStr, "👤 담당자 갱신", 2);
+        } else {
+          ss.toast("담당자가 해제되었습니다.", "👤 담당자 해제", 2);
+        }
+      } catch(eTst2) {}
+      return;
+    }
+
+    // 이미 2명이 차 있는 상태에서 3번째 사람을 선택한 경우 -> 기존 2명 유지 및 경고
+    if (oldList.length >= 2) {
+      e.range.setValue(rawOldVal);
+      try {
+        ss.toast("담당자는 최대 2명까지만 선택할 수 있습니다. 기존 2명(" + rawOldVal + ")이 유지됩니다.", "⚠️ 담당자 인원 초과", 4);
+      } catch(eTst3) {}
+      return;
+    }
+
+    // 기존 1명 + 새로 선택한 1명 -> 2명으로 결합!
+    if (oldList.length === 1) {
+      var combined = oldList[0] + ", " + singleSelected;
+      e.range.setValue(combined);
+      try {
+        ss.toast("담당자가 2명으로 지정되었습니다: " + combined, "👥 2인 담당자 지정", 3);
+      } catch(eTst4) {}
+      return;
+    }
+  }
+}
+
+/**
+ * 담당자 유효성 검사 안전 핸들러 (드롭다운 목록 오염 방어)
+ * 사용자의 요구에 맞춰 드롭다운 목록에는 오직 구성원 시트의 순수 인원만 고정 노출합니다.
  */
 function ensureManagersInValidation(sheet, newManagers) {
-  if (!sheet || !newManagers || newManagers.length === 0) return;
-  try {
-    var maxRows = Math.max((typeof sheet.getLastRow === "function" ? sheet.getLastRow() : 100), (typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100));
-    var ss = (typeof sheet.getParent === "function") ? sheet.getParent() : SpreadsheetApp.getActiveSpreadsheet();
-    var allowedList = getAvailableManagers(ss, sheet);
-
-    var added = false;
-    for (var i = 0; i < newManagers.length; i++) {
-      var m = String(newManagers[i] || "").trim();
-      if (m && allowedList.indexOf(m) === -1) {
-        allowedList.push(m);
-        added = true;
-      }
-    }
-
-    if (added) {
-      var newRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(allowedList, true)
-        .setAllowInvalid(true)
-        .build();
-      sheet.getRange(2, 7, maxRows - 1, 1).setDataValidation(newRule);
-    }
-  } catch (e) {
-    Logger.log("담당자 실시간 자동 학습 예외: " + e.toString());
-  }
+  // 드롭다운 목록에 2인 조합이 추가되어 목록이 길어지는 현상을 방어하기 위해 No-op 유지
+  // 유효성 검사 규칙은 .setAllowInvalid(true)이므로 기존 데이터나 복합 이름은 에러 없이 안전 보존됩니다.
+  return;
 }
 
 /**
@@ -615,10 +651,29 @@ function cleanAllValidationErrors(ss) {
     tSheet.getRange(nextRow, 1, tasksToAppend.length, 2).setHorizontalAlignment("center");
   }
 
-  // 2. C열, G열, H열 유효성 검사 일괄 재적용 (빨간 삼각형 제거)
+  // 2. '현장데이터' 시트 C열, G열, H열 유효성 검사 일괄 재적용 (구성원 5인 담당자 드롭다운 적용 & 기존 2인 데이터 보존)
   applySiteScheduleValidations(siteSheet, 2, maxRows - 1);
 
-  // 3. H열 상태값 공백 보정 ("진행중" -> "진행 중")
+  // 3. '단건' 및 'AS' 시트 G열 담당자 드롭다운 및 유효성 검사 동기화
+  var singleSheet = findSingleTaskSheet(ss, false);
+  if (singleSheet) {
+    try {
+      var sLastR = Math.max((typeof singleSheet.getLastRow === "function" ? singleSheet.getLastRow() : 2), 2);
+      var sMaxR = Math.max((typeof singleSheet.getMaxRows === "function" ? singleSheet.getMaxRows() : sLastR), 50);
+      applySiteScheduleValidations(singleSheet, 2, sMaxR - 1);
+    } catch(eSingleVal) {}
+  }
+
+  var asSheet = findAsSheet(ss, false);
+  if (asSheet) {
+    try {
+      var asLastR = Math.max((typeof asSheet.getLastRow === "function" ? asSheet.getLastRow() : 2), 2);
+      var asMaxR = Math.max((typeof asSheet.getMaxRows === "function" ? asSheet.getMaxRows() : asLastR), 50);
+      applySiteScheduleValidations(asSheet, 2, asMaxR - 1);
+    } catch(eAsVal) {}
+  }
+
+  // 4. H열 상태값 공백 보정 ("진행중" -> "진행 중")
   try {
     var hRange = siteSheet.getRange(2, 8, lastRow - 1, 1);
     var hVals = hRange.getValues();
@@ -642,7 +697,7 @@ function cleanAllValidationErrors(ss) {
     success: true,
     addedTasksCount: tasksToAppend.length,
     totalTasksCount: Object.keys(existingTasksInTSheet).length,
-    message: "현장데이터 시트의 모든 빨간 삼각형 유효성 검사 에러 표시가 말끔히 제거되었습니다."
+    message: "'현장데이터', '단건', 'AS' 시트의 담당자(구성원 5인 드롭다운/최대 2인 스마트 선택) 및 유효성 검사가 성공적으로 재정비되었습니다."
   };
 }
 
@@ -1578,25 +1633,16 @@ function onEdit(e) {
         }
       }
 
-      // G열 담당자 직접 편집 감지 -> 담당자 목록에 자동 등록 및 유효성 검사 자동학습으로 에러 방지
-      if (startCol <= 7 && endCol >= 7) {
-        var editedVals = e.range.getValues ? e.range.getValues() : [[e.range.getValue()]];
-        var editedMgrs = [];
-        for (var er = 0; er < editedVals.length; er++) {
-          var colOffset = 7 - startCol;
-          if (colOffset >= 0 && colOffset < editedVals[er].length) {
-            var val = String(editedVals[er][colOffset] || "").trim();
-            if (val) editedMgrs.push(val);
-          }
-        }
-        if (editedMgrs.length > 0) {
-          ensureManagersInValidation(sheet, editedMgrs);
-        }
+      // G열 담당자 직접 편집 감지 -> 스마트 2인 다중 선택 엔진 (드롭다운 순수 5인 노출 + 최대 2인 스마트 선택)
+      if (startCol <= 7 && endCol >= 7 && row >= 2) {
+        try {
+          handleManagerMultiSelectEdit(e, ss, sheet, row, 7);
+        } catch(eMgrEdit) {}
       }
     } catch(eSheetEdit) {}
   }
 
-  // ④ [AS 시트 편집 감지 -> 날짜(B열) 편집 시 최신순 자동 정렬 + 완료 시 완료현장 시트로 자동 이동]
+  // ④ [AS 시트 편집 감지 -> 날짜(B열) 편집 시 최신순 자동 정렬 + G열 스마트 2인 선택 + 완료 시 완료현장 시트로 자동 이동]
   if (isAsSheet(sheet)) {
     try {
       var aStartCol = e.range.getColumn();
@@ -1614,6 +1660,13 @@ function onEdit(e) {
         try {
           sortSiteScheduleTasksByDate(ss, sheet, true);
         } catch(eSortAs) {}
+      }
+
+      // G열 담당자 편집 감지 -> 스마트 2인 다중 선택 엔진
+      if (aStartCol <= 7 && aEndCol >= 7 && row >= 2) {
+        try {
+          handleManagerMultiSelectEdit(e, ss, sheet, row, 7);
+        } catch(eAsMgr) {}
       }
 
       // H열 진행상태 '완료' 시 완료현장 시트로 자동 이동
@@ -1640,7 +1693,7 @@ function onEdit(e) {
     }
   }
 
-  // ⑤ [단건 시트 편집 감지 -> 날짜(B열) 편집 시 최신순 자동 정렬 & 현장명(A열) 편집 시 동일 현장 자동 묶기]
+  // ⑤ [단건 시트 편집 감지 -> 날짜(B열) 편집 시 최신순 자동 정렬 + G열 스마트 2인 선택 & 현장명(A열) 편집 시 동일 현장 자동 묶기]
   if (isSingleTaskSheet(sheet)) {
     try {
       var sStartCol = e.range.getColumn();
@@ -1658,6 +1711,13 @@ function onEdit(e) {
         try {
           sortSiteScheduleTasksByDate(ss, sheet, true);
         } catch(eSortSingle) {}
+      }
+
+      // G열 담당자 편집 감지 -> 스마트 2인 다중 선택 엔진
+      if (sStartCol <= 7 && sEndCol >= 7 && row >= 2) {
+        try {
+          handleManagerMultiSelectEdit(e, ss, sheet, row, 7);
+        } catch(eSingleMgr) {}
       }
     } catch(eSingleEdit) {}
   }

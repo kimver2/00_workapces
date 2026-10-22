@@ -8162,13 +8162,12 @@ const mockSiteSheet109 = {
 };
 
 const loadedManagers109 = sandbox.getAvailableManagers(mockSs109, mockSiteSheet109);
-assertTest('Step 109-1: getAvailableManagers가 단일 인원뿐 아니라 2인 조합(쉼표/슬래시) 및 시트 실제 작성값(신규외부담당자)까지 모두 포함하여 에러표시 차단 검증',
+assertTest('Step 109-1: getAvailableManagers가 드롭다운에 조합 없이 순수 구성원 이름(조항만, 송지은 등)만 깔끔하게 노출 검증',
   Array.isArray(loadedManagers109) &&
   loadedManagers109.includes('조항만') &&
   loadedManagers109.includes('송지은') &&
-  loadedManagers109.includes('조항만, 송지은') &&
-  loadedManagers109.includes('조항만 / 송지은') &&
-  loadedManagers109.includes('신규외부담당자')
+  !loadedManagers109.includes('조항만, 송지은') &&
+  !loadedManagers109.includes('조항만 / 송지은')
 );
 
 // 109-2: ensureManagersInValidation 함수 탑재 검증
@@ -8182,11 +8181,11 @@ assertTest('Step 109-3: cleanAllValidationErrors 및 cleanAllValidationErrorsMen
   typeof sandbox.cleanAllValidationErrorsMenu === 'function'
 );
 
-// 109-4: onOpen 메뉴 및 onEdit 내 담당자 자동학습 연동 검증
-assertTest('Step 109-4: onOpen 메뉴 [빨간 에러표시 전체 제거] 및 onEdit G열 담당자 자동학습 연동 검증',
+// 109-4: onOpen 메뉴 및 onEdit 내 담당자 스마트 2인 다중 선택 연동 검증
+assertTest('Step 109-4: onOpen 메뉴 [빨간 에러표시 전체 제거] 및 onEdit G열 담당자 스마트 다중선택 연동 검증',
   code.includes('"🛡️ \'현장데이터\' 빨간 에러표시(유효성 경고) 전체 제거"') &&
   code.includes('startCol <= 7 && endCol >= 7') &&
-  code.includes('ensureManagersInValidation(sheet, editedMgrs)')
+  code.includes('handleManagerMultiSelectEdit(e, ss, sheet, row, 7)')
 );
 
 // 109-5: doGet 내 action === "cleanAllValidationErrors" 지원 검증
@@ -8307,9 +8306,9 @@ assertTest('Step 110-6: 캘린더 레거시 함수(cleanupOrphan, runPeriodic, r
   sandbox.isSystemSiteScheduleEvent() === false
 );
 
-// 110-7: onEdit 내 담당자/공종 유효성 자동학습 및 0토스트/0팝업 검증
-assertTest('Step 110-7: onEdit 내 G열/C열 자동학습 탑재 및 시트 직접 입력 시 팝업/토스트 0% 검증',
-  code.includes('ensureManagersInValidation(sheet, editedMgrs)') &&
+// 110-7: onEdit 내 담당자 스마트 다중선택/공종 유효성 자동학습 및 0토스트/0팝업 검증
+assertTest('Step 110-7: onEdit 내 G열/C열 스마트엔진 탑재 및 시트 직접 입력 시 팝업/토스트 0% 검증',
+  code.includes('handleManagerMultiSelectEdit(e, ss, sheet, row, 7)') &&
   code.includes('ensureTasksInValidation(sheet, editedTasks)') &&
   !code.includes('ss.toast("최종 수정 시간 기준으로')
 );
@@ -8985,6 +8984,113 @@ assertTest('Step 115-5: doGet action=sortScheduleSheets / fixSheetGrouping 엔�
 const indexHtmlContent115 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
 assertTest('Step 115-6: index.html 내 exec?v=106 이상 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(\d+)/.test(indexHtmlContent115) && parseInt(indexHtmlContent115.match(/exec\?v=(\d+)/)[1], 10) >= 106
+);
+
+// ========================================================
+console.log('\n👥 [Step 116]: 담당자 구성원 5인 순수 노출 및 최대 2인 스마트 다중 선택 양식 QA ---');
+
+// 116-1: getAvailableManagers 순수 구성원 이름만 반환 및 조합 완전 배제 검증
+const pureMgrs116 = sandbox.getAvailableManagers(mockSs113);
+assertTest('Step 116-1: getAvailableManagers가 드롭다운에 오직 순수 구성원 이름만 노출하고 2인 조합 완전 배제 검증',
+  Array.isArray(pureMgrs116) &&
+  pureMgrs116.length >= 5 &&
+  pureMgrs116.includes('조항만') &&
+  pureMgrs116.includes('송지은') &&
+  pureMgrs116.includes('전예린') &&
+  pureMgrs116.includes('한송이') &&
+  pureMgrs116.includes('인경호') &&
+  pureMgrs116.every(m => m.indexOf(',') === -1 && m.indexOf('/') === -1)
+);
+
+// 116-2: parseManagerNamesList 콤마/슬래시 파싱 및 중복제거 검증
+assertTest('Step 116-2: parseManagerNamesList가 "전예린, 한송이 / 전예린"을 중복 없이 ["전예린", "한송이"]로 파싱 검증',
+  JSON.stringify(sandbox.parseManagerNamesList('전예린, 한송이 / 전예린')) === JSON.stringify(['전예린', '한송이'])
+);
+
+// 116-3: handleManagerMultiSelectEdit 런타임 시뮬레이션 검증
+// A) 1인 -> 2인 자동 결합
+let cellVal116 = '송지은';
+let toastMsg116 = '';
+const mockEvent116A = {
+  value: '송지은',
+  oldValue: '조항만',
+  range: {
+    getValue: () => cellVal116,
+    setValue: (val) => { cellVal116 = val; }
+  }
+};
+const mockSs116 = {
+  toast: (msg) => { toastMsg116 = msg; }
+};
+sandbox.handleManagerMultiSelectEdit(mockEvent116A, mockSs116, null, 2, 7);
+assertTest('Step 116-3A: "조항만" 선택된 셀에서 "송지은" 선택 시 "조항만, 송지은" 2인으로 자동 결합 검증',
+  cellVal116 === '조항만, 송지은'
+);
+
+// B) 이미 2인 상태에서 3번째 사람 선택 시 기존 2인 유지 및 차단
+const mockEvent116B = {
+  value: '전예린',
+  oldValue: '조항만, 송지은',
+  range: {
+    getValue: () => '전예린',
+    setValue: (val) => { cellVal116 = val; }
+  }
+};
+sandbox.handleManagerMultiSelectEdit(mockEvent116B, mockSs116, null, 2, 7);
+assertTest('Step 116-3B: "조항만, 송지은" 2인 상태에서 "전예린" 선택 시 기존 2인 유지 및 3번째 선택 차단 검증',
+  cellVal116 === '조항만, 송지은'
+);
+
+// C) 이미 2인 상태에서 기존 인원("조항만") 재클릭 시 토글 해제 (1인만 남김)
+const mockEvent116C = {
+  value: '조항만',
+  oldValue: '조항만, 송지은',
+  range: {
+    getValue: () => '조항만',
+    setValue: (val) => { cellVal116 = val; }
+  }
+};
+sandbox.handleManagerMultiSelectEdit(mockEvent116C, mockSs116, null, 2, 7);
+assertTest('Step 116-3C: "조항만, 송지은" 상태에서 "조항만" 재클릭 시 토글 해제되어 "송지은" 1인만 남김 검증',
+  cellVal116 === '송지은'
+);
+
+// D) 다중 칩셋 등으로 3명 이상 한꺼번에 입력된 경우 앞 2명만 슬라이스
+const mockEvent116D = {
+  value: '조항만, 송지은, 전예린',
+  oldValue: '',
+  range: {
+    getValue: () => '조항만, 송지은, 전예린',
+    setValue: (val) => { cellVal116 = val; }
+  }
+};
+sandbox.handleManagerMultiSelectEdit(mockEvent116D, mockSs116, null, 2, 7);
+assertTest('Step 116-3D: 3명 이상 다중 입력 시 최대 2명("조항만, 송지은")으로 자동 슬라이스 검증',
+  cellVal116 === '조항만, 송지은'
+);
+
+// 116-4: onEdit 내 현장데이터, 단건, AS 3개 시트 모두에 handleManagerMultiSelectEdit 탑재 검증
+const code116 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+const asEditBlock = code116.slice(code116.indexOf('if (isAsSheet(sheet))'), code116.indexOf('if (isSingleTaskSheet(sheet))'));
+const singleIdx116 = code116.indexOf('if (isSingleTaskSheet(sheet))');
+const singleEditBlock = code116.slice(singleIdx116, code116.indexOf('invalidateDashboardServerCache();', singleIdx116));
+assertTest('Step 116-4: onEdit 내 현장데이터, 단건, AS 시트 3곳 모두에 G열 스마트 2인 선택 엔진 탑재 검증',
+  code116.includes('handleManagerMultiSelectEdit(e, ss, sheet, row, 7)') &&
+  asEditBlock.includes('handleManagerMultiSelectEdit(e, ss, sheet, row, 7)') &&
+  singleEditBlock.includes('handleManagerMultiSelectEdit(e, ss, sheet, row, 7)')
+);
+
+// 116-5: cleanAllValidationErrors가 현장데이터, 단건, AS 3개 시트 모두의 유효성 검사 일괄 재적용 검증
+assertTest('Step 116-5: cleanAllValidationErrors가 현장데이터, 단건, AS 3개 시트 모두에 유효성 검사 일괄 동기화 검증',
+  code116.includes('applySiteScheduleValidations(siteSheet') &&
+  code116.includes('applySiteScheduleValidations(singleSheet') &&
+  code116.includes('applySiteScheduleValidations(asSheet')
+);
+
+// 116-6: index.html 내 exec?v=108 이상 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent116 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 116-6: index.html 내 exec?v=108 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent116) && parseInt(indexHtmlContent116.match(/exec\?v=(\d+)/)[1], 10) >= 108
 );
 
 console.log('\n========================================================');
