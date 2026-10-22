@@ -9407,7 +9407,7 @@ assertTest('Step 139-4: 모바일 신규현장 선택 시 일정 체크리스트
 // 139-5: index.html cache buster updated to v=138
 const indexHtml139 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
 assertTest('Step 139-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 138)',
-  indexHtml139.indexOf('exec?v=138') !== -1 || indexHtml139.indexOf('exec?v=139') !== -1
+  indexHtml139.indexOf('exec?v=138') !== -1 || indexHtml139.indexOf('exec?v=139') !== -1 || indexHtml139.indexOf('exec?v=140') !== -1 || indexHtml139.indexOf('exec?v=141') !== -1
 );
 
 // 139-6: Runtime rendering simulation for mobile estimate dashboard
@@ -9674,7 +9674,116 @@ assertTest('Step 140-9: 런타임 모바일 견적 카드 상세 렌더링 시 �
 
 // 140-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 139)
 assertTest('Step 140-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 139)',
-  indexHtml140.indexOf('exec?v=139') !== -1
+  indexHtml140.indexOf('exec?v=139') !== -1 || indexHtml140.indexOf('exec?v=140') !== -1 || indexHtml140.indexOf('exec?v=141') !== -1
+);
+
+// ========================================================
+// [Step 141]: 공종 리스트 공유여부 아이콘, 실시간 공종추가 보존, 현장 일괄 삭제, 공종 단일 삭제 QA
+// ========================================================
+console.log('\n📋 [Step 141]: 공종 리스트 공유여부 아이콘, 실시간 공종추가 보존, 현장 일괄 삭제, 공종 단일 삭제 QA ---');
+
+const code141 = fs.readFileSync(path.resolve(__dirname, '../현장서식.js'), 'utf8');
+
+// 141-1: PC table 관리 열 너비 105px 및 공유여부 아이콘(🔗 / 🔒) 노출 검증
+assertTest('Step 141-1: PC 공종 리스트 공종명 앞 공유여부 아이콘(🔗 / 🔒) 및 관리 열 너비 105px 검증',
+  code141.indexOf('<th style="width:105px;text-align:center;">관리</th>') !== -1 &&
+  code141.indexOf('title="공정 공유 (ON)">🔗</span>') !== -1 &&
+  code141.indexOf('title="미공유 (OFF)">🔒</span>') !== -1
+);
+
+// 141-2: PC table 관리 열에 수정 옆 삭제 버튼 (pc-task-btn-del & confirmDeleteSingleTask) 검증
+assertTest('Step 141-2: PC 공종 리스트 수정 옆 단일 공종 삭제 버튼(confirmDeleteSingleTask) 탑재 검증',
+  code141.indexOf('class="pc-task-btn-del"') !== -1 &&
+  code141.indexOf('confirmDeleteSingleTask(decodeURIComponent(this.dataset.site)') !== -1 &&
+  code141.indexOf('function confirmDeleteSingleTask(siteName, row, taskName, sheetName)') !== -1
+);
+
+// 141-3: 모바일 공종 리스트 공종명 앞 mShareIconHtml (🔗 / 🔒) 노출 검증
+assertTest('Step 141-3: 모바일 공종 리스트 공종명 앞 공유여부 아이콘(🔗 / 🔒) 탑재 검증',
+  code141.indexOf('mShareIconHtml') !== -1 &&
+  code141.indexOf("mShareIconHtml") !== -1 &&
+  code141.indexOf("escapeHtml(task.taskName)") !== -1
+);
+
+// 141-4: PC 상세 히어로 헤더에 [➕ 새 공정 추가] 옆 [🗑️ 현장 삭제] 버튼 탑재 검증
+assertTest('Step 141-4: PC 상세 히어로 영역 새 공정 추가 옆 [🗑️ 현장 삭제](confirmDeleteSite) 버튼 탑재 검증',
+  code141.indexOf('class="pc-btn-danger"') !== -1 &&
+  code141.indexOf('confirmDeleteSite(decodeURIComponent(this.dataset.sitename)') !== -1 &&
+  code141.indexOf('<span>🗑️</span> 현장 삭제</button>') !== -1 &&
+  code141.indexOf('function confirmDeleteSite(siteName, scope)') !== -1
+);
+
+// 141-5: 서버사이드 deleteSiteFromWeb 함수 정의 및 doGet action=deleteSite 핸들러 검증
+assertTest('Step 141-5: 서버사이드 deleteSiteFromWeb 일괄 삭제 함수 및 doGet action=deleteSite 라우팅 검증',
+  code141.indexOf('function deleteSiteFromWeb(siteName, scope)') !== -1 &&
+  code141.indexOf('action === "deleteSite"') !== -1 &&
+  code141.indexOf('rowsToDelete.sort(function(a, b) { return b - a; });') !== -1 &&
+  code141.indexOf('sheet.deleteRow(rowsToDelete[d]);') !== -1
+);
+
+// 141-6: 공정 추가 시 즉시 화면 반영 및 pendingOptimisticTasks 보존 동기화 검증
+assertTest('Step 141-6: 공정 추가 시 실시간 즉시 렌더링 및 pendingOptimisticTasks 맵 보존 동기화 검증',
+  code141.indexOf('const pendingOptimisticTasks = new Map();') !== -1 &&
+  code141.indexOf('pendingOptimisticTasks.set(optKey,') !== -1 &&
+  code141.indexOf('pendingOptimisticTasks.size > 0 && Array.isArray(data.sites)') !== -1 &&
+  code141.indexOf('setTimeout(loadDataSilently, 350);') !== -1
+);
+
+
+// ========================================================
+// [Step 142]: 신규현장 정보수정 배너 제거, PC 시트열기 제거, 모바일 현장/단건/AS 진행/완료 탭 QA
+// ========================================================
+console.log('\n📋 [Step 142]: 신규현장 정보수정 배너 제거, PC 시트열기 제거, 모바일 현장/단건/AS 진행/완료 탭 QA ---');
+
+const code142 = fs.readFileSync(path.resolve(__dirname, '../현장서식.js'), 'utf8');
+const indexHtml142 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+
+// 142-1: 신규현장 정보수정 팝업(openEditEstimateModal & updateSheetModalSiteInfo)에서 sheetSiteInfoBanner 완전 은닉 검증
+assertTest('Step 142-1: 신규현장 정보수정 팝업에서 현장정보 등록 배너(#sheetSiteInfoBanner) 완전 은닉 검증',
+  code142.indexOf('if (curEstimateEditSite) { sInfoBanner.style.display = "none"; sInfoBanner.innerHTML = ""; return; }') !== -1 &&
+  code142.indexOf('if (sInfoBanner) { sInfoBanner.style.display = "none"; sInfoBanner.innerHTML = ""; }') !== -1
+);
+
+// 142-2: PC 신규견적 데이터 테이블 헤더에서 [스프레드시트 열기 ↗] 중복 버튼 완전 제거 검증
+assertTest('Step 142-2: PC 신규견적 데이터 테이블 헤더에서 스프레드시트 열기 ↗ 중복 버튼 완전 제거 검증',
+  code142.indexOf('pcEstimateSearchInput') !== -1 &&
+  code142.indexOf('<button type="button" class="btn-cal-filter-reset" onclick="openSpreadsheetEstimateSheet()" style="padding:5px 10px;font-size:11.5px;">스프레드시트 열기 ↗</button>') === -1
+);
+
+// 142-3: 모바일 renderList 내 현장, 단건, AS 탭 상단 진행/완료 서브 헤더바(mobile-scope-head-bar) 탑재 검증
+assertTest('Step 142-3: 모바일 renderList 상단 진행/완료 서브 헤더바(mobile-scope-head-bar) 및 시트 열기 링크 탑재 검증',
+  code142.indexOf('class="mobile-scope-head-bar"') !== -1 &&
+  code142.indexOf("진행 \\' + curScopeName") !== -1 &&
+  code142.indexOf("완료 \\' + curScopeName") !== -1 &&
+  code142.indexOf('openSpreadsheetEstimateSheet()') !== -1
+);
+
+// 142-4: 모바일 renderList 내 0건 empty-state 시에도 mobile-scope-head-bar 상시 유지 검증
+assertTest('Step 142-4: 모바일 검색/필터 결과 0건 시에도 상단 진행/완료 서브 헤더바 상시 유지(mHeadBarHtml + emptyHtml) 검증',
+  code142.indexOf('container.innerHTML = mHeadBarHtml + emptyHtml;') !== -1 &&
+  code142.indexOf('container.innerHTML = mHeadBarHtml + html;') !== -1
+);
+
+// 142-5: 단건/AS 완료현장 이동 시 [단건], [AS] 출처 태그 부여 및 findCompletedSitesSheet에서 scope 분리 복원 검증
+assertTest('Step 142-5: 단건/AS 완료 시 [단건], [AS] 태그 부여 및 findCompletedSitesSheet scope 분리 복원 검증',
+  code142.indexOf('if (rMemo.indexOf("[단건]") === -1) rMemo = "[단건] " + rMemo;') !== -1 &&
+  code142.indexOf('if (rMemo.indexOf("[AS]") === -1) rMemo = "[AS] " + rMemo;') !== -1 &&
+  code142.indexOf('cMemo.indexOf("[단건]") !== -1') !== -1 &&
+  code142.indexOf('cMemo.indexOf("[AS]") !== -1') !== -1 &&
+  code142.indexOf('ARCHIVED::" + cScope + "::" + cSiteName') !== -1
+);
+
+// 142-6: getSidebarDashboardData 내 siteDone, singleDone, asDone, newSiteDone 전 카테고리 완료 카운트 집계 검증
+assertTest('Step 142-6: getSidebarDashboardData scopeCounts 내 siteDone, singleDone, asDone, newSiteDone 전 카테고리 완료 카운트 집계 검증',
+  code142.indexOf('siteDone: siteDoneCount,') !== -1 &&
+  code142.indexOf('singleDone: singleDoneCount,') !== -1 &&
+  code142.indexOf('asDone: asDoneCount,') !== -1 &&
+  code142.indexOf('newSiteDone: newSiteDoneCount') !== -1
+);
+
+// 142-7: index.html 내 exec?v=141 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 142-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 141)',
+  indexHtml142.indexOf('exec?v=141') !== -1
 );
 
 console.log('\n========================================================');

@@ -4154,7 +4154,13 @@ function moveCompletedCategorySiteToCompletedSheet(ss, srcSheet, siteName) {
       var rTask = pCols.task;
       var rPartner = pCols.partner;
       var rShared = pCols.isShared;
-      var rMemo = pCols.memo;
+      var rMemo = pCols.memo || "";
+      var srcSheetName = (srcSheet && typeof srcSheet.getName === "function") ? srcSheet.getName() : "";
+      if (srcSheetName === "단건" || isSingleTaskSheet(srcSheet)) {
+        if (rMemo.indexOf("[단건]") === -1) rMemo = "[단건] " + rMemo;
+      } else if (srcSheetName === "AS" || isAsSheet(srcSheet)) {
+        if (rMemo.indexOf("[AS]") === -1) rMemo = "[AS] " + rMemo;
+      }
       var rStatus = "완료";
       var rCalId = pCols.calId;
 
@@ -4382,6 +4388,7 @@ function fixSiteInfoSheetFormat(ss) {
     }
 
     SpreadsheetApp.flush();
+    try { Utilities.sleep(150); } catch (eFlushSleep) {}
     invalidateDashboardServerCache();
 
     return {
@@ -8181,6 +8188,111 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
  * @param {boolean} isArchived 완료현장 여부
  * @return {object} { success: boolean, row: number, newDate: string, error?: string }
  */
+/**
+ * 웹 대시보드에서 현장 및 소속 모든 공정 일괄 영구 삭제 API
+ * @param {string} siteName 삭제할 현장명
+ * @param {string} [scope] "site" | "single" | "as" | "newSite"
+ * @return {object} { success: boolean, count: number, siteName: string, message: string }
+ */
+function deleteSiteFromWeb(siteName, scope) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(deleteSiteFromWeb, this, arguments);
+  try {
+    var cleanSite = String(siteName || "").trim();
+    if (!cleanSite) return { success: false, error: "삭제할 현장명을 입력해주세요." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+
+    var sheet = null;
+    if (scope === "single" || scope === "단건") {
+      sheet = findSingleTaskSheet(ss, false);
+    } else if (scope === "as" || scope === "AS") {
+      sheet = findAsSheet(ss, false);
+    } else if (scope === "newSite" || scope === "신규현장" || scope === "신규견적") {
+      sheet = findEstimateSheet(ss, false);
+    } else if (scope === "done" || scope === "완료현장") {
+      sheet = findCompletedSitesSheet(ss, false);
+    } else {
+      sheet = findSiteScheduleSheet(ss);
+    }
+    if (!sheet) return { success: false, error: "해당 현장의 대상 시트를 찾을 수 없습니다." };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, count: 0, message: "삭제할 데이터가 없습니다." };
+
+    var rowsToDelete = [];
+    if (scope === "newSite" || scope === "신규현장" || scope === "신규견적") {
+      var estVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (var ei = 0; ei < estVals.length; ei++) {
+        if (String(estVals[ei][0] || "").trim() === cleanSite) {
+          rowsToDelete.push(ei + 2);
+        }
+      }
+    } else {
+      var vals = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+      var lastKnown = "";
+      for (var i = 0; i < vals.length; i++) {
+        var rSite = String(vals[i][0] || "").trim();
+        if (rSite) lastKnown = rSite;
+        var effSite = rSite || lastKnown;
+        var hasData = Boolean(String(vals[i][1] || "").trim() || String(vals[i][2] || "").trim());
+        if (effSite === cleanSite && hasData) {
+          rowsToDelete.push(i + 2);
+        }
+      }
+    }
+
+    if (rowsToDelete.length === 0) {
+      return { success: true, count: 0, message: "해당 현장에 삭제할 공정이 없습니다." };
+    }
+
+    // 역순 정렬 후 행 삭제
+    rowsToDelete.sort(function(a, b) { return b - a; });
+    var maxDeletedRow = rowsToDelete[0];
+    var minDeletedRow = rowsToDelete[rowsToDelete.length - 1];
+
+    if (maxDeletedRow < sheet.getLastRow()) {
+      var nextRowVals = sheet.getRange(maxDeletedRow + 1, 1, 1, 3).getValues()[0];
+      var nextSite = String(nextRowVals[0] || "").trim();
+      var nextHasData = Boolean(String(nextRowVals[1] || "").trim() || String(nextRowVals[2] || "").trim());
+      if (!nextSite && nextHasData) {
+        var preSite = "";
+        if (minDeletedRow > 2) {
+          var pVals = sheet.getRange(2, 1, minDeletedRow - 2, 1).getValues();
+          for (var pi = pVals.length - 1; pi >= 0; pi--) {
+            var ps = String(pVals[pi][0] || "").trim();
+            if (ps && ps !== cleanSite) { preSite = ps; break; }
+          }
+        }
+        if (preSite) {
+          sheet.getRange(maxDeletedRow + 1, 1).setValue(preSite);
+        }
+      }
+    }
+
+    for (var d = 0; d < rowsToDelete.length; d++) {
+      sheet.deleteRow(rowsToDelete[d]);
+    }
+
+    SpreadsheetApp.flush();
+    try { Utilities.sleep(150); } catch(eSlp) {}
+    invalidateDashboardServerCache();
+    try {
+      PropertiesService.getScriptProperties().setProperty("LAST_SHEET_CHANGE_TIME", String(new Date().getTime()));
+    } catch(eProp) {}
+
+    return {
+      success: true,
+      count: rowsToDelete.length,
+      siteName: cleanSite,
+      message: "[" + cleanSite + "] 현장의 " + rowsToDelete.length + "개 공정이 모두 삭제되었습니다."
+    };
+  } catch (err) {
+    Logger.log("deleteSiteFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
 function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchived, targetSheetName) {
   if (!__woosungWriteLockHeld_) return runWithWriteLock_(moveScheduleTaskDateFromWeb, this, arguments);
   var rowNum = parseInt(row, 10);
@@ -8767,6 +8879,15 @@ function doGet(e) {
     };
     var addEstRes = addEstimateRowFromWeb(estData);
     return ContentService.createTextOutput(JSON.stringify(addEstRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-2) 현장 및 소속 모든 공정 일괄 삭제 요청 (action=deleteSite)
+  if (action === "deleteSite") {
+    var dSiteName = p.site || p.siteName || targetSite || "";
+    var dScope = p.scope || "site";
+    var delSiteRes = deleteSiteFromWeb(dSiteName, dScope);
+    return ContentService.createTextOutput(JSON.stringify(delSiteRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -11176,7 +11297,12 @@ function getSidebarDashboardData(forceRefresh) {
             cEndDateStr = cey + "-" + (cem < 10 ? "0" + cem : cem) + "-" + (ced < 10 ? "0" + ced : ced);
           }
 
+          var cScope = "site";
+          if (cMemo.indexOf("[단건]") !== -1 || cTaskName.indexOf("[단건]") !== -1) cScope = "single";
+          else if (cMemo.indexOf("[AS]") !== -1 || cTaskName.indexOf("[AS]") !== -1) cScope = "as";
+
           var cSiteKey = "ARCHIVED::" + cSiteName;
+          if (cScope !== "site") cSiteKey = "ARCHIVED::" + cScope + "::" + cSiteName;
           if (!sitesMap[cSiteKey]) {
             var cColorCode = "9";
             try { cColorCode = getCalendarColorForSite(cSiteName, compSheet); } catch(eC) {}
@@ -11186,7 +11312,7 @@ function getSidebarDashboardData(forceRefresh) {
               colorCode: cColorCode,
               colorHex: getHexColorForCalendarCode(cColorCode),
               tasks: [],
-              scope: "site",
+              scope: cScope,
               isArchived: true,
               initialOrder: siteOrder.length
             };
@@ -11210,7 +11336,7 @@ function getSidebarDashboardData(forceRefresh) {
             isToday: false,
             isDelayed: false,
             hasCal: !!cCalId,
-            scope: "site",
+            scope: cScope,
             sheetName: "완료현장",
             isArchived: true
           });
@@ -11502,22 +11628,28 @@ function getSidebarDashboardData(forceRefresh) {
     });
 
     var siteActiveCount = 0;
+    var siteDoneCount = 0;
     var singleActiveCount = 0;
+    var singleDoneCount = 0;
     var asActiveCount = 0;
+    var asDoneCount = 0;
     var newSiteActiveCount = 0;
     var newSiteDoneCount = 0;
 
     for (var scIdx = 0; scIdx < sitesList.length; scIdx++) {
       var scSite = sitesList[scIdx];
-      if (!scSite.isArchived) {
-        if (!scSite.isAllCompleted) {
-          if (scSite.scope === "single") singleActiveCount++;
-          else if (scSite.scope === "as") asActiveCount++;
-          else if (scSite.scope === "newSite") newSiteActiveCount++;
-          else siteActiveCount++;
-        } else if (scSite.scope === "newSite") {
-          newSiteDoneCount++;
-        }
+      var isDone = scSite.isAllCompleted || scSite.isArchived;
+      var effScope = scSite.scope || "site";
+      if (!isDone) {
+        if (scSite.scope === "single") singleActiveCount++;
+        else if (scSite.scope === "as") asActiveCount++;
+        else if (scSite.scope === "newSite") newSiteActiveCount++;
+        else siteActiveCount++;
+      } else {
+        if (scSite.scope === "single") singleDoneCount++;
+        else if (scSite.scope === "as") asDoneCount++;
+        else if (scSite.scope === "newSite") newSiteDoneCount++;
+        else siteDoneCount++;
       }
     }
 
@@ -11531,8 +11663,11 @@ function getSidebarDashboardData(forceRefresh) {
       },
       scopeCounts: {
         site: siteActiveCount,
+        siteDone: siteDoneCount,
         single: singleActiveCount,
+        singleDone: singleDoneCount,
         as: asActiveCount,
+        asDone: asDoneCount,
         newSite: newSiteActiveCount,
         newSiteDone: newSiteDoneCount
       },
@@ -13151,6 +13286,7 @@ function buildSidebarDashboardHtml(mode) {
   html += 'const DEFAULT_KOREAN_HOLIDAYS = ' + JSON.stringify(getKoreanHolidaysMap(null)) + ';';
   html += 'let activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS);';
   html += 'let curEstimateEditSite = null;';
+  html += 'const pendingOptimisticTasks = new Map();';
   html += '';
   html += 'function setDashboardScope(newScope) {';
   html += '  if (typeof mobileExpandedEstimateSites !== "undefined" && mobileExpandedEstimateSites && typeof mobileExpandedEstimateSites.clear === "function") {';
@@ -15682,6 +15818,30 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (!rawData) document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ \' + escapeHtml(data.error) + \'</div>\';';
   html += '    return;';
   html += '  }';
+  html += '  if (pendingOptimisticTasks.size > 0 && Array.isArray(data.sites)) {';
+  html += '    const now = Date.now();';
+  html += '    pendingOptimisticTasks.forEach((optItem, key) => {';
+  html += '      if (now - optItem.createdAt > 45000) {';
+  html += '        pendingOptimisticTasks.delete(key);';
+  html += '        return;';
+  html += '      }';
+  html += '      const foundSite = data.sites.find(s => s.siteName === optItem.siteName && (s.scope || "site") === (optItem.scope || "site"));';
+  html += '      if (foundSite && Array.isArray(foundSite.tasks)) {';
+  html += '        const hasTask = foundSite.tasks.some(t => {';
+  html += '          if (optItem.task.taskId && t.taskId && t.taskId === optItem.task.taskId) return true;';
+  html += '          return t.taskName === optItem.task.taskName && (t.dateDisplay === optItem.task.dateDisplay || t.startDateStr === optItem.task.startDateStr);';
+  html += '        });';
+  html += '        if (hasTask) {';
+  html += '          pendingOptimisticTasks.delete(key);';
+  html += '        } else {';
+  html += '          foundSite.tasks.push(optItem.task);';
+  html += '          foundSite.tasks.sort((a, b) => ((a.dateMs || 0) - (b.dateMs || 0)));';
+  html += '        }';
+  html += '      } else if (!foundSite && optItem.siteObj) {';
+  html += '        data.sites.unshift(optItem.siteObj);';
+  html += '      }';
+  html += '    });';
+  html += '  }';
   html += '  try {';
   html += '    renderDashboardPayload(data);';
   html += '    try {';
@@ -16180,7 +16340,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '  html += \'      </div>\';';
   html += '  html += \'      <div style="display:flex;align-items:center;gap:8px;">\';';
   html += '  html += \'        <input type="text" id="pcEstimateSearchInput" placeholder="현장명, 고객명, 연락처 검색..." oninput="onFilterEstimateTable(this.value)" style="padding:6px 12px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:200px;">\';';
-  html += '  html += \'        <button type="button" class="btn-cal-filter-reset" onclick="openSpreadsheetEstimateSheet()" style="padding:5px 10px;font-size:11.5px;">스프레드시트 열기 ↗</button>\';';
   html += '  html += \'      </div>\';';
   html += '  html += \'    </div>\';';
   html += '  html += \'    <div style="overflow-x:auto;">\';';
@@ -16507,6 +16666,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'      </div>\';';
   html += '  dHtml += \'      <div class="pc-detail-hero-actions">\';';
   html += '  dHtml += \'        <button type="button" class="pc-btn-primary" onclick="openNewTaskModal(decodeURIComponent(this.dataset.sitename), \\\'\\\')" data-sitename="\' + encodeURIComponent(curSite.siteName) + \'"><span>➕</span> 새 공정 추가</button>\';';
+  html += '  dHtml += \'        <button type="button" class="pc-btn-danger" style="background:#ef4444;color:#ffffff;border:none;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 2px rgba(239,68,68,0.25);" onclick="confirmDeleteSite(decodeURIComponent(this.dataset.sitename), decodeURIComponent(this.dataset.scope))" data-sitename="\' + encodeURIComponent(curSite.siteName) + \'" data-scope="\' + encodeURIComponent(curSite.scope || "site") + \'" title="이 현장의 모든 공정 일괄 삭제"><span>🗑️</span> 현장 삭제</button>\';';
   html += '  dHtml += \'        <button type="button" class="pc-btn-sec" onclick="filterCalendarBySite(decodeURIComponent(this.dataset.sitename))" data-sitename="\' + encodeURIComponent(curSite.siteName) + \'"><span>📅</span> 현장 캘린더 보기</button>\';';
   html += '  dHtml += \'      </div>\';';
   html += '  dHtml += \'    </div>\';';
@@ -16637,7 +16797,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'      </div>\';';
   html += '  dHtml += \'      <table class="pc-tasks-table">\';';
-  html += '  dHtml += \'        <thead><tr><th style="width:38px;text-align:center;padding:10px 4px;"><input type="checkbox" id="pcSiteTaskSelectAll" onchange="toggleSelectAllPcSiteTasks(this.checked)" title="전체 선택/해제" style="cursor:pointer;width:15px;height:15px;accent-color:#2563eb;"></th><th style="width:88px;text-align:center;">상태</th><th style="width:120px;min-width:100px;">공종</th><th style="width:190px;">일정</th><th style="width:105px;text-align:center;">담당자</th><th style="width:160px;min-width:150px;">협력업체</th><th style="min-width:180px;">비고 및 특이사항</th><th style="width:70px;text-align:center;">관리</th></tr></thead>\';';
+  html += '  dHtml += \'        <thead><tr><th style="width:38px;text-align:center;padding:10px 4px;"><input type="checkbox" id="pcSiteTaskSelectAll" onchange="toggleSelectAllPcSiteTasks(this.checked)" title="전체 선택/해제" style="cursor:pointer;width:15px;height:15px;accent-color:#2563eb;"></th><th style="width:88px;text-align:center;">상태</th><th style="width:120px;min-width:100px;">공종</th><th style="width:190px;">일정</th><th style="width:105px;text-align:center;">담당자</th><th style="width:160px;min-width:150px;">협력업체</th><th style="min-width:180px;">비고 및 특이사항</th><th style="width:105px;text-align:center;">관리</th></tr></thead>\';';
   html += '  dHtml += \'        <tbody>\';';
   html += '  if (filteredTasks.length === 0) {';
   html += '    dHtml += \'          <tr><td colspan="8" style="text-align:center;padding:40px;color:#94a3b8;font-weight:600;">조건에 맞는 공정이 없습니다.</td></tr>\';';
@@ -16671,14 +16831,18 @@ function buildSidebarDashboardHtml(mode) {
   html += '      dHtml += \'          <tr class="pc-task-row\' + (isDelayed ? \' delay-highlight\' : \'\') + (isTaskChecked ? \' row-selected\' : \'\') + \'" data-search="\' + escapeHtml(searchTargetStr) + \'" data-status="\' + escapeHtml(task.status || "") + \'" data-delayed="\' + (isDelayed ? "true" : "false") + \'" ondblclick="openEditModal(\\\'\' + task.row + \'\\\', \\\'\' + encCurSite + \'\\\')" title="더블클릭하여 공정 수정">\';';
   html += '      dHtml += \'            <td style="text-align:center;padding:12px 4px;" onclick="event.stopPropagation()"><input type="checkbox" class="pc-site-task-cb" data-site="\' + encCurSite + \'" data-row="\' + task.row + \'" data-task="\' + escapeHtml(task.taskName || "") + \'" \' + (isTaskChecked ? \'checked\' : \'\') + \' onchange="onPcSiteTaskCheckboxChange(event)" style="cursor:pointer;width:15px;height:15px;accent-color:#2563eb;"></td>\';';
   html += '      dHtml += \'            <td style="text-align:center;"><span class="pc-status-pill \' + badgeCls + \'"><span class="pill-icon">\' + badgeIcon + \'</span><span>\' + escapeHtml(badgeText) + \'</span></span></td>\';';
-  html += '      dHtml += \'            <td><strong style="color:#0f172a;font-size:13px;">\' + escapeHtml(task.taskName) + \'</strong></td>\';';
+  html += '      const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1" || String(task.isShared) === "Y" || String(task.isShared) === "공유");';
+  html += '      const shareIconHtml = isSh ? \'<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;background:#eff6ff;border:1px solid #bfdbfe;color:#2563eb;font-size:10px;margin-right:6px;vertical-align:middle;cursor:default;" title="공정 공유 (ON)">🔗</span>\' : \'<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;background:#f8fafc;border:1px solid #e2e8f0;color:#94a3b8;font-size:10px;margin-right:6px;vertical-align:middle;cursor:default;" title="미공유 (OFF)">🔒</span>\';';
+  html += '      dHtml += \'            <td>\' + shareIconHtml + \'<strong style="color:#0f172a;font-size:13px;vertical-align:middle;">\' + escapeHtml(task.taskName) + \'</strong></td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-weight:800;\' : \'font-weight:600;\') + \'">\' + escapeHtml(dateStr || "일정 미정") + \'</span>\' + ddayChip + \'</td>\';';
   html += '      dHtml += \'            <td style="text-align:center;">\' + (tMgr ? \'<span class="pc-manager-pill"><span class="mgr-icon">👤</span><span>\' + escapeHtml(tMgr) + \'</span></span>\' : \'<span style="color:#94a3b8;font-size:11.5px;">미등록</span>\') + \'</td>\';';
   html += '      const pcPPhone = task.partner ? getPartnerPhoneNumber(task.partner) : "";';
   html += '      const pcPCallHtml = pcPPhone ? (\' <a href="tel:\' + escapeHtml(pcPPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#22c55e;color:#fff;text-decoration:none;font-size:10px;vertical-align:middle;margin-left:4px;" title="전화 걸기: \' + escapeHtml(pcPPhone) + \'">📞</a>\') : "";';
   html += '      dHtml += \'            <td>\' + (task.partner ? \'<span class="pc-partner-pill">\' + escapeHtml(task.partner) + pcPCallHtml + \'</span>\' : \'<span style="color:#94a3b8;font-size:11.5px;">미등록</span>\') + \'</td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-size:12px;\' : \'color:#475569;font-size:12px;\') + \'">\' + escapeHtml(task.memo || "-") + \'</span></td>\';';
-  html += '      dHtml += \'            <td style="text-align:center;"><button type="button" class="pc-task-btn-edit" onclick="event.stopPropagation();openEditModal(\\\'\' + task.row + \'\\\', \\\'\' + encCurSite + \'\\\')">수정</button></td>\';';
+  html += '      const encTaskName = encodeURIComponent(task.taskName || "");';
+  html += '      const encTaskSheet = encodeURIComponent(task.sheetName || curSite.scope || "");';
+  html += '      dHtml += \'            <td style="text-align:center;white-space:nowrap;"><button type="button" class="pc-task-btn-edit" onclick="event.stopPropagation();openEditModal(\\\'\' + task.row + \'\\\', \\\'\' + encCurSite + \'\\\')">수정</button><button type="button" class="pc-task-btn-del" style="margin-left:4px;padding:3px 7px;font-size:11.5px;font-weight:700;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:5px;cursor:pointer;" onclick="event.stopPropagation();confirmDeleteSingleTask(decodeURIComponent(this.dataset.site), this.dataset.row, decodeURIComponent(this.dataset.task), decodeURIComponent(this.dataset.sheet))" data-site="\' + encCurSite + \'" data-row="\' + task.row + \'" data-task="\' + encTaskName + \'" data-sheet="\' + encTaskSheet + \'" title="이 공정 삭제">삭제</button></td>\';';
   html += '      dHtml += \'          </tr>\';';
   html += '    });';
   html += '  }';
@@ -16904,7 +17068,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (currentFilter === "today" && !t.isToday) return false;';
   html += '      if (currentFilter === "delay" && !t.isDelayed) return false;';
   html += '      if (currentFilter === "prog" && t.status.indexOf("진행") === -1) return false;';
-  html += '      if (currentFilter === "done" && t.status.indexOf("완료") === -1 && t.status.indexOf("취소") === -1) return false;';
+  html += '      if (currentFilter === "done" && !site.isArchived && !site.isAllCompleted && t.status.indexOf("완료") === -1 && t.status.indexOf("취소") === -1) return false;';
   html += '      if (query && currentFilter !== "done") {';
   html += '        const stClean = (t.status || "").replace(/\\s+/g, "");';
   html += '        if (stClean.indexOf("완료") !== -1 || stClean.indexOf("취소") !== -1) return false;';
@@ -16984,6 +17148,29 @@ function buildSidebarDashboardHtml(mode) {
   html += '      renderMobileEstimateDashboard(matchedSites, query);';
   html += '      return;';
   html += '    }';
+  html += '  }';
+  html += '';
+  html += '  let mHeadBarHtml = "";';
+  html += '  if (!isPcMode && currentScope !== "newSite") {';
+  html += '    const curScopeName = (currentScope === "single") ? "단건" : ((currentScope === "as") ? "AS" : "현장");';
+  html += '    const curScopeIcon = (currentScope === "single") ? "⚡" : ((currentScope === "as") ? "🔧" : "🏗️");';
+  html += '    const isDoneMode = (currentFilter === "done");';
+  html += '    const allScopeSites = rawData.sites.filter(s => (s.scope || "site") === currentScope);';
+  html += '    const activeScopeSites = allScopeSites.filter(s => !s.isArchived && !s.isAllCompleted);';
+  html += '    const doneScopeSites = allScopeSites.filter(s => s.isArchived || s.isAllCompleted);';
+  html += '    mHeadBarHtml += \'<div class="mobile-scope-head-bar" style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 2px 10px 2px;margin-bottom:8px;border-bottom:1px solid #e2e8f0;">\';';
+  html += '    mHeadBarHtml += \'  <div style="display:flex;background:#f1f5f9;padding:2px;border-radius:8px;gap:2px;">\';';
+  html += '    mHeadBarHtml += \'    <button type="button" class="pc-c-status-tab\' + (!isDoneMode ? " active" : "") + \'" data-status="active" onclick="setPcSiteStatusFilter(this.dataset.status)" style="padding:5px 9px;font-size:11.5px;font-weight:700;border:none;border-radius:6px;cursor:pointer;background:\' + (!isDoneMode ? "#ffffff" : "transparent") + \';color:\' + (!isDoneMode ? "#2563eb" : "#64748b") + \';box-shadow:\' + (!isDoneMode ? "0 1px 3px rgba(0,0,0,0.08)" : "none") + \';">\';';
+  html += '    mHeadBarHtml += \'      \' + curScopeIcon + \' 진행 \' + curScopeName + \' <span class="pc-badge-count" style="margin-left:3px;font-size:10px;padding:1px 5px;border-radius:8px;background:\' + (!isDoneMode ? "#eff6ff" : "#e2e8f0") + \';color:\' + (!isDoneMode ? "#2563eb" : "#64748b") + \';">\' + activeScopeSites.length + \'</span>\';';
+  html += '    mHeadBarHtml += \'    </button>\';';
+  html += '    mHeadBarHtml += \'    <button type="button" class="pc-c-status-tab done-tab\' + (isDoneMode ? " active" : "") + \'" data-status="done" onclick="setPcSiteStatusFilter(this.dataset.status)" style="padding:5px 9px;font-size:11.5px;font-weight:700;border:none;border-radius:6px;cursor:pointer;background:\' + (isDoneMode ? "#ffffff" : "transparent") + \';color:\' + (isDoneMode ? "#059669" : "#64748b") + \';box-shadow:\' + (isDoneMode ? "0 1px 3px rgba(0,0,0,0.08)" : "none") + \';">\';';
+  html += '    mHeadBarHtml += \'      ✅ 완료 \' + curScopeName + \' <span class="pc-badge-count-done" style="margin-left:3px;font-size:10px;padding:1px 5px;border-radius:8px;background:\' + (isDoneMode ? "#ecfdf5" : "#e2e8f0") + \';color:\' + (isDoneMode ? "#059669" : "#64748b") + \';">\' + doneScopeSites.length + \'</span>\';';
+  html += '    mHeadBarHtml += \'    </button>\';';
+  html += '    mHeadBarHtml += \'  </div>\';';
+  html += '    mHeadBarHtml += \'  <button type="button" onclick="openSpreadsheetEstimateSheet()" style="padding:5px 9px;font-size:11px;font-weight:700;border:1px solid #cbd5e1;background:#ffffff;color:#334155;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;">\';';
+  html += '    mHeadBarHtml += \'    <span>📊</span> 시트 열기 ↗\';';
+  html += '    mHeadBarHtml += \'  </button>\';';
+  html += '    mHeadBarHtml += \'</div>\';';
   html += '  }';
   html += '';
   html += '  matchedSites.forEach(item => {';
@@ -17115,7 +17302,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'<div class="task-item\' + (isTaskChecked ? " row-selected" : "") + \'" onclick="onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')">\';';
   html += '      html += \'  <div class="task-top" style="display:flex;align-items:center;gap:6px;">\';';
   html += '      html += \'    <input type="checkbox" class="mob-task-cb" data-site="\' + siteEnc + \'" data-row="\' + task.row + \'" \' + (isTaskChecked ? "checked" : "") + \' onclick="onMobileTaskCheckboxClick(event, this)" style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;flex-shrink:0;">\';';
-  html += '      html += \'    <span class="task-name" style="flex:1;min-width:0;">[\' + escapeHtml(task.taskName) + \']</span>\';';
+  html += '      const mIsSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1" || String(task.isShared) === "Y" || String(task.isShared) === "공유");';
+  html += '      const mShareIconHtml = mIsSh ? \'<span style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:4px;background:#eff6ff;border:1px solid #bfdbfe;color:#2563eb;font-size:9.5px;margin-right:5px;vertical-align:middle;cursor:default;" title="공정 공유 (ON)">🔗</span>\' : \'<span style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:4px;background:#f8fafc;border:1px solid #e2e8f0;color:#94a3b8;font-size:9.5px;margin-right:5px;vertical-align:middle;cursor:default;" title="미공유 (OFF)">🔒</span>\';';
+  html += '      html += \'    <span class="task-name" style="flex:1;min-width:0;display:inline-flex;align-items:center;">\' + mShareIconHtml + \'[\' + escapeHtml(task.taskName) + \']</span>\';';
   html += '      html += \'    <span class="task-date \' + dateClass + \'">\' + (task.isToday ? "🔥 오늘 " : (task.isDelayed ? "⚠️ 지연 " : "")) + escapeHtml(task.dateDisplay) + \'</span>\';';
   html += '      html += \'  </div>\';';
   html += '      html += \'  <div class="task-meta">\';';
@@ -17141,15 +17330,17 @@ function buildSidebarDashboardHtml(mode) {
 
   html += '  if (visibleSitesCount === 0) {';
   html += '    const scopeName = (currentScope === "single") ? "단건" : ((currentScope === "as") ? "AS" : ((currentScope === "newSite") ? "신규현장" : "현장"));';
+  html += '    let emptyHtml = "";';
   html += '    if (currentFilter === "checked") {';
-  html += '      container.innerHTML = \'<div class="empty-state">☑️ 선택된 \' + scopeName + \'이(가) 없습니다.<br><small style="color:#64748b;font-size:11px;">체크박스를 선택 후 다시 확인해보세요.</small><br><button type="button" class="btn-cal-filter-reset" style="margin-top:12px;" onclick="resetAllCalendarFilters()">🔄 전체 \' + scopeName + \' 보기</button></div>\';';
+  html += '      emptyHtml = \'<div class="empty-state">☑️ 선택된 \' + scopeName + \'이(가) 없습니다.<br><small style="color:#64748b;font-size:11px;">체크박스를 선택 후 다시 확인해보세요.</small><br><button type="button" class="btn-cal-filter-reset" style="margin-top:12px;" onclick="resetAllCalendarFilters()">🔄 전체 \' + scopeName + \' 보기</button></div>\';';
   html += '    } else if (currentFilter === "done") {';
-  html += '      container.innerHTML = \'<div class="empty-state">✅ 완료된 \' + scopeName + \'이(가) 없습니다.<br><button type="button" class="btn-cal-filter-reset" style="margin-top:12px;" onclick="resetAllCalendarFilters()">🔄 전체 \' + scopeName + \' 보기</button></div>\';';
+  html += '      emptyHtml = \'<div class="empty-state">✅ 완료된 \' + scopeName + \'이(가) 없습니다.<br><button type="button" class="btn-cal-filter-reset" style="margin-top:12px;" onclick="setPcSiteStatusFilter(\\\'active\\\')">🔄 진행 \' + scopeName + \' 보기</button></div>\';';
   html += '    } else {';
-  html += '      container.innerHTML = \'<div class="empty-state">🔍 일치하는 \' + scopeName + \' 및 일정이 없습니다.<br><button type="button" class="btn-cal-filter-reset" style="margin-top:12px;" onclick="resetAllCalendarFilters()">🔄 전체 \' + scopeName + \' 보기 (필터 해제)</button></div>\';';
+  html += '      emptyHtml = \'<div class="empty-state">🔍 일치하는 \' + scopeName + \' 및 일정이 없습니다.<br><button type="button" class="btn-cal-filter-reset" style="margin-top:12px;" onclick="resetAllCalendarFilters()">🔄 전체 \' + scopeName + \' 보기 (필터 해제)</button></div>\';';
   html += '    }';
+  html += '    container.innerHTML = mHeadBarHtml + emptyHtml;';
   html += '  } else {';
-  html += '    container.innerHTML = html;';
+  html += '    container.innerHTML = mHeadBarHtml + html;';
   html += '  }';
   html += '  if (typeof updateFilterVisualStates === "function") updateFilterVisualStates();';
   html += '  if (typeof updateAllMobileSelectAllStates === "function") updateAllMobileSelectAllStates();';
@@ -17998,6 +18189,7 @@ function buildSidebarDashboardHtml(mode) {
   html += 'function updateSheetModalSiteInfo(siteName) {';
   html += '  const sInfoBanner = document.getElementById("sheetSiteInfoBanner");';
   html += '  if (!sInfoBanner) return;';
+  html += '  if (curEstimateEditSite) { sInfoBanner.style.display = "none"; sInfoBanner.innerHTML = ""; return; }';
   html += '  const cleanVal = String(siteName || "").trim();';
   html += '  if (!cleanVal) { sInfoBanner.style.display = "none"; return; }';
   html += '  const sInfo = getSiteInfoFromMap(cleanVal);';
@@ -18253,6 +18445,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  curSiteName = siteObj.siteName;';
   html += '  curTaskObj = null;';
   html += '  closeCustomDatePicker();';
+  html += '  const sInfoBanner = document.getElementById("sheetSiteInfoBanner");';
+  html += '  if (sInfoBanner) { sInfoBanner.style.display = "none"; sInfoBanner.innerHTML = ""; }';
   html += '  const catRow = document.getElementById("sheetCategorySelectRow");';
   html += '  if (catRow) catRow.style.display = "none";';
   html += '  const createBox = document.getElementById("sheetCreateFields");';
@@ -18985,7 +19179,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (!dateVal) { showToast("⚠️ 일정(날짜)을 입력해주세요."); return; }';
   html += '    if (!mgrVal) mgrVal = findSiteDefaultManager(siteVal);';
   html += '    const tempSheetName = (catVal === "single") ? "단건" : ((catVal === "as") ? "AS" : "현장데이터");';
-  html += '    const tempTask = { row: 99999, taskName: taskVal, partner: partnerVal, manager: mgrVal, status: selectedStatus, isShared: selectedShare, memo: memoVal, dateDisplay: dateVal, startDateStr: "", endDateStr: "", dateMs: 0, scope: catVal, sheetName: tempSheetName };';
+  html += '    const tempTaskId = "temp_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);';
+  html += '    const tempTask = { row: 99999, taskId: tempTaskId, taskName: taskVal, partner: partnerVal, manager: mgrVal, status: selectedStatus, isShared: selectedShare, memo: memoVal, dateDisplay: dateVal, startDateStr: "", endDateStr: "", dateMs: 0, scope: catVal, sheetName: tempSheetName };';
   html += '    let targetSiteObj = null;';
   html += '    let isBrandNewSite = false;';
   html += '    if (rawData && Array.isArray(rawData.sites)) {';
@@ -19015,8 +19210,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '        if (!aMs && bMs) return 1;';
   html += '        return ((a && a.row) || 0) - ((b && b.row) || 0);';
   html += '      });';
-  html += '      renderDashboardPayload(rawData);';
   html += '    }';
+  html += '    if (selectedPcSiteName !== siteVal) { selectedPcSiteName = siteVal; }';
+  html += '    renderDashboardPayload(rawData);';
+  html += '    const optKey = siteVal + "::" + taskVal + "::" + tempTaskId;';
+  html += '    pendingOptimisticTasks.set(optKey, { siteName: siteVal, task: tempTask, siteObj: targetSiteObj, scope: catVal, createdAt: Date.now() });';
   html += '    closeCustomDatePicker();';
   html += '    const overlayEl = document.getElementById("sheetOverlay");';
   html += '    if (overlayEl) overlayEl.classList.remove("show");';
@@ -19028,8 +19226,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '        if (res && res.success) {';
   html += '          if (res.row) tempTask.row = res.row;';
   html += '          if (res.id || res.taskId) tempTask.taskId = res.taskId || res.id;';
-  html += '          loadDataSilently();';
+  html += '          setTimeout(loadDataSilently, 350);';
   html += '        } else {';
+  html += '          pendingOptimisticTasks.delete(optKey);';
   html += '          if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
   html += '            const idx = targetSiteObj.tasks.indexOf(tempTask);';
   html += '            if (idx !== -1) targetSiteObj.tasks.splice(idx, 1);';
@@ -19043,6 +19242,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        }';
   html += '      })';
   html += '      .withFailureHandler(err => {';
+  html += '        pendingOptimisticTasks.delete(optKey);';
   html += '        if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
   html += '          const idx = targetSiteObj.tasks.indexOf(tempTask);';
   html += '          if (idx !== -1) targetSiteObj.tasks.splice(idx, 1);';
@@ -19155,6 +19355,92 @@ function buildSidebarDashboardHtml(mode) {
   html += 'function onDeleteOverlayClick(e) {';
   html += '  if (e.target && e.target.id === "deleteConfirmOverlay") {';
   html += '    closeDeleteConfirmModal();';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function confirmDeleteSingleTask(siteName, row, taskName, sheetName) {';
+  html += '  if (!confirm("정말 [" + siteName + " - " + taskName + "] 공정을 삭제하시겠습니까?")) return;';
+  html += '  const targetRow = parseInt(row, 10);';
+  html += '  showToast("🗑️ [" + taskName + "] 공정 삭제 중...");';
+  html += '  if (rawData && Array.isArray(rawData.sites)) {';
+  html += '    for (let si = 0; si < rawData.sites.length; si++) {';
+  html += '      const siteObj = rawData.sites[si];';
+  html += '      if (siteObj && siteObj.siteName === siteName && Array.isArray(siteObj.tasks)) {';
+  html += '        const tIdx = siteObj.tasks.findIndex(t => t.row === targetRow);';
+  html += '        if (tIdx !== -1) {';
+  html += '          siteObj.tasks.splice(tIdx, 1);';
+  html += '          renderDashboardPayload(rawData);';
+  html += '          break;';
+  html += '        }';
+  html += '      }';
+  html += '    }';
+  html += '  }';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {';
+  html += '    google.script.run';
+  html += '      .withSuccessHandler(res => {';
+  html += '        if (res && res.success) {';
+  html += '          showToast("✅ [" + (res.taskName || taskName) + "] 공정이 삭제되었습니다.");';
+  html += '          loadDataSilently();';
+  html += '        } else {';
+  html += '          showToast("❌ 삭제 실패: " + ((res && res.error) || "알 수 없는 오류"));';
+  html += '          loadData();';
+  html += '        }';
+  html += '      })';
+  html += '      .withFailureHandler(err => {';
+  html += '        showToast("❌ 통신 오류: " + ((err && err.message) || err));';
+  html += '        loadData();';
+  html += '      })';
+  html += '      .deleteScheduleTaskFromWeb(targetRow, siteName, taskName, "", false, sheetName);';
+  html += '  } else {';
+  html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));';
+  html += '    fetch(apiUrl + "?action=deleteScheduleTask&row=" + targetRow + "&site=" + encodeURIComponent(siteName) + "&task=" + encodeURIComponent(taskName) + "&sheetName=" + encodeURIComponent(sheetName || ""))';
+  html += '      .then(r => r.json())';
+  html += '      .then(res => {';
+  html += '        if (res && res.success) { showToast("✅ [" + taskName + "] 공정이 삭제되었습니다."); loadDataSilently(); }';
+  html += '        else { showToast("❌ 삭제 실패: " + (res && res.error)); loadData(); }';
+  html += '      })';
+  html += '      .catch(err => { showToast("❌ 통신 오류: " + err); loadData(); });';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function confirmDeleteSite(siteName, scope) {';
+  html += '  if (!siteName) return;';
+  html += '  const confMsg = "⚠️ [" + siteName + "] 현장을 완전히 삭제하시겠습니까?\\n\\n이 현장에 등록된 모든 공종이 시트에서 영구 삭제됩니다.";';
+  html += '  if (!confirm(confMsg)) return;';
+  html += '  showToast("🗑️ [" + siteName + "] 현장 및 모든 공정 삭제 중...");';
+  html += '  if (rawData && Array.isArray(rawData.sites)) {';
+  html += '    const sIdx = rawData.sites.findIndex(s => s.siteName === siteName && (s.scope || "site") === (scope || "site"));';
+  html += '    if (sIdx !== -1) {';
+  html += '      rawData.sites.splice(sIdx, 1);';
+  html += '      if (selectedPcSiteName === siteName) { selectedPcSiteName = ""; }';
+  html += '      renderDashboardPayload(rawData);';
+  html += '    }';
+  html += '  }';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {';
+  html += '    google.script.run';
+  html += '      .withSuccessHandler(res => {';
+  html += '        if (res && res.success) {';
+  html += '          showToast("✅ [" + siteName + "] 현장의 모든 공정이 삭제되었습니다.");';
+  html += '          loadDataSilently();';
+  html += '        } else {';
+  html += '          showToast("❌ 현장 삭제 실패: " + ((res && res.error) || "알 수 없는 오류"));';
+  html += '          loadData();';
+  html += '        }';
+  html += '      })';
+  html += '      .withFailureHandler(err => {';
+  html += '        showToast("❌ 통신 오류: " + ((err && err.message) || err));';
+  html += '        loadData();';
+  html += '      })';
+  html += '      .deleteSiteFromWeb(siteName, scope);';
+  html += '  } else {';
+  html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));';
+  html += '    fetch(apiUrl + "?action=deleteSite&site=" + encodeURIComponent(siteName) + "&scope=" + encodeURIComponent(scope || "site"))';
+  html += '      .then(r => r.json())';
+  html += '      .then(res => {';
+  html += '        if (res && res.success) { showToast("✅ [" + siteName + "] 현장이 삭제되었습니다."); loadDataSilently(); }';
+  html += '        else { showToast("❌ 삭제 실패: " + (res && res.error)); loadData(); }';
+  html += '      })';
+  html += '      .catch(err => { showToast("❌ 통신 오류: " + err); loadData(); });';
   html += '  }';
   html += '}';
   html += '';
