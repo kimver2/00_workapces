@@ -11708,6 +11708,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    else pcTitleEl.innerText = "진행 현장";';
   html += '  }';
   html += '  checkedSites.clear();';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  updateScopeKpis();';
   html += '  renderPcSidebarSites();';
   html += '  renderList();';
@@ -12124,6 +12125,34 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
   html += '';
+  html += 'function clearCheckedSiteTasks() {';
+  html += '  if (typeof checkedSiteTasks !== "undefined" && checkedSiteTasks && checkedSiteTasks.size > 0) {';
+  html += '    checkedSiteTasks.clear();';
+  html += '  }';
+  html += '  const pcCbs = document.querySelectorAll(".pc-site-task-cb");';
+  html += '  pcCbs.forEach(cb => {';
+  html += '    cb.checked = false;';
+  html += '    const tr = cb.closest("tr");';
+  html += '    if (tr) tr.classList.remove("row-selected");';
+  html += '  });';
+  html += '  const pcAllCb = document.getElementById("pcSiteTaskSelectAll");';
+  html += '  if (pcAllCb) {';
+  html += '    pcAllCb.checked = false;';
+  html += '    pcAllCb.indeterminate = false;';
+  html += '  }';
+  html += '  const mobCbs = document.querySelectorAll(".mob-task-cb");';
+  html += '  mobCbs.forEach(cb => {';
+  html += '    cb.checked = false;';
+  html += '    const item = cb.closest(".task-item");';
+  html += '    if (item) item.classList.remove("row-selected");';
+  html += '  });';
+  html += '  const mobAllCbs = document.querySelectorAll(".mob-site-select-all");';
+  html += '  mobAllCbs.forEach(acb => {';
+  html += '    acb.checked = false;';
+  html += '    acb.indeterminate = false;';
+  html += '  });';
+  html += '}';
+  html += '';
   html += 'function toggleSelectAllPcSiteTasks(checked) {';
   html += '  const cbs = document.querySelectorAll(".pc-site-task-cb");';
   html += '  const sName = curSiteName || selectedPcSiteName || "";';
@@ -12438,6 +12467,7 @@ function buildSidebarDashboardHtml(mode) {
 
   html += 'function clearAllChecked() {';
   html += '  checkedSites.clear();';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  document.querySelectorAll(".site-check").forEach(cb => cb.checked = false);';
   html += '  updateCheckedStatusUI();';
   html += '  if (currentFilter === "checked") {';
@@ -12487,6 +12517,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function switchToPcView(view) {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  document.querySelectorAll(".pc-view-tab").forEach(tab => {';
   html += '    tab.classList.toggle("active", tab.dataset.view === view);';
   html += '  });';
@@ -12649,6 +12680,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function onPcSiteCheckChange(e, siteEnc) {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  const siteName = decodeURIComponent(siteEnc);';
   html += '  selectedPcSiteName = siteName;';
   html += '  if (checkedSites.has("__NONE__")) {';
@@ -12689,6 +12721,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function selectAllPcSites() {';
   html += '  checkedSites.clear();';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  updateCheckedStatusUI();';
   html += '  renderCurrentCalendarView();';
   html += '  renderPcSidebarSites();';
@@ -12696,6 +12729,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function deselectAllPcSites() {';
   html += '  checkedSites.clear();';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  checkedSites.add("__NONE__");';
   html += '  updateCheckedStatusUI();';
   html += '  renderCurrentCalendarView();';
@@ -12712,6 +12746,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function onPcSidebarDoneSiteClick(e, siteEnc) {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  if (e) e.stopPropagation();';
   html += '  const siteName = decodeURIComponent(siteEnc);';
   html += '  selectedPcSiteName = siteName;';
@@ -12838,18 +12873,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function prevMonth() {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  calMonth--;';
   html += '  if (calMonth < 1) { calMonth = 12; calYear--; }';
   html += '  renderCalendar("prev");';
   html += '}';
   html += '';
   html += 'function nextMonth() {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  calMonth++;';
   html += '  if (calMonth > 12) { calMonth = 1; calYear++; }';
   html += '  renderCalendar("next");';
   html += '}';
   html += '';
   html += 'function goToTodayMonth() {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  const now = new Date();';
   html += '  calYear = now.getFullYear();';
   html += '  calMonth = now.getMonth() + 1;';
@@ -12857,16 +12895,19 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function prevWeek() {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  calWeekStartDate.setDate(calWeekStartDate.getDate() - 7);';
   html += '  renderWeeklyCalendar("prev");';
   html += '}';
   html += '';
   html += 'function nextWeek() {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  calWeekStartDate.setDate(calWeekStartDate.getDate() + 7);';
   html += '  renderWeeklyCalendar("next");';
   html += '}';
   html += '';
   html += 'function goToThisWeek() {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  calWeekStartDate = getSundayOfCurrentWeek(new Date());';
   html += '  renderWeeklyCalendar();';
   html += '}';
@@ -13873,6 +13914,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function resetAllCalendarFilters() {';
   html += '  checkedSites.clear();';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  document.querySelectorAll(".site-check").forEach(cb => cb.checked = false);';
   html += '  updateCheckedStatusUI();';
   html += '  selectedMember = "";';
@@ -14153,6 +14195,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function setFilter(type) {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  currentFilter = type;';
   html += '  document.querySelectorAll(".filter-tab").forEach(b => {';
   html += '    b.classList.toggle("active", b.dataset.filter === type);';
@@ -14307,6 +14350,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function setPcSiteStatusFilter(status) {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  currentFilter = (status === "done") ? "done" : "all";';
   html += '  selectedPcSiteName = "";';
   html += '  pcSiteDetailFilter = "all";';
@@ -14319,6 +14363,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (typeof e.preventDefault === "function") e.preventDefault();';
   html += '    if (typeof e.stopPropagation === "function") e.stopPropagation();';
   html += '  }';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  const siteName = decodeURIComponent(siteEnc);';
   html += '  selectedPcSiteName = siteName;';
   html += '  currentFilter = "all";';
@@ -14334,6 +14379,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function selectPcSite(siteName) {';
+  html += '  if (selectedPcSiteName !== siteName && typeof clearCheckedSiteTasks === "function") {';
+  html += '    clearCheckedSiteTasks();';
+  html += '  }';
   html += '  selectedPcSiteName = siteName;';
   html += '  pcSiteDetailFilter = "all";';
   html += '  pcSiteTaskSearchQuery = "";';
@@ -14356,6 +14404,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function setPcSiteSortMode(mode) {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  pcSiteSortMode = mode;';
   html += '  pcSiteSortJustChanged = true;';
   html += '  selectedPcSiteName = "";';
@@ -14363,6 +14412,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function setPcSiteDetailFilter(filter) {';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  pcSiteDetailFilter = filter;';
   html += '  renderList();';
   html += '}';
@@ -14408,6 +14458,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function filterCalendarBySite(siteName) {';
   html += '  checkedSites.clear();';
+  html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  checkedSites.add(siteName);';
   html += '  updateCheckedStatusUI();';
   html += '  switchToPcView("month");';

@@ -8525,6 +8525,47 @@ assertTest('Step 128-5: index.html 내 exec?v=127 최신 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent128) && parseInt(indexHtmlContent128.match(/exec\?v=(\d+)/)[1], 10) >= 127
 );
 
+// ========================================================
+// 📋 [Step 129]: 현장/페이지/뷰 이동 시 공종 체크박스 자동 해제(clearCheckedSiteTasks) QA
+// ========================================================
+console.log('\n📋 [Step 129]: 현장/페이지/뷰 이동 시 공종 체크박스 자동 해제 QA ---');
+
+const code129 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent129 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 129-1: clearCheckedSiteTasks 함수 정의 및 checkedSiteTasks, PC/모바일 체크박스, 선택 행 클래스 해제 로직 검증
+assertTest('Step 129-1: clearCheckedSiteTasks 함수 정의 및 checkedSiteTasks 초기화/DOM 체크박스 해제 로직 검증',
+  code129.indexOf('function clearCheckedSiteTasks() {') !== -1 &&
+  code129.indexOf('checkedSiteTasks.clear();') !== -1 &&
+  code129.indexOf('document.querySelectorAll(".pc-site-task-cb")') !== -1 &&
+  code129.indexOf('document.getElementById("pcSiteTaskSelectAll")') !== -1 &&
+  code129.indexOf('document.querySelectorAll(".mob-task-cb")') !== -1
+);
+
+// 129-2: selectPcSite 내 다른 현장 선택 시 clearCheckedSiteTasks 호출 검증
+assertTest('Step 129-2: selectPcSite 내 다른 현장 선택 시 clearCheckedSiteTasks 호출 검증',
+  code129.indexOf('if (selectedPcSiteName !== siteName && typeof clearCheckedSiteTasks === "function") {') !== -1 &&
+  code129.indexOf('clearCheckedSiteTasks();') !== -1
+);
+
+// 129-3: switchToPcView 및 setDashboardScope 내 clearCheckedSiteTasks 호출 검증
+assertTest('Step 129-3: switchToPcView 및 setDashboardScope 내 clearCheckedSiteTasks 호출 검증',
+  code129.indexOf("html += 'function switchToPcView(view) {';\n  html += '  if (typeof clearCheckedSiteTasks === \"function\") clearCheckedSiteTasks();';") !== -1 &&
+  code129.indexOf("html += '  checkedSites.clear();';\n  html += '  if (typeof clearCheckedSiteTasks === \"function\") clearCheckedSiteTasks();';") !== -1
+);
+
+// 129-4: 사이드바/상태필터/캘린더 이동 함수 내 clearCheckedSiteTasks 연동 검증
+assertTest('Step 129-4: 사이드바/상태필터/달력 이동 함수 내 clearCheckedSiteTasks 연동 검증',
+  code129.indexOf("html += 'function onPcSidebarDoneSiteClick(e, siteEnc) {';\n  html += '  if (typeof clearCheckedSiteTasks === \"function\") clearCheckedSiteTasks();';") !== -1 &&
+  code129.indexOf("html += 'function setPcSiteStatusFilter(status) {';\n  html += '  if (typeof clearCheckedSiteTasks === \"function\") clearCheckedSiteTasks();';") !== -1 &&
+  code129.indexOf("html += 'function prevMonth() {';\n  html += '  if (typeof clearCheckedSiteTasks === \"function\") clearCheckedSiteTasks();';") !== -1
+);
+
+// 129-5: index.html 내 exec?v=128 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 129-5: index.html 내 exec?v=128 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent129) && parseInt(indexHtmlContent129.match(/exec\?v=(\d+)/)[1], 10) >= 128
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
