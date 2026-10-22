@@ -9406,8 +9406,8 @@ assertTest('Step 139-4: 모바일 신규현장 선택 시 일정 체크리스트
 
 // 139-5: index.html cache buster updated to v=138
 const indexHtml139 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
-assertTest('Step 139-5: index.html 내 exec?v=138 최신 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml139.indexOf('exec?v=138') !== -1
+assertTest('Step 139-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 138)',
+  indexHtml139.indexOf('exec?v=138') !== -1 || indexHtml139.indexOf('exec?v=139') !== -1
 );
 
 // 139-6: Runtime rendering simulation for mobile estimate dashboard
@@ -9495,6 +9495,188 @@ assertTest('Step 139-6: 모바일 신규현장 렌더링 시 3단 레이아웃(�
   mockContainerHtml.indexOf('시트 열기 ↗') !== -1
 );
 
+
+// ========================================================
+// [Step 140]: 신규현장 수정 팝업, 손가락 제거, 전화 아이콘 개선, 모바일 접힘 유지, 단건/AS 완료 시 동일 현장 묶음 이동 QA
+// ========================================================
+console.log('\n📋 [Step 140]: 신규현장 수정 팝업, 손가락 제거, 전화 아이콘 개선, 모바일 접힘 유지, 단건/AS 완료 시 동일 현장 묶음 이동 QA ---');
+
+const code140 = fs.readFileSync(path.resolve(__dirname, '../현장서식.js'), 'utf8');
+const indexHtml140 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+
+// 140-1: 신규현장 테이블 행 클릭 시 openEditEstimateModal 호출 및 손가락 이모지(👉 ) 완전 제거 검증
+assertTest('Step 140-1: 신규현장 테이블 행 클릭 시 openEditEstimateModal 호출 및 손가락 이모지(👉 ) 완전 제거 검증',
+  code140.indexOf('onclick="selectPcSite(decodeURIComponent(this.dataset.sitename)); openEditEstimateModal(decodeURIComponent(this.dataset.sitename));"') !== -1 &&
+  code140.indexOf('(isSelected ? "👉 " : "")') === -1 &&
+  code140.indexOf("(isSelected ? '👉 ' : '')") === -1
+);
+
+// 140-2: openEditEstimateModal 함수 정의 및 19개 필드 프리필/바텀시트 팝업 연동 검증
+assertTest('Step 140-2: openEditEstimateModal 함수 정의 및 19개 필드 프리필/바텀시트 팝업 연동 검증',
+  code140.indexOf('function openEditEstimateModal(siteNameOrEnc) {') !== -1 &&
+  code140.indexOf('curEstimateEditSite = siteObj;') !== -1 &&
+  code140.indexOf('document.getElementById("sheetCategorySelectRow");') !== -1 &&
+  code140.indexOf('document.getElementById("sheetNewSiteBox");') !== -1 &&
+  code140.indexOf('document.getElementById("sheetNewSiteExpectedAmountInput");') !== -1 &&
+  code140.indexOf('saveBtn.innerText = "💾 신규현장 수정 저장";') !== -1
+);
+
+// 140-3: saveSheetTask 내 curEstimateEditSite 수정 저장 분기 및 updateEstimateRowFromWeb 연동 검증
+assertTest('Step 140-3: saveSheetTask 내 curEstimateEditSite 수정 저장 분기 및 updateEstimateRowFromWeb 연동 검증',
+  code140.indexOf('if (curEstimateEditSite) {') !== -1 &&
+  code140.indexOf('origSiteName: origSiteName,') !== -1 &&
+  code140.indexOf('updateEstimateRowFromWeb(estPayload)') !== -1 &&
+  code140.indexOf('showToast("💾 [" + siteVal + "] 신규현장 정보가 수정되었습니다.");') !== -1
+);
+
+// 140-4: 연락처 미등록 시 전화걸기 아이콘(📞) 미표시 및 연락처 있을 때 '전화걸기' 글자 없이 📞 아이콘 단독 렌더링 검증
+assertTest('Step 140-4: 연락처 미등록 시 전화걸기 아이콘(📞) 미표시 및 연락처 있을 때 전화걸기 글자 없이 📞 아이콘 단독 렌더링 검증',
+  code140.indexOf('background:#2563eb;') !== -1 &&
+  code140.indexOf('title="고객 전화 걸기') !== -1 &&
+  code140.indexOf('연락처 미등록') !== -1 &&
+  code140.indexOf('📞 전화걸기') === -1
+);
+
+// 140-5: 모바일 신규 탭 전환 시 mobileExpandedEstimateSites.clear() 아코디언 상태 리셋 검증
+assertTest('Step 140-5: 모바일 신규 탭 전환 시 mobileExpandedEstimateSites.clear() 아코디언 상태 리셋 검증',
+  code140.indexOf('mobileExpandedEstimateSites.clear();') !== -1 &&
+  code140.indexOf('function setDashboardScope(newScope) {') !== -1 &&
+  code140.indexOf('const mobileExpandedEstimateSites = new Set();') !== -1
+);
+
+// 140-6: moveCompletedCategorySiteToCompletedSheet 함수 정의 및 완료현장 동일 현장명 묶음(insertRowsAfter) 삽입 로직 검증
+assertTest('Step 140-6: moveCompletedCategorySiteToCompletedSheet 함수 정의 및 완료현장 동일 현장명 묶음(insertRowsAfter) 삽입 로직 검증',
+  code140.indexOf('function moveCompletedCategorySiteToCompletedSheet(ss, srcSheet, siteName) {') !== -1 &&
+  code140.indexOf('compSheet.insertRowsAfter(matchingSiteLastRow, rowsToInsert.length);') !== -1 &&
+  code140.indexOf('compSheet.getRange(insertedStartRow, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);') !== -1 &&
+  code140.indexOf('targetSiteRows.sort(function(a, b) { return b.rowNum - a.rowNum; });') !== -1
+);
+
+// 140-7: updateScheduleStatusFromWeb 및 handleSheetEditTrigger_ 내 단건/AS 완료 시 자동 이동 연동 검증
+assertTest('Step 140-7: updateScheduleStatusFromWeb 및 handleSheetEditTrigger_ 내 단건/AS 완료 시 자동 이동 연동 검증',
+  code140.indexOf('var catMoveRes = moveCompletedCategorySiteToCompletedSheet(ss, sheet, siteName);') !== -1 &&
+  code140.indexOf('var sMoveRes = moveCompletedCategorySiteToCompletedSheet(ss, sheet, sRowSite);') !== -1 &&
+  code140.indexOf('var aMoveRes = moveCompletedCategorySiteToCompletedSheet(ss, sheet, aRowSite);') !== -1
+);
+
+// 140-8: updateEstimateRowFromWeb 서버 함수 정의 및 20개 컬럼 전체 매핑 검증
+assertTest('Step 140-8: updateEstimateRowFromWeb 서버 함수 정의 및 20개 컬럼 전체 매핑 검증',
+  code140.indexOf('function updateEstimateRowFromWeb(data) {') !== -1 &&
+  code140.indexOf('var originalSiteName = String(data.originalSiteName || data.origSiteName || siteName).trim();') !== -1 &&
+  code140.indexOf('findEstimateSheet(ss, true)') !== -1 &&
+  code140.indexOf('sheet.getRange(targetRow, 1, 1, 20).setValues([rowValues]);') !== -1
+);
+
+// 140-9: 런타임 모바일 견적 상세 렌더링 시뮬레이션
+const targetSheetUrl140 = "https://docs.google.com/spreadsheets/d/1V6Nb5ZB8gOfwDFsN8svMDZQYWXIJjGa9tuUYrVu0JhY/edit?gid=760414857#gid=760414857";
+const serverSandbox140 = {
+  SpreadsheetApp: { getActiveSpreadsheet: () => ({ getUrl: () => targetSheetUrl140 }) },
+  CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+  PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+  console: console,
+  Logger: { log: () => {} },
+  Date: Date,
+  Math: Math,
+  Object: Object,
+  Array: Array,
+  Set: Set,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String
+};
+vm.createContext(serverSandbox140);
+vm.runInContext(code140, serverSandbox140);
+const builtHtml140 = serverSandbox140.buildSidebarDashboardHtml('pc');
+const clientScriptMatch140 = builtHtml140.match(/<script>([\s\S]*?)<\/script>/);
+const clientScript140 = clientScriptMatch140 ? clientScriptMatch140[1] : '';
+
+let mockContainerHtml140 = '';
+const clientSandbox140 = {
+  console: console,
+  setTimeout: setTimeout,
+  clearTimeout: clearTimeout,
+  Date: Date,
+  Math: Math,
+  Object: Object,
+  Array: Array,
+  Set: Set,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String,
+  currentFilter: 'all',
+  currentScope: 'newSite',
+  document: {
+    readyState: 'loading',
+    getElementById: (id) => {
+      if (id === 'contentArea') return { innerHTML: '', set innerHTML(val) { mockContainerHtml140 = val; }, get innerHTML() { return mockContainerHtml140; } };
+      return null;
+    },
+    querySelectorAll: () => []
+  },
+  window: { addEventListener: () => {} }
+};
+vm.createContext(clientSandbox140);
+vm.runInContext(clientScript140, clientSandbox140);
+
+vm.runInContext(`
+mobileExpandedEstimateSites.add("분당 정자동 한솔마을");
+mobileExpandedEstimateSites.add("용인 기흥 보정동 단독주택");
+rawData = {
+  spreadsheetUrl: "${targetSheetUrl140}",
+  sites: [
+    {
+      siteName: "분당 정자동 한솔마을",
+      scope: "newSite",
+      estimateData: {
+        siteName: "분당 정자동 한솔마을",
+        clientName: "이소연",
+        clientPhone: "010-8888-9999",
+        status: "상담 중",
+        priority: "높음",
+        scope: "주방",
+        expectedAmount: 18000000,
+        manager: "조항만"
+      }
+    },
+    {
+      siteName: "용인 기흥 보정동 단독주택",
+      scope: "newSite",
+      estimateData: {
+        siteName: "용인 기흥 보정동 단독주택",
+        clientName: "박대표",
+        clientPhone: "",
+        status: "신규 문의",
+        priority: "보통",
+        scope: "전체공사",
+        expectedAmount: 90000000,
+        manager: "조항만"
+      }
+    }
+  ]
+};
+renderMobileEstimateDashboard(rawData.sites.map(s => ({ site: s, filteredTasks: [] })), "");
+`, clientSandbox140);
+
+assertTest('Step 140-9: 런타임 모바일 견적 카드 상세 렌더링 시 연락처 있으면 📞 아이콘 단독 노출, 연락처 없으면 연락처 미등록 노출 & ✏️ 정보 수정 버튼 탑재 검증',
+  mockContainerHtml140.indexOf('분당 정자동 한솔마을') !== -1 &&
+  mockContainerHtml140.indexOf('이소연') !== -1 &&
+  mockContainerHtml140.indexOf('tel:01088889999') !== -1 &&
+  mockContainerHtml140.indexOf('📞') !== -1 &&
+  mockContainerHtml140.indexOf('전화걸기') === -1 &&
+  mockContainerHtml140.indexOf('박대표') !== -1 &&
+  mockContainerHtml140.indexOf('연락처 미등록') !== -1 &&
+  mockContainerHtml140.indexOf('✏️ 정보 수정') !== -1
+);
+
+// 140-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 139)
+assertTest('Step 140-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 139)',
+  indexHtml140.indexOf('exec?v=139') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
@@ -9504,6 +9686,3 @@ if (failCount > 0) {
 } else {
   console.log('🎉 모든 QA 및 코드리뷰 무결성 테스트를 100% 통과했습니다!');
 }
-
-
-

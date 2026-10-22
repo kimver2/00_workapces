@@ -2418,20 +2418,32 @@ function onEdit(e) {
         } catch(eAsMgr) {}
       }
 
-      // H열 진행상태 '완료' 시 완료현장 시트로 자동 이동
-      if (aStartCol <= 8 && aEndCol >= 8) {
+      // H/I열 진행상태 '완료' 시 -> 해당 현장의 모든 공정이 완료되었으면 완료현장 시트로 자동 이동
+      var aIs11 = (typeof sheet.getLastColumn === "function" && sheet.getLastColumn() >= 11);
+      var aStCol = aIs11 ? 9 : 8;
+      if (aStartCol <= aStCol && aEndCol >= aStCol) {
         var aEditedVals = e.range.getValues ? e.range.getValues() : [[e.range.getValue()]];
         for (var aer = 0; aer < aEditedVals.length; aer++) {
-          var aColOffset = 8 - aStartCol;
+          var aColOffset = aStCol - aStartCol;
           if (aColOffset >= 0 && aColOffset < aEditedVals[aer].length) {
             var aVal = String(aEditedVals[aer][aColOffset] || "").trim();
             if (aVal.indexOf("완료") !== -1) {
               var aTargetRow = row + aer;
-              var aMoveRes = moveAsTaskToCompletedSheet(ss, sheet, aTargetRow);
-              if (aMoveRes && aMoveRes.success) {
-                try {
-                  ss.toast("[" + aMoveRes.targetSite + "] AS 일정이 완료현장 시트로 이동되었습니다.", "📦 완료 이동", 3);
-                } catch(eTst) {}
+              var aRowSite = String(sheet.getRange(aTargetRow, 1).getValue() || "").trim();
+              if (!aRowSite && aTargetRow > 2) {
+                var aPrevSites = sheet.getRange(2, 1, aTargetRow - 2, 1).getValues();
+                for (var aps = aPrevSites.length - 1; aps >= 0; aps--) {
+                  var apSite = String(aPrevSites[aps][0] || "").trim();
+                  if (apSite) { aRowSite = apSite; break; }
+                }
+              }
+              if (aRowSite) {
+                var aMoveRes = moveCompletedCategorySiteToCompletedSheet(ss, sheet, aRowSite);
+                if (aMoveRes && aMoveRes.moved) {
+                  try {
+                    ss.toast("[" + aMoveRes.targetSite + "] 현장의 모든 공정이 완료되어 완료현장 시트로 이동되었습니다.", "📦 완료 이동", 3);
+                  } catch(eTst) {}
+                }
               }
             }
           }
@@ -2442,7 +2454,7 @@ function onEdit(e) {
     }
   }
 
-  // ⑤ [단건 시트 편집 감지 -> G열 스마트 2인 선택 & 현장명(A열) 편집 시 동일 현장 자동 묶기 (정렬은 1시간 주기 트리거로 분리)]
+  // ⑤ [단건 시트 편집 감지 -> G열 스마트 2인 선택 & 현장명(A열) 편집 시 동일 현장 자동 묶기 & 완료 시 완료현장 시트로 이동]
   if (isSingleTaskSheet(sheet)) {
     try {
       var sStartCol = e.range.getColumn();
@@ -2461,7 +2473,41 @@ function onEdit(e) {
           handleManagerMultiSelectEdit(e, ss, sheet, row, 7);
         } catch(eSingleMgr) {}
       }
-    } catch(eSingleEdit) {}
+
+      // H/I열 진행상태 '완료' 시 -> 해당 현장의 모든 공정이 완료되었으면 완료현장 시트로 자동 이동
+      var sIs11 = (typeof sheet.getLastColumn === "function" && sheet.getLastColumn() >= 11);
+      var sStCol = sIs11 ? 9 : 8;
+      if (sStartCol <= sStCol && sEndCol >= sStCol) {
+        var sEditedVals = e.range.getValues ? e.range.getValues() : [[e.range.getValue()]];
+        for (var ser = 0; ser < sEditedVals.length; ser++) {
+          var sColOffset = sStCol - sStartCol;
+          if (sColOffset >= 0 && sColOffset < sEditedVals[ser].length) {
+            var sVal = String(sEditedVals[ser][sColOffset] || "").trim();
+            if (sVal.indexOf("완료") !== -1) {
+              var sTargetRow = row + ser;
+              var sRowSite = String(sheet.getRange(sTargetRow, 1).getValue() || "").trim();
+              if (!sRowSite && sTargetRow > 2) {
+                var sPrevSites = sheet.getRange(2, 1, sTargetRow - 2, 1).getValues();
+                for (var sps = sPrevSites.length - 1; sps >= 0; sps--) {
+                  var spSite = String(sPrevSites[sps][0] || "").trim();
+                  if (spSite) { sRowSite = spSite; break; }
+                }
+              }
+              if (sRowSite) {
+                var sMoveRes = moveCompletedCategorySiteToCompletedSheet(ss, sheet, sRowSite);
+                if (sMoveRes && sMoveRes.moved) {
+                  try {
+                    ss.toast("[" + sMoveRes.targetSite + "] 현장의 모든 공정이 완료되어 완료현장 시트로 이동되었습니다.", "📦 완료 이동", 3);
+                  } catch(eTst) {}
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch(eSingleEdit) {
+      Logger.log("단건 시트 onEdit 예외: " + eSingleEdit.toString());
+    }
   }
 
   // ⑥ [완료현장 시트 편집 감지 -> G열 담당자 편집 시 스마트 2인 선택 & 현장명(A열) 편집 시 동일 현장 자동 묶기]
@@ -4016,6 +4062,180 @@ function moveAsTaskToCompletedSheet(ss, asSheet, asRow, siteName, taskName) {
       Logger.log("moveAsTaskToCompletedSheet error: " + e.toString());
     }
     return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * [신규] '단건' 또는 'AS' 시트에서 특정 현장의 모든 공정이 완료(또는 취소)되었을 때 '완료현장' 시트로 해당 현장의 모든 공정을 이동
+ * - '완료현장' 시트에 동일한 현장명이 이미 존재하면 해당 현장 묶음(그룹)의 마지막 행 바로 다음으로 삽입하여 동일 현장 묶음 유지
+ * - 동일한 현장명이 없으면 '완료현장' 시트 맨 아래에 추가
+ * - 한건짜리 공정으로 등록된 현장도 모든 공정이 완료된 것이므로 동일하게 처리
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} srcSheet 원본 시트 ('단건' 또는 'AS')
+ * @param {string} siteName 완료 여부를 판정하고 이동할 현장명
+ * @return {object} { success: boolean, moved: boolean, targetSite: string, movedRowsCount: number, matchedExistingGroup: boolean, message: string }
+ */
+function moveCompletedCategorySiteToCompletedSheet(ss, srcSheet, siteName) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss || !srcSheet || !siteName) return { success: false, moved: false, error: "유효하지 않은 인자입니다." };
+
+  try {
+    var compSheet = findCompletedSitesSheet(ss, true);
+    if (!compSheet) return { success: false, moved: false, error: "완료현장 시트를 찾을 수 없습니다." };
+
+    var lastRow = srcSheet.getLastRow();
+    if (lastRow < 2) return { success: true, moved: false, message: "이동할 행이 없습니다." };
+
+    var srcCols = Math.max((typeof srcSheet.getLastColumn === "function" ? srcSheet.getLastColumn() : 11), 10);
+    var allVals = srcSheet.getRange(2, 1, lastRow - 1, srcCols).getValues();
+
+    // 1. 해당 현장명에 속하는 모든 행 수집
+    var targetSiteRows = [];
+    var lastKnownSite = "";
+    for (var i = 0; i < allVals.length; i++) {
+      var rVals = allVals[i];
+      var rawSite = String(rVals[0] || "").trim();
+      if (rawSite) lastKnownSite = rawSite;
+      var effSite = rawSite || lastKnownSite;
+      var taskName = String(rVals[2] || "").trim();
+      var dateVal = rVals[1];
+
+      if (effSite === siteName && (taskName || dateVal)) {
+        targetSiteRows.push({
+          rowNum: i + 2,
+          vals: rVals
+        });
+      }
+    }
+
+    if (targetSiteRows.length === 0) {
+      return { success: true, moved: false, message: "해당 현장의 유효 공정이 없습니다." };
+    }
+
+    // 2. 모든 공정이 '완료' 또는 '취소'인지 판별
+    for (var k = 0; k < targetSiteRows.length; k++) {
+      var itemVals = targetSiteRows[k].vals;
+      var stIdx = (itemVals.length >= 11) ? 8 : 7;
+      var st = String(itemVals[stIdx] || "").replace(/\s+/g, "");
+      if (st.indexOf("완료") === -1 && st.indexOf("취소") === -1) {
+        // 미완료 공정이 1개라도 있으면 아직 이동하지 않음
+        return { success: true, moved: false, message: "아직 완료되지 않은 공정이 있습니다." };
+      }
+    }
+
+    // 3. 모든 공정이 완료됨! -> '완료현장' 시트로 이동 준비
+    var compLastRow = compSheet.getLastRow();
+    var matchingSiteLastRow = -1;
+
+    // 완료현장 시트에서 동일 현장명의 마지막 행 위치 탐색
+    if (compLastRow >= 2) {
+      var compSites = compSheet.getRange(2, 1, compLastRow - 1, 1).getValues();
+      var lastKnownCompSite = "";
+      for (var ci = 0; ci < compSites.length; ci++) {
+        var rawCompSite = String(compSites[ci][0] || "").trim();
+        if (rawCompSite) lastKnownCompSite = rawCompSite;
+        var effCompSite = rawCompSite || lastKnownCompSite;
+        if (effCompSite === siteName) {
+          matchingSiteLastRow = ci + 2;
+        }
+      }
+    }
+
+    var isComp11 = (typeof compSheet.getLastColumn === "function" && compSheet.getLastColumn() >= 11);
+    var rowsToInsert = [];
+    var nowMs = Date.now();
+
+    for (var m = 0; m < targetSiteRows.length; m++) {
+      var mVals = targetSiteRows[m].vals;
+      var pCols = parseScheduleRowCols(mVals);
+      var rSite = siteName;
+      var rDate = pCols.date;
+      var rTask = pCols.task;
+      var rPartner = pCols.partner;
+      var rShared = pCols.isShared;
+      var rMemo = pCols.memo;
+      var rStatus = "완료";
+      var rCalId = pCols.calId;
+
+      var newRowVals = isComp11
+        ? [rSite, rDate, rTask, rPartner, rShared, rMemo, pCols.manager1, pCols.manager2, rStatus, rCalId, nowMs]
+        : [rSite, rDate, rTask, rPartner, rShared, rMemo, pCols.manager, rStatus, rCalId, nowMs];
+      rowsToInsert.push(newRowVals);
+    }
+
+    // 트리거 방어 플래그
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty("IS_ARCHIVING_ACTIVE", "true");
+
+    var insertedStartRow = -1;
+    try {
+      if (matchingSiteLastRow >= 2) {
+        // 동일 현장명이 존재함 -> 해당 현장 묶음 바로 다음에 행 삽입
+        compSheet.insertRowsAfter(matchingSiteLastRow, rowsToInsert.length);
+        insertedStartRow = matchingSiteLastRow + 1;
+        compSheet.getRange(insertedStartRow, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);
+      } else {
+        // 동일 현장명이 없음 -> 맨 아래에 추가
+        insertedStartRow = Math.max(2, compLastRow + 1);
+        compSheet.getRange(insertedStartRow, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);
+      }
+
+      // 서식 적용
+      try {
+        var compTargetR = compSheet.getRange(insertedStartRow, 1, rowsToInsert.length, rowsToInsert[0].length);
+        compTargetR.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+        compTargetR.setVerticalAlignment("middle");
+        compSheet.getRange(insertedStartRow, 5, rowsToInsert.length, 1).insertCheckboxes();
+        applySiteScheduleValidations(compSheet, insertedStartRow, rowsToInsert.length);
+        [1, 2, 3, 4, 7, 8].forEach(function(c) {
+          compSheet.getRange(insertedStartRow, c, rowsToInsert.length, 1).setHorizontalAlignment("center");
+        });
+        compSheet.getRange(insertedStartRow, 6, rowsToInsert.length, 1).setHorizontalAlignment("left");
+      } catch(eFmt) {}
+
+      // 원본 시트(단건 또는 AS)에서 행 삭제 (역순 삭제)
+      targetSiteRows.sort(function(a, b) { return b.rowNum - a.rowNum; });
+      for (var d = 0; d < targetSiteRows.length; d++) {
+        var dRow = targetSiteRows[d].rowNum;
+        // 삭제 전 다음 행 현장명 보존 가드
+        var dLastRow = srcSheet.getLastRow();
+        if (dRow < dLastRow) {
+          var nextR = srcSheet.getRange(dRow + 1, 1, 1, 3).getValues()[0];
+          var nextSite = String(nextR[0] || "").trim();
+          var nextHasData = Boolean(String(nextR[1] || "").trim() || String(nextR[2] || "").trim());
+          if (!nextSite && nextHasData) {
+            srcSheet.getRange(dRow + 1, 1).setValue(siteName);
+          }
+        }
+        srcSheet.deleteRow(dRow);
+      }
+
+      SpreadsheetApp.flush();
+
+      // 완료현장 그룹화 자동 갱신
+      try {
+        groupCompletedSitesBySite(compSheet);
+      } catch(eGrp) {}
+
+      invalidateDashboardServerCache();
+
+      return {
+        success: true,
+        moved: true,
+        targetSite: siteName,
+        movedRowsCount: rowsToInsert.length,
+        matchedExistingGroup: (matchingSiteLastRow >= 2),
+        message: "[" + siteName + "] 현장의 " + rowsToInsert.length + "개 공정이 완료현장 시트" + (matchingSiteLastRow >= 2 ? "의 기존 현장 그룹" : "") + "으로 정상 이동되었습니다."
+      };
+    } finally {
+      props.deleteProperty("IS_ARCHIVING_ACTIVE");
+    }
+  } catch(err) {
+    if (typeof Logger !== "undefined" && typeof Logger.log === "function") {
+      Logger.log("moveCompletedCategorySiteToCompletedSheet 오류: " + err.toString());
+    }
+    return { success: false, moved: false, error: err.toString() };
   }
 }
 
@@ -6941,97 +7161,129 @@ function archiveCompletedSiteBlocks(isManual) {
     }
   }
 
-  if (completedBlocks.length === 0) {
+  var destSheet = findCompletedSitesSheet(ss, true);
+  var movedSitesCount = 0;
+  var movedRowsCount = 0;
+  var movedSiteNames = [];
+
+  if (completedBlocks.length > 0 && destSheet) {
+    movedSitesCount += completedBlocks.length;
+    var allRowsToAppend = [];
+    var allBgsToAppend = [];
+    var allFontColorsToAppend = [];
+    var allFontWeightsToAppend = [];
+    var allAlignsToAppend = [];
+
+    for (var cb = 0; cb < completedBlocks.length; cb++) {
+      var cBlk = completedBlocks[cb];
+      movedSiteNames.push(cBlk.siteName);
+      for (var ci = 0; ci < cBlk.items.length; ci++) {
+        var it = cBlk.items[ci];
+        // A열 현장명 보장 (아코디언 형태였더라도 완료현장 시트에서는 명확히 표시)
+        it.vals[0] = it.vals[0] || cBlk.siteName;
+        allRowsToAppend.push(it.vals);
+        allBgsToAppend.push(it.bg);
+        allFontColorsToAppend.push(it.fontColor);
+        allFontWeightsToAppend.push(it.fontWeight);
+        allAlignsToAppend.push(it.align);
+        movedRowsCount++;
+      }
+    }
+
+    // [트리거 방어 가드]: 행 삭제 중 캘린더 일정 삭제 트리거 방지 플래그 설정
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty("IS_ARCHIVING_ACTIVE", "true");
+
+    try {
+      // 3-1. 완료현장 시트에 데이터 추가 (A~K열 11개 열 대응)
+      var destLastRow = destSheet.getLastRow();
+      var destStartRow = Math.max(2, destLastRow + 1);
+
+      var targetRange = destSheet.getRange(destStartRow, 1, allRowsToAppend.length, srcCols);
+      targetRange.setValues(allRowsToAppend);
+      try {
+        targetRange.setBackgrounds(allBgsToAppend);
+        targetRange.setFontColors(allFontColorsToAppend);
+        targetRange.setFontWeights(allFontWeightsToAppend);
+        targetRange.setHorizontalAlignments(allAlignsToAppend);
+        targetRange.setVerticalAlignment("middle");
+        targetRange.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
+      } catch(eStyle) {}
+
+      // E열 체크박스 서식 적용
+      try {
+        destSheet.getRange(destStartRow, 5, allRowsToAppend.length, 1).insertCheckboxes();
+      } catch(eChk) {}
+
+      // 유효성 검사 및 조건부 서식 적용
+      try {
+        applySiteScheduleValidations(destSheet, destStartRow, allRowsToAppend.length);
+      } catch(eDestVal) {}
+
+      // 3-2. 현장데이터 시트에서 완료된 블록 행들 삭제 (역순 삭제로 행 번호 밀림 방지!)
+      completedBlocks.sort(function(a, b) {
+        return b.startRow - a.startRow;
+      });
+
+      for (var d = 0; d < completedBlocks.length; d++) {
+        var dBlk = completedBlocks[d];
+        var delStart = dBlk.startRow;
+        var delCount = dBlk.items.length;
+        srcSheet.deleteRows(delStart, delCount);
+      }
+
+      SpreadsheetApp.flush();
+
+      // 3-3. 완료현장 시트 동일 현장별 자동 접기(그룹화) 적용
+      try {
+        groupCompletedSitesBySite(destSheet);
+      } catch(eGrp) {}
+
+      // 3-4. 대시보드 달력 즉시 새로고침
+      try {
+        refreshDashboardCalendar(ss);
+      } catch(eDash) {}
+
+    } finally {
+      props.deleteProperty("IS_ARCHIVING_ACTIVE");
+    }
+  }
+
+  // 3-5. '단건' 및 'AS' 시트에서도 모든 공정이 완료된 현장 탐색 및 완료현장 시트로 자동 이동
+  var categorySheets = [
+    { sheet: findSingleTaskSheet(ss, false), name: "단건" },
+    { sheet: findAsSheet(ss, false), name: "AS" }
+  ];
+  for (var csi = 0; csi < categorySheets.length; csi++) {
+    var cObj = categorySheets[csi];
+    var cSheet = cObj.sheet;
+    if (!cSheet || cSheet.getLastRow() < 2) continue;
+    var cCols = Math.max((typeof cSheet.getLastColumn === "function" ? cSheet.getLastColumn() : 11), 10);
+    var cVals = cSheet.getRange(2, 1, cSheet.getLastRow() - 1, cCols).getValues();
+    var cSiteSet = [];
+    var cLastSite = "";
+    for (var ci = 0; ci < cVals.length; ci++) {
+      var rRawS = String(cVals[ci][0] || "").trim();
+      if (rRawS) cLastSite = rRawS;
+      var effS = rRawS || cLastSite;
+      if (effS && cSiteSet.indexOf(effS) === -1) cSiteSet.push(effS);
+    }
+    for (var sj = 0; sj < cSiteSet.length; sj++) {
+      var targetCatSite = cSiteSet[sj];
+      var mRes = moveCompletedCategorySiteToCompletedSheet(ss, cSheet, targetCatSite);
+      if (mRes && mRes.moved) {
+        movedSitesCount++;
+        movedRowsCount += (mRes.movedRowsCount || 1);
+        movedSiteNames.push(targetCatSite + " (" + cObj.name + ")");
+      }
+    }
+  }
+
+  if (movedSitesCount === 0) {
     if (isManual) {
       SpreadsheetApp.getUi().alert("ℹ️ 안내", "현재 모든 공정이 완료(또는 취소)된 현장 블록이 없습니다.\n(진행 중이거나 예정된 공정이 1개라도 있는 현장은 이동되지 않습니다.)", SpreadsheetApp.getUi().ButtonSet.OK);
     }
     return { movedSitesCount: 0, movedRowsCount: 0, siteNames: [] };
-  }
-
-  // 3. 완료현장 시트 준비 및 이동 실행
-  var destSheet = findCompletedSitesSheet(ss, true);
-  var movedSitesCount = completedBlocks.length;
-  var movedRowsCount = 0;
-  var movedSiteNames = [];
-
-  var allRowsToAppend = [];
-  var allBgsToAppend = [];
-  var allFontColorsToAppend = [];
-  var allFontWeightsToAppend = [];
-  var allAlignsToAppend = [];
-
-  for (var cb = 0; cb < completedBlocks.length; cb++) {
-    var cBlk = completedBlocks[cb];
-    movedSiteNames.push(cBlk.siteName);
-    for (var ci = 0; ci < cBlk.items.length; ci++) {
-      var it = cBlk.items[ci];
-      // A열 현장명 보장 (아코디언 형태였더라도 완료현장 시트에서는 명확히 표시)
-      it.vals[0] = it.vals[0] || cBlk.siteName;
-      allRowsToAppend.push(it.vals);
-      allBgsToAppend.push(it.bg);
-      allFontColorsToAppend.push(it.fontColor);
-      allFontWeightsToAppend.push(it.fontWeight);
-      allAlignsToAppend.push(it.align);
-      movedRowsCount++;
-    }
-  }
-
-  // [트리거 방어 가드]: 행 삭제 중 캘린더 일정 삭제 트리거 방지 플래그 설정
-  var props = PropertiesService.getScriptProperties();
-  props.setProperty("IS_ARCHIVING_ACTIVE", "true");
-
-  try {
-    // 3-1. 완료현장 시트에 데이터 추가 (A~K열 11개 열 대응)
-    var destLastRow = destSheet.getLastRow();
-    var destStartRow = Math.max(2, destLastRow + 1);
-
-    var targetRange = destSheet.getRange(destStartRow, 1, allRowsToAppend.length, srcCols);
-    targetRange.setValues(allRowsToAppend);
-    try {
-      targetRange.setBackgrounds(allBgsToAppend);
-      targetRange.setFontColors(allFontColorsToAppend);
-      targetRange.setFontWeights(allFontWeightsToAppend);
-      targetRange.setHorizontalAlignments(allAlignsToAppend);
-      targetRange.setVerticalAlignment("middle");
-      targetRange.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
-    } catch(eStyle) {}
-
-    // E열 체크박스 서식 적용
-    try {
-      destSheet.getRange(destStartRow, 5, allRowsToAppend.length, 1).insertCheckboxes();
-    } catch(eChk) {}
-
-    // 유효성 검사 및 조건부 서식 적용
-    try {
-      applySiteScheduleValidations(destSheet, destStartRow, allRowsToAppend.length);
-    } catch(eDestVal) {}
-
-    // 3-2. 현장데이터 시트에서 완료된 블록 행들 삭제 (역순 삭제로 행 번호 밀림 방지!)
-    completedBlocks.sort(function(a, b) {
-      return b.startRow - a.startRow;
-    });
-
-    for (var d = 0; d < completedBlocks.length; d++) {
-      var dBlk = completedBlocks[d];
-      var delStart = dBlk.startRow;
-      var delCount = dBlk.items.length;
-      srcSheet.deleteRows(delStart, delCount);
-    }
-
-    SpreadsheetApp.flush();
-
-    // 3-3. 완료현장 시트 동일 현장별 자동 접기(그룹화) 적용
-    try {
-      groupCompletedSitesBySite(destSheet);
-    } catch(eGrp) {}
-
-    // 3-4. 대시보드 달력 즉시 새로고침
-    try {
-      refreshDashboardCalendar(ss);
-    } catch(eDash) {}
-
-  } finally {
-    props.deleteProperty("IS_ARCHIVING_ACTIVE");
   }
 
   Logger.log("📦 완료 현장 아카이브 완료: " + movedSitesCount + "개 현장 (" + movedRowsCount + "개 공정) 이동됨");
@@ -7763,23 +8015,27 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     sheet.getRange(rowNum, timeCol).setValue(now.getTime()); // 타임스탬프 업데이트 (10열 호환: sheet.getRange(rowNum, 10).setValue(now.getTime()))
     SpreadsheetApp.flush(); // 시트에 영구 커밋
 
-    // AS 시트에서 상태를 '완료'로 변경하는 경우 -> 완료현장 시트로 즉시 자동 이동 (동일 현장명 그룹 편입)
-    if ((targetSheetName === "AS" || targetSheetName === "as" || (sheet && typeof sheet.getName === "function" && isAsSheet(sheet))) && String(newStatus).indexOf("완료") !== -1) {
-      var moveRes = moveAsTaskToCompletedSheet(ss, sheet, rowNum, siteName, taskName);
-      invalidateDashboardServerCache();
-      return {
-        success: true,
-        row: rowNum,
-        taskName: updatedTask || taskName,
-        movedToCompleted: true,
-        status: "완료",
-        shared: updatedShared,
-        memo: updatedMemo,
-        date: updatedDate,
-        manager: updatedManager,
-        partner: updatedPartner,
-        message: moveRes.message
-      };
+    // 단건 또는 AS 시트에서 상태를 '완료'로 변경하는 경우 -> 해당 현장의 모든 공정이 완료(또는 취소)되었는지 확인 후 완료현장 시트로 자동 이동 (동일 현장명 그룹 편입)
+    var isTargetSingleOrAs = (targetSheetName === "단건" || targetSheetName === "single" || targetSheetName === "AS" || targetSheetName === "as" ||
+      (sheet && typeof sheet.getName === "function" && (isSingleTaskSheet(sheet) || isAsSheet(sheet))));
+    if (isTargetSingleOrAs && String(newStatus).indexOf("완료") !== -1) {
+      var catMoveRes = moveCompletedCategorySiteToCompletedSheet(ss, sheet, siteName);
+      if (catMoveRes && catMoveRes.moved) {
+        invalidateDashboardServerCache();
+        return {
+          success: true,
+          row: rowNum,
+          taskName: updatedTask || taskName,
+          movedToCompleted: true,
+          status: "완료",
+          shared: updatedShared,
+          memo: updatedMemo,
+          date: updatedDate,
+          manager: updatedManager,
+          partner: updatedPartner,
+          message: catMoveRes.message
+        };
+      }
     }
 
     invalidateDashboardServerCache();
@@ -8342,6 +8598,127 @@ function addEstimateRowFromWeb(data) {
 }
 
 /**
+ * 웹 대시보드에서 '신규현장(신규견적)' 정보 수정 API (20개 컬럼 전체 매핑)
+ * @param {Object} data 신규견적 수정 데이터 객체
+ */
+function updateEstimateRowFromWeb(data) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(updateEstimateRowFromWeb, this, arguments);
+  try {
+    if (!data) return { success: false, error: "수정할 데이터가 없습니다." };
+    var siteName = String(data.siteName || data.site || "").trim();
+    if (!siteName) return { success: false, error: "현장/고객명을 입력해주세요." };
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트에 연결할 수 없습니다." };
+
+    var sheet = findEstimateSheet(ss, true);
+    if (!sheet) return { success: false, error: "신규견적 시트를 찾을 수 없습니다." };
+
+    var targetRow = parseInt(data.row, 10);
+    var originalSiteName = String(data.originalSiteName || data.origSiteName || siteName).trim();
+
+    // row 검증 또는 siteName 매칭으로 정확한 행 탐색
+    if (!targetRow || targetRow < 2 || targetRow > sheet.getLastRow()) {
+      targetRow = 0;
+    }
+    if (targetRow > 0 && originalSiteName) {
+      var checkVal = String(sheet.getRange(targetRow, 1).getValue()).trim();
+      if (checkVal !== originalSiteName) {
+        targetRow = 0; // 행 번호 불일치 시 검색으로 fallback
+      }
+    }
+    if (!targetRow && originalSiteName) {
+      var lastR = sheet.getLastRow();
+      if (lastR >= 2) {
+        var names = sheet.getRange(2, 1, lastR - 1, 1).getValues();
+        for (var i = 0; i < names.length; i++) {
+          if (String(names[i][0]).trim() === originalSiteName) {
+            targetRow = i + 2;
+            break;
+          }
+        }
+      }
+    }
+    if (!targetRow) return { success: false, error: "해당 신규현장을 시트에서 찾을 수 없습니다." };
+
+    var status = String(data.status || "신규 문의").trim();
+    var inquiryDate = String(data.inquiryDate || "").trim();
+    var priority = String(data.priority || "보통").trim();
+    var scope = String(data.scope || "전체공사").trim();
+    var memo = String(data.memo || "").trim();
+    var source = String(data.source || "소개").trim();
+    var consultDate = String(data.consultDate || "").trim();
+    var expectedDate = String(data.expectedDate || "").trim();
+    var expectedAmount = data.expectedAmount || "";
+    if (typeof expectedAmount === "string") {
+      var numOnly = expectedAmount.replace(/[^0-9]/g, "");
+      if (numOnly) expectedAmount = parseInt(numOnly, 10);
+    }
+    var estimateSendDate = String(data.estimateSendDate || "").trim();
+    var clientName = String(data.clientName || "").trim();
+    var clientPhone = String(data.clientPhone || "").trim();
+    var manager = String(data.manager || "조항만").trim();
+    var estimateFile = String(data.estimateFile || "").trim();
+    var contractAmount = data.contractAmount || "";
+    if (typeof contractAmount === "string") {
+      var numOnly2 = contractAmount.replace(/[^0-9]/g, "");
+      if (numOnly2) contractAmount = parseInt(numOnly2, 10);
+    }
+    var nextAction = String(data.nextAction || "").trim();
+    var failReason = String(data.failReason || data.rejectReason || "").trim();
+    var visitDate = String(data.visitDate || "").trim();
+    var address = String(data.address || "").trim();
+
+    // 20개 컬럼 배열 생성
+    var rowValues = [
+      siteName,         // 1: 현장/고객
+      status,           // 2: 진행 단계
+      inquiryDate,      // 3: 문의일
+      priority,         // 4: 우선순위
+      scope,            // 5: 공사 범위
+      memo,             // 6: 상담 메모
+      source,           // 7: 유입 경로
+      consultDate,      // 8: 1차상담
+      expectedDate,     // 9: 공사 예정일
+      expectedAmount,   // 10: 예상 공사금액
+      estimateSendDate, // 11: 견적서 전달일
+      clientName,       // 12: 고객명
+      clientPhone,      // 13: 연락처
+      manager,          // 14: 담당자
+      estimateFile,     // 15: 견적서 파일
+      contractAmount,   // 16: 계약 금액
+      nextAction,       // 17: 다음 액션
+      failReason,       // 18: 보류·실패 사유
+      visitDate,        // 19: 현장 방문일
+      address           // 20: 현장 주소
+    ];
+
+    sheet.getRange(targetRow, 1, 1, 20).setValues([rowValues]);
+
+    try {
+      sheet.getRange(targetRow, 10).setNumberFormat("#,##0");
+      sheet.getRange(targetRow, 16).setNumberFormat("#,##0");
+      applyEstimateSheetColors(sheet, targetRow + 5);
+    } catch(eFmt) {}
+
+    invalidateDashboardServerCache();
+
+    return {
+      success: true,
+      row: targetRow,
+      siteName: siteName,
+      status: status
+    };
+  } catch(err) {
+    return {
+      success: false,
+      error: "신규견적 수정 중 오류: " + (err.message || err)
+    };
+  }
+}
+
+/**
  * 모바일 웹 드롭다운 상태 변경 화면 (doGet)
  */
 function doGet(e) {
@@ -8390,6 +8767,37 @@ function doGet(e) {
     };
     var addEstRes = addEstimateRowFromWeb(estData);
     return ContentService.createTextOutput(JSON.stringify(addEstRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-1) 신규현장(신규견적) 수정 요청 (action=updateEstimateRow || action=editEstimateRow)
+  if (action === "updateEstimateRow" || action === "editEstimateRow") {
+    var editEstData = {
+      siteName: p.siteName || p.site || targetSite,
+      originalSiteName: p.originalSiteName || "",
+      row: p.row || 0,
+      status: p.status || "신규 문의",
+      inquiryDate: p.inquiryDate || "",
+      priority: p.priority || "보통",
+      scope: p.scope || "전체공사",
+      memo: p.memo || "",
+      source: p.source || "소개",
+      consultDate: p.consultDate || "",
+      expectedDate: p.expectedDate || "",
+      expectedAmount: p.expectedAmount || "",
+      estimateSendDate: p.estimateSendDate || "",
+      clientName: p.clientName || "",
+      clientPhone: p.clientPhone || "",
+      manager: p.manager || "조항만",
+      estimateFile: p.estimateFile || "",
+      contractAmount: p.contractAmount || "",
+      nextAction: p.nextAction || "",
+      failReason: p.failReason || p.rejectReason || "",
+      visitDate: p.visitDate || "",
+      address: p.address || ""
+    };
+    var updateEstRes = updateEstimateRowFromWeb(editEstData);
+    return ContentService.createTextOutput(JSON.stringify(updateEstRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -12280,7 +12688,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </div>';
   html += '    </div>';
   html += '    <div id="sheetCreateFields" class="sheet-create-box" style="display:none;">';
-  html += '      <div class="sheet-field-row" style="margin-bottom:8px;">';
+  html += '      <div id="sheetCategorySelectRow" class="sheet-field-row" style="margin-bottom:8px;">';
   html += '        <div class="sheet-field-col" style="flex:1;">';
   html += '          <label class="sheet-field-label">📂 분류 선택</label>';
   html += '          <div style="display:flex;gap:14px;margin-top:4px;padding:4px 0;">';
@@ -12742,8 +13150,12 @@ function buildSidebarDashboardHtml(mode) {
   html += 'let isManualRefreshPending = false;';
   html += 'const DEFAULT_KOREAN_HOLIDAYS = ' + JSON.stringify(getKoreanHolidaysMap(null)) + ';';
   html += 'let activeHolidays = Object.assign({}, DEFAULT_KOREAN_HOLIDAYS);';
+  html += 'let curEstimateEditSite = null;';
   html += '';
   html += 'function setDashboardScope(newScope) {';
+  html += '  if (typeof mobileExpandedEstimateSites !== "undefined" && mobileExpandedEstimateSites && typeof mobileExpandedEstimateSites.clear === "function") {';
+  html += '    mobileExpandedEstimateSites.clear();';
+  html += '  }';
   html += '  if (newScope !== "site" && newScope !== "single" && newScope !== "as" && newScope !== "newSite") newScope = "site";';
   html += '  currentScope = newScope;';
   html += '  currentFilter = "all";';
@@ -13583,6 +13995,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function switchToPcView(view) {';
   html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
+  html += '  if (typeof mobileExpandedEstimateSites !== "undefined" && mobileExpandedEstimateSites && typeof mobileExpandedEstimateSites.clear === "function") {';
+  html += '    mobileExpandedEstimateSites.clear();';
+  html += '  }';
   html += '  if (currentScope === "newSite" && (view === "month" || view === "week")) {';
   html += '    setDashboardScope("site");';
   html += '    return;';
@@ -15281,6 +15696,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function setFilter(type) {';
+  html += '  if (typeof mobileExpandedEstimateSites !== "undefined" && mobileExpandedEstimateSites && typeof mobileExpandedEstimateSites.clear === "function") {';
+  html += '    mobileExpandedEstimateSites.clear();';
+  html += '  }';
   html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
   html += '  currentFilter = type;';
   html += '  document.querySelectorAll(".filter-tab").forEach(b => {';
@@ -15437,6 +15855,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function setPcSiteStatusFilter(status) {';
   html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
+  html += '  if (typeof mobileExpandedEstimateSites !== "undefined" && mobileExpandedEstimateSites && typeof mobileExpandedEstimateSites.clear === "function") {';
+  html += '    mobileExpandedEstimateSites.clear();';
+  html += '  }';
   html += '  currentFilter = (status === "done") ? "done" : "all";';
   html += '  selectedPcSiteName = "";';
   html += '  pcSiteDetailFilter = "all";';
@@ -15666,7 +16087,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const priorityBadge = buildEstimateBadgeHtml("priority", est.priority || "보통", "우선순위: ");';
   html += '  const scopeBadge = buildEstimateBadgeHtml("scope", est.scope || "전체공사", "공사범위: ");';
   html += '  const sourceBadge = buildEstimateBadgeHtml("source", est.source || "온라인", "유입: ");';
-  html += '  const phoneLink = clientPhone ? (\'<a href="tel:\' + escapeHtml(clientPhone.replace(/[^0-9+]/g, "")) + \'" class="pc-est-call-btn" title="고객 전화 걸기">📞 \' + escapeHtml(clientPhone) + \'</a>\') : \'<span style="color:#94a3b8;font-size:12px;">연락처 미등록</span>\';';
+  html += '  const rawPhone = String(clientPhone || "").trim();';
+  html += '  const cleanPhone = rawPhone.replace(/[^0-9+]/g, "");';
+  html += '  const hasPhone = Boolean(cleanPhone && cleanPhone.length >= 7 && rawPhone !== "-" && rawPhone !== "미등록");';
+  html += '  const phoneLink = hasPhone ? (\'<a href="tel:\' + escapeHtml(cleanPhone) + \'" class="pc-est-call-btn" title="고객 전화 걸기 (\' + escapeHtml(rawPhone) + \')">📞 \' + escapeHtml(rawPhone) + \'</a>\') : \'<span style="color:#94a3b8;font-size:12px;">연락처 미등록</span>\';';
   html += '  let html = "";';
   html += '  html += \'<div class="pc-estimate-detail-container">\';';
   html += '  html += \'  <div class="pc-est-hero-card">\';';
@@ -15690,8 +16114,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  html += \'      </div>\';';
   html += '  html += \'      <div class="pc-est-hero-actions">\';';
   html += '  html += \'        <button type="button" class="pc-btn-primary" onclick="openSpreadsheetEstimateSheet()" title="스프레드시트 신규견적 탭 열기"><span>📊</span> 시트에서 보기</button>\';';
-  html += '  if (clientPhone) {';
-  html += '    html += \'        <a href="tel:\' + escapeHtml(clientPhone.replace(/[^0-9+]/g, "")) + \'" class="pc-btn-sec" style="text-decoration:none;"><span>📞</span> 전화걸기</a>\';';
+  html += '  html += \'        <button type="button" class="pc-btn-primary" onclick="openEditEstimateModal(\\\'\' + encodeURIComponent(siteName) + \'\\\')" style="background:#3b82f6;" title="신규현장 정보 수정"><span>✏️</span> 정보 수정</button>\';';
+  html += '  if (hasPhone) {';
+  html += '    html += \'        <a href="tel:\' + escapeHtml(cleanPhone) + \'" class="pc-btn-sec" style="text-decoration:none;padding:8px 12px;" title="고객 전화 걸기 (\' + escapeHtml(rawPhone) + \')"><span>📞</span></a>\';';
   html += '  }';
   html += '  html += \'      </div>\';';
   html += '  html += \'    </div>\';';
@@ -15701,7 +16126,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  html += \'      <div class="pc-est-card-head"><span class="pc-est-card-icon">👤</span><span class="pc-est-card-title">고객 및 현장 정보</span></div>\';';
   html += '  html += \'      <div class="pc-est-card-body">\';';
   html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">고객 성명</span><span class="val"><strong>\' + escapeHtml(clientName || "-") + \'</strong></span></div>\';';
-  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">연락처</span><span class="val">\' + (clientPhone ? (\'<a href="tel:\' + escapeHtml(clientPhone.replace(/[^0-9+]/g, "")) + \'" style="color:#2563eb;font-weight:700;text-decoration:none;">\' + escapeHtml(clientPhone) + \' 📞</a>\') : \'-\') + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">연락처</span><span class="val">\' + (hasPhone ? (\'<a href="tel:\' + escapeHtml(cleanPhone) + \'" style="color:#2563eb;font-weight:700;text-decoration:none;">\' + escapeHtml(rawPhone) + \' 📞</a>\') : \'-\') + \'</span></div>\';';
   html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">담당자</span><span class="val">\' + escapeHtml(manager) + \'</span></div>\';';
   html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">현장 주소</span><span class="val" title="\' + escapeHtml(address || "-") + \'">\' + (address ? (\'<span style="color:#0f172a;font-weight:600;">\' + escapeHtml(address) + \'</span> <a href="https://map.naver.com/p/search/\' + encodeURIComponent(address) + \'" target="_blank" rel="noopener noreferrer" style="color:#16a34a;font-size:11px;margin-left:4px;text-decoration:underline;">지도 ↗</a>\') : \'<span style="color:#94a3b8;">주소 미등록</span>\') + \'</span></div>\';';
   html += '  html += \'      </div>\';';
@@ -15783,16 +16208,18 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const isSelected = (s.siteName === selectedPcSiteName);';
   html += '    const rowAmtStr = formatEstimateAmtStr(e.expectedAmount);';
   html += '    const phoneClean = (e.clientPhone || "").replace(/[^0-9+]/g, "");';
+  html += '    const eRawPhone = String(e.clientPhone || "").trim();';
+  html += '    const eHasPhone = Boolean(phoneClean && phoneClean.length >= 7 && eRawPhone !== "-" && eRawPhone !== "미등록");';
   html += '    const searchStr = (s.siteName + " " + (e.clientName || "") + " " + (e.clientPhone || "") + " " + (e.memo || "") + " " + (e.nextAction || "") + " " + (e.manager || "") + " " + (e.scope || "") + " " + (e.status || "")).toLowerCase();';
-  html += '    html += \'          <tr class="pc-est-table-row\' + (isSelected ? \' selected-row\' : \'\') + \'" data-search="\' + escapeHtml(searchStr) + \'" data-sitename="\' + encodeURIComponent(s.siteName) + \'" onclick="selectPcSite(decodeURIComponent(this.dataset.sitename))" title="클릭 시 상단 상세 화면으로 이동">\';';
+  html += '    html += \'          <tr class="pc-est-table-row\' + (isSelected ? \' selected-row\' : \'\') + \'" data-search="\' + escapeHtml(searchStr) + \'" data-sitename="\' + encodeURIComponent(s.siteName) + \'" onclick="selectPcSite(decodeURIComponent(this.dataset.sitename)); openEditEstimateModal(decodeURIComponent(this.dataset.sitename));" title="클릭 시 신규현장 정보 수정">\';';
   html += '    html += \'            <td style="text-align:center;color:#94a3b8;font-weight:700;">\' + (idx + 1) + \'</td>\';';
-  html += '    html += \'            <td><strong style="color:\' + (isSelected ? \'#1d4ed8\' : \'#0f172a\') + \';font-size:13px;">\' + (isSelected ? \'👉 \' : \'\') + escapeHtml(s.siteName) + \'</strong></td>\';';
+  html += '    html += \'            <td><strong style="color:\' + (isSelected ? \'#1d4ed8\' : \'#0f172a\') + \';font-size:13px;">\' + escapeHtml(s.siteName) + \'</strong></td>\';';
   html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("status", e.status || "신규 문의") + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("priority", e.priority || "보통") + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("scope", e.scope || "전체공사") + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("source", e.source || "온라인") + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;font-weight:600;color:#1e293b;">\' + (e.clientName ? escapeHtml(e.clientName) : \'<span style="color:#94a3b8;">-</span>\') + \'</td>\';';
-  html += '    html += \'            <td style="text-align:center;font-size:12px;">\' + (e.clientPhone ? (\'<a href="tel:\' + escapeHtml(phoneClean) + \'" style="color:#2563eb;text-decoration:none;font-weight:600;" onclick="event.stopPropagation();" title="고객 전화 걸기">📞 \' + escapeHtml(e.clientPhone) + \'</a>\') : \'<span style="color:#94a3b8;">-</span>\') + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;font-size:12px;">\' + (eHasPhone ? (\'<a href="tel:\' + escapeHtml(phoneClean) + \'" style="color:#2563eb;text-decoration:none;font-weight:600;" onclick="event.stopPropagation();" title="고객 전화 걸기">📞 \' + escapeHtml(e.clientPhone) + \'</a>\') : \'<span style="color:#94a3b8;">-</span>\') + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;"><span class="pc-manager-pill"><span>\' + escapeHtml(e.manager || "조항만") + \'</span></span></td>\';';
   html += '    html += \'            <td style="text-align:right;font-weight:700;color:#2563eb;">\' + rowAmtStr + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;font-size:12px;color:#475569;">\' + escapeHtml(formatEstimateDateYMD(e.expectedDate)) + \'</td>\';';
@@ -16360,7 +16787,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const sMgr = formatManagerName(s.primaryManager || s.manager || eData.manager || "");';
   html += '    const sNameEnc = encodeURIComponent(s.siteName);';
   html += '    const isExpanded = mobileExpandedEstimateSites.has(s.siteName);';
-  html += '    const clientPhone = eData.clientPhone || "";';
+  html += '    const mRawPhone = String(eData.clientPhone || "").trim();';
+  html += '    const mCleanPhone = mRawPhone.replace(/[^0-9+]/g, "");';
+  html += '    const mHasPhone = Boolean(mCleanPhone && mCleanPhone.length >= 7 && mRawPhone !== "-" && mRawPhone !== "미등록");';
   html += '    mHtml += \'<div class="mobile-est-card" style="background:#ffffff;border:1.5px solid \' + (isExpanded ? "#93c5fd" : "#e2e8f0") + \';border-radius:10px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04);cursor:pointer;" onclick="toggleMobileEstimateCard(\\\'\' + sNameEnc + \'\\\')">\';';
   html += '    mHtml += \'  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">\';';
   html += '    mHtml += \'    <div style="display:flex;align-items:center;gap:7px;min-width:0;flex:1;">\';';
@@ -16382,12 +16811,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '      mHtml += \'    <div style="display:flex;align-items:center;justify-content:space-between;background:#f8fafc;padding:8px 10px;border-radius:8px;border:1px solid #e2e8f0;">\';';
   html += '      mHtml += \'      <div>\';';
   html += '      mHtml += \'        <div style="font-size:11px;color:#64748b;">고객 성명 / 연락처</div>\';';
-  html += '      mHtml += \'        <div style="font-size:13px;font-weight:800;color:#0f172a;margin-top:1px;">\' + escapeHtml(eData.clientName || "성명 미등록") + \'</div>\';';
+  html += '      mHtml += \'        <div style="font-size:13px;font-weight:800;color:#0f172a;margin-top:1px;">\' + escapeHtml(eData.clientName || "성명 미등록") + (mHasPhone ? (\' <span style="font-size:12px;color:#475569;font-weight:600;margin-left:4px;">(\' + escapeHtml(mRawPhone) + \')</span>\') : \'\') + \'</div>\';';
   html += '      mHtml += \'      </div>\';';
-  html += '      if (clientPhone) {';
-  html += '        mHtml += \'      <a href="tel:\' + escapeHtml(clientPhone.replace(/[^0-9+]/g, "")) + \'" style="padding:5px 10px;background:#2563eb;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:700;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;">📞 전화걸기</a>\';';
+  html += '      if (mHasPhone) {';
+  html += '        mHtml += \'      <a href="tel:\' + escapeHtml(mCleanPhone) + \'" style="width:34px;height:34px;border-radius:8px;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(37,99,235,0.3);" title="고객 전화 걸기 (\' + escapeHtml(mRawPhone) + \')">📞</a>\';';
   html += '      } else {';
-  html += '        mHtml += \'      <span style="color:#94a3b8;font-size:11px;">연락처 미등록</span>\';';
+  html += '        mHtml += \'      <span style="color:#94a3b8;font-size:11.5px;font-weight:600;">연락처 미등록</span>\';';
   html += '      }';
   html += '      mHtml += \'    </div>\';';
   html += '      if (eData.address) {';
@@ -16426,6 +16855,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        mHtml += \'<div style="background:#f8fafc;padding:6px 10px;border-radius:6px;border:1px solid #e2e8f0;color:#334155;"><strong>상담 메모:</strong> \' + escapeHtml(eData.memo) + \'</div>\';';
   html += '      }';
   html += '      mHtml += \'    <div style="display:flex;gap:6px;margin-top:4px;">\';';
+  html += '      mHtml += \'      <button type="button" onclick="openEditEstimateModal(\\\'\' + sNameEnc + \'\\\')" style="flex:1;padding:7px;background:#3b82f6;color:#ffffff;border:none;border-radius:6px;font-weight:700;font-size:11.5px;cursor:pointer;">✏️ 정보 수정</button>\';';
   html += '      mHtml += \'      <button type="button" onclick="openSpreadsheetEstimateSheet()" style="flex:1;padding:7px;background:#2563eb;color:#ffffff;border:none;border-radius:6px;font-weight:700;font-size:11.5px;cursor:pointer;">📊 시트에서 보기</button>\';';
   html += '      mHtml += \'      <button type="button" onclick="toggleMobileEstimateCard(\\\'\' + sNameEnc + \'\\\')" style="padding:7px 12px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:700;font-size:11.5px;cursor:pointer;">접기 ▲</button>\';';
   html += '      mHtml += \'    </div>\';';
@@ -17466,6 +17896,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const overlayEl = document.getElementById("sheetOverlay");';
   html += '  if (overlayEl) overlayEl.classList.remove("show");';
   html += '  isCreateMode = false;';
+  html += '  curEstimateEditSite = null;';
+  html += '  const catRow = document.getElementById("sheetCategorySelectRow");';
+  html += '  if (catRow) catRow.style.display = "block";';
   html += '}';
   html += '';
   html += 'function pushBottomSheetHistoryState() {';
@@ -17806,6 +18239,116 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (name === "AS") selectSheetStatus("AS");';
   html += '}';
   html += '';
+  html += 'function openEditEstimateModal(siteNameOrEnc) {';
+  html += '  if (!siteNameOrEnc) return;';
+  html += '  const siteName = (siteNameOrEnc.indexOf("%") !== -1) ? decodeURIComponent(siteNameOrEnc) : siteNameOrEnc;';
+  html += '  if (!rawData || !Array.isArray(rawData.sites)) return;';
+  html += '  const siteObj = rawData.sites.find(s => (s.scope || "site") === "newSite" && s.siteName === siteName) || rawData.sites.find(s => s.siteName === siteName);';
+  html += '  if (!siteObj) {';
+  html += '    showToast("⚠️ 신규현장 정보를 찾을 수 없습니다: " + siteName);';
+  html += '    return;';
+  html += '  }';
+  html += '  curEstimateEditSite = siteObj;';
+  html += '  isCreateMode = false;';
+  html += '  curSiteName = siteObj.siteName;';
+  html += '  curTaskObj = null;';
+  html += '  closeCustomDatePicker();';
+  html += '  const catRow = document.getElementById("sheetCategorySelectRow");';
+  html += '  if (catRow) catRow.style.display = "none";';
+  html += '  const createBox = document.getElementById("sheetCreateFields");';
+  html += '  if (createBox) createBox.style.display = "block";';
+  html += '  const regularCreate = document.getElementById("sheetRegularCreateFields");';
+  html += '  if (regularCreate) regularCreate.style.display = "none";';
+  html += '  const newSiteBox = document.getElementById("sheetNewSiteBox");';
+  html += '  if (newSiteBox) newSiteBox.style.display = "block";';
+  html += '  const editBox = document.getElementById("sheetEditBox");';
+  html += '  if (editBox) editBox.style.display = "none";';
+  html += '  const statusWrap = document.getElementById("sheetStatusSecWrap");';
+  html += '  if (statusWrap) statusWrap.style.display = "none";';
+  html += '  const shareWrap = document.getElementById("sheetShareSecWrap");';
+  html += '  if (shareWrap) shareWrap.style.display = "none";';
+  html += '  const memoWrap = document.getElementById("sheetMemoSecWrap");';
+  html += '  if (memoWrap) memoWrap.style.display = "none";';
+  html += '  const delBtn = document.getElementById("sheetDeleteBtn");';
+  html += '  if (delBtn) delBtn.style.display = "none";';
+  html += '  const miniGotoBtn = document.getElementById("sheetMiniGoToRowBtn");';
+  html += '  if (miniGotoBtn) miniGotoBtn.style.display = "none";';
+  html += '  const addSameBtn = document.getElementById("sheetAddSameDateBtn");';
+  html += '  if (addSameBtn) addSameBtn.style.display = "none";';
+  html += '  const dayNav = document.getElementById("sheetDayNav");';
+  html += '  if (dayNav) dayNav.style.display = "none";';
+  html += '  const editTaskBtn = document.getElementById("sheetEditTaskBtn");';
+  html += '  if (editTaskBtn) editTaskBtn.style.display = "none";';
+  html += '  const partnerBadge = document.getElementById("sheetTaskPartnerBadge");';
+  html += '  if (partnerBadge) partnerBadge.style.display = "none";';
+  html += '  const editPartnerRow = document.getElementById("sheetEditPartnerRow");';
+  html += '  if (editPartnerRow) editPartnerRow.style.display = "none";';
+  html += '  const siteNameEl = document.getElementById("sheetSiteName");';
+  html += '  if (siteNameEl) siteNameEl.innerText = "📋 신규현장 정보 수정";';
+  html += '  const taskNameEl = document.getElementById("sheetTaskName");';
+  html += '  if (taskNameEl) taskNameEl.innerText = siteObj.siteName;';
+  html += '  const saveBtn = document.getElementById("sheetSaveBtn");';
+  html += '  if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "💾 신규현장 수정 저장"; }';
+  html += '  const eData = siteObj.estimateData || {};';
+  html += '  const nsName = document.getElementById("sheetNewSiteNameInput");';
+  html += '  if (nsName) nsName.value = siteObj.siteName || "";';
+  html += '  const nsStatus = document.getElementById("sheetNewSiteStatusSelect");';
+  html += '  if (nsStatus) nsStatus.value = eData.status || "신규 문의";';
+  html += '  const nsPrio = document.getElementById("sheetNewSitePrioritySelect");';
+  html += '  if (nsPrio) nsPrio.value = eData.priority || "보통";';
+  html += '  const nsScope = document.getElementById("sheetNewSiteScopeSelect");';
+  html += '  if (nsScope) nsScope.value = eData.scope || "전체공사";';
+  html += '  const nsSource = document.getElementById("sheetNewSiteSourceSelect");';
+  html += '  if (nsSource) nsSource.value = eData.source || "소개";';
+  html += '  const nsClientName = document.getElementById("sheetNewSiteClientNameInput");';
+  html += '  if (nsClientName) nsClientName.value = eData.clientName || "";';
+  html += '  const nsClientPhone = document.getElementById("sheetNewSiteClientPhoneInput");';
+  html += '  if (nsClientPhone) nsClientPhone.value = eData.clientPhone || "";';
+  html += '  const mgrSel = document.getElementById("sheetNewSiteManagerSelect");';
+  html += '  if (mgrSel && rawData && Array.isArray(rawData.members) && rawData.members.length > 0) {';
+  html += '    const curMgr = eData.manager || siteObj.primaryManager || siteObj.manager || "조항만";';
+  html += '    let mHtml = "";';
+  html += '    rawData.members.forEach(m => {';
+  html += '      if (!m || m === "김종혁" || m === "영하") return;';
+  html += '      mHtml += \'<option value="\' + escapeHtml(m) + \'"\' + (m === curMgr ? \' selected\' : \'\') + \'>\' + escapeHtml(m) + \'</option>\';';
+  html += '    });';
+  html += '    mgrSel.innerHTML = mHtml;';
+  html += '    mgrSel.value = curMgr;';
+  html += '  } else if (mgrSel) {';
+  html += '    mgrSel.value = eData.manager || "조항만";';
+  html += '  }';
+  html += '  const nsExpAmt = document.getElementById("sheetNewSiteExpectedAmountInput");';
+  html += '  if (nsExpAmt) nsExpAmt.value = eData.expectedAmount || "";';
+  html += '  const nsContractAmt = document.getElementById("sheetNewSiteContractAmountInput");';
+  html += '  if (nsContractAmt) nsContractAmt.value = eData.contractAmount || "";';
+  html += '  const inqYmd = formatEstimateDateYMD(eData.inquiryDate);';
+  html += '  const expYmd = formatEstimateDateYMD(eData.expectedDate);';
+  html += '  const consultYmd = formatEstimateDateYMD(eData.consultDate);';
+  html += '  const visitYmd = formatEstimateDateYMD(eData.visitDate);';
+  html += '  const estSendYmd = formatEstimateDateYMD(eData.estimateSendDate);';
+  html += '  const nsInqDate = document.getElementById("sheetNewSiteInquiryDateInput");';
+  html += '  if (nsInqDate) nsInqDate.value = (inqYmd && inqYmd !== "-") ? inqYmd : "";';
+  html += '  const nsExpDate = document.getElementById("sheetNewSiteExpectedDateInput");';
+  html += '  if (nsExpDate) nsExpDate.value = (expYmd && expYmd !== "-") ? expYmd : "";';
+  html += '  const nsConsultDate = document.getElementById("sheetNewSiteConsultDateInput");';
+  html += '  if (nsConsultDate) nsConsultDate.value = (consultYmd && consultYmd !== "-") ? consultYmd : "";';
+  html += '  const nsVisitDate = document.getElementById("sheetNewSiteVisitDateInput");';
+  html += '  if (nsVisitDate) nsVisitDate.value = (visitYmd && visitYmd !== "-") ? visitYmd : "";';
+  html += '  const nsEstSendDate = document.getElementById("sheetNewSiteEstSendDateInput");';
+  html += '  if (nsEstSendDate) nsEstSendDate.value = (estSendYmd && estSendYmd !== "-") ? estSendYmd : "";';
+  html += '  const nsAddr = document.getElementById("sheetNewSiteAddressInput");';
+  html += '  if (nsAddr) nsAddr.value = eData.address || "";';
+  html += '  const nsNextAct = document.getElementById("sheetNewSiteNextActionInput");';
+  html += '  if (nsNextAct) nsNextAct.value = eData.nextAction || "";';
+  html += '  const nsFailReason = document.getElementById("sheetNewSiteFailReasonSelect");';
+  html += '  if (nsFailReason) nsFailReason.value = eData.failReason || "";';
+  html += '  const nsMemo = document.getElementById("sheetNewSiteMemoInput");';
+  html += '  if (nsMemo) nsMemo.value = eData.memo || "";';
+  html += '  updateSheetModalSiteInfo(siteObj.siteName);';
+  html += '  const overlayEl = document.getElementById("sheetOverlay");';
+  html += '  if (overlayEl) overlayEl.classList.add("show");';
+  html += '  pushBottomSheetHistoryState();';
+  html += '}';
   html += 'function openNewTaskOnCurrentDate() {';
   html += '  const dateInput = document.getElementById("sheetDateInput");';
   html += '  const curDate = (dateInput && dateInput.value) ? dateInput.value.trim() : ((curTaskObj && curTaskObj.startDateStr) || "");';
@@ -17814,6 +18357,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function openNewTaskModal(prefillSite, prefillDate) {';
   html += '  closeCustomDatePicker();';
+  html += '  curEstimateEditSite = null;';
+  html += '  const catRow = document.getElementById("sheetCategorySelectRow");';
+  html += '  if (catRow) catRow.style.display = "block";';
   html += '  isCreateMode = true;';
   html += '  curSiteName = prefillSite || "";';
   html += '  curTaskObj = null;';
@@ -17943,6 +18489,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function openBottomSheet(site, task, explicitList, explicitIndex) {';
   html += '  closeCustomDatePicker();';
+  html += '  curEstimateEditSite = null;';
+  html += '  const catRow = document.getElementById("sheetCategorySelectRow");';
+  html += '  if (catRow) catRow.style.display = "block";';
   html += '  isCreateMode = false;';
   html += '  curSiteName = site;';
   html += '  curTaskObj = task;';
@@ -18064,6 +18613,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (taskDispWrap) taskDispWrap.style.display = "inline-flex";';
   html += '  document.getElementById("sheetOverlay").classList.remove("show");';
   html += '  isCreateMode = false;';
+  html += '  curEstimateEditSite = null;';
+  html += '  const catRow = document.getElementById("sheetCategorySelectRow");';
+  html += '  if (catRow) catRow.style.display = "block";';
   html += '  popBottomSheetHistoryStateIfNeeded();';
   html += '}';
   html += '';
@@ -18191,6 +18743,123 @@ function buildSidebarDashboardHtml(mode) {
   html += '    mgrVal = (mgrVal1 === mgrVal2) ? mgrVal1 : (mgrVal1 + ", " + mgrVal2);';
   html += '  } else {';
   html += '    mgrVal = mgrVal1 || mgrVal2;';
+  html += '  }';
+  html += '  if (curEstimateEditSite) {';
+  html += '    const siteObj = curEstimateEditSite;';
+  html += '    const nameInput = document.getElementById("sheetNewSiteNameInput");';
+  html += '    const siteVal = nameInput ? nameInput.value.trim() : "";';
+  html += '    if (!siteVal) {';
+  html += '      showToast("⚠️ 현장/고객명을 입력해주세요.");';
+  html += '      if (nameInput) nameInput.focus();';
+  html += '      return;';
+  html += '    }';
+  html += '    const statusSel = document.getElementById("sheetNewSiteStatusSelect");';
+  html += '    const prioritySel = document.getElementById("sheetNewSitePrioritySelect");';
+  html += '    const scopeSel = document.getElementById("sheetNewSiteScopeSelect");';
+  html += '    const sourceSel = document.getElementById("sheetNewSiteSourceSelect");';
+  html += '    const clientNameInp = document.getElementById("sheetNewSiteClientNameInput");';
+  html += '    const clientPhoneInp = document.getElementById("sheetNewSiteClientPhoneInput");';
+  html += '    const mgrSel = document.getElementById("sheetNewSiteManagerSelect");';
+  html += '    const expAmtInp = document.getElementById("sheetNewSiteExpectedAmountInput");';
+  html += '    const contractAmtInp = document.getElementById("sheetNewSiteContractAmountInput");';
+  html += '    const inqDateInp = document.getElementById("sheetNewSiteInquiryDateInput");';
+  html += '    const expDateInp = document.getElementById("sheetNewSiteExpectedDateInput");';
+  html += '    const consultDateInp = document.getElementById("sheetNewSiteConsultDateInput");';
+  html += '    const visitDateInp = document.getElementById("sheetNewSiteVisitDateInput");';
+  html += '    const estSendDateInp = document.getElementById("sheetNewSiteEstSendDateInput");';
+  html += '    const addrInp = document.getElementById("sheetNewSiteAddressInput");';
+  html += '    const nextActInp = document.getElementById("sheetNewSiteNextActionInput");';
+  html += '    const failReasonSel = document.getElementById("sheetNewSiteFailReasonSelect");';
+  html += '    const memoInp = document.getElementById("sheetNewSiteMemoInput");';
+  html += '    const origSiteName = siteObj.siteName;';
+  html += '    const rowNum = (siteObj.estimateData && siteObj.estimateData.row) || null;';
+  html += '    const estPayload = {';
+  html += '      row: rowNum,';
+  html += '      originalSiteName: origSiteName,';
+  html += '      origSiteName: origSiteName,';
+  html += '      siteName: siteVal,';
+  html += '      status: (statusSel && statusSel.value) || "신규 문의",';
+  html += '      priority: (prioritySel && prioritySel.value) || "보통",';
+  html += '      scope: (scopeSel && scopeSel.value) || "전체공사",';
+  html += '      source: (sourceSel && sourceSel.value) || "소개",';
+  html += '      clientName: (clientNameInp && clientNameInp.value.trim()) || "",';
+  html += '      clientPhone: (clientPhoneInp && clientPhoneInp.value.trim()) || "",';
+  html += '      manager: (mgrSel && mgrSel.value) || "조항만",';
+  html += '      expectedAmount: (expAmtInp && expAmtInp.value.trim()) || "",';
+  html += '      contractAmount: (contractAmtInp && contractAmtInp.value.trim()) || "",';
+  html += '      inquiryDate: (inqDateInp && inqDateInp.value) || "",';
+  html += '      expectedDate: (expDateInp && expDateInp.value) || "",';
+  html += '      consultDate: (consultDateInp && consultDateInp.value) || "",';
+  html += '      visitDate: (visitDateInp && visitDateInp.value) || "",';
+  html += '      estimateSendDate: (estSendDateInp && estSendDateInp.value) || "",';
+  html += '      address: (addrInp && addrInp.value.trim()) || "",';
+  html += '      nextAction: (nextActInp && nextActInp.value.trim()) || "",';
+  html += '      failReason: (failReasonSel && failReasonSel.value) || "",';
+  html += '      memo: (memoInp && memoInp.value.trim()) || ""';
+  html += '    };';
+  html += '    const prevEstimateSnapshot = Object.assign({}, siteObj.estimateData || {});';
+  html += '    const prevSiteName = siteObj.siteName;';
+  html += '    const eColorHex = (estPayload.priority === "긴급" ? "#ef4444" : (estPayload.priority === "높음" ? "#f97316" : "#0284c7"));';
+  html += '    siteObj.siteName = siteVal;';
+  html += '    siteObj.colorHex = eColorHex;';
+  html += '    siteObj.colorCode = (estPayload.priority === "긴급" ? "11" : (estPayload.priority === "높음" ? "6" : "1"));';
+  html += '    siteObj.primaryManager = estPayload.manager;';
+  html += '    siteObj.manager = estPayload.manager;';
+  html += '    siteObj.estimateData = Object.assign({}, siteObj.estimateData || {}, estPayload);';
+  html += '    if (selectedPcSiteName === origSiteName) { selectedPcSiteName = siteVal; }';
+  html += '    const isDone = (estPayload.status === "계약 완료");';
+  html += '    siteObj.isArchived = isDone;';
+  html += '    siteObj.isAllCompleted = isDone;';
+  html += '    closeCustomDatePicker();';
+  html += '    const overlayEl = document.getElementById("sheetOverlay");';
+  html += '    if (overlayEl) overlayEl.classList.remove("show");';
+  html += '    popBottomSheetHistoryStateIfNeeded();';
+  html += '    curEstimateEditSite = null;';
+  html += '    if (rawData) renderDashboardPayload(rawData);';
+  html += '    showToast("💾 [" + siteVal + "] 신규현장 정보가 수정되었습니다.");';
+  html += '    if (typeof google !== "undefined" && google.script && google.script.run) {';
+  html += '      google.script.run';
+  html += '        .withSuccessHandler(res => {';
+  html += '          if (res && res.success) { loadDataSilently(); }';
+  html += '          else {';
+  html += '            showToast("⚠️ 수정 실패: " + ((res && res.error) || "알 수 없는 오류"));';
+  html += '            siteObj.siteName = prevSiteName;';
+  html += '            siteObj.estimateData = prevEstimateSnapshot;';
+  html += '            if (rawData) renderDashboardPayload(rawData);';
+  html += '          }';
+  html += '        })';
+  html += '        .withFailureHandler(err => {';
+  html += '          showToast("❌ 서버 오류: " + ((err && err.message) || err));';
+  html += '          siteObj.siteName = prevSiteName;';
+  html += '          siteObj.estimateData = prevEstimateSnapshot;';
+  html += '          if (rawData) renderDashboardPayload(rawData);';
+  html += '        })';
+  html += '        .updateEstimateRowFromWeb(estPayload);';
+  html += '    } else {';
+  html += '      const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));';
+  html += '      fetch(apiUrl + "?action=updateEstimateRow", {';
+  html += '        method: "POST",';
+  html += '        headers: { "Content-Type": "application/x-www-form-urlencoded" },';
+  html += '        body: Object.keys(estPayload).map(k => encodeURIComponent(k) + "=" + encodeURIComponent(estPayload[k])).join("&")';
+  html += '      })';
+  html += '        .then(r => r.json())';
+  html += '        .then(res => {';
+  html += '          if (res && res.success) loadDataSilently();';
+  html += '          else {';
+  html += '            showToast("⚠️ 수정 실패: " + (res && res.error));';
+  html += '            siteObj.siteName = prevSiteName;';
+  html += '            siteObj.estimateData = prevEstimateSnapshot;';
+  html += '            if (rawData) renderDashboardPayload(rawData);';
+  html += '          }';
+  html += '        })';
+  html += '        .catch(err => {';
+  html += '          showToast("❌ 통신 오류: " + err);';
+  html += '          siteObj.siteName = prevSiteName;';
+  html += '          siteObj.estimateData = prevEstimateSnapshot;';
+  html += '          if (rawData) renderDashboardPayload(rawData);';
+  html += '        });';
+  html += '    }';
+  html += '    return;';
   html += '  }';
   html += '  if (isCreateMode) {';
   html += '    const catEl = (typeof document !== "undefined" && typeof document.querySelector === "function") ? document.querySelector(\'input[name="sheetCategory"]:checked\') : null;';
