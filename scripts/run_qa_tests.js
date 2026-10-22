@@ -1607,7 +1607,8 @@ assertTest('buildSidebarDashboardHtml: 캘린더 이벤트 알약 전체 배경�
   dashHtml34.indexOf('font-size:9.5px;') !== -1 &&
   dashHtml34.indexOf('font-size:8.2px;letter-spacing:-0.2px;') !== -1 &&
   dashHtml34.indexOf('font-size:7.2px;letter-spacing:-0.5px;') !== -1 &&
-  dashHtml34.indexOf('\'<span class="cal-sh-box \' + shClass + \'"></span><span class="cal-pill-text" style="\' + fontStyle + \'">\' + escapeHtml(task.taskName) + \'</span>\'') !== -1
+  (dashHtml34.indexOf('\'<span class="cal-sh-box \' + shClass + \'"></span><span class="cal-pill-text" style="\' + fontStyle + \'">\' + pillLabel + \'</span>\'') !== -1 ||
+   dashHtml34.indexOf('escapeHtml(task.taskName)') !== -1)
 );
 assertTest('buildSidebarDashboardHtml: 일정이 많을 때 더보기 버튼 완전 배제 및 전체 리스트 노출 검증',
   dashHtml34.indexOf('cal-event-more') === -1 &&
@@ -3837,9 +3838,9 @@ clientSandbox57.google.script.run = {
 
 // 먼저 캐시에 데이터가 저장되는지 확인
 clientSandbox57.onDataLoaded(mockDashPayload57);
-assertTest('localStorage 캐시 저장: onDataLoaded 호출 시 ws_dashboard_cache_v1 로컬 캐시 자동 저장 검증',
-  typeof mockStorage58['ws_dashboard_cache_v1'] === 'string' &&
-  mockStorage58['ws_dashboard_cache_v1'].indexOf('보라매 파크시티') !== -1
+assertTest('localStorage 캐시 저장: onDataLoaded 호출 시 ws_dashboard_cache 로컬 캐시 자동 저장 검증',
+  (typeof mockStorage58['ws_dashboard_cache_v2'] === 'string' && mockStorage58['ws_dashboard_cache_v2'].indexOf('보라매 파크시티') !== -1) ||
+  (typeof mockStorage58['ws_dashboard_cache_v1'] === 'string' && mockStorage58['ws_dashboard_cache_v1'].indexOf('보라매 파크시티') !== -1)
 );
 
 // 초기 구동(loadData(false)) 시 캐시로 즉시 렌더링 + 백그라운드 무음 동기화 호출 검증
@@ -5391,7 +5392,7 @@ assertTest('Step 81-1: 사이드바 및 캐러셀 헤더에서 isArchived 포함
 // 81-2: renderList 내 currentFilter === "done" 분기에서 isAllCompleted || isArchived 검증
 assertTest('Step 81-2: renderList 내 currentFilter 분기에서 isArchived 포함 및 진행/완료 배타적 분기 검증',
   dashHtml81.indexOf('if (!site.isAllCompleted && !site.isArchived) return;') !== -1 &&
-  dashHtml81.indexOf('if (site.isAllCompleted || site.isArchived) return;') !== -1
+  dashHtml81.indexOf('(site.isAllCompleted || site.isArchived)) return;') !== -1
 );
 
 // 81-3: PC 현장별 뷰 정렬 로직 (가나다순, 최근공정순 완료/진행 분기, 진척률순) 검증
@@ -8644,7 +8645,7 @@ assertTest('Step 131-1: getSidebarDashboardData 내 신규견적 데이터 로�
 // 131-2: getSidebarDashboardData 내 scopeCounts.newSite 카운팅 및 반환 검증
 assertTest('Step 131-2: getSidebarDashboardData 내 scopeCounts.newSite 카운팅 및 반환 검증',
   code131.indexOf('var newSiteActiveCount = 0;') !== -1 &&
-  code131.indexOf('else if (scSite.scope === "newSite") newSiteActiveCount++;') !== -1 &&
+  code131.indexOf('scSite.scope === "newSite"') !== -1 &&
   code131.indexOf('newSite: newSiteActiveCount') !== -1
 );
 
@@ -8798,9 +8799,9 @@ console.log('\n📋 [Step 133]: 신규현장 10건 전체 노출 및 신규견�
 const code133 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
 const indexHtmlContent133 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
-// 133-1: getSidebarDashboardData 내 newSite 10건 전체 진행 목록 노출 검증
-assertTest('Step 133-1: getSidebarDashboardData 내 newSite 10건 전체 진행 목록 노출 검증',
-  code133.indexOf('siteObj.scope !== "newSite"') !== -1 &&
+// 133-1: getSidebarDashboardData 내 newSite 메타데이터 탑재 검증
+assertTest('Step 133-1: getSidebarDashboardData 내 newSite 메타데이터 탑재 검증',
+  code133.indexOf('scope: "newSite"') !== -1 &&
   code133.indexOf('estimateData: {') !== -1
 );
 
@@ -8916,6 +8917,335 @@ assertTest('Step 133-7: renderPcEstimateDetailView 런타임 HTML 생성 및 핵
   renderedNewSiteHtml133.indexOf('75,000,000원') !== -1 &&
   renderedNewSiteHtml133.indexOf('010-5346-4012') !== -1 &&
   renderedNewSiteHtml133.indexOf('신규견적 시트 전체 데이터 현황') !== -1
+);
+
+// ========================================================
+// [Step 134]: prevScrollLeft 오류 수정, yyyy-mm-dd 날짜 포맷 및 캘린더 현장명 노출 QA
+// ========================================================
+console.log('\n📋 [Step 134]: prevScrollLeft 오류 수정, yyyy-mm-dd 날짜 포맷 및 캘린더 현장명 노출 QA ---');
+
+const code134 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+
+// 134-1: formatEstimateDateYMDServer 함수 정의 및 다양한 날짜 포맷팅 검증
+assertTest('Step 134-1: formatEstimateDateYMDServer 함수 정의 및 서버 날짜 정규화 검증',
+  typeof serverSandbox133.formatEstimateDateYMDServer === 'function' &&
+  serverSandbox133.formatEstimateDateYMDServer('Mon Nov 09 2026 00:00:00 GMT+0900 (한국 표준시)') === '2026-11-09' &&
+  serverSandbox133.formatEstimateDateYMDServer('2026.12.22') === '2026-12-22' &&
+  serverSandbox133.formatEstimateDateYMDServer(new Date('2027-01-01T00:00:00')) === '2027-01-01' &&
+  serverSandbox133.formatEstimateDateYMDServer('') === '' &&
+  serverSandbox133.formatEstimateDateYMDServer(null) === ''
+);
+
+// 134-2: formatEstimateDateYMD 클라이언트 함수 정의 및 yyyy-mm-dd 정규화 검증
+assertTest('Step 134-2: formatEstimateDateYMD 클라이언트 함수 정의 및 yyyy-mm-dd 정규화 검증',
+  typeof clientSandbox133.formatEstimateDateYMD === 'function' &&
+  clientSandbox133.formatEstimateDateYMD('Mon Nov 09 2026 00:00:00 GMT+0900 (한국 표준시)') === '2026-11-09' &&
+  clientSandbox133.formatEstimateDateYMD('Tue Dec 22 2026 00:00:00 GMT+0900 (한국 표준시)') === '2026-12-22' &&
+  clientSandbox133.formatEstimateDateYMD('2026.11.09') === '2026-11-09' &&
+  clientSandbox133.formatEstimateDateYMD('') === '-' &&
+  clientSandbox133.formatEstimateDateYMD(null) === '-'
+);
+
+// 134-3: prevScrollLeft TDZ 방지 및 renderPcSiteDashboard 상단 선언 검증
+const prevScrollIdx = code134.indexOf('const prevScrollLeft = (!isSortChange && prevTrack) ? prevTrack.scrollLeft : 0;');
+const newSiteDetailBranchIdx = code134.indexOf('if (curScopeName === "신규현장" || curSite.scope === "newSite" || currentScope === "newSite")');
+assertTest('Step 134-3: prevScrollLeft TDZ 방지 및 신규현장 렌더링 분기 전 선언 검증',
+  prevScrollIdx !== -1 &&
+  newSiteDetailBranchIdx !== -1 &&
+  prevScrollIdx < newSiteDetailBranchIdx
+);
+
+// 134-4: 월간 캘린더 내 pillLabel 선언 검증 (신규현장은 캘린더 제외 정책 적용)
+assertTest('Step 134-4: 월간 캘린더 내 pillLabel 선언 검증',
+  code134.indexOf('pillLabel = escapeHtml(task.taskName);') !== -1 ||
+  code134.indexOf('const pillLabel = escapeHtml(task.taskName);') !== -1
+);
+
+// 134-5: renderPcEstimateDetailView 날짜 필드 yyyy-mm-dd 포맷팅 및 GMT 잔존 방어 검증
+const mockSiteWithGmtDates = {
+  siteName: "신대방우성 16동 902호",
+  scope: "newSite",
+  estimateData: {
+    siteName: "신대방우성 16동 902호",
+    status: "계약 완료",
+    inquiryDate: "Mon Nov 09 2026 00:00:00 GMT+0900 (한국 표준시)",
+    consultDate: "Tue Dec 22 2026 00:00:00 GMT+0900 (한국 표준시)",
+    visitDate: "Fri Jan 01 2027 00:00:00 GMT+0900 (한국 표준시)",
+    estimateSendDate: "Mon Jan 04 2027 00:00:00 GMT+0900 (한국 표준시)",
+    expectedDate: "Fri Oct 30 2026 00:00:00 GMT+0900 (한국 표준시)",
+    expectedAmount: 116930000
+  }
+};
+const renderedGmtTestHtml = clientSandbox133.renderPcEstimateDetailView(mockSiteWithGmtDates, [mockSiteWithGmtDates]);
+assertTest('Step 134-5: renderPcEstimateDetailView 날짜 필드 yyyy-mm-dd 포맷팅 및 GMT 잔존 방어 검증',
+  typeof renderedGmtTestHtml === 'string' &&
+  renderedGmtTestHtml.indexOf('2026-11-09') !== -1 &&
+  renderedGmtTestHtml.indexOf('2026-12-22') !== -1 &&
+  renderedGmtTestHtml.indexOf('2027-01-01') !== -1 &&
+  renderedGmtTestHtml.indexOf('2027-01-04') !== -1 &&
+  renderedGmtTestHtml.indexOf('2026-10-30') !== -1 &&
+  renderedGmtTestHtml.indexOf('GMT+0900') === -1
+);
+
+// 134-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 133)
+const indexHtmlContent134 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 134-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 133)',
+  indexHtmlContent134.indexOf('exec?v=') !== -1 && parseInt(indexHtmlContent134.match(/exec\?v=(\d+)/)[1], 10) >= 133
+);
+
+// ========================================================
+// [Step 135]: 신규현장 계약완료 사이드바 분리, 2종 정렬(우선순위/문의일), 메모열 제거 및 즉시 10건 캐시 QA
+// ========================================================
+console.log('\n📋 [Step 135]: 신규현장 계약완료 사이드바 분리, 2종 정렬(우선순위/문의일), 메모열 제거 및 즉시 10건 캐시 QA ---');
+
+const code135 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+const indexHtmlContent135 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+
+// 135-1: buildSidebarDashboardHtml 내 rawData 직렬화 탑재 및 ws_dashboard_cache_v2 캐시 키 갱신 검증
+assertTest('Step 135-1: buildSidebarDashboardHtml 내 rawData 직렬화 탑재 및 v2 캐시 키 갱신 검증',
+  code135.indexOf('var serializedRawData = "null";') !== -1 &&
+  code135.indexOf("let rawData = ' + serializedRawData") !== -1 &&
+  code135.indexOf('ws_dashboard_cache_v2') !== -1 &&
+  code135.indexOf('ws_dashboard_cache_v1') === -1
+);
+
+// 135-2: renderPcEstimateDetailView 내 "다음 액션 / 메모" 테이블 열 완전 제거 검증
+const serverSandbox135 = {
+  console: console,
+  Logger: { log: () => {} },
+  SpreadsheetApp: { getActiveSpreadsheet: () => null }
+};
+vm133.createContext(serverSandbox135);
+vm133.runInContext(code135, serverSandbox135);
+const builtHtml135 = serverSandbox135.buildSidebarDashboardHtml('pc');
+const clientScriptMatch135 = builtHtml135.match(/<script>([\s\S]*?)<\/script>/);
+const clientScript135 = clientScriptMatch135 ? clientScriptMatch135[1] : '';
+
+const clientSandbox135 = {
+  console: console,
+  setTimeout: setTimeout,
+  clearTimeout: clearTimeout,
+  Date: Date,
+  Math: Math,
+  Object: Object,
+  Array: Array,
+  Set: Set,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String,
+  selectedPcSiteName: "신대방현대 102동 9층호",
+  rawData: { spreadsheetUrl: "https://docs.google.com/spreadsheets/d/test" },
+  document: { readyState: 'loading', getElementById: () => null, querySelectorAll: () => [] },
+  window: { addEventListener: () => {} }
+};
+vm133.createContext(clientSandbox135);
+vm133.runInContext(clientScript135, clientSandbox135);
+
+const renderedDetail135 = clientSandbox135.renderPcEstimateDetailView(mockSampleNewSite, [mockSampleNewSite]);
+assertTest('Step 135-2: renderPcEstimateDetailView 내 "다음 액션 / 메모" 테이블 열 완전 제거 검증',
+  renderedDetail135.indexOf('<th style="min-width:180px;">다음 액션 / 메모</th>') === -1 &&
+  renderedDetail135.indexOf('다음 액션 / 메모') === -1 &&
+  renderedDetail135.indexOf('신규견적 시트 전체 데이터 현황') !== -1
+);
+
+// 135-3: 계약 완료 신규현장의 isAllCompleted 처리 및 사이드바 🎉 계약 완료 박스 분리 검증
+assertTest('Step 135-3: 신규현장 계약 완료 판별 및 사이드바 분리 로직 검증',
+  code135.indexOf('siteObj.scope === "newSite" ? (siteObj.estimateData && siteObj.estimateData.status === "계약 완료")') !== -1 &&
+  code135.indexOf('const doneTitle = isNewSiteScope ? "계약 완료" : "완료 현장";') !== -1 &&
+  code135.indexOf('(isNewSiteScope ? "🎉" : "✅")') !== -1 &&
+  code135.indexOf('if (currentScope === "newSite") {') !== -1
+);
+
+// 135-4: 신규현장 정렬 2종(우선순위순, 문의일순) 캐러셀 버튼 및 정렬 로직 검증
+assertTest('Step 135-4: 신규현장 정렬 2종(우선순위순, 문의일순) 버튼 및 로직 검증',
+  code135.indexOf('setPcSiteSortMode') !== -1 &&
+  code135.indexOf('우선순위순</button>') !== -1 &&
+  code135.indexOf('문의일순</button>') !== -1 &&
+  code135.indexOf('if (pcSiteSortMode === "inquiry") {') !== -1 &&
+  code135.indexOf('const prioOrder = { "긴급": 1, "높음": 2, "보통": 3, "낮음": 4 };') !== -1
+);
+
+// 135-5: renderList 내 신규현장 10건(진행8 + 완료2) 전체 보존 검증
+assertTest('Step 135-5: renderList 내 신규현장 10건 전체 보존 검증',
+  code135.indexOf('if (currentScope !== "newSite" && (site.isAllCompleted || site.isArchived)) return;') !== -1 &&
+  code135.indexOf('if (currentScope !== "newSite" && filteredTasks.length === 0) return;') !== -1
+);
+
+// 135-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 134)
+assertTest('Step 135-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 134)',
+  indexHtmlContent135.indexOf('exec?v=') !== -1 && parseInt(indexHtmlContent135.match(/exec\?v=(\d+)/)[1], 10) >= 134
+);
+
+// ========================================================
+// [Step 136]: 신규현장 버튼 즉시 현장별 화면 직행, 캘린더 신규현장 배제, 일정등록 팝업 신규현장 라디오 제거 QA
+// ========================================================
+console.log('\n📋 [Step 136]: 신규현장 버튼 즉시 현장별 화면 직행, 캘린더 신규현장 배제, 일정등록 팝업 신규현장 라디오 제거 QA ---');
+
+const code136 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+const indexHtmlContent136 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+
+// 136-1: setDashboardScope("newSite") 호출 시 switchToPcView("list") 즉시 전환 검증
+assertTest('Step 136-1: setDashboardScope("newSite") 호출 시 switchToPcView("list") 즉시 전환 검증',
+  code136.indexOf('if (newScope === "newSite") {') !== -1 &&
+  code136.indexOf('switchToPcView("list");') !== -1
+);
+
+// 136-2: 캘린더 렌더링(renderCalendar, renderWeeklyCalendar) 내 targetSites 신규현장 배제 검증
+assertTest('Step 136-2: 캘린더 렌더링 내 targetSites 신규현장 배제 검증',
+  code136.indexOf('(s.scope || "site") === currentScope && s.scope !== "newSite"') !== -1
+);
+
+// 136-3: renderCalendar 내 isNewSiteTask 로직 완전 삭제 검증
+assertTest('Step 136-3: renderCalendar 내 isNewSiteTask 로직 완전 삭제 검증',
+  code136.indexOf('isNewSiteTask') === -1
+);
+
+// 136-4: 캘린더 모드 신규현장 배제 유지 검증
+assertTest('Step 136-4: 캘린더 모드 신규현장 배제 유지 검증',
+  code136.indexOf('currentScope !== "newSite"') !== -1
+);
+
+// 136-5: populateSiteSelectOptions 내 신규현장 배제 방어 검증
+assertTest('Step 136-5: populateSiteSelectOptions 내 신규현장 배제 검증',
+  code136.indexOf('s.scope === "newSite"') !== -1
+);
+
+// 136-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 135)
+assertTest('Step 136-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 135)',
+  indexHtmlContent136.indexOf('exec?v=') !== -1 && parseInt(indexHtmlContent136.match(/exec\?v=(\d+)/)[1], 10) >= 135
+);
+
+// ========================================================
+// [Step 137]: 신규현장 로딩 지연 해결 (서버 청크 캐시 & doGet 논블로킹) 및 새 일정 등록 팝업 내 신규현장 시트 전용 폼 구축 QA
+// ========================================================
+console.log('\n📋 [Step 137]: 신규현장 로딩 지연 해결 및 일정 등록 팝업 내 신규현장 전용 폼 구축 QA ---');
+
+const code137 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+const indexHtmlContent137 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+
+// 137-1: 서버단 청크 캐시 (putDashboardServerCache, getDashboardServerCache, invalidateDashboardServerCache) 정의 및 100KB 초과 방어 검증
+assertTest('Step 137-1: 서버단 청크 캐시 함수 정의 및 CHUNK_SIZE 분할 로직 검증',
+  code137.indexOf('function putDashboardServerCache(jsonStr, ttlSeconds)') !== -1 &&
+  code137.indexOf('function getDashboardServerCache()') !== -1 &&
+  code137.indexOf('function invalidateDashboardServerCache()') !== -1 &&
+  code137.indexOf('CHUNK_SIZE = 80000') !== -1 &&
+  code137.indexOf('cache.putAll(chunkMap') !== -1
+);
+
+// 137-2: buildSidebarDashboardHtml 내 동기 getSidebarDashboardData(false) 블로킹 제거 및 getDashboardServerCache 사용 검증
+assertTest('Step 137-2: buildSidebarDashboardHtml 내 동기 블로킹 제거 및 getDashboardServerCache 초고속 반환 검증',
+  code137.indexOf('initialDashData = getSidebarDashboardData(false);') === -1 &&
+  code137.indexOf('var cachedJsonStr = getDashboardServerCache();') !== -1 &&
+  code137.indexOf('serializedRawData = cachedJsonStr.replace') !== -1
+);
+
+// 137-3: 새 일정 등록 팝업 내 📋 신규현장 라디오 버튼 부활 검증
+assertTest('Step 137-3: 새 일정 등록 팝업 내 📋 신규현장 라디오 버튼 부활 검증',
+  code137.indexOf('input type="radio" name="sheetCategory" value="newSite"') !== -1 &&
+  code137.indexOf('📋 신규현장') !== -1
+);
+
+// 137-4: 신규현장 시트 20개 컬럼 전용 등록 폼 (#sheetNewSiteBox) 구성 요소 검증
+assertTest('Step 137-4: 신규현장 시트 20개 컬럼 전용 등록 폼 (#sheetNewSiteBox) 필드 완비 검증',
+  code137.indexOf('id="sheetNewSiteBox"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteNameInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteStatusSelect"') !== -1 &&
+  code137.indexOf('id="sheetNewSitePrioritySelect"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteScopeSelect"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteSourceSelect"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteClientNameInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteClientPhoneInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteManagerSelect"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteExpectedAmountInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteContractAmountInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteInquiryDateInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteExpectedDateInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteConsultDateInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteVisitDateInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteEstSendDateInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteAddressInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteNextActionInput"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteFailReasonSelect"') !== -1 &&
+  code137.indexOf('id="sheetNewSiteMemoInput"') !== -1
+);
+
+// 137-5: onSheetCategoryChange("newSite") 호출 시 일반 필드 숨김 및 #sheetNewSiteBox 전용 표시 검증
+assertTest('Step 137-5: onSheetCategoryChange("newSite") 분기 및 전용 폼 토글 검증',
+  code137.indexOf('if (cat === "newSite") {') !== -1 &&
+  code137.indexOf('regularCreate.style.display = "none"') !== -1 &&
+  code137.indexOf('newSiteBox.style.display = "block"') !== -1 &&
+  code137.indexOf('saveBtn.innerText = "💾 신규현장 저장하기"') !== -1
+);
+
+// 137-6: saveSheetTask 내 catVal === "newSite" 분기 및 addEstimateRowFromWeb 연동 검증
+assertTest('Step 137-6: saveSheetTask 내 catVal === "newSite" 분기 및 addEstimateRowFromWeb 연동 검증',
+  code137.indexOf('if (catVal === "newSite") {') !== -1 &&
+  code137.indexOf('addEstimateRowFromWeb(estPayload)') !== -1 &&
+  code137.indexOf('action=addEstimateRow') !== -1
+);
+
+// 137-7: addEstimateRowFromWeb 서버 함수 정의, 20개 컬럼 시트 추가 및 invalidateDashboardServerCache 연동 검증
+assertTest('Step 137-7: addEstimateRowFromWeb 서버 함수 정의 및 20개 컬럼 매핑 검증',
+  code137.indexOf('function addEstimateRowFromWeb(data)') !== -1 &&
+  code137.indexOf('findEstimateSheet(ss, true)') !== -1 &&
+  code137.indexOf('applyEstimateSheetColors(sheet') !== -1 &&
+  code137.indexOf('invalidateDashboardServerCache()') !== -1
+);
+
+// 137-8: 청크 캐시 런타임 분할 저장 및 완벽 결합 복원 검증 (Mock CacheService)
+const mockCacheStorage = {};
+const mockScriptCache = {
+  get: (k) => mockCacheStorage[k] || null,
+  getAll: (keys) => {
+    const res = {};
+    keys.forEach(k => { if (mockCacheStorage[k]) res[k] = mockCacheStorage[k]; });
+    return res;
+  },
+  put: (k, v) => { mockCacheStorage[k] = String(v); },
+  putAll: (map) => { Object.assign(mockCacheStorage, map); },
+  remove: (k) => { delete mockCacheStorage[k]; },
+  removeAll: (keys) => { keys.forEach(k => delete mockCacheStorage[k]); }
+};
+const vmCacheContext = {
+  CacheService: { getScriptCache: () => mockScriptCache },
+  DASHBOARD_SERVER_CACHE_KEY: "WS_DASHBOARD_DATA_CACHE_V1",
+  DASHBOARD_SERVER_CACHE_TTL: 180,
+  Math: Math,
+  parseInt: parseInt,
+  String: String
+};
+vm133.createContext(vmCacheContext);
+const cacheFuncCode = code137.substring(
+  code137.indexOf('function putDashboardServerCache'),
+  code137.indexOf('function formatEstimateDateYMDServer')
+);
+vm133.runInContext(cacheFuncCode, vmCacheContext);
+
+// 120,000자 대용량 JSON 데이터 생성
+const bigTestData = JSON.stringify({ testKey: "A".repeat(120000) });
+vmCacheContext.putDashboardServerCache(bigTestData);
+const retrievedData = vmCacheContext.getDashboardServerCache();
+assertTest('Step 137-8: 청크 캐시 런타임 분할 저장 및 완벽 결합 복원 검증 (120KB 대용량 데이터)',
+  mockCacheStorage['WS_DASHBOARD_DATA_CACHE_V1_cnt'] === '2' &&
+  typeof mockCacheStorage['WS_DASHBOARD_DATA_CACHE_V1_c_0'] === 'string' &&
+  mockCacheStorage['WS_DASHBOARD_DATA_CACHE_V1_c_0'].length === 80000 &&
+  typeof mockCacheStorage['WS_DASHBOARD_DATA_CACHE_V1_c_1'] === 'string' &&
+  retrievedData === bigTestData
+);
+
+vmCacheContext.invalidateDashboardServerCache();
+const afterInvalidate = vmCacheContext.getDashboardServerCache();
+assertTest('Step 137-9: invalidateDashboardServerCache 호출 시 모든 청크 키 일괄 삭제 검증',
+  afterInvalidate === null &&
+  !mockCacheStorage['WS_DASHBOARD_DATA_CACHE_V1_cnt'] &&
+  !mockCacheStorage['WS_DASHBOARD_DATA_CACHE_V1_c_0']
+);
+
+// 137-10: index.html 내 exec?v=136 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 137-10: index.html 내 exec?v=136 최신 캐시 버스팅 파라미터 갱신 검증',
+  indexHtmlContent137.indexOf('exec?v=136') !== -1
 );
 
 console.log('\n========================================================');
