@@ -417,6 +417,75 @@ function getMemberNames(ss) {
 }
 
 /**
+ * 03_구성원 시트 연동 담당자별 연락처(전화번호) 매핑 테이블 반환
+ * - 작업 안내문 '담당 디자이너' 연락처 자동 매핑 및 고정 인경호 소장 연락처 보장
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {Object<string, string>}
+ */
+function getMemberPhoneMap(ss) {
+  var phoneMap = {
+    "인경호": "010-9870-9696"
+  };
+  try {
+    if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    var mSheet = findMembersSheet(ss);
+    if (mSheet && mSheet.getLastRow() >= 2) {
+      var lastR = mSheet.getLastRow();
+      var lastC = Math.max((typeof mSheet.getLastColumn === "function" ? mSheet.getLastColumn() : 5), 5);
+      var headerVals = mSheet.getRange(1, 1, 1, lastC).getValues()[0];
+      var nameColIdx = -1;
+      var phoneColIdx = -1;
+
+      for (var c = 0; c < lastC; c++) {
+        var hStr = String(headerVals[c] || "").trim().toLowerCase();
+        if (nameColIdx === -1 && (hStr.indexOf("이름") !== -1 || hStr.indexOf("성명") !== -1 || hStr.indexOf("담당자") !== -1 || hStr.indexOf("직원") !== -1)) {
+          nameColIdx = c;
+        }
+        if (phoneColIdx === -1 && (hStr.indexOf("연락처") !== -1 || hStr.indexOf("전화") !== -1 || hStr.indexOf("phone") !== -1 || hStr.indexOf("휴대폰") !== -1 || hStr.indexOf("핸드폰") !== -1)) {
+          phoneColIdx = c;
+        }
+      }
+
+      if (nameColIdx === -1) nameColIdx = 0;
+      if (phoneColIdx === -1) phoneColIdx = 3; // 기본 D열(4열)
+
+      var mData = mSheet.getRange(2, 1, lastR - 1, lastC).getValues();
+      for (var i = 0; i < mData.length; i++) {
+        var mName = String(mData[i][nameColIdx] || "").trim();
+        var rawPhone = String(mData[i][phoneColIdx] || "").trim();
+        if (!mName) continue;
+
+        if (!rawPhone) {
+          for (var oc = 0; oc < mData[i].length; oc++) {
+            if (oc === nameColIdx) continue;
+            var cVal = String(mData[i][oc] || "").trim();
+            if (/01[0-9]-?[0-9]{3,4}-?[0-9]{4}/.test(cVal)) {
+              rawPhone = cVal;
+              break;
+            }
+          }
+        }
+
+        if (rawPhone) {
+          var matchedPhone = rawPhone.match(/(0\d{1,2}-?\d{3,4}-?\d{4}|\d{9,11})/);
+          var finalPhone = matchedPhone ? matchedPhone[0] : rawPhone;
+          phoneMap[mName] = finalPhone;
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("getMemberPhoneMap error: " + e.toString());
+  }
+
+  if (!phoneMap["인경호"]) {
+    phoneMap["인경호"] = "010-9870-9696";
+  }
+
+  return phoneMap;
+}
+
+/**
  * 담당자 드롭다운 목록 반환 (구성원 시트 연동 + 모든 2인 조합 + 시트 실제 작성값 자동 포함)
  * - 개별 인원 명단 (김종혁·영하 제외, 오직 구성원 시트에 등록된 순수 이름만 노출)
  * - 드롭다운을 열었을 때 조합(쉼표/슬래시) 없이 구성원 이름만 깔끔하게 노출
@@ -9495,6 +9564,9 @@ function getSidebarDashboardData(forceRefresh) {
                 if (!parsedCache.partnerPhoneMap) {
                   parsedCache.partnerPhoneMap = getPartnerPhoneMap(null);
                 }
+                if (!parsedCache.memberPhoneMap) {
+                  parsedCache.memberPhoneMap = getMemberPhoneMap(null);
+                }
                 return parsedCache;
               }
             }
@@ -10073,6 +10145,7 @@ function getSidebarDashboardData(forceRefresh) {
       tasks: getAvailableTasks(sheet),
       partners: getAvailablePartners(ss),
       partnerPhoneMap: getPartnerPhoneMap(ss),
+      memberPhoneMap: getMemberPhoneMap(ss),
       holidays: getKoreanHolidaysMap(ss),
       sites: sitesList,
       siteInfoMap: getSiteInfoMap(ss)
@@ -10100,6 +10173,8 @@ function getSidebarDashboardData(forceRefresh) {
       members: ["조항만", "송지은", "전예린", "한송이", "인경호"],
       tasks: getAvailableTasks(null),
       holidays: getKoreanHolidaysMap(null),
+      partnerPhoneMap: getPartnerPhoneMap(null),
+      memberPhoneMap: getMemberPhoneMap(null),
       sites: [],
       siteInfoMap: {}
     };
@@ -10341,6 +10416,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '.site-card.expanded .task-list { display: block; }';
   html += '.task-item { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 9px 11px; margin-bottom: 6px; cursor: pointer; transition: all 0.15s; }';
   html += '.task-item:hover { border-color: #2563eb; background: #f0f7ff; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(37,99,235,0.08); }';
+  html += '.task-item.row-selected { background: #eff6ff !important; border-color: #3b82f6 !important; border-left: 3.5px solid #2563eb !important; }';
+  html += '.mob-task-cb { cursor: pointer; width: 16px; height: 16px; accent-color: #2563eb; flex-shrink: 0; }';
   html += '.task-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }';
   html += '.task-name { font-weight: 700; color: #0f172a; font-size: 13px; }';
   html += '.task-date { font-size: 11.5px; color: #64748b; font-weight: 600; }';
@@ -10396,6 +10473,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '.sheet-date-picker-wrap { position: relative; display: flex; align-items: center; width: 100%; }';
   html += '.sheet-field-input { width: 100%; height: 38px; padding: 6px 32px 6px 10px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff; outline: none; transition: border-color 0.15s; }';
   html += '.sheet-field-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }';
+  html += '#sheetPartnerPhoneInput, #sheetCreatePartnerPhoneInput { padding: 6px 6px 6px 8px !important; font-size: 12.5px !important; letter-spacing: -0.3px !important; width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }';
   html += '.sheet-hidden-picker { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; left: 0; bottom: 0; }';
   html += '.sheet-cal-pick-btn { position: absolute; right: 4px; width: 28px; height: 28px; border: none; background: #f1f5f9; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.15s; }';
   html += '.sheet-cal-pick-btn:hover { background: #e2e8f0; }';
@@ -11191,7 +11269,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        </div>';
   html += '      </div>';
   html += '      <div class="sheet-field-row" style="margin-top:8px;">';
-  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '        <div class="sheet-field-col" style="flex:1;min-width:0;">';
   html += '          <label class="sheet-field-label">협력업체</label>';
   html += '          <div class="sheet-partner-wrap">';
   html += '            <select id="sheetPartnerSelect" class="sheet-field-select" onchange="onSheetPartnerSelect(this.value, true)">';
@@ -11200,11 +11278,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '            <input type="text" id="sheetPartnerCustomInput" class="sheet-field-input" placeholder="협력업체 직접 입력" style="display:none;margin-top:4px;" oninput="onSheetPartnerCustomInput(this.value, true)">';
   html += '          </div>';
   html += '        </div>';
-  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '        <div class="sheet-field-col" style="flex:1.15;min-width:0;">';
   html += '          <label class="sheet-field-label">📞 연락처</label>';
-  html += '          <div style="display:flex;gap:6px;align-items:center;">';
-  html += '            <input type="text" id="sheetCreatePartnerPhoneInput" class="sheet-field-input" placeholder="연락처 미등록" readonly style="background:#f8fafc;color:#94a3b8;font-size:11.5px;font-weight:500;flex:1;cursor:default;">';
-  html += '            <a id="sheetCreatePartnerCallBtn" href="javascript:void(0)" class="sheet-call-btn" style="display:none;width:38px;height:38px;min-width:38px;border-radius:8px;background:#22c55e;color:#ffffff;align-items:center;justify-content:center;text-decoration:none;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,0.1);" title="전화 걸기">📞</a>';
+  html += '          <div style="display:flex;gap:5px;align-items:center;">';
+  html += '            <input type="text" id="sheetCreatePartnerPhoneInput" class="sheet-field-input" placeholder="연락처 미등록" readonly style="background:#f8fafc;color:#94a3b8;font-size:12px;font-weight:600;flex:1;min-width:0;cursor:default;padding:6px 6px 6px 8px !important;letter-spacing:-0.3px;">';
+  html += '            <a id="sheetCreatePartnerCallBtn" href="javascript:void(0)" class="sheet-call-btn" style="display:none;width:34px;height:34px;min-width:34px;border-radius:8px;background:#22c55e;color:#ffffff;align-items:center;justify-content:center;text-decoration:none;font-size:14px;box-shadow:0 1px 3px rgba(0,0,0,0.1);flex-shrink:0;" title="전화 걸기">📞</a>';
   html += '          </div>';
   html += '        </div>';
   html += '      </div>';
@@ -11238,7 +11316,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        </div>';
   html += '      </div>';
   html += '      <div class="sheet-field-row" id="sheetEditPartnerRow" style="margin-top:8px;">';
-  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '        <div class="sheet-field-col" style="flex:1;min-width:0;">';
   html += '          <label class="sheet-field-label">협력업체</label>';
   html += '          <div class="sheet-partner-wrap">';
   html += '            <select id="sheetEditPartnerSelect" class="sheet-field-select" onchange="onSheetPartnerSelect(this.value, false)">';
@@ -11247,11 +11325,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '            <input type="text" id="sheetEditPartnerCustomInput" class="sheet-field-input" placeholder="협력업체 직접 입력" style="display:none;margin-top:4px;" oninput="onSheetPartnerCustomInput(this.value, false)">';
   html += '          </div>';
   html += '        </div>';
-  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '        <div class="sheet-field-col" style="flex:1.15;min-width:0;">';
   html += '          <label class="sheet-field-label">📞 연락처</label>';
-  html += '          <div style="display:flex;gap:6px;align-items:center;">';
-  html += '            <input type="text" id="sheetPartnerPhoneInput" class="sheet-field-input" placeholder="연락처 미등록" readonly style="background:#f8fafc;color:#94a3b8;font-size:11.5px;font-weight:500;flex:1;cursor:default;">';
-  html += '            <a id="sheetPartnerCallBtn" href="javascript:void(0)" class="sheet-call-btn" style="display:none;width:38px;height:38px;min-width:38px;border-radius:8px;background:#22c55e;color:#ffffff;align-items:center;justify-content:center;text-decoration:none;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,0.1);" title="전화 걸기">📞</a>';
+  html += '          <div style="display:flex;gap:5px;align-items:center;">';
+  html += '            <input type="text" id="sheetPartnerPhoneInput" class="sheet-field-input" placeholder="연락처 미등록" readonly style="background:#f8fafc;color:#94a3b8;font-size:12px;font-weight:600;flex:1;min-width:0;cursor:default;padding:6px 6px 6px 8px !important;letter-spacing:-0.3px;">';
+  html += '            <a id="sheetPartnerCallBtn" href="javascript:void(0)" class="sheet-call-btn" style="display:none;width:34px;height:34px;min-width:34px;border-radius:8px;background:#22c55e;color:#ffffff;align-items:center;justify-content:center;text-decoration:none;font-size:14px;box-shadow:0 1px 3px rgba(0,0,0,0.1);flex-shrink:0;" title="전화 걸기">📞</a>';
   html += '          </div>';
   html += '        </div>';
   html += '      </div>';
@@ -11687,7 +11765,33 @@ function buildSidebarDashboardHtml(mode) {
   html += '  lines.push("■ 현장명: " + sName);';
   html += '  if (taskName) lines.push("■ 공종: " + taskName + partner);';
   html += '  lines.push("■ 작업일자: " + (dateDisp || todayFormatted));';
-  html += '  lines.push("■ 담당자: " + (mgr || "현장 담당자"));';
+  html += '  let designerName = "";';
+  html += '  if (taskObj) {';
+  html += '    if (taskObj.manager1) {';
+  html += '      designerName = String(taskObj.manager1).trim();';
+  html += '    } else if (taskObj.manager) {';
+  html += '      designerName = String(taskObj.manager).split(/[,/]/)[0].trim();';
+  html += '    }';
+  html += '  }';
+  html += '  if (!designerName) {';
+  html += '    let sObjForMgr = null;';
+  html += '    if (rawData && Array.isArray(rawData.sites)) {';
+  html += '      sObjForMgr = rawData.sites.find(s => s && s.siteName === sName);';
+  html += '    }';
+  html += '    if (sObjForMgr && (sObjForMgr.primaryManager || sObjForMgr.manager)) {';
+  html += '      designerName = String(sObjForMgr.primaryManager || sObjForMgr.manager).split(/[,/]/)[0].trim();';
+  html += '    } else if (typeof findSiteDefaultManager === "function") {';
+  html += '      designerName = String(findSiteDefaultManager(sName) || "").split(/[,/]/)[0].trim();';
+  html += '    }';
+  html += '  }';
+  html += '  if (typeof formatManagerName === "function" && designerName) {';
+  html += '    const fNames = formatManagerName(designerName);';
+  html += '    if (fNames) designerName = fNames.split(/[,/]/)[0].trim();';
+  html += '  }';
+  html += '  const designerPhone = designerName ? getMemberPhoneNumber(designerName) : "";';
+  html += '  const designerDisplay = designerName ? (designerName + (designerPhone ? " | " + designerPhone : "")) : "미지정";';
+  html += '  lines.push("■ 담당 디자이너 : " + designerDisplay);';
+  html += '  lines.push("■ 현장 소장 : 인경호 | 010-9870-9696");';
   html += '  lines.push("━━━━━━━━━━━━━━━━━━");';
   html += '  lines.push("📍 현장 주소: " + (sInfo.address || "(주소 미등록 - 현장 문의)"));';
   html += '  lines.push("🔑 도어락 비번: " + (sInfo.doorPassword || "(비밀번호 미등록 - 현장 문의)"));';
@@ -11917,6 +12021,76 @@ function buildSidebarDashboardHtml(mode) {
   html += '    allCb.checked = false;';
   html += '    allCb.indeterminate = true;';
   html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onMobileTaskCheckboxClick(e, cb) {';
+  html += '  if (e) e.stopPropagation();';
+  html += '  if (!cb) return;';
+  html += '  const sName = cb.getAttribute("data-site") ? decodeURIComponent(cb.getAttribute("data-site")) : "";';
+  html += '  const r = cb.getAttribute("data-row");';
+  html += '  const key = sName + "::" + r;';
+  html += '  const cardEl = cb.closest(".task-item");';
+  html += '  if (cb.checked) {';
+  html += '    checkedSiteTasks.add(key);';
+  html += '    if (cardEl) cardEl.classList.add("row-selected");';
+  html += '  } else {';
+  html += '    checkedSiteTasks.delete(key);';
+  html += '    if (cardEl) cardEl.classList.remove("row-selected");';
+  html += '  }';
+  html += '  updateMobileSelectAllState(sName);';
+  html += '}';
+  html += '';
+  html += 'function toggleSelectAllMobileSiteTasks(allCb, encSite) {';
+  html += '  const sName = decodeURIComponent(encSite || "");';
+  html += '  const checked = allCb ? allCb.checked : false;';
+  html += '  const siteCard = allCb ? allCb.closest(".site-card") : null;';
+  html += '  if (!siteCard) return;';
+  html += '  const cbs = siteCard.querySelectorAll(".mob-task-cb");';
+  html += '  cbs.forEach(cb => {';
+  html += '    cb.checked = checked;';
+  html += '    const itemEl = cb.closest(".task-item");';
+  html += '    if (itemEl) itemEl.classList.toggle("row-selected", checked);';
+  html += '    const r = cb.getAttribute("data-row");';
+  html += '    const key = sName + "::" + r;';
+  html += '    if (checked) {';
+  html += '      checkedSiteTasks.add(key);';
+  html += '    } else {';
+  html += '      checkedSiteTasks.delete(key);';
+  html += '    }';
+  html += '  });';
+  html += '}';
+  html += '';
+  html += 'function updateMobileSelectAllState(siteName) {';
+  html += '  const encSite = encodeURIComponent(siteName);';
+  html += '  const allCb = document.querySelector(\'.mob-site-select-all[data-site="\' + encSite + \'"]\');';
+  html += '  if (!allCb) return;';
+  html += '  const siteCard = allCb.closest(".site-card");';
+  html += '  if (!siteCard) return;';
+  html += '  const cbs = Array.from(siteCard.querySelectorAll(".mob-task-cb"));';
+  html += '  if (cbs.length === 0) {';
+  html += '    allCb.checked = false;';
+  html += '    allCb.indeterminate = false;';
+  html += '    return;';
+  html += '  }';
+  html += '  const checkedCount = cbs.filter(cb => cb.checked).length;';
+  html += '  if (checkedCount === 0) {';
+  html += '    allCb.checked = false;';
+  html += '    allCb.indeterminate = false;';
+  html += '  } else if (checkedCount === cbs.length) {';
+  html += '    allCb.checked = true;';
+  html += '    allCb.indeterminate = false;';
+  html += '  } else {';
+  html += '    allCb.checked = false;';
+  html += '    allCb.indeterminate = true;';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function updateAllMobileSelectAllStates() {';
+  html += '  const allCbs = document.querySelectorAll(".mob-site-select-all");';
+  html += '  allCbs.forEach(cb => {';
+  html += '    const encSite = cb.getAttribute("data-site");';
+  html += '    if (encSite) updateMobileSelectAllState(decodeURIComponent(encSite));';
+  html += '  });';
   html += '}';
   html += '';
   html += 'function openCurrentTaskPartnerGuideModal() {';
@@ -14627,12 +14801,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (progTotal > 0) sumText += " · 진행 " + progTotal + "건";';
   html += '    if (delayTotal > 0) sumText += " · ⚠️ 지연 " + delayTotal + "건";';
   html += '    if (site.canceledTasksCount > 0) sumText += " (취소 " + site.canceledTasksCount + "건 제외)";';
-  html += '    html += \'    <div class="site-summary-box">\';';
-  html += '    html += \'      <div class="site-summary-main">\';';
-  html += '    html += \'        <span class="site-summary-rate \' + (site.isAllCompleted ? "done" : "") + \'">진척률 <strong>\' + pRate + \'%</strong></span>\';';
-  html += '    html += \'        <span class="site-summary-counts">\' + escapeHtml(sumText) + \'</span>\';';
-  html += '    html += \'      </div>\';';
-  html += '    html += \'    </div>\';';
+  html += '    html += \'<div class="site-summary-box" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">\';';
+  html += '    html += \'  <div class="site-summary-main">\';';
+  html += '    html += \'    <span class="site-summary-rate \' + (site.isAllCompleted ? "done" : "") + \'">진척률 <strong>\' + pRate + \'%</strong></span>\';';
+  html += '    html += \'    <span class="site-summary-counts">\' + escapeHtml(sumText) + \'</span>\';';
+  html += '    html += \'  </div>\';';
+  html += '    html += \'  <label style="font-size:11px;font-weight:700;color:#2563eb;display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none;flex-shrink:0;padding:2px 7px;border-radius:5px;background:#eff6ff;" onclick="event.stopPropagation()">\';';
+  html += '    html += \'    <input type="checkbox" class="mob-site-select-all" data-site="\' + siteEnc + \'" onchange="toggleSelectAllMobileSiteTasks(this, \\\'\' + siteEnc + \'\\\')" style="width:14px;height:14px;accent-color:#2563eb;cursor:pointer;"> 전체선택\';';
+  html += '    html += \'  </label>\';';
+  html += '    html += \'</div>\';';
   html += '    const mobSiteInfo = getSiteInfoFromMap(site.siteName);';
   html += '    const mobConsent = (mobSiteInfo.consentDone === true);';
   html += '    const mobElevator = (mobSiteInfo.elevatorCoverDone === true);';
@@ -14700,11 +14877,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '      const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1");';
   html += '      const shareTagClass = isSh ? "share-tag share-on" : "share-tag share-off";';
   html += '      const shareTagText = isSh ? "🟦 공유" : "🟥 미공유";';
-
+  html += '';
+  html += '      const isTaskChecked = checkedSiteTasks.has(site.siteName + "::" + task.row);';
   html += '      const taskJson = encodeURIComponent(JSON.stringify(task));';
-  html += '      html += \'<div class="task-item" onclick="onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')">\';';
-  html += '      html += \'  <div class="task-top">\';';
-  html += '      html += \'    <span class="task-name">[\' + escapeHtml(task.taskName) + \']</span>\';';
+  html += '      html += \'<div class="task-item\' + (isTaskChecked ? " row-selected" : "") + \'" onclick="onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')">\';';
+  html += '      html += \'  <div class="task-top" style="display:flex;align-items:center;gap:6px;">\';';
+  html += '      html += \'    <input type="checkbox" class="mob-task-cb" data-site="\' + siteEnc + \'" data-row="\' + task.row + \'" \' + (isTaskChecked ? "checked" : "") + \' onclick="onMobileTaskCheckboxClick(event, this)" style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;flex-shrink:0;">\';';
+  html += '      html += \'    <span class="task-name" style="flex:1;min-width:0;">[\' + escapeHtml(task.taskName) + \']</span>\';';
   html += '      html += \'    <span class="task-date \' + dateClass + \'">\' + (task.isToday ? "🔥 오늘 " : (task.isDelayed ? "⚠️ 지연 " : "")) + escapeHtml(task.dateDisplay) + \'</span>\';';
   html += '      html += \'  </div>\';';
   html += '      html += \'  <div class="task-meta">\';';
@@ -14741,6 +14920,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    container.innerHTML = html;';
   html += '  }';
   html += '  if (typeof updateFilterVisualStates === "function") updateFilterVisualStates();';
+  html += '  if (typeof updateAllMobileSelectAllStates === "function") updateAllMobileSelectAllStates();';
   html += '}';
 
   html += 'function toggleSite(el) {';
@@ -15124,6 +15304,20 @@ function buildSidebarDashboardHtml(mode) {
   html += '  return "";';
   html += '}';
   html += '';
+  html += 'function getMemberPhoneNumber(mName) {';
+  html += '  if (!mName) return "";';
+  html += '  const clean = String(mName || "").trim();';
+  html += '  if (!clean) return "";';
+  html += '  if (clean === "인경호") return "010-9870-9696";';
+  html += '  if (rawData && rawData.memberPhoneMap) {';
+  html += '    if (rawData.memberPhoneMap[clean]) return rawData.memberPhoneMap[clean];';
+  html += '    if (rawData.memberPhoneMap[clean.toLowerCase()]) return rawData.memberPhoneMap[clean.toLowerCase()];';
+  html += '    const fName = (typeof formatManagerName === "function") ? formatManagerName(clean) : clean;';
+  html += '    if (fName && rawData.memberPhoneMap[fName]) return rawData.memberPhoneMap[fName];';
+  html += '  }';
+  html += '  return "";';
+  html += '}';
+  html += '';
   html += 'function updatePartnerSelectStyle(sel) {';
   html += '  if (!sel || !sel.style) return;';
   html += '  if (!sel.value) {';
@@ -15225,7 +15419,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '      inp.value = phone;';
   html += '      inp.placeholder = "";';
   html += '      inp.style.color = "#0f172a";';
-  html += '      inp.style.fontSize = "13px";';
+  html += '      inp.style.fontSize = "12.5px";';
+  html += '      inp.style.letterSpacing = "-0.3px";';
   html += '      inp.style.fontWeight = "700";';
   html += '      inp.style.background = "#ffffff";';
   html += '    } else {';

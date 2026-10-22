@@ -8205,6 +8205,146 @@ assertTest('Step 123-9: index.html 내 exec?v=121 이상 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent123) && parseInt(indexHtmlContent123.match(/exec\?v=(\d+)/)[1], 10) >= 121
 );
 
+console.log('\n📱 [Step 124]: 안내문 담당 디자이너/소장 분리 매핑 & 모바일 체크박스 연동 & 협력업체 연락처 잘림 방지 QA ---');
+
+const code124 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent124 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const vm124 = require('vm');
+const sandbox124 = {
+  SpreadsheetApp: {
+    getActiveSpreadsheet: () => null
+  },
+  Logger: { log: () => {} }
+};
+vm124.createContext(sandbox124);
+vm124.runInContext(code124, sandbox124);
+
+// 124-1: getMemberPhoneMap(ss) 함수 정의 및 인경호 010-9870-9696 기본 포함 검증
+const mSheet124 = {
+  getName: () => '03_구성원',
+  getLastRow: () => 3,
+  getLastColumn: () => 5,
+  getRange: (r, c, numR, numC) => ({
+    getValues: () => {
+      if (numR === 1) {
+        return [['이름', '직책', '이메일', '연락처', '상태']];
+      }
+      return [
+        ['조항만', '디자이너', 'test1@example.com', '010-1234-5678', '재직'],
+        ['송지은', '디자이너', 'test2@example.com', '010-9876-5432', '재직']
+      ];
+    }
+  })
+};
+const mockSs124 = {
+  getSheets: () => [mSheet124],
+  getSheetByName: (name) => (name === '03_구성원' || name === '구성원') ? mSheet124 : null
+};
+const phoneMap124 = sandbox124.getMemberPhoneMap(mockSs124);
+assertTest('Step 124-1: getMemberPhoneMap 구성원 시트 연동 및 인경호 소장 기본 포함 검증',
+  typeof sandbox124.getMemberPhoneMap === 'function' &&
+  phoneMap124['조항만'] === '010-1234-5678' &&
+  phoneMap124['송지은'] === '010-9876-5432' &&
+  phoneMap124['인경호'] === '010-9870-9696'
+);
+
+// 124-2: buildPartnerWorkGuideText 내 ■ 담당 디자이너 : 이름 | 연락처 및 ■ 현장 소장 : 인경호 | 010-9870-9696 포맷 검증
+const dashHtml124 = sandbox124.buildSidebarDashboardHtml('desktop');
+assertTest('Step 124-2: 안내문 텍스트 내 담당 디자이너 및 현장 소장(인경호 | 010-9870-9696 고정) 분리 포맷 검증',
+  dashHtml124.indexOf('lines.push("■ 담당 디자이너 : " + designerDisplay);') !== -1 &&
+  dashHtml124.indexOf('lines.push("■ 현장 소장 : 인경호 | 010-9870-9696");') !== -1 &&
+  dashHtml124.indexOf('lines.push("■ 담당자: "') === -1
+);
+
+// 124-3: 클라이언트 getMemberPhoneNumber(mName) 함수 탑재 및 런타임 매핑 검증
+const clientScriptMatch124 = dashHtml124.match(/<script>([\s\S]*?)<\/script>/);
+const clientScript124 = clientScriptMatch124 ? clientScriptMatch124[1] : '';
+const clientSandbox124 = {
+  document: {
+    getElementById: () => null,
+    querySelectorAll: () => []
+  },
+  window: { addEventListener: () => {} },
+  setTimeout: () => {},
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String,
+  Date: Date
+};
+vm124.createContext(clientSandbox124);
+vm124.runInContext(clientScript124, clientSandbox124);
+
+vm124.runInContext(`rawData = {
+  memberPhoneMap: {
+    '조항만': '010-1234-5678',
+    '송지은': '010-9876-5432'
+  },
+  sites: [
+    {
+      siteName: '한남동 준빌라 201호',
+      tasks: [
+        { row: 2, taskName: '현장실측', manager: '조항만, 송지은', status: '예정', startDateStr: '2026.09.22' }
+      ]
+    }
+  ],
+  siteInfoMap: {
+    '한남동 준빌라 201호': {
+      siteName: '한남동 준빌라 201호',
+      address: '유엔빌리지길 80-46',
+      doorPassword: '0304',
+      officePhone: '010-5416-7272',
+      memo: '월요일 주차대수 4대 가능'
+    }
+  }
+};`, clientSandbox124);
+
+const phone1 = clientSandbox124.getMemberPhoneNumber('조항만');
+const phone2 = clientSandbox124.getMemberPhoneNumber('인경호');
+const sampleTask124 = vm124.runInContext('rawData.sites[0].tasks[0]', clientSandbox124);
+const guideText124 = clientSandbox124.buildPartnerWorkGuideText('한남동 준빌라 201호', sampleTask124);
+assertTest('Step 124-3: 클라이언트 getMemberPhoneNumber 및 buildPartnerWorkGuideText 런타임 생성 검증',
+  phone1 === '010-1234-5678' &&
+  phone2 === '010-9870-9696' &&
+  guideText124.indexOf('■ 담당 디자이너 : 조항만 | 010-1234-5678') !== -1 &&
+  guideText124.indexOf('■ 현장 소장 : 인경호 | 010-9870-9696') !== -1
+);
+
+// 124-4: 모바일 renderList 내 mob-site-select-all 전체선택 체크박스 및 mob-task-cb 개별 체크박스 탑재 검증
+assertTest('Step 124-4: 모바일 renderList 내 mob-site-select-all 및 mob-task-cb 체크박스 탑재 검증',
+  dashHtml124.indexOf('class="mob-site-select-all"') !== -1 &&
+  dashHtml124.indexOf('class="mob-task-cb"') !== -1 &&
+  dashHtml124.indexOf('onchange="toggleSelectAllMobileSiteTasks(this,') !== -1 &&
+  dashHtml124.indexOf('onclick="onMobileTaskCheckboxClick(event, this)"') !== -1
+);
+
+// 124-5: 모바일 체크박스 핸들러 함수 구현 검증
+assertTest('Step 124-5: 모바일 체크박스 핸들러(onMobileTaskCheckboxClick, toggleSelectAllMobileSiteTasks, updateMobileSelectAllState, updateAllMobileSelectAllStates) 구현 검증',
+  typeof clientSandbox124.onMobileTaskCheckboxClick === 'function' &&
+  typeof clientSandbox124.toggleSelectAllMobileSiteTasks === 'function' &&
+  typeof clientSandbox124.updateMobileSelectAllState === 'function' &&
+  typeof clientSandbox124.updateAllMobileSelectAllStates === 'function'
+);
+
+// 124-6: 모바일 공종 선택 시 .task-item.row-selected CSS 및 하이라이트 스타일 탑재 검증
+assertTest('Step 124-6: 모바일 공종 선택 시 .task-item.row-selected CSS 탑재 검증',
+  dashHtml124.indexOf('.task-item.row-selected {') !== -1 &&
+  dashHtml124.indexOf('.mob-task-cb {') !== -1
+);
+
+// 124-7: 모달 내 #sheetPartnerPhoneInput, #sheetCreatePartnerPhoneInput 패딩 6px 및 폰트 12.5px/자간-0.3px 잘림 방어 스타일 검증
+assertTest('Step 124-7: 모달 내 #sheetPartnerPhoneInput, #sheetCreatePartnerPhoneInput 잘림 방어 CSS 및 HTML 개선 검증',
+  dashHtml124.indexOf('#sheetPartnerPhoneInput, #sheetCreatePartnerPhoneInput { padding: 6px 6px 6px 8px !important; font-size: 12.5px !important; letter-spacing: -0.3px !important;') !== -1 &&
+  dashHtml124.indexOf('id="sheetPartnerPhoneInput"') !== -1 &&
+  dashHtml124.indexOf('id="sheetCreatePartnerPhoneInput"') !== -1 &&
+  dashHtml124.indexOf('width:34px;height:34px;min-width:34px;') !== -1
+);
+
+// 124-8: index.html 내 exec?v=122 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 124-8: index.html 내 exec?v=122 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent124) && parseInt(indexHtmlContent124.match(/exec\?v=(\d+)/)[1], 10) >= 122
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
