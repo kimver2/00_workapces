@@ -552,6 +552,69 @@ function getAvailablePartners(ss) {
 }
 
 /**
+ * '02_거래처' 시트에서 협력업체별 1순위 연락처(전화번호) 매핑 테이블 생성
+ * - 전화번호가 2개 이상(슬래시, 콤마 등)인 경우 첫 번째 전화번호 추출
+ * - 표준 결합명("공종_업체명") 및 업체명 단독("업체명") 모두 매핑 지원
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {object} { "도배_이충호 반장 (개인)": "010-3744-3901", ... }
+ */
+function getPartnerPhoneMap(ss) {
+  var phoneMap = {};
+  try {
+    var pSheet = findPartnersSheet(ss);
+    if (pSheet && pSheet.getLastRow() >= 2) {
+      var lastR = pSheet.getLastRow();
+      var maxCols = Math.max((typeof pSheet.getLastColumn === "function" ? pSheet.getLastColumn() : 11), 11);
+      var pData = pSheet.getRange(2, 1, lastR - 1, maxCols).getValues();
+
+      for (var i = 0; i < pData.length; i++) {
+        var aName = String(pData[i][0] || "").trim();
+        var bBiz = String(pData[i][1] || "").trim();
+        var rawPhone = String(pData[i][5] || "").trim(); // F열(6열) 연락처
+        var kVal = (pData[i].length >= 11) ? String(pData[i][10] || "").trim() : "";
+
+        if (!rawPhone) continue;
+
+        // 전화번호가 2개 이상일 때 첫 번째 전화번호 추출
+        var parts = rawPhone.split(/[/,\n~]/);
+        var firstPhone = "";
+        for (var pi = 0; pi < parts.length; pi++) {
+          var trimmedPart = parts[pi].trim();
+          var matched = trimmedPart.match(/(0\d{1,2}-\d{3,4}-\d{4}|\d{2,3}-\d{3,4}-\d{4}|010\d{8}|\d{9,11})/);
+          if (matched) {
+            firstPhone = matched[0];
+            break;
+          }
+        }
+        if (!firstPhone && parts.length > 0) {
+          firstPhone = parts[0].trim();
+        }
+        if (!firstPhone) continue;
+
+        // 표준 결합명 및 단독명 등록
+        var stdVal = kVal || (bBiz ? (bBiz + "_" + aName) : aName);
+        if (stdVal) {
+          phoneMap[stdVal] = firstPhone;
+          phoneMap[stdVal.toLowerCase()] = firstPhone;
+        }
+        if (aName) {
+          phoneMap[aName] = firstPhone;
+          phoneMap[aName.toLowerCase()] = firstPhone;
+          var cleanName = aName.split("(")[0].trim();
+          if (cleanName) {
+            phoneMap[cleanName] = firstPhone;
+            phoneMap[cleanName.toLowerCase()] = firstPhone;
+          }
+        }
+      }
+    }
+  } catch(ePhoneMap) {
+    Logger.log("getPartnerPhoneMap 예외: " + ePhoneMap.toString());
+  }
+  return phoneMap;
+}
+
+/**
  * 콤마/슬래시 등으로 연결된 담당자 문자열에서 유효한 인원 이름 배열 추출
  * @param {string} raw
  * @return {string[]}
@@ -875,7 +938,7 @@ function migrateSchedulePartnerNames(ss) {
     "우성": "창호_영림"
   };
 
-  var targetSheets = [findSiteScheduleSheet(ss), findSingleTaskSheet(ss, false), findAsSheet(ss, false)];
+  var targetSheets = [findSiteScheduleSheet(ss), findSingleTaskSheet(ss, false), findAsSheet(ss, false), findCompletedSitesSheet(ss, false)];
   var totalMigrated = 0;
 
   for (var si = 0; si < targetSheets.length; si++) {
@@ -993,6 +1056,17 @@ function cleanAllValidationErrors(ss) {
     } catch(eAsVal) {}
   }
 
+  // 3-1. '완료현장' 시트 담당자 및 협력업체 유효성 검사 동기화
+  var compSheet = findCompletedSitesSheet(ss, false);
+  if (compSheet) {
+    try {
+      var cLastR = Math.max((typeof compSheet.getLastRow === "function" ? compSheet.getLastRow() : 2), 2);
+      var cMaxR = Math.max((typeof compSheet.getMaxRows === "function" ? compSheet.getMaxRows() : cLastR), 100);
+      try { compSheet.getRange(2, 7, cMaxR - 1, 2).setBackground(null).setFontColor(null); } catch(eC4) {}
+      applySiteScheduleValidations(compSheet, 2, cMaxR - 1);
+    } catch(eCompVal) {}
+  }
+
   // 4. H열 상태값 공백 보정 ("진행중" -> "진행 중")
   try {
     var hRange = siteSheet.getRange(2, 8, lastRow - 1, 1);
@@ -1017,7 +1091,7 @@ function cleanAllValidationErrors(ss) {
     success: true,
     addedTasksCount: tasksToAppend.length,
     totalTasksCount: Object.keys(existingTasksInTSheet).length,
-    message: "'현장데이터', '단건', 'AS' 시트의 담당자(구성원 5인 드롭다운/최대 2인 스마트 선택) 및 유효성 검사가 성공적으로 재정비되었습니다."
+    message: "'현장데이터', '단건', 'AS', '완료현장' 시트의 담당자(구성원 5인 드롭다운/최대 2인 스마트 선택) 및 유효성 검사가 성공적으로 재정비되었습니다."
   };
 }
 
@@ -1132,9 +1206,9 @@ function migrateSingleSheetToTwoManagers(sheet) {
 }
 
 /**
- * '현장데이터', '단건', 'AS' 시트 3개 모두에 대해 '담당자 1', '담당자 2' 2개 열 양식 변경 및 기존 데이터 분리 일괄 실행
+ * '현장데이터', '단건', 'AS', '완료현장' 시트 4개 모두에 대해 '담당자 1', '담당자 2' 2개 열 양식 변경 및 기존 데이터 분리 일괄 실행
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
- * @return {{site: object, single: object, as: object, totalMigratedRows: number}}
+ * @return {{site: object, single: object, as: object, completed: object, totalMigratedRows: number}}
  */
 function migrateSheetsToTwoManagers(ss) {
   if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1145,6 +1219,7 @@ function migrateSheetsToTwoManagers(ss) {
     site: { migrated: false, count: 0 },
     single: { migrated: false, count: 0 },
     as: { migrated: false, count: 0 },
+    completed: { migrated: false, count: 0 },
     totalMigratedRows: 0
   };
 
@@ -1163,7 +1238,12 @@ function migrateSheetsToTwoManagers(ss) {
     res.as = migrateSingleSheetToTwoManagers(asSheet);
   }
 
-  res.totalMigratedRows = (res.site.count || 0) + (res.single.count || 0) + (res.as.count || 0);
+  var compSheet = findCompletedSitesSheet(ss, false);
+  if (compSheet) {
+    res.completed = migrateSingleSheetToTwoManagers(compSheet);
+  }
+
+  res.totalMigratedRows = (res.site.count || 0) + (res.single.count || 0) + (res.as.count || 0) + ((res.completed && res.completed.count) || 0);
 
   SpreadsheetApp.flush();
   invalidateDashboardServerCache();
@@ -1181,7 +1261,7 @@ function migrateSheetsToTwoManagersMenu() {
   if (res) {
     SpreadsheetApp.getUi().alert(
       "👥 담당자 1 / 담당자 2 양식 변경 완료",
-      "'현장데이터', '단건', 'AS' 시트가 '담당자 1'과 '담당자 2' 2개 열 양식으로 변경되었습니다.\n\n" +
+      "'현장데이터', '단건', 'AS', '완료현장' 시트가 '담당자 1'과 '담당자 2' 2개 열 양식으로 변경되었습니다.\n\n" +
       "• 분리된 2인 담당자 데이터: 총 " + (res.totalMigratedRows || 0) + "건\n" +
       "• 드롭다운 목록: 구성원 시트의 5인만 깔끔하게 노출\n" +
       "• 빨간 삼각형 에러표시: 100% 완전 해제\n\n" +
@@ -2210,6 +2290,28 @@ function onEdit(e) {
         } catch(eSingleMgr) {}
       }
     } catch(eSingleEdit) {}
+  }
+
+  // ⑥ [완료현장 시트 편집 감지 -> G열 담당자 편집 시 스마트 2인 선택 & 현장명(A열) 편집 시 동일 현장 자동 묶기]
+  if (isCompletedSitesSheet(sheet)) {
+    try {
+      var cStartCol = e.range.getColumn();
+      var cEndCol = e.range.getLastColumn ? e.range.getLastColumn() : cStartCol;
+
+      // 현장명(A열) 편집 시 동일 현장 자동 묶기
+      if (cStartCol <= 1 && cEndCol >= 1 && sheet.getLastRow() >= 3) {
+        try {
+          groupSheetRowsBySite(sheet, false);
+        } catch(eGComp) {}
+      }
+
+      // G열 담당자 편집 감지 -> 스마트 2인 다중 선택 엔진 (드롭다운 순수 5인 노출 + 최대 2인 스마트 선택)
+      if (cStartCol <= 7 && cEndCol >= 7 && row >= 2) {
+        try {
+          handleManagerMultiSelectEdit(e, ss, sheet, row, 7);
+        } catch(eCompMgr) {}
+      }
+    } catch(eCompEdit) {}
   }
 
   // 캐시 무효화 (무음 실행, 팝업/딜레이 0%)
@@ -3341,8 +3443,17 @@ function findSiteScheduleSheet(ss) {
 }
 
 /**
+ * '완료현장' 시트인지 판별
+ */
+function isCompletedSitesSheet(sheet) {
+  if (!sheet || typeof sheet.getName !== "function") return false;
+  var name = sheet.getName().toLowerCase();
+  return (name === "완료현장" || name === "완료_현장" || name === "완료" || name.indexOf("완료") !== -1 || name.indexOf("archive") !== -1);
+}
+
+/**
  * [신규] 완료 현장 아카이브 시트('완료현장') 탐색 및 자동 생성 헬퍼
- * - 현장데이터 시트와 완전히 동일한 10개 열(A~J열) 구조 및 헤더 서식 적용
+ * - 현장데이터 시트와 완전히 동일한 11개 열(A~K열: 담당자 1, 담당자 2 포함) 구조 및 헤더 서식 적용
  *
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss] 스프레드시트 객체
  * @param {boolean} [createIfMissing=false] 시트가 없을 때 신규 생성할지 여부
@@ -3368,8 +3479,8 @@ function findCompletedSitesSheet(ss, createIfMissing) {
 
   // 신규 생성
   var newSheet = ss.insertSheet("완료현장");
-  var headers = [["현장명", "날짜", "공종", "협력업체", "공유", "비고", "담당자", "진행상태", "캘린더ID", "최종수정일시"]];
-  var headerRange = newSheet.getRange(1, 1, 1, 10);
+  var headers = [["현장명", "날짜", "공종", "협력업체", "공유", "비고", "담당자 1", "담당자 2", "진행상태", "캘린더ID", "최종수정일시"]];
+  var headerRange = newSheet.getRange(1, 1, 1, 11);
   headerRange.setValues(headers)
     .setBackground("#1e293b")
     .setFontColor("#ffffff")
@@ -3382,16 +3493,20 @@ function findCompletedSitesSheet(ss, createIfMissing) {
   // 현장데이터 시트와 동일한 열 너비 복사 적용
   var srcSheet = findSiteScheduleSheet(ss);
   if (srcSheet) {
-    for (var c = 1; c <= 10; c++) {
+    for (var c = 1; c <= 11; c++) {
       try {
         newSheet.setColumnWidth(c, srcSheet.getColumnWidth(c));
       } catch(eW) {}
     }
-    // 9, 10열(캘린더ID, 타임스탬프) 숨김 처리 (현장데이터 시트와 동일하게)
+    // 10, 11열(캘린더ID, 타임스탬프) 숨김 처리
     try {
-      newSheet.hideColumns(9, 2);
+      newSheet.hideColumns(10, 2);
     } catch(eH) {}
   }
+
+  try {
+    applySiteScheduleValidations(newSheet, 2, 100);
+  } catch(eVal) {}
 
   return newSheet;
 }
@@ -3597,8 +3712,9 @@ function moveAsTaskToCompletedSheet(ss, asSheet, asRow, siteName, taskName) {
     var compSheet = findCompletedSitesSheet(ss, true);
     if (!compSheet) return { success: false, error: "완료현장 시트를 찾을 수 없습니다." };
 
-    // 1. AS 시트의 해당 행 데이터 읽기 (10개 열)
-    var rowVals = asSheet.getRange(asRow, 1, 1, 10).getValues()[0];
+    // 1. AS 시트의 해당 행 데이터 읽기 (10열 또는 11열 동적 대응)
+    var asCols = Math.max((typeof asSheet.getLastColumn === "function" ? asSheet.getLastColumn() : 11), 10);
+    var rowVals = asSheet.getRange(asRow, 1, 1, asCols).getValues()[0];
     var actualSite = String(rowVals[0] || "").trim() || siteName;
     if (!actualSite && asRow > 2) {
       var prevSites = asSheet.getRange(2, 1, asRow - 2, 1).getValues();
@@ -3609,17 +3725,20 @@ function moveAsTaskToCompletedSheet(ss, asSheet, asRow, siteName, taskName) {
     }
     if (!actualSite) actualSite = "현장";
 
-    var actualTask = String(rowVals[2] || "").trim() || taskName;
-    var actualDate = rowVals[1];
-    var actualPartner = String(rowVals[3] || "").trim();
-    var actualShared = (rowVals[4] === true || String(rowVals[4]).toUpperCase() === "TRUE");
-    var actualMemo = String(rowVals[5] || "").trim();
-    var actualManager = String(rowVals[6] || "").trim();
+    var pCols = parseScheduleRowCols(rowVals);
+    var actualTask = pCols.task || taskName;
+    var actualDate = pCols.date;
+    var actualPartner = pCols.partner;
+    var actualShared = pCols.isShared;
+    var actualMemo = pCols.memo;
     var actualStatus = "완료";
-    var actualCalId = String(rowVals[8] || "").trim();
+    var actualCalId = pCols.calId;
     var nowMs = Date.now();
 
-    var newRowVals = [actualSite, actualDate, actualTask, actualPartner, actualShared, actualMemo, actualManager, actualStatus, actualCalId, nowMs];
+    var isComp11 = (typeof compSheet.getLastColumn === "function" && compSheet.getLastColumn() >= 11);
+    var newRowVals = isComp11
+      ? [actualSite, actualDate, actualTask, actualPartner, actualShared, actualMemo, pCols.manager1, pCols.manager2, actualStatus, actualCalId, nowMs]
+      : [actualSite, actualDate, actualTask, actualPartner, actualShared, actualMemo, pCols.manager, actualStatus, actualCalId, nowMs];
 
     // 2. 완료현장 시트에서 동일 현장명 탐색
     var compLastRow = compSheet.getLastRow();
@@ -3643,19 +3762,20 @@ function moveAsTaskToCompletedSheet(ss, asSheet, asRow, siteName, taskName) {
       // Case A: 동일 현장명이 존재함 -> 해당 현장 그룹의 마지막 행 바로 다음에 삽입
       compSheet.insertRowAfter(matchingSiteLastRow);
       insertedRow = matchingSiteLastRow + 1;
-      compSheet.getRange(insertedRow, 1, 1, 10).setValues([newRowVals]);
+      compSheet.getRange(insertedRow, 1, 1, newRowVals.length).setValues([newRowVals]);
     } else {
       // Case B: 동일 현장명이 없음 -> 완료현장 맨 아래에 추가
       insertedRow = Math.max(2, compLastRow + 1);
-      compSheet.getRange(insertedRow, 1, 1, 10).setValues([newRowVals]);
+      compSheet.getRange(insertedRow, 1, 1, newRowVals.length).setValues([newRowVals]);
     }
 
     // 서식 적용: E열 체크박스, 테두리, 배경색 등
     try {
-      var targetR = compSheet.getRange(insertedRow, 1, 1, 10);
+      var targetR = compSheet.getRange(insertedRow, 1, 1, newRowVals.length);
       targetR.setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
       targetR.setVerticalAlignment("middle");
       compSheet.getRange(insertedRow, 5).insertCheckboxes();
+      applySiteScheduleValidations(compSheet, insertedRow, 1);
       [1, 2, 3, 4, 7, 8].forEach(function(c) {
         compSheet.getRange(insertedRow, c).setHorizontalAlignment("center");
       });
@@ -6038,12 +6158,13 @@ function archiveCompletedSiteBlocks(isManual) {
     return { movedSitesCount: 0, movedRowsCount: 0, siteNames: [] };
   }
 
-  // A~J열(10열) 읽기
-  var values = srcSheet.getRange(2, 1, lastRow - 1, 10).getValues();
-  var backgrounds = srcSheet.getRange(2, 1, lastRow - 1, 10).getBackgrounds();
-  var fontColors = srcSheet.getRange(2, 1, lastRow - 1, 10).getFontColors();
-  var fontWeights = srcSheet.getRange(2, 1, lastRow - 1, 10).getFontWeights();
-  var horizontalAlignments = srcSheet.getRange(2, 1, lastRow - 1, 10).getHorizontalAlignments();
+  // A~K열 읽기 (11열 체제 대응)
+  var srcCols = Math.max((typeof srcSheet.getLastColumn === "function" ? srcSheet.getLastColumn() : 11), 10);
+  var values = srcSheet.getRange(2, 1, lastRow - 1, srcCols).getValues();
+  var backgrounds = srcSheet.getRange(2, 1, lastRow - 1, srcCols).getBackgrounds();
+  var fontColors = srcSheet.getRange(2, 1, lastRow - 1, srcCols).getFontColors();
+  var fontWeights = srcSheet.getRange(2, 1, lastRow - 1, srcCols).getFontWeights();
+  var horizontalAlignments = srcSheet.getRange(2, 1, lastRow - 1, srcCols).getHorizontalAlignments();
 
   // 1. 블록 단위 그룹화
   var blocks = [];
@@ -6116,7 +6237,8 @@ function archiveCompletedSiteBlocks(isManual) {
       if (!tName && !dVal) continue; // 빈 행 스킵
 
       validTasksCount++;
-      var st = String(itemVals[7] || "").replace(/\s+/g, "");
+      var stIdx = (itemVals.length >= 11) ? 8 : 7;
+      var st = String(itemVals[stIdx] || "").replace(/\s+/g, "");
       // 완료 또는 취소만 완료로 인정! (예정, 진행, 지연 등 미완료 공정이 1개라도 있으면 제외)
       if (st.indexOf("완료") === -1 && st.indexOf("취소") === -1) {
         isAllDone = false;
@@ -6169,11 +6291,11 @@ function archiveCompletedSiteBlocks(isManual) {
   props.setProperty("IS_ARCHIVING_ACTIVE", "true");
 
   try {
-    // 3-1. 완료현장 시트에 데이터 추가 (A~J열 10개 열)
+    // 3-1. 완료현장 시트에 데이터 추가 (A~K열 11개 열 대응)
     var destLastRow = destSheet.getLastRow();
     var destStartRow = Math.max(2, destLastRow + 1);
 
-    var targetRange = destSheet.getRange(destStartRow, 1, allRowsToAppend.length, 10);
+    var targetRange = destSheet.getRange(destStartRow, 1, allRowsToAppend.length, srcCols);
     targetRange.setValues(allRowsToAppend);
     try {
       targetRange.setBackgrounds(allBgsToAppend);
@@ -6188,6 +6310,11 @@ function archiveCompletedSiteBlocks(isManual) {
     try {
       destSheet.getRange(destStartRow, 5, allRowsToAppend.length, 1).insertCheckboxes();
     } catch(eChk) {}
+
+    // 유효성 검사 및 조건부 서식 적용
+    try {
+      applySiteScheduleValidations(destSheet, destStartRow, allRowsToAppend.length);
+    } catch(eDestVal) {}
 
     // 3-2. 현장데이터 시트에서 완료된 블록 행들 삭제 (역순 삭제로 행 번호 밀림 방지!)
     completedBlocks.sort(function(a, b) {
@@ -7495,12 +7622,31 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 0-10) '현장데이터', '단건', 'AS' 시트 '담당자 1', '담당자 2' 2개 열 양식 개편 및 복합 데이터 분리 마이그레이션 (action=migrateToTwoManagers)
+  // 0-10) '현장데이터', '단건', 'AS', '완료현장' 시트 '담당자 1', '담당자 2' 2개 열 양식 개편 및 복합 데이터 분리 마이그레이션 (action=migrateToTwoManagers)
   if (action === "migrateToTwoManagers" || action === "migrateSheetsToTwoManagers") {
     var migRes = migrateSheetsToTwoManagers(ss);
     invalidateDashboardServerCache();
     return ContentService.createTextOutput(JSON.stringify(migRes))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-11) '완료현장' 시트 담당자 1/2 개편 & 협력업체 마이그레이션 전용 엔드포인트 (action=migrateCompletedSheet || action=setupCompletedSheet)
+  if (action === "migrateCompletedSheet" || action === "setupCompletedSheet") {
+    var cSheet = findCompletedSitesSheet(ss, false);
+    if (!cSheet) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: "완료현장 시트를 찾을 수 없습니다." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    var compMgrRes = migrateSingleSheetToTwoManagers(cSheet);
+    var partnerMigRes = migrateSchedulePartnerNames(ss);
+    applySiteScheduleValidations(cSheet, 2, Math.max(cSheet.getMaxRows() - 1, 100));
+    invalidateDashboardServerCache();
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      completedManagerMigration: compMgrRes,
+      partnerMigration: partnerMigRes,
+      message: "완료현장 시트의 담당자(담당자 1/2 분리 및 5인 드롭다운)와 협력업체(K2:K 실시간 범위 드롭다운 및 데이터 표준화)가 성공적으로 완료되었습니다."
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 
   // [스마트 행 자동 보정 엔진]
@@ -9034,6 +9180,9 @@ function getSidebarDashboardData(forceRefresh) {
                 if (!parsedCache.tasks || !Array.isArray(parsedCache.tasks)) {
                   parsedCache.tasks = getAvailableTasks(null);
                 }
+                if (!parsedCache.partnerPhoneMap) {
+                  parsedCache.partnerPhoneMap = getPartnerPhoneMap(null);
+                }
                 return parsedCache;
               }
             }
@@ -9611,6 +9760,7 @@ function getSidebarDashboardData(forceRefresh) {
       members: getMemberNames(ss),
       tasks: getAvailableTasks(sheet),
       partners: getAvailablePartners(ss),
+      partnerPhoneMap: getPartnerPhoneMap(ss),
       holidays: getKoreanHolidaysMap(ss),
       sites: sitesList,
       siteInfoMap: getSiteInfoMap(ss)
@@ -10685,7 +10835,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        </div>';
   html += '      </div>';
   html += '      <div class="sheet-field-row">';
-  html += '        <div class="sheet-field-col" style="flex:1.2;">';
+  html += '        <div class="sheet-field-col" style="flex:1;">';
   html += '          <label class="sheet-field-label">🔨 공종 (작업내용)</label>';
   html += '          <div class="sheet-task-wrap">';
   html += '            <select id="sheetTaskSelect" class="sheet-field-select" onchange="onSheetTaskSelect(this.value)">';
@@ -10694,9 +10844,18 @@ function buildSidebarDashboardHtml(mode) {
   html += '            <input type="text" id="sheetTaskCustomInput" class="sheet-field-input" placeholder="공종 직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
   html += '          </div>';
   html += '        </div>';
-  html += '        <div class="sheet-field-col" style="flex:0.8;">';
-  html += '          <label class="sheet-field-label">🤝 협력업체 (선택)</label>';
-  html += '          <input type="text" id="sheetPartnerInput" class="sheet-field-input" placeholder="업체명">';
+  html += '      </div>';
+  html += '      <div class="sheet-field-row" style="margin-top:8px;">';
+  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '          <label class="sheet-field-label">🤝 협력업체</label>';
+  html += '          <input type="text" id="sheetPartnerInput" list="sheetPartnerDatalist" class="sheet-field-input" placeholder="협력업체명 (선택)" oninput="onCreatePartnerInputChange(this.value)">';
+  html += '        </div>';
+  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '          <label class="sheet-field-label">📞 연락처</label>';
+  html += '          <div style="display:flex;gap:6px;align-items:center;">';
+  html += '            <input type="text" id="sheetCreatePartnerPhoneInput" class="sheet-field-input" placeholder="연락처 없음" readonly style="background:#f8fafc;color:#1e293b;font-weight:600;flex:1;cursor:default;">';
+  html += '            <a id="sheetCreatePartnerCallBtn" href="javascript:void(0)" class="sheet-call-btn" style="display:none;width:38px;height:38px;min-width:38px;border-radius:8px;background:#22c55e;color:#ffffff;align-items:center;justify-content:center;text-decoration:none;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,0.1);" title="전화 걸기">📞</a>';
+  html += '          </div>';
   html += '        </div>';
   html += '      </div>';
   html += '    </div>';
@@ -10711,17 +10870,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '          </div>';
   html += '        </div>';
   html += '        <div class="sheet-field-col" style="flex:1;">';
-  html += '          <label class="sheet-field-label">👤 담당자 (최대 2명)</label>';
+  html += '          <label class="sheet-field-label">👤 담당자</label>';
   html += '          <div style="display:flex;gap:6px;">';
   html += '            <div class="sheet-manager-wrap" style="flex:1;">';
   html += '              <select id="sheetManagerSelect" class="sheet-field-select" onchange="onSheetManagerSelect(this.value)">';
-  html += '                <option value="">담당자 1</option>';
+  html += '                <option value="">담당자</option>';
   html += '              </select>';
   html += '              <input type="text" id="sheetManagerCustomInput" class="sheet-field-input" placeholder="직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
   html += '            </div>';
   html += '            <div class="sheet-manager-wrap" style="flex:1;">';
   html += '              <select id="sheetManagerSelect2" class="sheet-field-select" onchange="onSheetManagerSelect2(this.value)">';
-  html += '                <option value="">담당자 2 (선택)</option>';
+  html += '                <option value="">담당자</option>';
   html += '              </select>';
   html += '              <input type="text" id="sheetManagerCustomInput2" class="sheet-field-input" placeholder="직접 입력" style="display:none;margin-top:4px;padding-right:10px;">';
   html += '            </div>';
@@ -10731,9 +10890,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div class="sheet-field-row" id="sheetEditPartnerRow" style="margin-top:8px;">';
   html += '        <div class="sheet-field-col" style="flex:1;">';
   html += '          <label class="sheet-field-label">🤝 협력업체</label>';
-  html += '          <input type="text" id="sheetEditPartnerInput" class="sheet-field-input" placeholder="협력업체명 (선택)">';
+  html += '          <input type="text" id="sheetEditPartnerInput" list="sheetPartnerDatalist" class="sheet-field-input" placeholder="협력업체명 (선택)" oninput="onPartnerInputChange(this.value)">';
+  html += '        </div>';
+  html += '        <div class="sheet-field-col" style="flex:1;">';
+  html += '          <label class="sheet-field-label">📞 연락처</label>';
+  html += '          <div style="display:flex;gap:6px;align-items:center;">';
+  html += '            <input type="text" id="sheetPartnerPhoneInput" class="sheet-field-input" placeholder="연락처 없음" readonly style="background:#f8fafc;color:#1e293b;font-weight:600;flex:1;cursor:default;">';
+  html += '            <a id="sheetPartnerCallBtn" href="javascript:void(0)" class="sheet-call-btn" style="display:none;width:38px;height:38px;min-width:38px;border-radius:8px;background:#22c55e;color:#ffffff;align-items:center;justify-content:center;text-decoration:none;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,0.1);" title="전화 걸기">📞</a>';
+  html += '          </div>';
   html += '        </div>';
   html += '      </div>';
+  html += '      <datalist id="sheetPartnerDatalist"></datalist>';
   html += '      <div id="sheetCustomCalPopover" class="sheet-custom-cal-popover">';
   html += '        <div class="pcal-top-bar">';
   html += '          <div class="pcal-nav-group">';
@@ -13673,7 +13840,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      dHtml += \'            <td><strong style="color:#0f172a;font-size:13px;">\' + escapeHtml(task.taskName) + \'</strong></td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-weight:800;\' : \'font-weight:600;\') + \'">\' + escapeHtml(dateStr || "일정 미정") + \'</span>\' + ddayChip + \'</td>\';';
   html += '      dHtml += \'            <td style="text-align:center;">\' + (tMgr ? \'<span class="pc-manager-pill"><span class="mgr-icon">👤</span><span>\' + escapeHtml(tMgr) + \'</span></span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
-  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span class="pc-partner-pill">🤝 \' + escapeHtml(task.partner) + \'</span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
+  html += '      const pcPPhone = task.partner ? getPartnerPhoneNumber(task.partner) : "";';
+  html += '      const pcPCallHtml = pcPPhone ? (\' <a href="tel:\' + escapeHtml(pcPPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#22c55e;color:#fff;text-decoration:none;font-size:10px;vertical-align:middle;margin-left:4px;" title="전화 걸기: \' + escapeHtml(pcPPhone) + \'">📞</a>\') : "";';
+  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span class="pc-partner-pill">🤝 \' + escapeHtml(task.partner) + pcPCallHtml + \'</span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-size:12px;\' : \'color:#475569;font-size:12px;\') + \'">\' + escapeHtml(task.memo || "-") + \'</span></td>\';';
   html += '      dHtml += \'            <td style="text-align:center;"><button type="button" class="pc-task-btn-edit" onclick="event.stopPropagation();openEditModal(\\\'\' + task.row + \'\\\', \\\'\' + encCurSite + \'\\\')">수정</button></td>\';';
   html += '      dHtml += \'          </tr>\';';
@@ -13952,7 +14121,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'    <span class="task-date \' + dateClass + \'">\' + (task.isToday ? "🔥 오늘 " : (task.isDelayed ? "⚠️ 지연 " : "")) + escapeHtml(task.dateDisplay) + \'</span>\';';
   html += '      html += \'  </div>\';';
   html += '      html += \'  <div class="task-meta">\';';
-  html += '      html += \'    <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? " / " + escapeHtml(task.partner) : "") + \'</span>\';';
+  html += '      const pPhone = task.partner ? getPartnerPhoneNumber(task.partner) : "";';
+  html += '      const pCallHtml = pPhone ? (\' <a href="tel:\' + escapeHtml(pPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#22c55e;color:#fff;text-decoration:none;font-size:11px;vertical-align:middle;margin-left:4px;box-shadow:0 1px 2px rgba(0,0,0,0.15);" title="전화 걸기: \' + escapeHtml(pPhone) + \'">📞</a>\') : "";';
+  html += '      html += \'    <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? (" / " + escapeHtml(task.partner) + pCallHtml) : "") + \'</span>\';';
   html += '      html += \'    <div style="display:flex;align-items:center;gap:4px;">\';';
   html += '      html += \'      <span class="\' + shareTagClass + \'">\' + shareTagText + \'</span>\';';
   html += '      const stIcon = getTaskStatusIcon(task.status);';
@@ -14313,7 +14484,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });';
   html += '  if (sel1) {';
   html += '    sel1._populated = true;';
-  html += '    sel1.innerHTML = \'<option value="">담당자 1 (선택)</option>\';';
+  html += '    sel1.innerHTML = \'<option value="">담당자</option>\';';
   html += '    allList.forEach(m => {';
   html += '      const opt = document.createElement("option");';
   html += '      opt.value = m;';
@@ -14327,7 +14498,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  if (sel2) {';
   html += '    sel2._populated = true;';
-  html += '    sel2.innerHTML = \'<option value="">담당자 2 (선택 안함)</option>\';';
+  html += '    sel2.innerHTML = \'<option value="">담당자</option>\';';
   html += '    allList.forEach(m => {';
   html += '      const opt = document.createElement("option");';
   html += '      opt.value = m;';
@@ -14339,6 +14510,63 @@ function buildSidebarDashboardHtml(mode) {
   html += '    customOpt2.innerText = "✏️ 직접 입력...";';
   html += '    sel2.appendChild(customOpt2);';
   html += '  }';
+  html += '}';
+  html += '';
+  html += 'function getPartnerPhoneNumber(pName) {';
+  html += '  if (!pName || !rawData || !rawData.partnerPhoneMap) return "";';
+  html += '  const clean = String(pName || "").trim();';
+  html += '  if (!clean) return "";';
+  html += '  const pMap = rawData.partnerPhoneMap;';
+  html += '  if (pMap[clean]) return pMap[clean];';
+  html += '  if (pMap[clean.toLowerCase()]) return pMap[clean.toLowerCase()];';
+  html += '  const nameOnly = clean.indexOf("_") !== -1 ? clean.substring(clean.indexOf("_") + 1).trim() : clean;';
+  html += '  if (pMap[nameOnly]) return pMap[nameOnly];';
+  html += '  if (pMap[nameOnly.toLowerCase()]) return pMap[nameOnly.toLowerCase()];';
+  html += '  const noParen = nameOnly.split("(")[0].trim();';
+  html += '  if (pMap[noParen]) return pMap[noParen];';
+  html += '  if (pMap[noParen.toLowerCase()]) return pMap[noParen.toLowerCase()];';
+  html += '  return "";';
+  html += '}';
+  html += '';
+  html += 'function populatePartnerDatalist(partners) {';
+  html += '  const dl = document.getElementById("sheetPartnerDatalist");';
+  html += '  if (!dl) return;';
+  html += '  const list = Array.isArray(partners) ? partners : [];';
+  html += '  let dHtml = "";';
+  html += '  list.forEach(p => {';
+  html += '    dHtml += \'<option value="\' + escapeHtml(p) + \'"></option>\';';
+  html += '  });';
+  html += '  dl.innerHTML = dHtml;';
+  html += '}';
+  html += '';
+  html += 'function updateModalPartnerPhone(pName, isCreate) {';
+  html += '  const phone = getPartnerPhoneNumber(pName);';
+  html += '  const inpId = isCreate ? "sheetCreatePartnerPhoneInput" : "sheetPartnerPhoneInput";';
+  html += '  const btnId = isCreate ? "sheetCreatePartnerCallBtn" : "sheetPartnerCallBtn";';
+  html += '  const inp = document.getElementById(inpId);';
+  html += '  const btn = document.getElementById(btnId);';
+  html += '  if (inp) {';
+  html += '    inp.value = phone ? phone : (pName ? "연락처 미등록" : "연락처 없음");';
+  html += '  }';
+  html += '  if (btn) {';
+  html += '    if (phone) {';
+  html += '      const cleanTel = phone.replace(/[^0-9+]/g, "");';
+  html += '      btn.href = "tel:" + cleanTel;';
+  html += '      btn.style.display = "inline-flex";';
+  html += '      btn.title = "전화 걸기: " + phone;';
+  html += '    } else {';
+  html += '      btn.href = "javascript:void(0)";';
+  html += '      btn.style.display = "none";';
+  html += '    }';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onPartnerInputChange(val) {';
+  html += '  updateModalPartnerPhone(val, false);';
+  html += '}';
+  html += '';
+  html += 'function onCreatePartnerInputChange(val) {';
+  html += '  updateModalPartnerPhone(val, true);';
   html += '}';
   html += '';
   html += 'function onSheetManagerSelect(val) {';
@@ -14699,6 +14927,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (taskCustom) { taskCustom.value = ""; taskCustom.style.display = "none"; }';
   html += '  const partnerInput = document.getElementById("sheetPartnerInput");';
   html += '  if (partnerInput) partnerInput.value = "";';
+  html += '  populatePartnerDatalist(rawData ? rawData.partners : []);';
+  html += '  updateModalPartnerPhone("", true);';
   html += '  const dateInput = document.getElementById("sheetDateInput");';
   html += '  const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
   html += '  let targetIso = "";';
@@ -14765,7 +14995,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const editPartnerRow = document.getElementById("sheetEditPartnerRow");';
   html += '  if (partnerBadge) {';
   html += '    if (curPartnerVal) {';
-  html += '      partnerBadge.innerText = "🤝 " + curPartnerVal;';
+  html += '      const pPhone = getPartnerPhoneNumber(curPartnerVal);';
+  html += '      partnerBadge.innerHTML = "🤝 " + escapeHtml(curPartnerVal) + (pPhone ? \' <a href="tel:\' + escapeHtml(pPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="color:#1d4ed8;text-decoration:none;font-weight:700;margin-left:4px;" title="전화 걸기: \' + escapeHtml(pPhone) + \'">📞</a>\' : "");';
   html += '      partnerBadge.style.display = "inline-flex";';
   html += '    } else {';
   html += '      partnerBadge.innerText = "";';
@@ -14774,6 +15005,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  if (editPartnerRow) editPartnerRow.style.display = "flex";';
   html += '  if (editPartnerInp) editPartnerInp.value = curPartnerVal;';
+  html += '  populatePartnerDatalist(rawData ? rawData.partners : []);';
+  html += '  updateModalPartnerPhone(curPartnerVal, false);';
   html += '  const dateInput = document.getElementById("sheetDateInput");';
   html += '  const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
   html += '  if (dateInput) {';

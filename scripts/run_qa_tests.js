@@ -7799,7 +7799,7 @@ const indexHtml103 = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf
 // 103-1: 바텀시트 현장 정보 배너(updateSheetModalSiteInfo) 내 뒷 전화 아이콘 제거 검증
 assertTest('Step 103-1: 바텀시트 현장 정보 배너 내 뒷 전화 아이콘 제거 검증',
   dashHtml103Mobile.indexOf('escapeHtml(sInfo.officePhone) + \'</a></span>\'') !== -1 &&
-  dashHtml103Mobile.indexOf('📞</a>') === -1
+  dashHtml103Mobile.indexOf('escapeHtml(sInfo.officePhone) + \' 📞</a>\'') === -1
 );
 
 // 103-2: 모바일 현장 카드 내 뒷 전화 아이콘 제거 검증
@@ -9338,6 +9338,188 @@ assertTest('Step 118-6: doGet 내 action=setupPartnerValidation 및 action=migra
 const indexHtmlContent118 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
 assertTest('Step 118-7: index.html 내 exec?v=113 이상 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(\d+)/.test(indexHtmlContent118) && parseInt(indexHtmlContent118.match(/exec\?v=(\d+)/)[1], 10) >= 113
+);
+
+console.log('\n📦 [Step 119]: 완료현장 시트 담당자 1/2 개편 & 협력업체 실시간 연동 및 데이터 정규화 QA ---');
+
+// 119-1: isCompletedSitesSheet 함수 정의 및 판별 로직 검증
+assertTest('Step 119-1: isCompletedSitesSheet 정의 및 다양한 시트명 판별 검증',
+  typeof sandbox.isCompletedSitesSheet === 'function' &&
+  sandbox.isCompletedSitesSheet({ getName: () => '완료현장' }) === true &&
+  sandbox.isCompletedSitesSheet({ getName: () => '완료_현장' }) === true &&
+  sandbox.isCompletedSitesSheet({ getName: () => '완료' }) === true &&
+  sandbox.isCompletedSitesSheet({ getName: () => '현장데이터' }) === false &&
+  sandbox.isCompletedSitesSheet({ getName: () => '단건' }) === false
+);
+
+// 119-2: findCompletedSitesSheet 신규 생성 시 11개 헤더 표준화 검증
+let compCreatedHeaders119 = null;
+let compCreatedWidths119 = [];
+let compHiddenCols119 = [];
+const mockSsForComp119 = {
+  getSheetByName: () => null,
+  getSheets: () => [],
+  insertSheet: () => ({
+    getRange: (r, c, nr, nc) => ({
+      setValues: (vals) => {
+        compCreatedHeaders119 = vals[0];
+        return {
+          setBackground: () => ({
+            setFontColor: () => ({
+              setFontWeight: () => ({
+                setHorizontalAlignment: () => ({
+                  setVerticalAlignment: () => ({})
+                })
+              })
+            })
+          })
+        };
+      },
+      setDataValidation: () => {},
+      getValues: () => [],
+      clearFormat: () => {}
+    }),
+    setRowHeight: () => {},
+    setFrozenRows: () => {},
+    setColumnWidth: (c, w) => { compCreatedWidths119.push({ col: c, width: w }); },
+    hideColumns: (col, num) => { compHiddenCols119.push({ col: col, num: num }); },
+    getMaxRows: () => 100
+  })
+};
+
+sandbox.findCompletedSitesSheet(mockSsForComp119, true);
+assertTest('Step 119-2: findCompletedSitesSheet 신규 생성 시 11개 헤더("담당자 1", "담당자 2" 포함) 검증',
+  Array.isArray(compCreatedHeaders119) &&
+  compCreatedHeaders119.length === 11 &&
+  compCreatedHeaders119[6] === '담당자 1' &&
+  compCreatedHeaders119[7] === '담당자 2' &&
+  compCreatedHeaders119[8] === '진행상태' &&
+  compCreatedHeaders119[9] === '캘린더ID' &&
+  compCreatedHeaders119[10] === '최종수정일시'
+);
+
+// 119-3: migrateSheetsToTwoManagers가 완료현장 시트를 포함하여 실행 검증
+const code119 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+assertTest('Step 119-3: migrateSheetsToTwoManagers 내 findCompletedSitesSheet 포함 및 res.completed 반환 검증',
+  code119.includes('findCompletedSitesSheet(ss, false)') &&
+  code119.includes('res.completed = migrateSingleSheetToTwoManagers(compSheet)') &&
+  code119.includes('res.completed.count')
+);
+
+// 119-4: migrateSchedulePartnerNames 내 targetSheets에 findCompletedSitesSheet 포함 검증
+assertTest('Step 119-4: migrateSchedulePartnerNames 내 targetSheets에 완료현장 시트 포함 검증',
+  /targetSheets\s*=\s*\[[^\]]*findCompletedSitesSheet\(ss,\s*false\)[^\]]*\]/.test(code119)
+);
+
+// 119-5: cleanAllValidationErrors 내 완료현장 시트 유효성 검사 동기화 검증
+assertTest('Step 119-5: cleanAllValidationErrors 내 완료현장 시트 유효성 검사 동기화 검증',
+  code119.includes('3-1. \'완료현장\' 시트 담당자 및 협력업체 유효성 검사 동기화') &&
+  code119.includes('applySiteScheduleValidations(compSheet')
+);
+
+// 119-6: archiveCompletedSiteBlocks 11열 대응 검증
+assertTest('Step 119-6: archiveCompletedSiteBlocks 11열 체제 대응(srcCols, stIdx, allRowsToAppend 쓰기) 검증',
+  code119.includes('// A~K열 읽기 (11열 체제 대응)') &&
+  code119.includes('var stIdx = (itemVals.length >= 11) ? 8 : 7;') &&
+  code119.includes('applySiteScheduleValidations(destSheet')
+);
+
+// 119-7: moveAsTaskToCompletedSheet 11열 대응 검증
+assertTest('Step 119-7: moveAsTaskToCompletedSheet 11열 대응(parseScheduleRowCols 및 newRowVals) 검증',
+  code119.includes('// 1. AS 시트의 해당 행 데이터 읽기 (10열 또는 11열 동적 대응)') &&
+  code119.includes('pCols.manager1, pCols.manager2') &&
+  code119.includes('applySiteScheduleValidations(compSheet, insertedRow')
+);
+
+// 119-8: onEdit 내 isCompletedSitesSheet 블록(담당자 2인 선택 및 현장명 자동 묶기) 탑재 검증
+assertTest('Step 119-8: onEdit 내 isCompletedSitesSheet 블록(담당자 2인 스마트 선택 엔진 연동) 탑재 검증',
+  code119.includes('if (isCompletedSitesSheet(sheet))') &&
+  code119.includes('handleManagerMultiSelectEdit(e, ss, sheet, row, 7)')
+);
+
+// 119-9: doGet action=migrateCompletedSheet 엔드포인트 지원 검증
+assertTest('Step 119-9: doGet 내 action === "migrateCompletedSheet" 엔드포인트 지원 검증',
+  code119.includes('action === "migrateCompletedSheet"') &&
+  code119.includes('action === "setupCompletedSheet"')
+);
+
+// 119-10: index.html 내 exec?v=114 이상 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent119 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 119-10: index.html 내 exec?v=114 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent119) && parseInt(indexHtmlContent119.match(/exec\?v=(\d+)/)[1], 10) >= 114
+);
+
+console.log('\n📞 [Step 120]: 담당자 문구 간소화 & 협력업체 50:50 분할 및 전화번호 1순위 노출 + 📞 바로 전화 발신 QA ---');
+
+// 120-1: getPartnerPhoneMap 함수 정의 및 복수 전화번호(슬래시 등) 첫 번째 추출 검증
+assertTest('Step 120-1: getPartnerPhoneMap 함수 정의 검증',
+  typeof sandbox.getPartnerPhoneMap === 'function'
+);
+
+const mockPartnerSheet120 = {
+  getName: () => '02_거래처',
+  getSheetId: () => 179677299,
+  getLastRow: () => 4,
+  getLastColumn: () => 11,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => [
+      ['이충호 반장 (개인)', '도배', '시공', 'A팀', '이충호', '010-3744-3901', '운영', '특징', '방식', '비고', '도배_이충호 반장 (개인)'],
+      ['인스', '철거', '시공', 'A팀', '이철상', '010-8207-8204/010-8240-5404', '운영', '특징', '방식', '비고', '철거_인스'],
+      ['노번호', '기타', '시공', 'B팀', '담당자', '', '운영', '특징', '방식', '비고', '기타_노번호']
+    ]
+  })
+};
+const mockSs120 = {
+  getSheets: () => [mockPartnerSheet120],
+  getSheetByName: () => mockPartnerSheet120
+};
+
+const phoneMap120 = sandbox.getPartnerPhoneMap(mockSs120);
+assertTest('Step 120-2: 단일 전화번호 정상 매핑 검증 ("도배_이충호 반장 (개인)" -> "010-3744-3901")',
+  phoneMap120 &&
+  phoneMap120['도배_이충호 반장 (개인)'] === '010-3744-3901' &&
+  phoneMap120['이충호 반장 (개인)'] === '010-3744-3901'
+);
+
+assertTest('Step 120-3: 복수 전화번호("/" 구분) 시 첫 번째 번호 추출 검증 ("철거_인스" -> "010-8207-8204")',
+  phoneMap120 &&
+  phoneMap120['철거_인스'] === '010-8207-8204' &&
+  phoneMap120['인스'] === '010-8207-8204'
+);
+
+// 120-4: 모달 HTML 내 담당자 문구 간소화 검증 (담당자 1 (선택) -> 담당자)
+const code120 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+assertTest('Step 120-4: 모달 HTML 및 셀렉트 옵션 내 담당자 문구 간소화("담당자") 검증',
+  code120.includes('<label class="sheet-field-label">👤 담당자</label>') &&
+  code120.includes('sel1.innerHTML') && code120.includes('>담당자</option>') &&
+  code120.includes('sel2.innerHTML')
+);
+
+// 120-5: 모달 협력업체 영역 반반(50:50) 분할 및 전화번호 인풋 + 📞 전화 버튼 탑재 검증
+assertTest('Step 120-5: 모달 협력업체 영역 50:50 분할(이름 + 연락처 + 📞 버튼) 탑재 검증',
+  code120.includes('id="sheetEditPartnerInput"') &&
+  code120.includes('id="sheetPartnerPhoneInput"') &&
+  code120.includes('id="sheetPartnerCallBtn"') &&
+  code120.includes('id="sheetPartnerDatalist"')
+);
+
+// 120-6: 클라이언트 헬퍼 함수(getPartnerPhoneNumber, updateModalPartnerPhone, populatePartnerDatalist) 검증
+assertTest('Step 120-6: 클라이언트 전화번호 조회 및 모달 연동 헬퍼 함수 탑재 검증',
+  code120.includes('function getPartnerPhoneNumber(pName)') &&
+  code120.includes('function updateModalPartnerPhone(pName, isCreate)') &&
+  code120.includes('function populatePartnerDatalist(partners)')
+);
+
+// 120-7: 모바일 일정 카드 목록(task-item) 및 PC 테이블 뷰 내 📞 바로 전화 발신 연동 검증
+assertTest('Step 120-7: 모바일 일정 카드 및 PC 테이블 뷰 내 협력업체 📞 전화 발신 링크 연동 검증',
+  code120.includes('task.partner ? getPartnerPhoneNumber(task.partner) : ""') &&
+  code120.includes('a href="tel:')
+);
+
+// 120-8: index.html 내 exec?v=115 이상 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent120 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 120-8: index.html 내 exec?v=115 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent120) && parseInt(indexHtmlContent120.match(/exec\?v=(\d+)/)[1], 10) >= 115
 );
 
 console.log('\n========================================================');
