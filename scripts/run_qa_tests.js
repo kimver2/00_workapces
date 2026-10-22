@@ -8129,6 +8129,82 @@ assertTest('Step 122-8: index.html 내 exec?v=119 이상 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent122) && parseInt(indexHtmlContent122.match(/exec\?v=(\d+)/)[1], 10) >= 119
 );
 
+console.log('\n🔐 [Step 123]: 현장정보 도어락 비밀번호 공종 드롭다운 제거 & 0304 앞자리 0 보존(Plain Text) 및 정보 노출 QA ---');
+
+const code123 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+const dashHtml123 = sandbox.buildSidebarDashboardHtml('web');
+const indexHtmlContent123 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+
+// 123-1: isSiteInfoSheet 함수 정의 및 다양한 시트명/헤더 식별 검증
+assertTest('Step 123-1: isSiteInfoSheet 함수 정의 및 다양한 시트명/헤더 식별 검증',
+  typeof sandbox.isSiteInfoSheet === 'function' &&
+  sandbox.isSiteInfoSheet({ getName: () => '현장정보' }) === true &&
+  sandbox.isSiteInfoSheet({ getName: () => '07_현장정보' }) === true &&
+  sandbox.isSiteInfoSheet({ getName: () => '현장_정보' }) === true &&
+  sandbox.isSiteInfoSheet({ getName: () => '현장데이터' }) === false &&
+  sandbox.isSiteInfoSheet({
+    getName: () => '임의시트',
+    getLastColumn: () => 9,
+    getRange: () => ({
+      getValues: () => [['현장명', '현장 주소', '도어락 비밀번호', '관리사무소 연락처']]
+    })
+  }) === true
+);
+
+// 123-2: fixSiteInfoSheetFormat 함수 정의 및 C열 유효성 제거, Plain Text(@) 서식, 0304 복구 검증
+assertTest('Step 123-2: fixSiteInfoSheetFormat 함수 정의 및 C열 유효성 제거, Plain Text(@) 서식, 0304 복구 검증',
+  typeof sandbox.fixSiteInfoSheetFormat === 'function' &&
+  code123.includes('sheet.getRange(2, 3, numRows, 1).clearDataValidations()') &&
+  code123.includes('sheet.getRange(2, 3, numRows, 1).setNumberFormat("@")') &&
+  code123.includes('sheet.getRange(rowNum, 3).setNumberFormat("@").setValue("0304")')
+);
+
+// 123-3: getSiteInfoMap 한남동 304 -> 0304 보정 및 공백 정규화/공백제거 키 등록 검증
+assertTest('Step 123-3: getSiteInfoMap 한남동 304 -> 0304 보정 및 공백 정규화/공백제거 키 등록 검증',
+  code123.includes('rawPwd === "304" && rawSiteName.indexOf("한남동") !== -1') &&
+  code123.includes('map[cleanSpaces] = infoItem') &&
+  code123.includes('map[noSpaces] = infoItem')
+);
+
+// 123-4: saveSiteInfoFieldFromWeb 및 saveFullSiteInfoFromWeb 공백제거 매칭 및 C열 Plain Text 검증
+assertTest('Step 123-4: saveSiteInfoFieldFromWeb 및 saveFullSiteInfoFromWeb 공백제거 매칭 및 C열 Plain Text 검증',
+  code123.includes('sName.replace(/\\s+/g, "") === cleanSiteNoSpace') &&
+  code123.includes('sheet.getRange(targetRow, targetCol).clearDataValidations()') &&
+  code123.includes('sheet.getRange(targetRow, 3).setNumberFormat("@").setValue(String(infoObj.doorPassword || "").trim())')
+);
+
+// 123-5: onEdit 내 isSiteInfoSheet 핸들러 탑재 및 C열 편집 시 0304 보정 및 캐시 무효화 검증
+assertTest('Step 123-5: onEdit 내 isSiteInfoSheet 핸들러 탑재 및 C열 편집 시 0304 보정 및 캐시 무효화 검증',
+  code123.includes('if (typeof isSiteInfoSheet === "function" && isSiteInfoSheet(sheet))') &&
+  code123.includes('sVal === "304" && rSite.indexOf("한남동") !== -1') &&
+  code123.includes('e.range.setNumberFormat("@")')
+);
+
+// 123-6: ensureTasksInValidation 및 applySiteScheduleValidations 현장정보 시트 오염 방어 가드 검증
+assertTest('Step 123-6: ensureTasksInValidation 및 applySiteScheduleValidations 현장정보 시트 오염 방어 가드 검증',
+  code123.includes('if (!sheet || !newTasks || newTasks.length === 0) return;\n  if (typeof isSiteInfoSheet === "function" && isSiteInfoSheet(sheet)) return;') &&
+  code123.includes('if (typeof isSiteInfoSheet === "function" && isSiteInfoSheet(sheet)) return;\n  startRow = startRow || 2;')
+);
+
+// 123-7: 클라이언트 getSiteInfoFromMap 헬퍼 탑재 및 안전 연동 검증
+assertTest('Step 123-7: 클라이언트 getSiteInfoFromMap 헬퍼 탑재 및 안전 연동 검증',
+  dashHtml123.indexOf('function getSiteInfoFromMap(siteName)') !== -1 &&
+  dashHtml123.indexOf('const curSiteInfo = getSiteInfoFromMap(curSite.siteName);') !== -1 &&
+  dashHtml123.indexOf('const mobSiteInfo = getSiteInfoFromMap(site.siteName);') !== -1 &&
+  dashHtml123.indexOf('const sInfo = getSiteInfoFromMap(cleanVal);') !== -1
+);
+
+// 123-8: doGet action=fixSiteInfoSheet 엔드포인트 지원 검증
+assertTest('Step 123-8: doGet action=fixSiteInfoSheet 엔드포인트 지원 검증',
+  code123.includes('action === "fixSiteInfoSheet"') &&
+  code123.includes('action === "fixSiteInfo"')
+);
+
+// 123-9: index.html 내 exec?v=121 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 123-9: index.html 내 exec?v=121 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent123) && parseInt(indexHtmlContent123.match(/exec\?v=(\d+)/)[1], 10) >= 121
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

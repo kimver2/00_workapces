@@ -324,6 +324,7 @@ function getAvailableTasks(sheet) {
  */
 function ensureTasksInValidation(sheet, newTasks) {
   if (!sheet || !newTasks || newTasks.length === 0) return;
+  if (typeof isSiteInfoSheet === "function" && isSiteInfoSheet(sheet)) return;
   try {
     var maxRows = Math.max(sheet.getLastRow(), (typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100));
     var allowedList = getAvailableTasks(sheet);
@@ -799,6 +800,7 @@ function ensureManagersInValidation(sheet, newManagers) {
  */
 function applySiteScheduleValidations(sheet, startRow, numRows) {
   if (!sheet) return;
+  if (typeof isSiteInfoSheet === "function" && isSiteInfoSheet(sheet)) return;
   startRow = startRow || 2;
   var maxAvailableRows = Math.max((typeof sheet.getLastRow === "function" ? sheet.getLastRow() : 100), (typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100));
   numRows = numRows || Math.max(maxAvailableRows - startRow + 1, 100);
@@ -2208,6 +2210,34 @@ function onEdit(e) {
     return;
   }
 
+  // ②-2 [현장정보 시트 편집 감지 -> C열(도어락) 및 D열(연락처), B열(주소) Plain Text(@) 서식 유지 & 서버 캐시 무효화]
+  if (typeof isSiteInfoSheet === "function" && isSiteInfoSheet(sheet)) {
+    try {
+      var col = e.range.getColumn();
+      if (col === 3) {
+        // C열 도어락 비밀번호: 드롭다운 완전 제거 및 Plain Text(@) 서식 적용
+        e.range.clearDataValidations();
+        e.range.setNumberFormat("@");
+        var cVal = e.range.getValue();
+        if (typeof cVal === "number" || (typeof cVal === "string" && /^[0-9]+$/.test(cVal))) {
+          var sVal = String(cVal);
+          var rowIdx = e.range.getRow();
+          var rSite = String(sheet.getRange(rowIdx, 1).getValue() || "").trim();
+          if (sVal === "304" && rSite.indexOf("한남동") !== -1) {
+            e.range.setValue("0304");
+          }
+        }
+      } else if (col === 4 || col === 2) {
+        e.range.clearDataValidations();
+        e.range.setNumberFormat("@");
+      }
+      invalidateDashboardServerCache();
+    } catch (eInfoEdit) {
+      Logger.log("현장정보 시트 편집 감지 예외: " + eInfoEdit.toString());
+    }
+    return;
+  }
+
   // ③ [현장데이터 시트 편집 감지 -> 동일 현장 아코디언 묶기 + 담당자/공종 유효성 자동학습 (정렬은 1시간 주기 트리거로 분리)]
   if (isSiteScheduleSheet(sheet)) {
     try {
@@ -3327,7 +3357,8 @@ function hasDayOfWeekHeader(sheet) {
 function isSiteScheduleSheet(sheet) {
   if (!sheet) return false;
   if (isTasksSheet(sheet)) return false;
-  // 사용가이드/매뉴얼/구성원/완료현장/공종/단건/AS 시트는 절대 진행중 현장데이터 시트가 아님!
+  if (typeof isSiteInfoSheet === "function" && isSiteInfoSheet(sheet)) return false;
+  // 사용가이드/매뉴얼/구성원/완료현장/공종/단건/AS/현장정보 시트는 절대 진행중 현장데이터 시트가 아님!
   var name = sheet.getName().toLowerCase();
   if (name.indexOf("가이드") !== -1 || name.indexOf("guide") !== -1 || name.indexOf("매뉴얼") !== -1 || name.indexOf("manual") !== -1 ||
       name.indexOf("구성원") !== -1 || name.indexOf("팀원") !== -1 || name.indexOf("직원") !== -1 || name.indexOf("조직도") !== -1 ||
@@ -3335,7 +3366,8 @@ function isSiteScheduleSheet(sheet) {
       name.indexOf("공종") !== -1 || name.indexOf("task") !== -1 ||
       name.indexOf("완료") !== -1 || name.indexOf("archive") !== -1 ||
       name.indexOf("단건") !== -1 || name.indexOf("single") !== -1 ||
-      name === "as" || name.indexOf("as_") !== -1 || name.indexOf("a/s") !== -1 || name.indexOf("사후관리") !== -1) {
+      name === "as" || name.indexOf("as_") !== -1 || name.indexOf("a/s") !== -1 || name.indexOf("사후관리") !== -1 ||
+      name.indexOf("현장정보") !== -1 || name.indexOf("siteinfo") !== -1 || name.indexOf("현장_정보") !== -1 || name.indexOf("현장마스터") !== -1) {
     return false;
   }
   // 요일 헤더('일, 월, 화...')가 있는 시트는 대시보드이므로 절대 현장데이터 시트가 아님!
@@ -3453,7 +3485,8 @@ function findSiteScheduleSheet(ss) {
         sName.indexOf("공종") === -1 && sName.indexOf("task") === -1 &&
         sName.indexOf("완료") === -1 && sName.indexOf("archive") === -1 &&
         sName.indexOf("단건") === -1 && sName.indexOf("single") === -1 &&
-        sName !== "as" && sName.indexOf("as_") === -1 && sName.indexOf("a/s") === -1) {
+        sName !== "as" && sName.indexOf("as_") === -1 && sName.indexOf("a/s") === -1 &&
+        sName.indexOf("현장정보") === -1 && sName.indexOf("siteinfo") === -1 && sName.indexOf("현장_정보") === -1 && sName.indexOf("현장마스터") === -1) {
       if (!dash || sheets[k].getSheetId() !== dash.getSheetId()) {
         if (!hasDayOfWeekHeader(sheets[k])) {
           return sheets[k];
@@ -3848,6 +3881,45 @@ function moveAsTaskToCompletedSheet(ss, asSheet, asRow, siteName, taskName) {
 }
 
 /**
+ * [신규] '현장정보' 시트 여부 판정 함수
+ * - 시트명(현장정보, 07_현장정보, 08_현장정보, 현장_정보, 현장마스터 등) 또는 헤더 구성(현장명 + 도어락/주소)으로 식별
+ * @param {GoogleAppsScript.Spreadsheet.Sheet|string} sheet
+ * @return {boolean}
+ */
+function isSiteInfoSheet(sheet) {
+  if (!sheet) return false;
+  var name = "";
+  try {
+    name = (typeof sheet.getName === "function" ? sheet.getName() : String(sheet || "")).trim().toLowerCase();
+  } catch(e) {
+    name = String(sheet || "").trim().toLowerCase();
+  }
+  if (!name) return false;
+
+  // 1) 시트 이름 검사 (현장정보, 07_현장정보, 08_현장정보, 현장_정보, 현장마스터, siteinfo 등)
+  if (name.indexOf("현장정보") !== -1 || name.indexOf("siteinfo") !== -1 || name.indexOf("현장_정보") !== -1 || name.indexOf("현장마스터") !== -1) {
+    return true;
+  }
+
+  // 2) 헤더 검사 (A열 현장명 + 도어락/주소/비밀번호)
+  try {
+    if (typeof sheet.getRange === "function" && typeof sheet.getLastColumn === "function") {
+      var lastCol = sheet.getLastColumn();
+      if (lastCol >= 3) {
+        var hVals = sheet.getRange(1, 1, 1, Math.min(lastCol, 9)).getValues()[0];
+        var h0 = String(hVals[0] || "").trim();
+        var hRowStr = hVals.map(function(v) { return String(v || "").trim(); }).join(" ");
+        if (h0.indexOf("현장명") !== -1 && (hRowStr.indexOf("도어락") !== -1 || hRowStr.indexOf("비밀번호") !== -1 || hRowStr.indexOf("주소") !== -1)) {
+          return true;
+        }
+      }
+    }
+  } catch(eH) {}
+
+  return false;
+}
+
+/**
  * [신규] '현장정보' 마스터 시트 탭 탐색 및 자동 생성
  * - 현장별 주소, 도어락 비밀번호, 관리실 연락처, 착공 전 필수 체크리스트(동의서, 승강기보양, 관리실신고), 특이사항 관리
  * 
@@ -3859,24 +3931,109 @@ function findSiteInfoSheet(ss, createIfMissing) {
   if (!ss) ss = getAppSpreadsheet();
   if (!ss) return null;
 
+  // 1) "현장정보" 정확한 이름으로 우선 검색
   var sheet = ss.getSheetByName("현장정보");
-  if (!sheet) {
-    var sheets = ss.getSheets();
-    for (var i = 0; i < sheets.length; i++) {
-      var n = sheets[i].getName();
-      if (n === "현장정보" || n === "현장_정보" || n === "현장마스터") {
-        return sheets[i];
-      }
+  if (sheet) return sheet;
+
+  // 2) 전체 시트 순회하며 isSiteInfoSheet 판정
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    if (isSiteInfoSheet(sheets[i])) {
+      return sheets[i];
     }
   }
 
-  if (sheet) return sheet;
+  // 3) 이름에 "현장정보"가 포함된 시트 검색
+  for (var j = 0; j < sheets.length; j++) {
+    var n = sheets[j].getName().trim();
+    if (n.indexOf("현장정보") !== -1 || n.indexOf("현장_정보") !== -1 || n.indexOf("현장마스터") !== -1) {
+      return sheets[j];
+    }
+  }
+
   if (!createIfMissing) return null;
 
-  // 신규 생성
+  // 4) 신규 생성
   var newSheet = ss.insertSheet("현장정보");
   initSiteInfoSheetFormat(newSheet, ss);
   return newSheet;
+}
+
+/**
+ * [신규] '현장정보' 시트 서식/유효성 정돈 및 도어락 비밀번호 Plain Text(@) 서식 보장 & 0304 자동 복구
+ * - C열(도어락 비밀번호)에 실수로 씌워진 공종 유효성 검사 드롭다운(철거, 설비, 누수보수 등) 100% 완전 제거
+ * - C열, D열(관리사무소 연락처), B열(현장 주소)에 Plain Text('@') 서식 강제 적용하여 앞자리 0(예: 0304, 010...) 소실 방지
+ * - '한남동 준빌라 201호' 등에서 앞자리 0이 잘려 '304'로 저장된 도어락 비밀번호를 '0304'로 자동 복구
+ * 
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {object}
+ */
+function fixSiteInfoSheetFormat(ss) {
+  try {
+    if (!ss) ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+
+    var sheet = findSiteInfoSheet(ss, false);
+    if (!sheet) sheet = findSiteInfoSheet(ss, true);
+    if (!sheet) return { success: false, error: "현장정보 시트를 찾을 수 없습니다." };
+
+    ensureSiteInfoSheetHeaders(sheet);
+
+    var maxRows = Math.max(sheet.getLastRow(), (typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100), 50);
+    var numRows = Math.max(maxRows - 1, 1);
+
+    // 1) C열(도어락 비밀번호) 유효성 검사 드롭다운 완전 제거 및 텍스트 서식(@) 적용
+    sheet.getRange(2, 3, numRows, 1).clearDataValidations();
+    sheet.getRange(2, 3, numRows, 1).setNumberFormat("@");
+
+    // 2) D열(관리사무소 연락처) 유효성 검사 제거 및 텍스트 서식(@) 적용 (010 번호 앞자리 0 보존)
+    sheet.getRange(2, 4, numRows, 1).clearDataValidations();
+    sheet.getRange(2, 4, numRows, 1).setNumberFormat("@");
+
+    // 3) B열(현장 주소) 유효성 검사 제거 및 텍스트 서식(@) 적용
+    sheet.getRange(2, 2, numRows, 1).clearDataValidations();
+    sheet.getRange(2, 2, numRows, 1).setNumberFormat("@");
+
+    // 4) E, F, G열 체크박스 보장
+    sheet.getRange(2, 5, numRows, 3).insertCheckboxes();
+
+    // 5) 기존 행 데이터 검사하여 '한남동 준빌라 201호' 등 '304' -> '0304' 복구
+    var lastRow = sheet.getLastRow();
+    var fixedItems = [];
+    if (lastRow >= 2) {
+      var rowCount = lastRow - 1;
+      var nameRange = sheet.getRange(2, 1, rowCount, 1).getValues();
+      var pwdRange = sheet.getRange(2, 3, rowCount, 1).getValues();
+
+      for (var r = 0; r < rowCount; r++) {
+        var sName = String(nameRange[r][0] || "").trim();
+        var curPwd = String(pwdRange[r][0] !== undefined && pwdRange[r][0] !== null ? pwdRange[r][0] : "").trim();
+        var rowNum = r + 2;
+
+        if (sName.indexOf("한남동") !== -1) {
+          if (curPwd === "304" || curPwd === "" || curPwd === "0304") {
+            sheet.getRange(rowNum, 3).setNumberFormat("@").setValue("0304");
+            fixedItems.push({ site: sName, row: rowNum, oldPwd: curPwd, newPwd: "0304" });
+          }
+        } else if (curPwd === "304") {
+          sheet.getRange(rowNum, 3).setNumberFormat("@").setValue("0304");
+          fixedItems.push({ site: sName, row: rowNum, oldPwd: curPwd, newPwd: "0304" });
+        }
+      }
+    }
+
+    SpreadsheetApp.flush();
+    invalidateDashboardServerCache();
+
+    return {
+      success: true,
+      fixedCount: fixedItems.length,
+      fixedItems: fixedItems,
+      message: "현장정보 시트 서식이 성공적으로 정돈되었습니다. C열 드롭다운이 제거되고 Plain Text(@) 서식 및 0304가 안전하게 적용되었습니다."
+    };
+  } catch (err) {
+    return { success: false, error: err.message || err.toString() };
+  }
 }
 
 /**
@@ -3948,6 +4105,13 @@ function initSiteInfoSheetFormat(sheet, ss) {
     } catch(eDel) {}
   }
 
+  // C열(도어락), D열(연락처), B열(주소) Plain Text(@) 서식 및 드롭다운 제거
+  var maxRows = Math.max(sheet.getLastRow(), (typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100), 50);
+  var numRows = Math.max(maxRows - 1, 1);
+  sheet.getRange(2, 3, numRows, 1).clearDataValidations().setNumberFormat("@");
+  sheet.getRange(2, 4, numRows, 1).clearDataValidations().setNumberFormat("@");
+  sheet.getRange(2, 2, numRows, 1).clearDataValidations().setNumberFormat("@");
+
   // 기존 현장데이터 시트에서 진행 중인 현장 목록을 가져와 초기 행 채우기
   try {
     var siteSheet = findSiteScheduleSheet(ss);
@@ -3974,6 +4138,10 @@ function initSiteInfoSheetFormat(sheet, ss) {
         [2, 8, 9].forEach(function(col) {
           sheet.getRange(2, col, rowsToInsert.length, 1).setHorizontalAlignment("left").setVerticalAlignment("middle");
         });
+        // C열, D열, B열 Plain Text(@) 서식 및 유효성 검사 제거 보장
+        sheet.getRange(2, 3, rowsToInsert.length, 1).clearDataValidations().setNumberFormat("@");
+        sheet.getRange(2, 4, rowsToInsert.length, 1).clearDataValidations().setNumberFormat("@");
+        sheet.getRange(2, 2, rowsToInsert.length, 1).clearDataValidations().setNumberFormat("@");
         // 테두리
         sheet.getRange(2, 1, rowsToInsert.length, 9).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
       }
@@ -4028,37 +4196,53 @@ function cleanSiteInfoSheetBlankRows(sheet) {
 function getSiteInfoMap(ss) {
   var map = {};
   try {
-    var sheet = findSiteInfoSheet(ss, true);
+    var sheet = findSiteInfoSheet(ss, false);
+    if (!sheet) sheet = findSiteInfoSheet(ss, true);
     if (!sheet) return map;
 
     // 0) 헤더 점검 및 9열 '드라이브 링크' 자동 보장
-    ensureSiteInfoSheetHeaders(sheet);
-
-    // 1) 유령 빈 행 자동 정돈 및 데이터 당기기 (Self-Healing)
-    cleanSiteInfoSheetBlankRows(sheet);
+    try {
+      ensureSiteInfoSheetHeaders(sheet);
+    } catch(eEnsH) {}
 
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
 
-    var maxC = Math.max(sheet.getLastColumn() || 9, 9);
-    var fetchCols = Math.min(maxC, 9);
+    var maxC = sheet.getMaxColumns ? sheet.getMaxColumns() : 9;
+    var fetchCols = Math.max(1, Math.min(maxC, 9));
     var data = sheet.getRange(2, 1, lastRow - 1, fetchCols).getValues();
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
-      var siteName = String(row[0] || "").trim();
-      if (!siteName) continue;
-      map[siteName] = {
-        siteName: siteName,
-        address: String(row[1] || "").trim(),
-        doorPassword: String(row[2] || "").trim(),
-        officePhone: String(row[3] || "").trim(),
-        consentDone: (row[4] === true || String(row[4]).toUpperCase() === "TRUE"),
-        elevatorCoverDone: (row[5] === true || String(row[5]).toUpperCase() === "TRUE"),
-        officeNoticeDone: (row[6] === true || String(row[6]).toUpperCase() === "TRUE"),
-        memo: String(row[7] || "").trim(),
+      var rawSiteName = String(row[0] || "").trim();
+      if (!rawSiteName) continue;
+
+      var rawPwd = (row.length > 2 && row[2] !== undefined && row[2] !== null) ? String(row[2]).trim() : "";
+      if (rawPwd === "304" && rawSiteName.indexOf("한남동") !== -1) {
+        rawPwd = "0304";
+      }
+
+      var infoItem = {
+        siteName: rawSiteName,
+        address: (row.length > 1 && row[1] !== undefined && row[1] !== null) ? String(row[1]).trim() : "",
+        doorPassword: rawPwd,
+        officePhone: (row.length > 3 && row[3] !== undefined && row[3] !== null) ? String(row[3]).trim() : "",
+        consentDone: (row.length > 4 && (row[4] === true || String(row[4]).toUpperCase() === "TRUE")),
+        elevatorCoverDone: (row.length > 5 && (row[5] === true || String(row[5]).toUpperCase() === "TRUE")),
+        officeNoticeDone: (row.length > 6 && (row[6] === true || String(row[6]).toUpperCase() === "TRUE")),
+        memo: (row.length > 7 && row[7] !== undefined && row[7] !== null) ? String(row[7]).trim() : "",
         driveUrl: String(row[8] || "").trim(),
         rowNum: i + 2
       };
+
+      map[rawSiteName] = infoItem;
+      var cleanSpaces = rawSiteName.replace(/\s+/g, " ");
+      if (cleanSpaces !== rawSiteName) {
+        map[cleanSpaces] = infoItem;
+      }
+      var noSpaces = rawSiteName.replace(/\s+/g, "");
+      if (noSpaces !== rawSiteName && noSpaces !== cleanSpaces) {
+        map[noSpaces] = infoItem;
+      }
     }
   } catch (e) {
     Logger.log("getSiteInfoMap error: " + e.toString());
@@ -4082,9 +4266,6 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
     // 0) 헤더 보장
     ensureSiteInfoSheetHeaders(sheet);
 
-    // 1) 유령 빈 행 정리
-    cleanSiteInfoSheetBlankRows(sheet);
-
     var colMap = {
       "address": 2,
       "doorPassword": 3,
@@ -4103,12 +4284,13 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
     var lastRow = sheet.getLastRow();
     var targetRow = -1;
     var firstEmptyRow = -1;
+    var cleanSiteNoSpace = cleanSite.replace(/\s+/g, "");
 
     if (lastRow >= 2) {
       var siteNames = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
       for (var i = 0; i < siteNames.length; i++) {
         var sName = String(siteNames[i][0] || "").trim();
-        if (sName === cleanSite) {
+        if (sName === cleanSite || sName.replace(/\s+/g, "") === cleanSiteNoSpace) {
           targetRow = i + 2;
           break;
         }
@@ -4119,11 +4301,7 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
     }
 
     if (targetRow === -1) {
-      if (firstEmptyRow !== -1) {
-        targetRow = firstEmptyRow;
-      } else {
-        targetRow = Math.max(lastRow + 1, 2);
-      }
+      targetRow = (firstEmptyRow !== -1) ? firstEmptyRow : Math.max(lastRow + 1, 2);
       sheet.getRange(targetRow, 1).setValue(cleanSite).setFontWeight("bold").setHorizontalAlignment("center");
       sheet.getRange(targetRow, 5, 1, 3).insertCheckboxes().setHorizontalAlignment("center");
       sheet.getRange(targetRow, 1, 1, 9).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
@@ -4132,9 +4310,16 @@ function saveSiteInfoFieldFromWeb(siteName, fieldName, value) {
     var valToSet = value;
     if (fieldName === "consentDone" || fieldName === "elevatorCoverDone" || fieldName === "officeNoticeDone") {
       valToSet = (value === true || String(value).toUpperCase() === "TRUE");
+      sheet.getRange(targetRow, targetCol).setValue(valToSet);
+    } else if (fieldName === "doorPassword" || fieldName === "officePhone" || fieldName === "address") {
+      valToSet = String(value !== undefined && value !== null ? value : "").trim();
+      sheet.getRange(targetRow, targetCol).clearDataValidations();
+      sheet.getRange(targetRow, targetCol).setNumberFormat("@").setValue(valToSet);
+    } else {
+      valToSet = String(value !== undefined && value !== null ? value : "").trim();
+      sheet.getRange(targetRow, targetCol).setValue(valToSet);
     }
 
-    sheet.getRange(targetRow, targetCol).setValue(valToSet);
     SpreadsheetApp.flush();
     invalidateDashboardServerCache();
 
@@ -4161,18 +4346,16 @@ function saveFullSiteInfoFromWeb(siteName, infoObj) {
     // 0) 헤더 보장
     ensureSiteInfoSheetHeaders(sheet);
 
-    // 1) 유령 빈 행 정리
-    cleanSiteInfoSheetBlankRows(sheet);
-
     var lastRow = sheet.getLastRow();
     var targetRow = -1;
     var firstEmptyRow = -1;
+    var cleanSiteNoSpace = cleanSite.replace(/\s+/g, "");
 
     if (lastRow >= 2) {
       var siteNames = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
       for (var i = 0; i < siteNames.length; i++) {
         var sName = String(siteNames[i][0] || "").trim();
-        if (sName === cleanSite) {
+        if (sName === cleanSite || sName.replace(/\s+/g, "") === cleanSiteNoSpace) {
           targetRow = i + 2;
           break;
         }
@@ -4183,19 +4366,24 @@ function saveFullSiteInfoFromWeb(siteName, infoObj) {
     }
 
     if (targetRow === -1) {
-      if (firstEmptyRow !== -1) {
-        targetRow = firstEmptyRow;
-      } else {
-        targetRow = Math.max(lastRow + 1, 2);
-      }
+      targetRow = (firstEmptyRow !== -1) ? firstEmptyRow : Math.max(lastRow + 1, 2);
       sheet.getRange(targetRow, 1).setValue(cleanSite).setFontWeight("bold").setHorizontalAlignment("center");
       sheet.getRange(targetRow, 5, 1, 3).insertCheckboxes().setHorizontalAlignment("center");
       sheet.getRange(targetRow, 1, 1, 9).setBorder(true, true, true, true, true, true, "#cbd5e1", SpreadsheetApp.BorderStyle.SOLID);
     }
 
-    if (infoObj.address !== undefined) sheet.getRange(targetRow, 2).setValue(String(infoObj.address || "").trim());
-    if (infoObj.doorPassword !== undefined) sheet.getRange(targetRow, 3).setValue(String(infoObj.doorPassword || "").trim());
-    if (infoObj.officePhone !== undefined) sheet.getRange(targetRow, 4).setValue(String(infoObj.officePhone || "").trim());
+    if (infoObj.address !== undefined) {
+      sheet.getRange(targetRow, 2).clearDataValidations();
+      sheet.getRange(targetRow, 2).setNumberFormat("@").setValue(String(infoObj.address || "").trim());
+    }
+    if (infoObj.doorPassword !== undefined) {
+      sheet.getRange(targetRow, 3).clearDataValidations();
+      sheet.getRange(targetRow, 3).setNumberFormat("@").setValue(String(infoObj.doorPassword || "").trim());
+    }
+    if (infoObj.officePhone !== undefined) {
+      sheet.getRange(targetRow, 4).clearDataValidations();
+      sheet.getRange(targetRow, 4).setNumberFormat("@").setValue(String(infoObj.officePhone || "").trim());
+    }
     if (infoObj.consentDone !== undefined) sheet.getRange(targetRow, 5).setValue(infoObj.consentDone === true || String(infoObj.consentDone).toUpperCase() === "TRUE");
     if (infoObj.elevatorCoverDone !== undefined) sheet.getRange(targetRow, 6).setValue(infoObj.elevatorCoverDone === true || String(infoObj.elevatorCoverDone).toUpperCase() === "TRUE");
     if (infoObj.officeNoticeDone !== undefined) sheet.getRange(targetRow, 7).setValue(infoObj.officeNoticeDone === true || String(infoObj.officeNoticeDone).toUpperCase() === "TRUE");
@@ -7582,6 +7770,13 @@ function doGet(e) {
       cleanedCount: cleanedCnt,
       message: cleanedCnt + "개의 유령 빈 행이 정리되고 데이터가 당겨졌습니다."
     })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-2-1) 현장정보 시트 서식/유효성 정돈 및 도어락 0304 복구 요청 (action=fixSiteInfoSheet || action=fixSiteInfo)
+  if (action === "fixSiteInfoSheet" || action === "fixSiteInfo") {
+    var fixRes = fixSiteInfoSheetFormat(ss);
+    return ContentService.createTextOutput(JSON.stringify(fixRes))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   // 0-3) 거래처 정리본(10열 슬림화 백업본) 시트 생성 요청 (action=createOrganizedPartnersBackupSheet)
@@ -11207,6 +11402,21 @@ function buildSidebarDashboardHtml(mode) {
   html += 'const isMobileMode = ' + (isMobile ? 'true' : 'false') + ';';
   html += 'const webAppBaseUrl = "' + (webAppUrl || "") + '";';
   html += 'let rawData = null;';
+  html += 'function getSiteInfoFromMap(siteName) {';
+  html += '  if (!rawData || !rawData.siteInfoMap || !siteName) return {};';
+  html += '  const s = String(siteName).trim();';
+  html += '  if (rawData.siteInfoMap[s]) return rawData.siteInfoMap[s];';
+  html += '  const sNorm = s.replace(/\\s+/g, " ");';
+  html += '  if (rawData.siteInfoMap[sNorm]) return rawData.siteInfoMap[sNorm];';
+  html += '  const sNoSp = s.replace(/\\s+/g, "");';
+  html += '  if (rawData.siteInfoMap[sNoSp]) return rawData.siteInfoMap[sNoSp];';
+  html += '  for (const k in rawData.siteInfoMap) {';
+  html += '    if (Object.prototype.hasOwnProperty.call(rawData.siteInfoMap, k)) {';
+  html += '      if (k.replace(/\\s+/g, "") === sNoSp) return rawData.siteInfoMap[k];';
+  html += '    }';
+  html += '  }';
+  html += '  return {};';
+  html += '}';
   html += 'let currentFilter = "all";';
   html += 'let currentScope = "site";';
   html += 'let selectedMember = "";';
@@ -11360,7 +11570,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function buildPartnerWorkGuideText(siteName, taskObj) {';
   html += '  const sName = siteName || (taskObj && taskObj.siteName) || curSiteName || selectedPcSiteName || "";';
-  html += '  const sInfo = (rawData && rawData.siteInfoMap && rawData.siteInfoMap[sName]) ? rawData.siteInfoMap[sName] : {};';
+  html += '  const sInfo = getSiteInfoFromMap(sName);';
   html += '  let taskName = "";';
   html += '  let partner = "";';
   html += '  let dateDisp = "";';
@@ -11724,12 +11934,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function togglePreChecklist(siteName, fieldName, e) {';
   html += '  if (e) { e.stopPropagation(); e.preventDefault(); }';
-  html += '  if (!rawData || !rawData.siteInfoMap) return;';
+  html += '  if (!rawData) rawData = {};';
+  html += '  if (!rawData.siteInfoMap) rawData.siteInfoMap = {};';
+  html += '  const curInfo = getSiteInfoFromMap(siteName);';
   html += '  if (!rawData.siteInfoMap[siteName]) {';
-  html += '    rawData.siteInfoMap[siteName] = { siteName: siteName, consentDone: false, elevatorCoverDone: false, officeNoticeDone: false, address: "", doorPassword: "", officePhone: "", memo: "" };';
+  html += '    rawData.siteInfoMap[siteName] = Object.assign({ siteName: siteName, consentDone: false, elevatorCoverDone: false, officeNoticeDone: false, address: "", doorPassword: "", officePhone: "", memo: "" }, curInfo);';
   html += '  }';
   html += '  const info = rawData.siteInfoMap[siteName];';
   html += '  info[fieldName] = !info[fieldName];';
+  html += '  const sNoSp = siteName.replace(/\\s+/g, "");';
+  html += '  rawData.siteInfoMap[sNoSp] = info;';
+  html += '  try { if (typeof localStorage !== "undefined" && localStorage && localStorage.setItem) localStorage.setItem("ws_dashboard_cache_v1", JSON.stringify(rawData)); } catch(eLs) {}';
   html += '  const newVal = info[fieldName];';
   html += '  const labelNames = { consentDone: "입주민 동의서", elevatorCoverDone: "승강기 보양", officeNoticeDone: "관리실 신고" };';
   html += '  const itemTitle = labelNames[fieldName] || "체크리스트";';
@@ -11751,7 +11966,7 @@ function buildSidebarDashboardHtml(mode) {
   html += 'function openSiteDriveLink(siteName) {';
   html += '  const sName = String(siteName || selectedPcSiteName || "").trim();';
   html += '  if (!sName) return;';
-  html += '  const info = (rawData && rawData.siteInfoMap && rawData.siteInfoMap[sName]) ? rawData.siteInfoMap[sName] : {};';
+  html += '  const info = getSiteInfoFromMap(sName);';
   html += '  const driveUrl = String(info.driveUrl || info.driveLink || "").trim();';
   html += '  if (driveUrl) {';
   html += '    window.open(driveUrl, "_blank");';
@@ -11774,7 +11989,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (e) { e.stopPropagation(); e.preventDefault(); }';
   html += '  const sName = siteName || selectedPcSiteName || "";';
   html += '  if (!sName) return;';
-  html += '  const info = (rawData && rawData.siteInfoMap && rawData.siteInfoMap[sName]) ? rawData.siteInfoMap[sName] : {};';
+  html += '  const info = getSiteInfoFromMap(sName);';
   html += '  document.getElementById("editSiteInfoSiteName").value = sName;';
   html += '  document.getElementById("siteInfoModalTitleText").innerText = "[" + sName + "] 현장 정보 관리";';
   html += '  document.getElementById("editSiteInfoAddress").value = info.address || "";';
@@ -11804,13 +12019,19 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const driveUrl = driveInp ? driveInp.value.trim() : "";';
   html += '  if (!rawData) rawData = {};';
   html += '  if (!rawData.siteInfoMap) rawData.siteInfoMap = {};';
-  html += '  if (!rawData.siteInfoMap[sName]) rawData.siteInfoMap[sName] = { siteName: sName, consentDone: false, elevatorCoverDone: false, officeNoticeDone: false };';
+  html += '  const curInfo = getSiteInfoFromMap(sName);';
+  html += '  if (!rawData.siteInfoMap[sName]) {';
+  html += '    rawData.siteInfoMap[sName] = Object.assign({ siteName: sName, consentDone: false, elevatorCoverDone: false, officeNoticeDone: false }, curInfo);';
+  html += '  }';
   html += '  const info = rawData.siteInfoMap[sName];';
   html += '  info.address = addr;';
   html += '  info.doorPassword = pwd;';
   html += '  info.officePhone = phone;';
   html += '  info.memo = memo;';
   html += '  info.driveUrl = driveUrl;';
+  html += '  const sNoSp = sName.replace(/\\s+/g, "");';
+  html += '  rawData.siteInfoMap[sNoSp] = info;';
+  html += '  try { if (typeof localStorage !== "undefined" && localStorage && localStorage.setItem) localStorage.setItem("ws_dashboard_cache_v1", JSON.stringify(rawData)); } catch(eLs) {}';
   html += '  const saveBtn = document.getElementById("btnSaveSiteInfo");';
   html += '  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerText = "저장 중..."; }';
   html += '  showToast("💾 [" + sName + "] 현장 정보 저장 중...");';
@@ -14049,7 +14270,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    dHtml += \'      <span>\' + escapeHtml(statusInfo.alertMsg) + \'</span>\';';
   html += '    dHtml += \'    </div>\';';
   html += '  }';
-  html += '  const curSiteInfo = (rawData && rawData.siteInfoMap && rawData.siteInfoMap[curSite.siteName]) ? rawData.siteInfoMap[curSite.siteName] : {};';
+  html += '  const curSiteInfo = getSiteInfoFromMap(curSite.siteName);';
   html += '  const isConsentDone = (curSiteInfo.consentDone === true);';
   html += '  const isElevatorDone = (curSiteInfo.elevatorCoverDone === true);';
   html += '  const isNoticeDone = (curSiteInfo.officeNoticeDone === true);';
@@ -14412,7 +14633,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    html += \'        <span class="site-summary-counts">\' + escapeHtml(sumText) + \'</span>\';';
   html += '    html += \'      </div>\';';
   html += '    html += \'    </div>\';';
-  html += '    const mobSiteInfo = (rawData && rawData.siteInfoMap && rawData.siteInfoMap[site.siteName]) ? rawData.siteInfoMap[site.siteName] : {};';
+  html += '    const mobSiteInfo = getSiteInfoFromMap(site.siteName);';
   html += '    const mobConsent = (mobSiteInfo.consentDone === true);';
   html += '    const mobElevator = (mobSiteInfo.elevatorCoverDone === true);';
   html += '    const mobNotice = (mobSiteInfo.officeNoticeDone === true);';
@@ -15335,7 +15556,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (!sInfoBanner) return;';
   html += '  const cleanVal = String(siteName || "").trim();';
   html += '  if (!cleanVal) { sInfoBanner.style.display = "none"; return; }';
-  html += '  const sInfo = (rawData && rawData.siteInfoMap && rawData.siteInfoMap[cleanVal]) ? rawData.siteInfoMap[cleanVal] : null;';
+  html += '  const sInfo = getSiteInfoFromMap(cleanVal);';
   html += '  if (sInfo && (sInfo.address || sInfo.doorPassword || sInfo.officePhone || sInfo.memo)) {';
   html += '    let bHtml = \'<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">\';';
   html += '    bHtml += \'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;">\';';
