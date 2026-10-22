@@ -5423,6 +5423,132 @@ function createOrganizedPartnersBackupSheetMenu() {
   }
 }
 
+/**
+ * 거래처 우선순위 가중치 산출 (1차: A팀/A거래처 -> 2차: B팀/B거래처 -> 3차: C팀/C거래처 -> 4차: 본사/대리점 -> 5차: 미지정)
+ * @param {string} prioVal
+ * @return {number}
+ */
+function getPartnerPriorityWeight(prioVal) {
+  var p = String(prioVal || "").trim().toUpperCase();
+  if (p.indexOf("A팀") !== -1 || p.indexOf("A 거래처") !== -1 || p === "A") return 10;
+  if (p.indexOf("B팀") !== -1 || p.indexOf("B 거래처") !== -1 || p === "B") return 20;
+  if (p.indexOf("C팀") !== -1 || p.indexOf("C 거래처") !== -1 || p === "C") return 30;
+  if (p.indexOf("본사") !== -1 || p.indexOf("대리점") !== -1) return 40;
+  if (p === "미지정" || !p) return 90;
+  return 50;
+}
+
+/**
+ * '02_거래처' 시트를 우선순위(A팀/A거래처 -> B팀 -> C팀 -> 본사/대리점 -> 미지정)별로 안전 정렬
+ * - 값뿐만 아니라 각 행의 배경색, 글꼴색, 굵기, 정렬 등 셀 서식을 100% 무결하게 유지
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {{success: boolean, count: number, message: string}}
+ */
+function sortPartnersSheetByPriority(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+
+  var pSheet = null;
+  var allS = ss.getSheets();
+  for (var i = 0; i < allS.length; i++) {
+    if (allS[i].getSheetId() === 179677299 || allS[i].getName() === "02_거래처") {
+      pSheet = allS[i];
+      break;
+    }
+  }
+  if (!pSheet) return { success: false, error: "02_거래처 시트를 찾을 수 없습니다." };
+
+  var lastRow = pSheet.getLastRow();
+  var lastCol = pSheet.getLastColumn();
+  if (lastRow < 2) return { success: true, message: "정렬할 데이터가 없습니다.", count: 0 };
+
+  var numRows = lastRow - 1;
+  var range = pSheet.getRange(2, 1, numRows, lastCol);
+  var values = range.getValues();
+  var backgrounds = range.getBackgrounds();
+  var fontColors = range.getFontColors();
+  var fontWeights = range.getFontWeights();
+  var alignments = range.getHorizontalAlignments();
+
+  // 각 행의 데이터와 서식을 일체형 객체로 패키징
+  var rowItems = [];
+  for (var r = 0; r < values.length; r++) {
+    var rawName = String(values[r][0] || "").trim();
+    if (!rawName) continue; // 빈 행 제외
+    rowItems.push({
+      vals: values[r],
+      bgs: backgrounds[r],
+      fcs: fontColors[r],
+      fws: fontWeights[r],
+      aligns: alignments[r],
+      prioWeight: getPartnerPriorityWeight(values[r][3]),
+      biz: String(values[r][1] || "").trim(),
+      cat: String(values[r][2] || "").trim(),
+      name: rawName
+    });
+  }
+
+  // 1차: 우선순위(A팀 -> B팀 -> C팀 -> 본사/대리점 -> 미지정), 2차: 대표 공종, 3차: 대구분, 4차: 업체명
+  rowItems.sort(function(a, b) {
+    if (a.prioWeight !== b.prioWeight) return a.prioWeight - b.prioWeight;
+    if (a.biz !== b.biz) return a.biz.localeCompare(b.biz, "ko");
+    if (a.cat !== b.cat) return a.cat.localeCompare(b.cat, "ko");
+    return a.name.localeCompare(b.name, "ko");
+  });
+
+  // 정렬된 순서대로 새 배열 구성
+  var newValues = [];
+  var newBgs = [];
+  var newFcs = [];
+  var newFws = [];
+  var newAligns = [];
+
+  for (var k = 0; k < rowItems.length; k++) {
+    newValues.push(rowItems[k].vals);
+    newBgs.push(rowItems[k].bgs);
+    newFcs.push(rowItems[k].fcs);
+    newFws.push(rowItems[k].fws);
+    newAligns.push(rowItems[k].aligns);
+  }
+
+  // 잔여 빈 행이 있을 경우 흰색 기본값으로 채움
+  while (newValues.length < numRows) {
+    var emptyRow = [];
+    var emptyBg = [];
+    var emptyFc = [];
+    var emptyFw = [];
+    var emptyAl = [];
+    for (var c = 0; c < lastCol; c++) {
+      emptyRow.push("");
+      emptyBg.push("#ffffff");
+      emptyFc.push("#000000");
+      emptyFw.push("normal");
+      emptyAl.push("left");
+    }
+    newValues.push(emptyRow);
+    newBgs.push(emptyBg);
+    newFcs.push(emptyFc);
+    newFws.push(emptyFw);
+    newAligns.push(emptyAl);
+  }
+
+  // 시트에 원자적 즉시 반영
+  range.setValues(newValues);
+  try { range.setBackgrounds(newBgs); } catch(eBg) {}
+  try { range.setFontColors(newFcs); } catch(eFc) {}
+  try { range.setFontWeights(newFws); } catch(eFw) {}
+  try { range.setHorizontalAlignments(newAligns); } catch(eAl) {}
+
+  SpreadsheetApp.flush();
+
+  return {
+    success: true,
+    count: rowItems.length,
+    message: "02_거래처 시트가 우선순위(A팀/A거래처 -> B팀 -> C팀 -> 본사/대리점 -> 미지정)별로 성공적으로 정렬되었습니다."
+  };
+}
+
 
 
 // ========================================================
@@ -7002,6 +7128,39 @@ function doGet(e) {
   if (action === "createOrganizedPartnersBackupSheet" || action === "createPartnersBackupSheet") {
     var backupRes = createOrganizedPartnersBackupSheet(ss);
     return ContentService.createTextOutput(JSON.stringify(backupRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-3-1) 거래처 시트 데이터 진단 (action=inspectPartnersSheet)
+  if (action === "inspectPartnersSheet") {
+    var pSheet = null;
+    var allS = ss ? ss.getSheets() : [];
+    for (var psi = 0; psi < allS.length; psi++) {
+      if (allS[psi].getSheetId() === 179677299 || allS[psi].getName() === "02_거래처") {
+        pSheet = allS[psi];
+        break;
+      }
+    }
+    if (!pSheet) {
+      return ContentService.createTextOutput(JSON.stringify({ error: "02_거래처 시트를 찾을 수 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var pLastR = pSheet.getLastRow();
+    var pLastC = pSheet.getLastColumn();
+    var pData = pSheet.getRange(1, 1, pLastR, pLastC).getValues();
+    return ContentService.createTextOutput(JSON.stringify({
+      sheetName: pSheet.getName(),
+      sheetId: pSheet.getSheetId(),
+      lastRow: pLastR,
+      lastCol: pLastC,
+      headers: pData[0],
+      rows: pData.slice(1)
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-3-2) 거래처 시트 우선순위별 1회성 정렬 실행 (action=sortPartnersSheet)
+  if (action === "sortPartnersSheet" || action === "sortPartnersByPriority") {
+    var sortPRes = sortPartnersSheetByPriority(ss);
+    return ContentService.createTextOutput(JSON.stringify(sortPRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
