@@ -5514,7 +5514,7 @@ assertTest('Step 84-3: 좌측 상단 로고/타이틀 클릭 시 onLogoClick 호
 // 84-4: PC 공종 테이블 <th>협력업체</th> 및 행 내 task.partner 뱃지 노출 검증
 assertTest('Step 84-4: PC 공종 테이블 <th>협력업체</th> 및 행 내 task.partner 뱃지 노출 검증',
   dashHtml84.indexOf('>협력업체</th>') !== -1 &&
-  dashHtml84.indexOf('colspan="7"') !== -1 &&
+  (dashHtml84.indexOf('colspan="7"') !== -1 || dashHtml84.indexOf('colspan="8"') !== -1) &&
   dashHtml84.indexOf('task.partner') !== -1 &&
   dashHtml84.indexOf('pc-partner-pill') !== -1 &&
   dashHtml84.indexOf('\'<span class="pc-partner-pill">\' + escapeHtml(task.partner)') !== -1
@@ -8063,6 +8063,70 @@ assertTest('Step 121-3: 신규 등록 및 수정 모달 라벨 내 🤝 아이�
 const indexHtmlContent121 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
 assertTest('Step 121-4: index.html 내 exec?v=116 이상 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(\d+)/.test(indexHtmlContent121) && parseInt(indexHtmlContent121.match(/exec\?v=(\d+)/)[1], 10) >= 116
+);
+
+// ========================================================
+// 📋 [Step 122]: 공종 테이블 상태 앞 체크박스 및 안내문 확인 모달 이전/다음 다중 공정 네비게이션 QA
+// ========================================================
+console.log('\n📋 [Step 122]: 공종 테이블 상태 앞 체크박스 및 안내문 확인 모달 이전/다음 다중 공정 네비게이션 QA ---');
+
+const dashHtml122 = sandbox.buildSidebarDashboardHtml('web');
+
+// 122-1: 테이블 헤더 전체 선택 체크박스(#pcSiteTaskSelectAll) 및 행별 체크박스(.pc-site-task-cb) 탑재 검증
+assertTest('Step 122-1: 테이블 헤더 전체 선택 체크박스(#pcSiteTaskSelectAll) 및 행별 공종 선택 체크박스 탑재 검증',
+  dashHtml122.indexOf('id="pcSiteTaskSelectAll"') !== -1 &&
+  dashHtml122.indexOf('class="pc-site-task-cb"') !== -1 &&
+  dashHtml122.indexOf('toggleSelectAllPcSiteTasks(this.checked)') !== -1 &&
+  dashHtml122.indexOf('onPcSiteTaskCheckboxChange(event)') !== -1
+);
+
+// 122-2: toggleSelectAllPcSiteTasks, onPcSiteTaskCheckboxChange, updateSelectAllCheckboxState 함수 구현 검증
+assertTest('Step 122-2: toggleSelectAllPcSiteTasks, onPcSiteTaskCheckboxChange, updateSelectAllCheckboxState 함수 구현 검증',
+  dashHtml122.indexOf('function toggleSelectAllPcSiteTasks(checked)') !== -1 &&
+  dashHtml122.indexOf('function onPcSiteTaskCheckboxChange(e)') !== -1 &&
+  dashHtml122.indexOf('function updateSelectAllCheckboxState()') !== -1 &&
+  dashHtml122.indexOf('checkedSiteTasks.add(key)') !== -1
+);
+
+// 122-3: 안내문 모달 양측 이전/다음 내비게이션 버튼(#btnPartnerGuidePrev, #btnPartnerGuideNext) 탑재 검증
+assertTest('Step 122-3: 안내문 모달 양측 이전/다음 내비게이션 버튼 탑재 검증',
+  dashHtml122.indexOf('id="btnPartnerGuidePrev"') !== -1 &&
+  dashHtml122.indexOf('id="btnPartnerGuideNext"') !== -1 &&
+  dashHtml122.indexOf('navigatePartnerGuide(-1)') !== -1 &&
+  dashHtml122.indexOf('navigatePartnerGuide(1)') !== -1 &&
+  dashHtml122.indexOf('id="partnerGuideCounterBadge"') !== -1
+);
+
+// 122-4: 안내문 모달 하단 푸터 이전/다음 내비게이션 및 카운터 탑재 검증
+assertTest('Step 122-4: 안내문 모달 하단 푸터 이전/다음 내비게이션 및 카운터 탑재 검증',
+  dashHtml122.indexOf('id="partnerGuideFooterNav"') !== -1 &&
+  dashHtml122.indexOf('id="btnGuideFooterPrev"') !== -1 &&
+  dashHtml122.indexOf('id="btnGuideFooterNext"') !== -1 &&
+  dashHtml122.indexOf('id="partnerGuideFooterCounter"') !== -1
+);
+
+// 122-5: navigatePartnerGuide, copyAllPartnerGuidesFromModal, 전체 복사 버튼 탑재 검증
+assertTest('Step 122-5: navigatePartnerGuide, copyAllPartnerGuidesFromModal, 전체 복사 버튼 탑재 검증',
+  dashHtml122.indexOf('function navigatePartnerGuide(delta)') !== -1 &&
+  dashHtml122.indexOf('function copyAllPartnerGuidesFromModal()') !== -1 &&
+  dashHtml122.indexOf('id="btnDoPartnerGuideCopyAll"') !== -1
+);
+
+// 122-6: openPartnerWorkGuideModal 다중 체크 공종 수집 및 개별 공종 안내문 분기 검증
+assertTest('Step 122-6: openPartnerWorkGuideModal 다중 체크 공종 수집 및 개별 공종 안내문 분기 검증',
+  dashHtml122.indexOf('selectedTasks = siteObj.tasks.filter(t => t && checkedSiteTasks.has(sName + "::" + t.row))') !== -1 &&
+  dashHtml122.indexOf('function renderPartnerGuideModalView()') !== -1
+);
+
+// 122-7: 작업일자 기간 일정 요일 자동 결합(YYYY.MM.DD (요일) ~ YYYY.MM.DD (요일)) 탑재 검증
+assertTest('Step 122-7: 작업일자 기간 일정 요일 자동 결합(YYYY.MM.DD (요일) ~ YYYY.MM.DD (요일)) 탑재 검증',
+  dashHtml122.indexOf('dowEnd = formatKoreanDOW(eObj)') !== -1
+);
+
+// 122-8: index.html 내 exec?v=119 이상 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent122 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 122-8: index.html 내 exec?v=119 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent122) && parseInt(indexHtmlContent122.match(/exec\?v=(\d+)/)[1], 10) >= 119
 );
 
 console.log('\n========================================================');
