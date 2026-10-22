@@ -6997,7 +6997,7 @@ assertTest('Step 84-4: PC 공종 테이블 <th>협력업체</th> 및 행 내 tas
   dashHtml84.indexOf('colspan="7"') !== -1 &&
   dashHtml84.indexOf('task.partner') !== -1 &&
   dashHtml84.indexOf('pc-partner-pill') !== -1 &&
-  dashHtml84.indexOf('🤝 \' + escapeHtml(task.partner)') !== -1
+  dashHtml84.indexOf('\'<span class="pc-partner-pill">\' + escapeHtml(task.partner)') !== -1
 );
 
 // 84-5: 일정 수정 모달 내 sheetTaskPartnerBadge 및 sheetEditPartnerInput 입력/노출, 서버 updateScheduleStatusFromWeb D열 협력업체 저장 검증
@@ -9520,6 +9520,37 @@ assertTest('Step 120-7: 모바일 일정 카드 및 PC 테이블 뷰 내 협력�
 const indexHtmlContent120 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
 assertTest('Step 120-8: index.html 내 exec?v=115 이상 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(\d+)/.test(indexHtmlContent120) && parseInt(indexHtmlContent120.match(/exec\?v=(\d+)/)[1], 10) >= 115
+);
+
+// ========================================================
+// 🤝 [Step 121]: 협력업체 표시 시 🤝 악수 아이콘 완전 제거 및 UI 간소화 QA
+// ========================================================
+console.log('\n🤝 [Step 121]: 협력업체 표시 시 🤝 악수 아이콘 완전 제거 및 UI 간소화 QA ---');
+
+const code121 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+
+// 121-1: PC 테이블 뷰 pc-partner-pill 내 🤝 아이콘 배제 검증
+assertTest('Step 121-1: PC 테이블 뷰 pc-partner-pill 내 🤝 아이콘 배제 검증',
+  code121.includes('class="pc-partner-pill">\\\' + escapeHtml(task.partner)') &&
+  !code121.includes('pc-partner-pill">🤝')
+);
+
+// 121-2: 일정 모달 상단 sheetTaskPartnerBadge 내 🤝 아이콘 배제 검증
+assertTest('Step 121-2: 일정 모달 상단 sheetTaskPartnerBadge 내 🤝 아이콘 배제 검증',
+  code121.includes('partnerBadge.innerHTML = escapeHtml(curPartnerVal)') &&
+  !code121.includes('partnerBadge.innerHTML = "🤝 " + escapeHtml(curPartnerVal)')
+);
+
+// 121-3: 신규 등록 및 수정 모달 라벨 내 🤝 아이콘 배제 검증
+assertTest('Step 121-3: 신규 등록 및 수정 모달 라벨 내 🤝 아이콘 배제 및 깔끔한 "협력업체" 검증',
+  code121.includes('<label class="sheet-field-label">협력업체</label>') &&
+  !code121.includes('<label class="sheet-field-label">🤝 협력업체</label>')
+);
+
+// 121-4: index.html 내 exec?v=116 이상 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent121 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 121-4: index.html 내 exec?v=116 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent121) && parseInt(indexHtmlContent121.match(/exec\?v=(\d+)/)[1], 10) >= 116
 );
 
 console.log('\n========================================================');

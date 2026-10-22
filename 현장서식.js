@@ -10847,7 +10847,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </div>';
   html += '      <div class="sheet-field-row" style="margin-top:8px;">';
   html += '        <div class="sheet-field-col" style="flex:1;">';
-  html += '          <label class="sheet-field-label">🤝 협력업체</label>';
+  html += '          <label class="sheet-field-label">협력업체</label>';
   html += '          <input type="text" id="sheetPartnerInput" list="sheetPartnerDatalist" class="sheet-field-input" placeholder="협력업체명 (선택)" oninput="onCreatePartnerInputChange(this.value)">';
   html += '        </div>';
   html += '        <div class="sheet-field-col" style="flex:1;">';
@@ -10889,7 +10889,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </div>';
   html += '      <div class="sheet-field-row" id="sheetEditPartnerRow" style="margin-top:8px;">';
   html += '        <div class="sheet-field-col" style="flex:1;">';
-  html += '          <label class="sheet-field-label">🤝 협력업체</label>';
+  html += '          <label class="sheet-field-label">협력업체</label>';
   html += '          <input type="text" id="sheetEditPartnerInput" list="sheetPartnerDatalist" class="sheet-field-input" placeholder="협력업체명 (선택)" oninput="onPartnerInputChange(this.value)">';
   html += '        </div>';
   html += '        <div class="sheet-field-col" style="flex:1;">';
@@ -13842,7 +13842,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      dHtml += \'            <td style="text-align:center;">\' + (tMgr ? \'<span class="pc-manager-pill"><span class="mgr-icon">👤</span><span>\' + escapeHtml(tMgr) + \'</span></span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
   html += '      const pcPPhone = task.partner ? getPartnerPhoneNumber(task.partner) : "";';
   html += '      const pcPCallHtml = pcPPhone ? (\' <a href="tel:\' + escapeHtml(pcPPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#22c55e;color:#fff;text-decoration:none;font-size:10px;vertical-align:middle;margin-left:4px;" title="전화 걸기: \' + escapeHtml(pcPPhone) + \'">📞</a>\') : "";';
-  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span class="pc-partner-pill">🤝 \' + escapeHtml(task.partner) + pcPCallHtml + \'</span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
+  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span class="pc-partner-pill">\' + escapeHtml(task.partner) + pcPCallHtml + \'</span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-size:12px;\' : \'color:#475569;font-size:12px;\') + \'">\' + escapeHtml(task.memo || "-") + \'</span></td>\';';
   html += '      dHtml += \'            <td style="text-align:center;"><button type="button" class="pc-task-btn-edit" onclick="event.stopPropagation();openEditModal(\\\'\' + task.row + \'\\\', \\\'\' + encCurSite + \'\\\')">수정</button></td>\';';
   html += '      dHtml += \'          </tr>\';';
@@ -14996,7 +14996,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (partnerBadge) {';
   html += '    if (curPartnerVal) {';
   html += '      const pPhone = getPartnerPhoneNumber(curPartnerVal);';
-  html += '      partnerBadge.innerHTML = "🤝 " + escapeHtml(curPartnerVal) + (pPhone ? \' <a href="tel:\' + escapeHtml(pPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="color:#1d4ed8;text-decoration:none;font-weight:700;margin-left:4px;" title="전화 걸기: \' + escapeHtml(pPhone) + \'">📞</a>\' : "");';
+  html += '      partnerBadge.innerHTML = escapeHtml(curPartnerVal) + (pPhone ? \' <a href="tel:\' + escapeHtml(pPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="color:#1d4ed8;text-decoration:none;font-weight:700;margin-left:4px;" title="전화 걸기: \' + escapeHtml(pPhone) + \'">📞</a>\' : "");';
   html += '      partnerBadge.style.display = "inline-flex";';
   html += '    } else {';
   html += '      partnerBadge.innerText = "";';
