@@ -2004,7 +2004,7 @@ function consolidateSplitSiteRows(sheet) {
   return movedCount;
 }
 
-function sortSiteScheduleTasksByDate(ss, sheet, silent) {
+function sortSiteScheduleTasksByDate(ss, sheet, silent, sortBlocks) {
   if (!ss) ss = getAppSpreadsheet();
   if (!ss) return 0;
   if (!sheet) sheet = findSiteScheduleSheet(ss);
@@ -2167,8 +2167,13 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
   // - 일반 현장 시트(현장데이터, 단건, AS): 빠른 시작일 우선 (오름차순, ASC - 웹앱과 100% 일치)
   // - 날짜가 없는 현장: 맨 아래로
   // - 날짜가 같거나 둘 다 없는 경우: 원래 등장 순서(firstRowIdx) 보존
+  // [정렬 정책 준수]: sortBlocks === false일 때는 현장 블록들 간의 순서를 바꾸지 않고 원래 등장 순서(firstRowIdx) 보존
+  // (웹에서 신규 등록한 현장이 다른 현장 사이로 끼어들지 않고 시트 최하단에 보존됨. 전체 현장 블록 정렬은 매일 새벽 4시 트리거에서만 수행)
   var isCompletedSheet = (typeof isCompletedSitesSheet === "function" && isCompletedSitesSheet(sheet));
   blocks.sort(function(blkA, blkB) {
+    if (sortBlocks === false) {
+      return blkA.firstRowIdx - blkB.firstRowIdx;
+    }
     var aDate = blkA.firstDateMs || 0;
     var bDate = blkB.firstDateMs || 0;
 
@@ -7344,9 +7349,7 @@ function groupSheetRowsBySite(sheet, collapse) {
     for (var d = 0; d < 8; d++) {
       try {
         sheet.getRange(1, 1, maxRows, 1).shiftRowGroupDepth(-1);
-      } catch(eReset) {
-        break;
-      }
+      } catch(eReset) {}
     }
 
     // 2단계: 동일 현장명 연속 구간 판별
@@ -8158,6 +8161,9 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
     // 5단계: 스프레드시트에서 행 영구 삭제
     sheet.deleteRow(rowNum);
     SpreadsheetApp.flush();
+    if (sheet && typeof isEstimateSheet === "function" && !isEstimateSheet(sheet)) {
+      try { groupSheetRowsBySite(sheet, false); } catch(eGrpDelTask) {}
+    }
 
     // 6단계: 캐시 무효화 및 변경 타임스탬프 기록
     invalidateDashboardServerCache();
@@ -8235,6 +8241,9 @@ function moveSiteBlockToBottom(siteName, sheetName) {
     sheet.getRange(2, 1, newVals.length, numCols).setValues(newVals);
     sheet.getRange(2, 1, newBgs.length, numCols).setBackgrounds(newBgs);
     SpreadsheetApp.flush();
+    if (sheet && typeof isEstimateSheet === "function" && !isEstimateSheet(sheet)) {
+      try { groupSheetRowsBySite(sheet, false); } catch(eGrpMove) {}
+    }
     try { Utilities.sleep(150); } catch(eSlp) {}
     invalidateDashboardServerCache();
     return {
@@ -8306,7 +8315,8 @@ function deleteSiteFromWeb(siteName, scope) {
     var maxDeletedRow = rowsToDelete[0];
     var minDeletedRow = rowsToDelete[rowsToDelete.length - 1];
 
-    if (maxDeletedRow < sheet.getLastRow()) {
+    var isNewSiteScope = (scope === "newSite" || scope === "신규현장" || scope === "신규견적");
+    if (!isNewSiteScope && maxDeletedRow < sheet.getLastRow()) {
       var nextRowVals = sheet.getRange(maxDeletedRow + 1, 1, 1, 3).getValues()[0];
       var nextSite = String(nextRowVals[0] || "").trim();
       var nextHasData = Boolean(String(nextRowVals[1] || "").trim() || String(nextRowVals[2] || "").trim());
@@ -8330,23 +8340,397 @@ function deleteSiteFromWeb(siteName, scope) {
     }
 
     SpreadsheetApp.flush();
+    if (sheet && typeof isEstimateSheet === "function" && !isEstimateSheet(sheet)) {
+      try { groupSheetRowsBySite(sheet, false); } catch(eGrpDelSite) {}
+    }
     try { Utilities.sleep(150); } catch(eSlp) {}
     invalidateDashboardServerCache();
     try {
       PropertiesService.getScriptProperties().setProperty("LAST_SHEET_CHANGE_TIME", String(new Date().getTime()));
     } catch(eProp) {}
 
+    var deleteMsg = isNewSiteScope
+      ? ("[" + cleanSite + "] 신규현장이 삭제되었습니다.")
+      : ("[" + cleanSite + "] 현장의 " + rowsToDelete.length + "개 공정이 모두 삭제되었습니다.");
     return {
       success: true,
       count: rowsToDelete.length,
       siteName: cleanSite,
-      message: "[" + cleanSite + "] 현장의 " + rowsToDelete.length + "개 공정이 모두 삭제되었습니다."
+      message: deleteMsg
     };
   } catch (err) {
     Logger.log("deleteSiteFromWeb 오류: " + err.toString());
     return { success: false, error: err.toString() };
   }
 }
+
+
+// ========================================================
+// [To-Do 매트릭스 보드 전용 백엔드 엔진]
+// ========================================================
+
+/**
+ * To-Do 전용 시트 탐색 또는 신규 생성 (부재 시 자동 생성)
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {GoogleAppsScript.Spreadsheet.Sheet}
+ */
+function findOrCreateTodoSheet(ss) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
+  var sheet = ss.getSheetByName("To-Do");
+  if (!sheet) {
+    sheet = ss.getSheetByName("TODO") || ss.getSheetByName("Todo") || ss.getSheetByName("할일");
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet("To-Do");
+    var headers = ["ID", "마감일", "상태", "담당자", "업무명", "태그", "상세내용", "현장명", "중요여부", "등록일시", "완료일시"];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setBackground("#f1f5f9")
+      .setFontColor("#1e293b")
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center");
+    sheet.setRowHeight(1, 35);
+    sheet.setFrozenRows(1);
+    try {
+      sheet.setColumnWidth(1, 130); // ID
+      sheet.setColumnWidth(2, 100); // 마감일
+      sheet.setColumnWidth(3, 80);  // 상태
+      sheet.setColumnWidth(4, 90);  // 담당자
+      sheet.setColumnWidth(5, 220); // 업무명
+      sheet.setColumnWidth(6, 110); // 태그
+      sheet.setColumnWidth(7, 260); // 상세내용
+      sheet.setColumnWidth(8, 160); // 현장명
+      sheet.setColumnWidth(9, 80);  // 중요여부
+      sheet.setColumnWidth(10, 140); // 등록일시
+      sheet.setColumnWidth(11, 140); // 완료일시
+    } catch(eWidth) {}
+  }
+  return sheet;
+}
+
+/**
+ * To-Do 목록 전체 조회 서버 함수
+ * @return {object} { success: boolean, list: Array, members: Array, activeSites: Array }
+ */
+function getTodoListFromWeb() {
+  try {
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다.", list: [] };
+    var sheet = findOrCreateTodoSheet(ss);
+    if (!sheet) return { success: false, error: "To-Do 시트를 찾을 수 없습니다.", list: [] };
+
+    var lastRow = sheet.getLastRow();
+    var list = [];
+    if (lastRow >= 2) {
+      var numCols = Math.max(sheet.getLastColumn(), 11);
+      var vals = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+      for (var i = 0; i < vals.length; i++) {
+        var r = vals[i];
+        var id = String(r[0] || "").trim();
+        var title = String(r[4] || "").trim();
+        if (!id && !title) continue;
+        list.push({
+          row: i + 2,
+          id: id || ("TD_" + (i + 2)),
+          dueDate: r[1] ? formatDateYYMMDD(r[1]) : "",
+          status: String(r[2] || "미완료").trim(),
+          manager: String(r[3] || "").trim(),
+          title: title,
+          tag: String(r[5] || "").trim(),
+          detail: String(r[6] || "").trim(),
+          siteName: String(r[7] || "").trim(),
+          isImportant: (String(r[8] || "").toUpperCase() === "TRUE" || r[8] === true || String(r[2] || "").trim() === "중요"),
+          createdAt: r[9] ? String(r[9]) : "",
+          completedAt: r[10] ? String(r[10]) : ""
+        });
+      }
+    }
+
+    // [구성원 시트 실제 인원 목록 추출]
+    var members = [];
+    try {
+      members = getMemberNames(ss) || [];
+    } catch(eMem) {
+      members = [];
+    }
+
+    // [진행 중인 현장, 단건, AS 목록 추출]
+    var activeSites = [];
+    try {
+      var sSheet = findSiteScheduleSheet(ss);
+      if (sSheet && sSheet.getLastRow() >= 2) {
+        var sVals = sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 1).getValues();
+        var sSet = {};
+        for (var si = 0; si < sVals.length; si++) {
+          var sn = String(sVals[si][0] || "").trim();
+          if (sn && !sSet[sn]) { sSet[sn] = true; activeSites.push({ name: sn, category: "현장" }); }
+        }
+      }
+      var sSingle = findSingleTaskSheet(ss, false);
+      if (sSingle && sSingle.getLastRow() >= 2) {
+        var snVals = sSingle.getRange(2, 1, sSingle.getLastRow() - 1, 1).getValues();
+        var snSet = {};
+        for (var sni = 0; sni < snVals.length; sni++) {
+          var snm = String(snVals[sni][0] || "").trim();
+          if (snm && !snSet[snm]) { snSet[snm] = true; activeSites.push({ name: snm, category: "단건" }); }
+        }
+      }
+      var sAs = findAsSheet(ss, false);
+      if (sAs && sAs.getLastRow() >= 2) {
+        var asVals = sAs.getRange(2, 1, sAs.getLastRow() - 1, 1).getValues();
+        var asSet = {};
+        for (var asi = 0; asi < asVals.length; asi++) {
+          var asm = String(asVals[asi][0] || "").trim();
+          if (asm && !asSet[asm]) { asSet[asm] = true; activeSites.push({ name: asm, category: "AS" }); }
+        }
+      }
+    } catch(eSites) {}
+
+    return {
+      success: true,
+      list: list,
+      members: members,
+      activeSites: activeSites
+    };
+  } catch(err) {
+    Logger.log("getTodoListFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString(), list: [] };
+  }
+}
+
+/**
+ * To-Do 항목 신규 등록
+ */
+function addTodoItemFromWeb(todoData) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(addTodoItemFromWeb, this, arguments);
+  try {
+    var data = (typeof todoData === "string") ? JSON.parse(todoData) : (todoData || {});
+    var title = String(data.title || "").trim();
+    if (!title) return { success: false, error: "업무명을 입력해주세요." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var sheet = findOrCreateTodoSheet(ss);
+    if (!sheet) return { success: false, error: "To-Do 시트를 찾을 수 없습니다." };
+
+    var id = "TD_" + Date.now();
+    var dueDate = String(data.dueDate || "").trim();
+    var isImp = (data.isImportant === true || data.isImportant === "true");
+    var status = isImp ? "중요" : (String(data.status || "미완료").trim());
+    var manager = String(data.manager || "").trim();
+    var tag = String(data.tag || "").trim();
+    var detail = String(data.detail || "").trim();
+    var siteName = String(data.siteName || "").trim();
+    var nowStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+
+    var rowVals = [
+      id,
+      dueDate,
+      status,
+      manager,
+      title,
+      tag,
+      detail,
+      siteName,
+      isImp,
+      nowStr,
+      (status === "완료" ? nowStr : "")
+    ];
+
+    sheet.appendRow(rowVals);
+    SpreadsheetApp.flush();
+
+    return {
+      success: true,
+      id: id,
+      item: {
+        id: id,
+        dueDate: dueDate,
+        status: status,
+        manager: manager,
+        title: title,
+        tag: tag,
+        detail: detail,
+        siteName: siteName,
+        isImportant: isImp,
+        createdAt: nowStr,
+        completedAt: (status === "완료" ? nowStr : "")
+      },
+      message: "할 일이 등록되었습니다."
+    };
+  } catch(err) {
+    Logger.log("addTodoItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * To-Do 항목 전체 수정
+ */
+function updateTodoItemFromWeb(id, updateData) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(updateTodoItemFromWeb, this, arguments);
+  try {
+    var cleanId = String(id || "").trim();
+    if (!cleanId) return { success: false, error: "유효하지 않은 ID입니다." };
+    var data = (typeof updateData === "string") ? JSON.parse(updateData) : (updateData || {});
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var sheet = findOrCreateTodoSheet(ss);
+    if (!sheet) return { success: false, error: "To-Do 시트를 찾을 수 없습니다." };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: false, error: "데이터가 없습니다." };
+
+    var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    var targetRow = -1;
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0] || "").trim() === cleanId) {
+        targetRow = i + 2;
+        break;
+      }
+    }
+    if (targetRow === -1) return { success: false, error: "해당 할 일을 찾을 수 없습니다." };
+
+    var title = String(data.title || "").trim();
+    var dueDate = String(data.dueDate || "").trim();
+    var isImp = (data.isImportant === true || data.isImportant === "true");
+    var status = isImp ? "중요" : (String(data.status || "미완료").trim());
+    var manager = String(data.manager || "").trim();
+    var tag = String(data.tag || "").trim();
+    var detail = String(data.detail || "").trim();
+    var siteName = String(data.siteName || "").trim();
+    var nowStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+
+    var updateVals = [
+      dueDate,
+      status,
+      manager,
+      title,
+      tag,
+      detail,
+      siteName,
+      isImp
+    ];
+    sheet.getRange(targetRow, 2, 1, updateVals.length).setValues([updateVals]);
+    if (status === "완료") {
+      sheet.getRange(targetRow, 11).setValue(nowStr);
+    } else {
+      sheet.getRange(targetRow, 11).setValue("");
+    }
+    SpreadsheetApp.flush();
+
+    return {
+      success: true,
+      id: cleanId,
+      message: "할 일이 수정되었습니다."
+    };
+  } catch(err) {
+    Logger.log("updateTodoItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * To-Do 상태 및 담당자 변경 (드래그앤드롭 / 체크박스)
+ */
+function updateTodoStatusFromWeb(id, newStatus, newManager) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(updateTodoStatusFromWeb, this, arguments);
+  try {
+    var cleanId = String(id || "").trim();
+    if (!cleanId) return { success: false, error: "유효하지 않은 ID입니다." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var sheet = findOrCreateTodoSheet(ss);
+    if (!sheet) return { success: false, error: "To-Do 시트를 찾을 수 없습니다." };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: false, error: "데이터가 없습니다." };
+
+    var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    var targetRow = -1;
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0] || "").trim() === cleanId) {
+        targetRow = i + 2;
+        break;
+      }
+    }
+    if (targetRow === -1) return { success: false, error: "해당 할 일을 찾을 수 없습니다." };
+
+    var cleanStatus = String(newStatus || "미완료").trim();
+    var isImp = (cleanStatus === "중요");
+    sheet.getRange(targetRow, 3).setValue(cleanStatus);
+    sheet.getRange(targetRow, 9).setValue(isImp);
+
+    if (newManager !== undefined && newManager !== null && String(newManager).trim() !== "") {
+      var mVal = String(newManager).trim();
+      sheet.getRange(targetRow, 4).setValue(mVal === "담당 미지정" ? "" : mVal);
+    }
+
+    var nowStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+    if (cleanStatus === "완료") {
+      sheet.getRange(targetRow, 11).setValue(nowStr);
+    } else {
+      sheet.getRange(targetRow, 11).setValue("");
+    }
+    SpreadsheetApp.flush();
+
+    return {
+      success: true,
+      id: cleanId,
+      status: cleanStatus,
+      manager: newManager,
+      message: "할 일 상태가 변경되었습니다."
+    };
+  } catch(err) {
+    Logger.log("updateTodoStatusFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * To-Do 항목 삭제
+ */
+function deleteTodoItemFromWeb(id) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(deleteTodoItemFromWeb, this, arguments);
+  try {
+    var cleanId = String(id || "").trim();
+    if (!cleanId) return { success: false, error: "유효하지 않은 ID입니다." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var sheet = findOrCreateTodoSheet(ss);
+    if (!sheet) return { success: false, error: "To-Do 시트를 찾을 수 없습니다." };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: false, error: "데이터가 없습니다." };
+
+    var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    var targetRow = -1;
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0] || "").trim() === cleanId) {
+        targetRow = i + 2;
+        break;
+      }
+    }
+    if (targetRow === -1) return { success: false, error: "해당 할 일을 찾을 수 없습니다." };
+
+    sheet.deleteRow(targetRow);
+    SpreadsheetApp.flush();
+
+    return {
+      success: true,
+      id: cleanId,
+      message: "할 일이 삭제되었습니다."
+    };
+  } catch(err) {
+    Logger.log("deleteTodoItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
 
 function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchived, targetSheetName) {
   if (!__woosungWriteLockHeld_) return runWithWriteLock_(moveScheduleTaskDateFromWeb, this, arguments);
@@ -8598,7 +8982,10 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     }
 
     try {
-      sortSiteScheduleTasksByDate(ss, sheet, true);
+      // [정렬 정책 준수]: 웹 등록 시에는 현장 블록 간 순서 변경을 금지(sortBlocks=false)하여
+      // 신규 등록 현장이 타 현장 사이로 끼어들지 않고 시트 최하단에 그대로 보존되도록 함.
+      // (단, 동일 현장 내부의 공정들은 날짜순으로 올바르게 정돈됨)
+      sortSiteScheduleTasksByDate(ss, sheet, true, false);
       var afterLastRow = sheet.getLastRow();
       if (afterLastRow >= 2) {
         var afterVals = sheet.getRange(2, 1, afterLastRow - 1, colCount).getValues();
@@ -8934,6 +9321,48 @@ function doGet(e) {
     };
     var addEstRes = addEstimateRowFromWeb(estData);
     return ContentService.createTextOutput(JSON.stringify(addEstRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-0-Todo) To-Do 관련 액션 라우팅
+  if (action === "getTodoList") {
+    var todoListRes = getTodoListFromWeb();
+    return ContentService.createTextOutput(JSON.stringify(todoListRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "addTodo") {
+    var addData = p.data ? JSON.parse(p.data) : p;
+    var addTodoRes = addTodoItemFromWeb(addData);
+    return ContentService.createTextOutput(JSON.stringify(addTodoRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "updateTodo") {
+    var uId = p.id || "";
+    var uData = p.data ? JSON.parse(p.data) : p;
+    var updateTodoRes = updateTodoItemFromWeb(uId, uData);
+    return ContentService.createTextOutput(JSON.stringify(updateTodoRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "updateTodoStatus") {
+    var sId = p.id || "";
+    var sStatus = p.status || "";
+    var sMgr = p.manager !== undefined ? p.manager : null;
+    var updateStatusRes = updateTodoStatusFromWeb(sId, sStatus, sMgr);
+    return ContentService.createTextOutput(JSON.stringify(updateStatusRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "deleteTodo") {
+    var delId = p.id || "";
+    var delTodoRes = deleteTodoItemFromWeb(delId);
+    return ContentService.createTextOutput(JSON.stringify(delTodoRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-0-Repair) 현장 아코디언 그룹 무결성 즉시 복구 요청 (action=repairSiteGroups)
+  if (action === "repairSiteGroups") {
+    var rTargetSheet = p.sheet ? ss.getSheetByName(p.sheet) : sheet;
+    var repCount = groupSheetRowsBySite(rTargetSheet, false);
+    return ContentService.createTextOutput(JSON.stringify({ success: true, count: repCount, message: "현장별 아코디언 그룹이 완벽하게 복구되었습니다." }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -12657,6 +13086,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    </div>';
   html += '  </div>';
   html += '  <div class="pc-top-right">';
+  html += '    <button type="button" class="pc-view-tab" id="pcViewTabTodo" data-view="todo" onclick="switchToPcView(\'todo\')" style="background:#f0fdf4;color:#166534;border:1.5px solid #86efac;font-weight:800;display:inline-flex;align-items:center;gap:4px;margin-right:8px;border-radius:8px;padding:6px 12px;box-shadow:0 1px 2px rgba(22,101,52,0.1);" title="할 일 · 업무 관리 보드"><span>✅</span> To-Do</button>';
   html += '    <div class="pc-view-switcher">';
   html += '      <button type="button" class="pc-view-tab active" data-view="month" onclick="switchToPcView(\'month\')">월간</button>';
   html += '      <button type="button" class="pc-view-tab" data-view="week" onclick="switchToPcView(\'week\')">주간</button>';
@@ -13284,8 +13714,579 @@ function buildSidebarDashboardHtml(mode) {
   html += '  </div>';
   html += '</div>';
   html += '';
+
+  // ========================================================
+  // [To-Do 업무 추가/수정 모달 HTML]
+  // ========================================================
+  html += '<div id="todoActionModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.6);z-index:99999;align-items:center;justify-content:center;backdrop-filter:blur(3px);padding:16px;" onclick="if(event.target===this)closeTodoModal()">';
+  html += '  <div style="background:#ffffff;border-radius:16px;width:100%;max-width:540px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1),0 10px 10px -5px rgba(0,0,0,0.04);overflow:hidden;animation:todoModalFadeIn 0.2s ease;">';
+  html += '    <div style="padding:18px 22px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;">';
+  html += '      <h3 id="todoModalTitleText" style="margin:0;font-size:17px;font-weight:900;color:#0f172a;">할 일 추가</h3>';
+  html += '      <div style="display:inline-flex;background:#f1f5f9;border-radius:8px;padding:3px;">';
+  html += '        <span style="padding:4px 10px;font-size:11.5px;font-weight:700;color:#64748b;cursor:pointer;">일정</span>';
+  html += '        <span style="padding:4px 10px;font-size:11.5px;font-weight:800;color:#2563eb;background:#ffffff;border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,0.05);cursor:pointer;">할 일</span>';
+  html += '      </div>';
+  html += '    </div>';
+  html += '    <div style="padding:20px 24px;display:flex;flex-direction:column;gap:14px;max-height:calc(85vh - 120px);overflow-y:auto;">';
+  html += '      <div>';
+  html += '        <input type="text" id="todoModalInpTitle" placeholder="예: 타일 발주서 보내기" style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:15px;font-weight:700;color:#0f172a;outline:none;" onfocus="this.style.borderColor=\'#2563eb\'" onblur="this.style.borderColor=\'#cbd5e1\'">';
+  html += '      </div>';
+  html += '      <div style="display:flex;align-items:center;gap:14px;">';
+  html += '        <span style="width:65px;font-size:13px;font-weight:700;color:#475569;flex-shrink:0;">마감</span>';
+  html += '        <input type="date" id="todoModalInpDueDate" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:600;color:#1e293b;outline:none;">';
+  html += '      </div>';
+  html += '      <div>';
+  html += '        <div style="display:flex;align-items:center;gap:14px;">';
+  html += '          <span style="width:65px;font-size:13px;font-weight:700;color:#475569;flex-shrink:0;">담당자</span>';
+  html += '          <select id="todoModalInpManager" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:700;color:#1e293b;outline:none;background:#ffffff;"></select>';
+  html += '        </div>';
+  html += '        <div style="margin-left:79px;margin-top:4px;font-size:11px;color:#94a3b8;font-weight:500;">여러 명을 고르면 공동 업무가 됩니다 — 첫 사람이 대표 담당자예요</div>';
+  html += '      </div>';
+  html += '      <div style="display:flex;align-items:center;gap:14px;">';
+  html += '        <span style="width:65px;font-size:13px;font-weight:700;color:#475569;flex-shrink:0;">태그</span>';
+  html += '        <input type="text" id="todoModalInpTag" placeholder="+ 태그 (예: 팀 업무, 자재, 발주)" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;color:#1e293b;outline:none;">';
+  html += '      </div>';
+  html += '      <div style="display:flex;align-items:flex-start;gap:14px;">';
+  html += '        <span style="width:65px;font-size:13px;font-weight:700;color:#475569;flex-shrink:0;margin-top:8px;">상세 내용</span>';
+  html += '        <textarea id="todoModalInpDetail" placeholder="어디에·무엇을·어떻게 — 제목만으로 부족한 설명" style="flex:1;height:75px;padding:10px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;color:#1e293b;outline:none;resize:vertical;font-family:inherit;line-height:1.4;"></textarea>';
+  html += '      </div>';
+  html += '      <div>';
+  html += '        <div style="display:flex;align-items:center;gap:14px;">';
+  html += '          <span style="width:65px;font-size:13px;font-weight:700;color:#475569;flex-shrink:0;">현장</span>';
+  html += '          <select id="todoModalInpSite" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:600;color:#1e293b;outline:none;background:#ffffff;"></select>';
+  html += '        </div>';
+  html += '        <div style="margin-left:79px;margin-top:4px;font-size:11px;color:#94a3b8;font-weight:500;">현장 없이 등록 — 팀 업무로 저장됩니다(현장에 안 묶인 회사 할 일).</div>';
+  html += '      </div>';
+  html += '      <div style="display:flex;justify-content:flex-end;margin-top:4px;">';
+  html += '        <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:700;color:#0f172a;">';
+  html += '          <input type="checkbox" id="todoModalInpIsImportant" style="width:16px;height:16px;cursor:pointer;accent-color:#eab308;">';
+  html += '          <span style="color:#d97706;">★ 중요로 표시</span>';
+  html += '        </label>';
+  html += '      </div>';
+  html += '    </div>';
+  html += '    <div style="padding:14px 22px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;align-items:center;justify-content:flex-end;gap:10px;">';
+  html += '      <button type="button" onclick="closeTodoModal()" style="padding:8px 18px;background:#ffffff;color:#475569;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">취소</button>';
+  html += '      <button type="button" onclick="saveTodoFromModal()" style="padding:8px 22px;background:#2563eb;color:#ffffff;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 1px 3px rgba(37,99,235,0.3);">저장</button>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '</div>';
+
   // Script
   html += '<script>';
+
+  // ========================================================
+  // [To-Do 매트릭스 보드 클라이언트 엔진]
+  // ========================================================
+  html += 'let todoDataList = [];\n';
+  html += 'let todoMembersList = [];\n';
+  html += 'let todoActiveSitesList = [];\n';
+  html += 'let currentTodoMemberFilter = "all";\n';
+  html += 'let todoDraggedId = null;\n';
+  html += 'let isTodoLoaded = false;\n';
+  html += 'let currentEditingTodoId = null;\n';
+  html += '\n';
+
+  html += 'function loadTodoList(force) {\n';
+  html += '  if (isTodoLoaded && !force) {\n';
+  html += '    renderTodoDashboard();\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  const contentArea = document.getElementById("contentArea");\n';
+  html += '  if (contentArea && (!todoDataList || todoDataList.length === 0)) {\n';
+  html += '    contentArea.innerHTML = \'<div style="padding:60px 20px;text-align:center;color:#64748b;font-weight:700;"><span style="font-size:28px;">⏳</span><div style="margin-top:10px;font-size:14px;">To-Do 데이터를 불러오는 중...</div></div>\';\n';
+  html += '  }\n';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '    google.script.run\n';
+  html += '      .withSuccessHandler(res => {\n';
+  html += '        if (res && res.success) {\n';
+  html += '          todoDataList = res.list || [];\n';
+  html += '          if (res.members && res.members.length > 0) todoMembersList = res.members;\n';
+  html += '          if (res.activeSites && res.activeSites.length > 0) todoActiveSitesList = res.activeSites;\n';
+  html += '          isTodoLoaded = true;\n';
+  html += '          renderTodoDashboard();\n';
+  html += '        } else {\n';
+  html += '          showToast("❌ To-Do 불러오기 실패: " + ((res && res.error) || "알 수 없는 오류"));\n';
+  html += '        }\n';
+  html += '      })\n';
+  html += '      .withFailureHandler(err => {\n';
+  html += '        showToast("❌ To-Do 통신 오류: " + ((err && err.message) || err));\n';
+  html += '      })\n';
+  html += '      .getTodoListFromWeb();\n';
+  html += '  } else {\n';
+  html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '    fetch(apiUrl + "?action=getTodoList")\n';
+  html += '      .then(r => r.json())\n';
+  html += '      .then(res => {\n';
+  html += '        if (res && res.success) {\n';
+  html += '          todoDataList = res.list || [];\n';
+  html += '          if (res.members && res.members.length > 0) todoMembersList = res.members;\n';
+  html += '          if (res.activeSites && res.activeSites.length > 0) todoActiveSitesList = res.activeSites;\n';
+  html += '          isTodoLoaded = true;\n';
+  html += '          renderTodoDashboard();\n';
+  html += '        } else {\n';
+  html += '          showToast("❌ To-Do 로드 실패: " + (res && res.error));\n';
+  html += '        }\n';
+  html += '      })\n';
+  html += '      .catch(err => { showToast("❌ To-Do 통신 에러: " + err); });\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+
+  html += 'function setTodoMemberFilter(mem) {\n';
+  html += '  currentTodoMemberFilter = mem || "all";\n';
+  html += '  renderTodoDashboard();\n';
+  html += '}\n';
+  html += '\n';
+
+  html += 'function renderTodoDashboard() {\n';
+  html += '  const contentArea = document.getElementById("contentArea");\n';
+  html += '  if (!contentArea) return;\n';
+  html += '  let tHtml = "";\n';
+  html += '  tHtml += \'<div class="todo-dashboard-container" style="padding:16px 20px;max-width:1440px;margin:0 auto;">\';\n';
+  html += '\n';
+
+  // 1. 상단 담당자 필터 칩 바
+  html += '  tHtml += \'  <div style="display:flex;align-items:center;gap:8px;overflow-x:auto;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid #e2e8f0;">\';\n';
+  html += '  tHtml += \'    <span style="font-size:12px;font-weight:800;color:#64748b;white-space:nowrap;margin-right:4px;">담당자</span>\';\n';
+  html += '  const isAllAct = (currentTodoMemberFilter === "all");\n';
+  html += '  tHtml += \'    <button type="button" onclick="setTodoMemberFilter(\\\'all\\\')" style="padding:5px 12px;border-radius:20px;border:1.5px solid \' + (isAllAct ? "#2563eb;background:#eff6ff;color:#1d4ed8;font-weight:800;" : "#cbd5e1;background:#ffffff;color:#475569;font-weight:600;") + \'font-size:12px;cursor:pointer;white-space:nowrap;">전체</button>\';\n';
+  html += '  (todoMembersList || []).forEach(m => {\n';
+  html += '    const mClean = String(m || "").trim();\n';
+  html += '    if (!mClean) return;\n';
+  html += '    const isAct = (currentTodoMemberFilter === mClean);\n';
+  html += '    const firstLetter = mClean.charAt(0);\n';
+  html += '    tHtml += \'    <button type="button" onclick="setTodoMemberFilter(\\\'\' + escapeHtml(mClean) + \'\\\')" style="padding:4px 10px;border-radius:20px;border:1.5px solid \' + (isAct ? "#2563eb;background:#eff6ff;color:#1d4ed8;font-weight:800;" : "#cbd5e1;background:#ffffff;color:#475569;font-weight:600;") + \'font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">\';\n';
+  html += '    tHtml += \'      <span style="width:18px;height:18px;border-radius:50%;background:\' + (isAct ? "#2563eb;color:#ffffff;" : "#e2e8f0;color:#475569;") + \'display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">\' + escapeHtml(firstLetter) + \'</span>\';\n';
+  html += '    tHtml += \'      <span>\' + escapeHtml(mClean) + \'</span>\';\n';
+  html += '    tHtml += \'    </button>\';\n';
+  html += '  });\n';
+  html += '  const isUnassignedAct = (currentTodoMemberFilter === "unassigned");\n';
+  html += '  tHtml += \'    <button type="button" onclick="setTodoMemberFilter(\\\'unassigned\\\')" style="padding:5px 12px;border-radius:20px;border:1.5px solid \' + (isUnassignedAct ? "#2563eb;background:#eff6ff;color:#1d4ed8;font-weight:800;" : "#cbd5e1;background:#ffffff;color:#475569;font-weight:600;") + \'font-size:12px;cursor:pointer;white-space:nowrap;">담당 미지정</button>\';\n';
+  html += '  tHtml += \'  </div>\';\n';
+  html += '\n';
+
+  // 2. 타이틀 & 액션 버튼
+  html += '  tHtml += \'  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">\';\n';
+  html += '  tHtml += \'    <h2 style="font-size:18px;font-weight:900;color:#0f172a;margin:0;display:flex;align-items:center;gap:8px;"><span>할 일 · 담당자 × 진행상태</span></h2>\';\n';
+  html += '  tHtml += \'    <div style="display:flex;align-items:center;gap:8px;">\';\n';
+  html += '  tHtml += \'      <button type="button" onclick="window.print()" style="padding:8px 14px;background:#ffffff;color:#334155;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><span>🖨️</span> 인쇄 / PDF ⏷</button>\';\n';
+  html += '  tHtml += \'      <button type="button" onclick="openAddTodoModal()" style="padding:8px 16px;background:#2563eb;color:#ffffff;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:5px;box-shadow:0 1px 3px rgba(37,99,235,0.3);"><span>+</span> 업무 추가</button>\';\n';
+  html += '  tHtml += \'    </div>\';\n';
+  html += '  tHtml += \'  </div>\';\n';
+  html += '\n';
+
+  // 3. 통계 요약 뱃지 계산
+  html += '  const todayYmd = formatDateYYMMDD(new Date());\n';
+  html += '  let uncompletedCount = 0;\n';
+  html += '  let overdueCount = 0;\n';
+  html += '  let importantCount = 0;\n';
+  html += '  let completedCount = 0;\n';
+  html += '  (todoDataList || []).forEach(it => {\n';
+  html += '    const st = it.status || "미완료";\n';
+  html += '    if (st === "완료") {\n';
+  html += '      completedCount++;\n';
+  html += '    } else {\n';
+  html += '      uncompletedCount++;\n';
+  html += '      if (it.dueDate && it.dueDate < todayYmd) overdueCount++;\n';
+  html += '    }\n';
+  html += '    if (it.isImportant || st === "중요") importantCount++;\n';
+  html += '  });\n';
+  html += '\n';
+  html += '  tHtml += \'  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">\';\n';
+  html += '  tHtml += \'    <div style="padding:6px 14px;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12.5px;font-weight:800;color:#0f172a;">미완료 <span style="margin-left:4px;">\' + uncompletedCount + \'</span></div>\';\n';
+  html += '  tHtml += \'    <div style="padding:6px 14px;background:\' + (overdueCount > 0 ? "#fff1f2" : "#ffffff") + \';border:1.5px solid \' + (overdueCount > 0 ? "#fca5a5" : "#cbd5e1") + \';border-radius:8px;font-size:12.5px;font-weight:800;color:\' + (overdueCount > 0 ? "#e11d48" : "#64748b") + \';">지남 <span style="margin-left:4px;">\' + overdueCount + \'</span></div>\';\n';
+  html += '  tHtml += \'    <div style="padding:6px 14px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;font-size:12.5px;font-weight:800;color:#d97706;">중요 <span style="margin-left:4px;">\' + importantCount + \'</span></div>\';\n';
+  html += '  tHtml += \'    <div style="padding:6px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;font-weight:800;color:#16a34a;">완료 <span style="margin-left:4px;">\' + completedCount + \'</span></div>\';\n';
+  html += '  tHtml += \'  </div>\';\n';
+  html += '\n';
+
+  // 4. 담당자 × 진행상태 매트릭스 테이블
+  html += '  tHtml += \'  <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">\';\n';
+  html += '  tHtml += \'    <table class="todo-matrix-table" style="width:100%;border-collapse:collapse;table-layout:fixed;">\';\n';
+  html += '  tHtml += \'      <thead>\';\n';
+  html += '  tHtml += \'        <tr style="border-bottom:1.5px solid #cbd5e1;background:#f8fafc;">\';\n';
+  html += '  tHtml += \'          <th style="width:180px;padding:12px 14px;text-align:left;font-size:12px;font-weight:800;color:#64748b;border-right:1px solid #e2e8f0;">담당자 \\ 상태</th>\';\n';
+  html += '  tHtml += \'          <th style="width:28%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#d97706;background:#fffdfa;border-right:1px solid #e2e8f0;">중요</th>\';\n';
+  html += '  tHtml += \'          <th style="width:36%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#334155;border-right:1px solid #e2e8f0;">미완료</th>\';\n';
+  html += '  tHtml += \'          <th style="width:36%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#16a34a;background:#fcfdfc;">완료</th>\';\n';
+  html += '  tHtml += \'        </tr>\';\n';
+  html += '  tHtml += \'      </thead>\';\n';
+  html += '  tHtml += \'      <tbody>\';\n';
+  html += '\n';
+
+  // 담당자 행 목록 산출
+  html += '  let targetMembers = [];\n';
+  html += '  if (currentTodoMemberFilter === "all") {\n';
+  html += '    targetMembers = (todoMembersList && todoMembersList.length > 0) ? [...todoMembersList, "담당 미지정"] : ["담당 미지정"];\n';
+  html += '  } else if (currentTodoMemberFilter === "unassigned") {\n';
+  html += '    targetMembers = ["담당 미지정"];\n';
+  html += '  } else {\n';
+  html += '    targetMembers = [currentTodoMemberFilter];\n';
+  html += '  }\n';
+  html += '\n';
+
+  html += '  targetMembers.forEach(mem => {\n';
+  html += '    const isUnassigned = (mem === "담당 미지정" || !mem);\n';
+  html += '    const memClean = isUnassigned ? "담당 미지정" : String(mem).trim();\n';
+  html += '    const firstLetter = isUnassigned ? "?" : memClean.charAt(0);\n';
+  html += '    let memUncomp = 0;\n';
+  html += '    let memOverdue = 0;\n';
+  html += '    (todoDataList || []).forEach(it => {\n';
+  html += '      const itMem = String(it.manager || "").trim();\n';
+  html += '      const matchMem = isUnassigned ? (!itMem || itMem === "담당 미지정") : (itMem === memClean);\n';
+  html += '      if (matchMem) {\n';
+  html += '        if (it.status !== "완료") {\n';
+  html += '          memUncomp++;\n';
+  html += '          if (it.dueDate && it.dueDate < todayYmd) memOverdue++;\n';
+  html += '        }\n';
+  html += '      }\n';
+  html += '    });\n';
+  html += '\n';
+  html += '    tHtml += \'        <tr style="border-bottom:1px solid #e2e8f0;vertical-align:top;">\';\n';
+  html += '    tHtml += \'          <td style="padding:14px;border-right:1px solid #e2e8f0;background:#fafbfc;">\';\n';
+  html += '    tHtml += \'            <div style="display:flex;align-items:flex-start;gap:8px;">\';\n';
+  html += '    tHtml += \'              <span style="width:26px;height:26px;border-radius:50%;background:\' + (isUnassigned ? "#f1f5f9;color:#94a3b8;border:1px solid #cbd5e1;" : "#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;") + \'display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex-shrink:0;">\' + escapeHtml(firstLetter) + \'</span>\';\n';
+  html += '    tHtml += \'              <div>\';\n';
+  html += '    tHtml += \'                <div style="font-size:13px;font-weight:800;color:#0f172a;">\' + escapeHtml(memClean) + \'</div>\';\n';
+  html += '    tHtml += \'                <div style="font-size:11px;color:#64748b;margin-top:2px;">미완료 \' + memUncomp + (memOverdue > 0 ? (\' · <span style="color:#e11d48;font-weight:700;">지난 \' + memOverdue + \'</span>\') : "") + \'</div>\';\n';
+  html += '    tHtml += \'              </div>\';\n';
+  html += '    tHtml += \'            </div>\';\n';
+  html += '    tHtml += \'          </td>\';\n';
+  html += '\n';
+
+  // 3개 열 (중요 / 미완료 / 완료)
+  html += '    const statuses = ["중요", "미완료", "완료"];\n';
+  html += '    statuses.forEach(st => {\n';
+  html += '      const bgCol = (st === "중요") ? "#fffdfa" : (st === "완료" ? "#fcfdfc" : "#ffffff");\n';
+  html += '      tHtml += \'          <td class="todo-drop-cell" data-status="\' + st + \'" data-manager="\' + escapeHtml(memClean) + \'" ondragover="onTodoDragOver(event)" ondragleave="onTodoDragLeave(event)" ondrop="onTodoDrop(event, this)" style="padding:10px;border-right:1px solid #e2e8f0;background:\' + bgCol + \';min-height:80px;">\';\n';
+  html += '      const cellCards = (todoDataList || []).filter(it => {\n';
+  html += '        const itMem = String(it.manager || "").trim();\n';
+  html += '        const matchMem = isUnassigned ? (!itMem || itMem === "담당 미지정") : (itMem === memClean);\n';
+  html += '        if (!matchMem) return false;\n';
+  html += '        if (st === "중요") return (it.isImportant === true || it.status === "중요") && it.status !== "완료";\n';
+  html += '        if (st === "미완료") return (it.status === "미완료" || !it.status) && !it.isImportant;\n';
+  html += '        if (st === "완료") return it.status === "완료";\n';
+  html += '        return false;\n';
+  html += '      });\n';
+  html += '\n';
+  html += '      if (cellCards.length === 0) {\n';
+  html += '        if (isUnassigned && st === "미완료") {\n';
+  html += '          tHtml += \'            <div style="border:1.5px dashed #cbd5e1;border-radius:8px;padding:12px;text-align:center;font-size:11px;color:#94a3b8;font-weight:600;">여기 쌓이면 배정 필요</div>\';\n';
+  html += '        } else {\n';
+  html += '          tHtml += \'            <div style="min-height:48px;height:100%;border-radius:6px;"></div>\';\n';
+  html += '        }\n';
+  html += '      } else {\n';
+  html += '        cellCards.forEach(card => {\n';
+  html += '          const isDone = (card.status === "완료");\n';
+  html += '          const isOverdue = (!isDone && card.dueDate && card.dueDate < todayYmd);\n';
+  html += '          tHtml += \'            <div class="todo-item-card" draggable="true" ondragstart="onTodoDragStart(event, \\\'\' + card.id + \'\\\')" style="background:#ffffff;border:1px solid \' + (isOverdue ? "#fca5a5" : "#e2e8f0") + \';border-radius:8px;padding:9px 11px;margin-bottom:7px;box-shadow:0 1px 2px rgba(0,0,0,0.04);cursor:grab;transition:all 0.15s ease;">\';\n';
+  html += '          tHtml += \'              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">\';\n';
+  html += '          tHtml += \'                <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;flex:1;min-width:0;margin:0;">\';\n';
+  html += '          tHtml += \'                  <input type="checkbox" \' + (isDone ? "checked" : "") + \' onclick="event.stopPropagation();toggleTodoComplete(\\\'\' + card.id + \'\\\', this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:#2563eb;flex-shrink:0;">\';\n';
+  html += '          tHtml += \'                  <span style="font-size:12.5px;font-weight:700;color:\' + (isDone ? "#94a3b8" : "#0f172a") + \';\' + (isDone ? "text-decoration:line-through;" : "") + \'word-break:break-all;">\' + escapeHtml(card.title) + \'</span>\';\n';
+  html += '          tHtml += \'                </label>\';\n';
+  html += '          tHtml += \'                <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">\';\n';
+  html += '          tHtml += \'                  <span onclick="event.stopPropagation();toggleTodoImportant(\\\'\' + card.id + \'\\\')" style="cursor:pointer;font-size:13px;color:\' + (card.isImportant ? "#eab308" : "#cbd5e1") + \';" title="중요 표시 토글">★</span>\';\n';
+  html += '          tHtml += \'                  <span onclick="event.stopPropagation();openEditTodoModal(\\\'\' + card.id + \'\\\')" style="cursor:pointer;font-size:11px;color:#94a3b8;" title="수정">✏️</span>\';\n';
+  html += '          tHtml += \'                  <span onclick="event.stopPropagation();confirmDeleteTodo(\\\'\' + card.id + \'\\\')" style="cursor:pointer;font-size:11px;color:#cbd5e1;" title="삭제">🗑️</span>\';\n';
+  html += '          tHtml += \'                </div>\';\n';
+  html += '          tHtml += \'              </div>\';\n';
+  html += '          if (card.tag || card.siteName || card.dueDate) {\n';
+  html += '            tHtml += \'              <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:6px;font-size:10.5px;">\';\n';
+  html += '            if (card.tag) {\n';
+  html += '              tHtml += \'                <span style="background:#e0f2fe;color:#0369a1;padding:2px 6px;border-radius:4px;font-weight:700;">\' + escapeHtml(card.tag) + \'</span>\';\n';
+  html += '            }\n';
+  html += '            if (card.siteName) {\n';
+  html += '              tHtml += \'                <span style="background:#f1f5f9;color:#475569;padding:2px 6px;border-radius:4px;font-weight:600;">📍 \' + escapeHtml(card.siteName) + \'</span>\';\n';
+  html += '            }\n';
+  html += '            if (card.dueDate) {\n';
+  html += '              tHtml += \'                <span style="color:\' + (isOverdue ? "#e11d48;font-weight:700;" : "#64748b;") + \'">📅 \' + escapeHtml(card.dueDate) + (isOverdue ? " (지남)" : "") + \'</span>\';\n';
+  html += '            }\n';
+  html += '            tHtml += \'              </div>\';\n';
+  html += '          }\n';
+  html += '          if (card.detail) {\n';
+  html += '            tHtml += \'              <div style="margin-top:5px;font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="\' + escapeHtml(card.detail) + \'">\' + escapeHtml(card.detail) + \'</div>\';\n';
+  html += '          }\n';
+  html += '          tHtml += \'            </div>\';\n';
+  html += '        });\n';
+  html += '      }\n';
+  html += '      tHtml += \'          </td>\';\n';
+  html += '    });\n';
+  html += '    tHtml += \'        </tr>\';\n';
+  html += '  });\n';
+  html += '\n';
+  html += '  tHtml += \'      </tbody>\';\n';
+  html += '  tHtml += \'    </table>\';\n';
+  html += '  tHtml += \'  </div>\';\n';
+  html += '  tHtml += \'</div>\';\n';
+  html += '\n';
+  html += '  contentArea.innerHTML = tHtml;\n';
+  html += '}\n';
+  html += '\n';
+
+  // 5. 드래그 앤 드롭 핸들러
+  html += 'function onTodoDragStart(e, id) {\n';
+  html += '  todoDraggedId = id;\n';
+  html += '  if (e.dataTransfer) {\n';
+  html += '    e.dataTransfer.setData("text/plain", id);\n';
+  html += '    e.dataTransfer.effectAllowed = "move";\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function onTodoDragOver(e) {\n';
+  html += '  e.preventDefault();\n';
+  html += '  if (e.currentTarget) e.currentTarget.style.background = "#eff6ff";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function onTodoDragLeave(e) {\n';
+  html += '  if (e.currentTarget) {\n';
+  html += '    const st = e.currentTarget.dataset.status;\n';
+  html += '    e.currentTarget.style.background = (st === "중요") ? "#fffdfa" : (st === "완료" ? "#fcfdfc" : "#ffffff");\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function onTodoDrop(e, cell) {\n';
+  html += '  e.preventDefault();\n';
+  html += '  if (cell) {\n';
+  html += '    const st = cell.dataset.status;\n';
+  html += '    cell.style.background = (st === "중요") ? "#fffdfa" : (st === "완료" ? "#fcfdfc" : "#ffffff");\n';
+  html += '  }\n';
+  html += '  const id = todoDraggedId || (e.dataTransfer && e.dataTransfer.getData("text/plain"));\n';
+  html += '  if (!id || !cell) return;\n';
+  html += '  const targetStatus = cell.dataset.status || "미완료";\n';
+  html += '  const targetManager = cell.dataset.manager || "";\n';
+  html += '  const item = (todoDataList || []).find(it => it.id === id);\n';
+  html += '  if (!item) return;\n';
+  html += '\n';
+  html += '  // 낙관적 즉시 업데이트\n';
+  html += '  item.status = targetStatus;\n';
+  html += '  item.isImportant = (targetStatus === "중요");\n';
+  html += '  if (targetManager && targetManager !== "담당 미지정") {\n';
+  html += '    item.manager = targetManager;\n';
+  html += '  } else if (targetManager === "담당 미지정") {\n';
+  html += '    item.manager = "";\n';
+  html += '  }\n';
+  html += '  renderTodoDashboard();\n';
+  html += '  showToast("💾 [" + item.title + "] 상태 변경 중...");\n';
+  html += '\n';
+  html += '  // 서버 비동기 전송\n';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '    google.script.run\n';
+  html += '      .withSuccessHandler(res => {\n';
+  html += '        if (res && res.success) {\n';
+  html += '          showToast("✅ [" + item.title + "] " + targetStatus + "로 이동되었습니다.");\n';
+  html += '        } else {\n';
+  html += '          showToast("❌ 상태 저장 실패: " + ((res && res.error) || ""));\n';
+  html += '          loadTodoList(true);\n';
+  html += '        }\n';
+  html += '      })\n';
+  html += '      .withFailureHandler(err => {\n';
+  html += '        showToast("❌ 통신 오류: " + err);\n';
+  html += '        loadTodoList(true);\n';
+  html += '      })\n';
+  html += '      .updateTodoStatusFromWeb(id, targetStatus, item.manager);\n';
+  html += '  } else {\n';
+  html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(targetStatus) + "&manager=" + encodeURIComponent(item.manager || ""))\n';
+  html += '      .then(r => r.json())\n';
+  html += '      .then(res => {\n';
+  html += '        if (res && res.success) showToast("✅ [" + item.title + "] " + targetStatus + "로 이동되었습니다.");\n';
+  html += '        else { showToast("❌ 실패: " + res.error); loadTodoList(true); }\n';
+  html += '      })\n';
+  html += '      .catch(err => { showToast("❌ 통신 에러: " + err); loadTodoList(true); });\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+
+  // 6. 체크박스 완료 토글 & 중요 별표 토글 & 삭제
+  html += 'function toggleTodoComplete(id, isChecked) {\n';
+  html += '  const item = (todoDataList || []).find(it => it.id === id);\n';
+  html += '  if (!item) return;\n';
+  html += '  const newSt = isChecked ? "완료" : (item.isImportant ? "중요" : "미완료");\n';
+  html += '  item.status = newSt;\n';
+  html += '  renderTodoDashboard();\n';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '    google.script.run.updateTodoStatusFromWeb(id, newSt, item.manager);\n';
+  html += '  } else {\n';
+  html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(newSt));\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function toggleTodoImportant(id) {\n';
+  html += '  const item = (todoDataList || []).find(it => it.id === id);\n';
+  html += '  if (!item) return;\n';
+  html += '  item.isImportant = !item.isImportant;\n';
+  html += '  if (item.status !== "완료") {\n';
+  html += '    item.status = item.isImportant ? "중요" : "미완료";\n';
+  html += '  }\n';
+  html += '  renderTodoDashboard();\n';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '    google.script.run.updateTodoStatusFromWeb(id, item.status, item.manager);\n';
+  html += '  } else {\n';
+  html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(item.status));\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function confirmDeleteTodo(id) {\n';
+  html += '  const item = (todoDataList || []).find(it => it.id === id);\n';
+  html += '  const title = item ? item.title : "";\n';
+  html += '  if (!confirm("⚠️ [" + title + "] 할 일을 삭제하시겠습니까?")) return;\n';
+  html += '  const idx = (todoDataList || []).findIndex(it => it.id === id);\n';
+  html += '  if (idx !== -1) todoDataList.splice(idx, 1);\n';
+  html += '  renderTodoDashboard();\n';
+  html += '  showToast("🗑️ [" + title + "] 삭제 완료");\n';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '    google.script.run.deleteTodoItemFromWeb(id);\n';
+  html += '  } else {\n';
+  html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '    fetch(apiUrl + "?action=deleteTodo&id=" + encodeURIComponent(id));\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+
+  // 7. 업무 추가/수정 모달 로직
+  html += 'function openAddTodoModal() {\n';
+  html += '  currentEditingTodoId = null;\n';
+  html += '  const titleEl = document.getElementById("todoModalTitleText");\n';
+  html += '  if (titleEl) titleEl.innerText = "할 일 추가";\n';
+  html += '  const inpTitle = document.getElementById("todoModalInpTitle");\n';
+  html += '  if (inpTitle) inpTitle.value = "";\n';
+  html += '  const inpDue = document.getElementById("todoModalInpDueDate");\n';
+  html += '  if (inpDue) inpDue.value = "";\n';
+  html += '  const inpMgr = document.getElementById("todoModalInpManager");\n';
+  html += '  if (inpMgr) populateTodoManagerOptions(inpMgr, "");\n';
+  html += '  const inpTag = document.getElementById("todoModalInpTag");\n';
+  html += '  if (inpTag) inpTag.value = "";\n';
+  html += '  const inpDetail = document.getElementById("todoModalInpDetail");\n';
+  html += '  if (inpDetail) inpDetail.value = "";\n';
+  html += '  const inpSite = document.getElementById("todoModalInpSite");\n';
+  html += '  if (inpSite) populateTodoSiteOptions(inpSite, "");\n';
+  html += '  const inpImp = document.getElementById("todoModalInpIsImportant");\n';
+  html += '  if (inpImp) inpImp.checked = false;\n';
+  html += '  const modal = document.getElementById("todoActionModal");\n';
+  html += '  if (modal) modal.style.display = "flex";\n';
+  html += '  if (inpTitle) setTimeout(() => inpTitle.focus(), 100);\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function openEditTodoModal(id) {\n';
+  html += '  const item = (todoDataList || []).find(it => it.id === id);\n';
+  html += '  if (!item) return;\n';
+  html += '  currentEditingTodoId = id;\n';
+  html += '  const titleEl = document.getElementById("todoModalTitleText");\n';
+  html += '  if (titleEl) titleEl.innerText = "할 일 수정";\n';
+  html += '  const inpTitle = document.getElementById("todoModalInpTitle");\n';
+  html += '  if (inpTitle) inpTitle.value = item.title || "";\n';
+  html += '  const inpDue = document.getElementById("todoModalInpDueDate");\n';
+  html += '  if (inpDue) inpDue.value = item.dueDate || "";\n';
+  html += '  const inpMgr = document.getElementById("todoModalInpManager");\n';
+  html += '  if (inpMgr) populateTodoManagerOptions(inpMgr, item.manager || "");\n';
+  html += '  const inpTag = document.getElementById("todoModalInpTag");\n';
+  html += '  if (inpTag) inpTag.value = item.tag || "";\n';
+  html += '  const inpDetail = document.getElementById("todoModalInpDetail");\n';
+  html += '  if (inpDetail) inpDetail.value = item.detail || "";\n';
+  html += '  const inpSite = document.getElementById("todoModalInpSite");\n';
+  html += '  if (inpSite) populateTodoSiteOptions(inpSite, item.siteName || "");\n';
+  html += '  const inpImp = document.getElementById("todoModalInpIsImportant");\n';
+  html += '  if (inpImp) inpImp.checked = (item.isImportant === true || item.status === "중요");\n';
+  html += '  const modal = document.getElementById("todoActionModal");\n';
+  html += '  if (modal) modal.style.display = "flex";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function closeTodoModal() {\n';
+  html += '  const modal = document.getElementById("todoActionModal");\n';
+  html += '  if (modal) modal.style.display = "none";\n';
+  html += '  currentEditingTodoId = null;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function populateTodoManagerOptions(selectEl, selectedVal) {\n';
+  html += '  let opts = \'<option value="">담당 미지정</option>\';\n';
+  html += '  (todoMembersList || []).forEach(m => {\n';
+  html += '    const mStr = String(m).trim();\n';
+  html += '    if (!mStr) return;\n';
+  html += '    opts += \'<option value="\' + escapeHtml(mStr) + \'"\' + (mStr === selectedVal ? " selected" : "") + \'>\' + escapeHtml(mStr) + \'</option>\';\n';
+  html += '  });\n';
+  html += '  selectEl.innerHTML = opts;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function populateTodoSiteOptions(selectEl, selectedVal) {\n';
+  html += '  let opts = \'<option value="">현장 없음 (팀 업무)</option>\';\n';
+  html += '  const siteList = (todoActiveSitesList && todoActiveSitesList.length > 0) ? todoActiveSitesList : [];\n';
+  html += '  siteList.forEach(s => {\n';
+  html += '    const sName = (typeof s === "object") ? s.name : s;\n';
+  html += '    const sCat = (typeof s === "object") ? s.category : "";\n';
+  html += '    const prefix = sCat ? ("[" + sCat + "] ") : "";\n';
+  html += '    opts += \'<option value="\' + escapeHtml(sName) + \'"\' + (sName === selectedVal ? " selected" : "") + \'>\' + escapeHtml(prefix + sName) + \'</option>\';\n';
+  html += '  });\n';
+  html += '  selectEl.innerHTML = opts;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function saveTodoFromModal() {\n';
+  html += '  const inpTitle = document.getElementById("todoModalInpTitle");\n';
+  html += '  const title = inpTitle ? inpTitle.value.trim() : "";\n';
+  html += '  if (!title) {\n';
+  html += '    alert("업무명을 입력해주세요.");\n';
+  html += '    if (inpTitle) inpTitle.focus();\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  const dueDate = (document.getElementById("todoModalInpDueDate") || {}).value || "";\n';
+  html += '  const manager = (document.getElementById("todoModalInpManager") || {}).value || "";\n';
+  html += '  const tag = (document.getElementById("todoModalInpTag") || {}).value || "";\n';
+  html += '  const detail = (document.getElementById("todoModalInpDetail") || {}).value || "";\n';
+  html += '  const siteName = (document.getElementById("todoModalInpSite") || {}).value || "";\n';
+  html += '  const isImportant = (document.getElementById("todoModalInpIsImportant") || {}).checked === true;\n';
+  html += '  const status = isImportant ? "중요" : "미완료";\n';
+  html += '\n';
+  html += '  const payload = { title, dueDate, manager, tag, detail, siteName, isImportant, status };\n';
+  html += '  closeTodoModal();\n';
+  html += '\n';
+  html += '  if (currentEditingTodoId) {\n';
+  html += '    const editId = currentEditingTodoId;\n';
+  html += '    const item = (todoDataList || []).find(it => it.id === editId);\n';
+  html += '    if (item) {\n';
+  html += '      Object.assign(item, payload);\n';
+  html += '      renderTodoDashboard();\n';
+  html += '    }\n';
+  html += '    showToast("💾 [" + title + "] 수정 저장 중...");\n';
+  html += '    if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '      google.script.run\n';
+  html += '        .withSuccessHandler(res => {\n';
+  html += '          if (res && res.success) showToast("✅ 할 일이 수정되었습니다.");\n';
+  html += '          else { showToast("❌ 수정 실패: " + (res && res.error)); loadTodoList(true); }\n';
+  html += '        })\n';
+  html += '        .updateTodoItemFromWeb(editId, payload);\n';
+  html += '    } else {\n';
+  html += '      const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '      fetch(apiUrl + "?action=updateTodo&id=" + encodeURIComponent(editId) + "&data=" + encodeURIComponent(JSON.stringify(payload)))\n';
+  html += '        .then(r => r.json()).then(res => { if (res && res.success) showToast("✅ 수정 완료"); else loadTodoList(true); });\n';
+  html += '    }\n';
+  html += '  } else {\n';
+  html += '    const tempId = "TD_" + Date.now();\n';
+  html += '    const newItem = Object.assign({ id: tempId, createdAt: formatDateYYMMDD(new Date()) }, payload);\n';
+  html += '    todoDataList.push(newItem);\n';
+  html += '    renderTodoDashboard();\n';
+  html += '    showToast("💾 [" + title + "] 추가 중...");\n';
+  html += '    if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '      google.script.run\n';
+  html += '        .withSuccessHandler(res => {\n';
+  html += '          if (res && res.success) {\n';
+  html += '            if (res.id) newItem.id = res.id;\n';
+  html += '            showToast("✅ 새 할 일이 등록되었습니다.");\n';
+  html += '          } else {\n';
+  html += '            showToast("❌ 등록 실패: " + (res && res.error));\n';
+  html += '            loadTodoList(true);\n';
+  html += '          }\n';
+  html += '        })\n';
+  html += '        .addTodoItemFromWeb(payload);\n';
+  html += '    } else {\n';
+  html += '      const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '      fetch(apiUrl + "?action=addTodo&data=" + encodeURIComponent(JSON.stringify(payload)))\n';
+  html += '        .then(r => r.json()).then(res => { if (res && res.success) showToast("✅ 등록 완료"); else loadTodoList(true); });\n';
+  html += '    }\n';
+  html += '  }\n';
+  html += '}\n';
+
   html += 'function getSundayOfCurrentWeek(d) {';
   html += '  const date = new Date(d);';
   html += '  const day = date.getDay();';
@@ -14194,6 +15195,20 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function switchToPcView(view) {';
   html += '  if (typeof clearCheckedSiteTasks === "function") clearCheckedSiteTasks();';
+  html += '  if (view === "todo") {';
+  html += '    isCalendarMode = false;';
+  html += '    const calArea = document.getElementById("calendarArea");';
+  html += '    const contentArea = document.getElementById("contentArea");';
+  html += '    if (calArea) { if (calArea.classList) calArea.classList.add("hidden"); calArea.style.display = "none"; }';
+  html += '    if (contentArea) { if (contentArea.classList) contentArea.classList.remove("hidden"); contentArea.style.display = ""; }';
+  html += '    document.querySelectorAll(".pc-view-tab").forEach(tab => {';
+  html += '      tab.classList.toggle("active", tab.dataset.view === "todo");';
+  html += '    });';
+  html += '    const pcTitle = document.getElementById("pcMonthTitle");';
+  html += '    if (pcTitle) pcTitle.innerText = "To-Do 할 일 보드";';
+  html += '    loadTodoList();';
+  html += '    return;';
+  html += '  }';
   html += '  if (typeof mobileExpandedEstimateSites !== "undefined" && mobileExpandedEstimateSites && typeof mobileExpandedEstimateSites.clear === "function") {';
   html += '    mobileExpandedEstimateSites.clear();';
   html += '  }';
@@ -16338,6 +17353,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  html += \'      <div class="pc-est-hero-actions">\';';
   html += '  html += \'        <button type="button" class="pc-btn-primary" onclick="openSpreadsheetEstimateSheet()" title="스프레드시트 신규견적 탭 열기"><span>📊</span> 시트에서 보기</button>\';';
   html += '  html += \'        <button type="button" class="pc-btn-primary" onclick="openEditEstimateModal(\\\'\' + encodeURIComponent(siteName) + \'\\\')" style="background:#3b82f6;" title="신규현장 정보 수정"><span>✏️</span> 정보 수정</button>\';';
+  html += '  html += \'        <button type="button" class="pc-btn-danger" style="background:#ef4444;color:#ffffff;border:none;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 2px rgba(239,68,68,0.25);" onclick="confirmDeleteSite(decodeURIComponent(this.dataset.sitename), decodeURIComponent(this.dataset.scope))" data-sitename="\' + encodeURIComponent(siteName) + \'" data-scope="newSite" title="이 신규현장 영구 삭제"><span>🗑️</span> 현장 삭제</button>\';';
   html += '  if (hasPhone) {';
   html += '    html += \'        <a href="tel:\' + escapeHtml(cleanPhone) + \'" class="pc-btn-sec" style="text-decoration:none;padding:8px 12px;" title="고객 전화 걸기 (\' + escapeHtml(rawPhone) + \')"><span>📞</span></a>\';';
   html += '  }';
@@ -16420,6 +17436,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  html += \'            <th style="width:75px;text-align:center;">담당자</th>\';';
   html += '  html += \'            <th style="min-width:110px;text-align:right;">예상 공사금액</th>\';';
   html += '  html += \'            <th style="width:100px;text-align:center;">공사 예정일</th>\';';
+  html += '  html += \'            <th style="width:105px;text-align:center;">관리</th>\';';
   html += '  html += \'          </tr>\';';
   html += '  html += \'        </thead>\';';
   html += '  html += \'        <tbody>\';';
@@ -16445,6 +17462,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    html += \'            <td style="text-align:center;"><span class="pc-manager-pill"><span>\' + escapeHtml(e.manager || "조항만") + \'</span></span></td>\';';
   html += '    html += \'            <td style="text-align:right;font-weight:700;color:#2563eb;">\' + rowAmtStr + \'</td>\';';
   html += '    html += \'            <td style="text-align:center;font-size:12px;color:#475569;">\' + escapeHtml(formatEstimateDateYMD(e.expectedDate)) + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;white-space:nowrap;"><button type="button" class="pc-task-btn-edit" onclick="event.stopPropagation();openEditEstimateModal(decodeURIComponent(this.dataset.sitename))" data-sitename="\' + encodeURIComponent(s.siteName) + \'">수정</button><button type="button" class="pc-task-btn-del" style="margin-left:4px;padding:3px 7px;font-size:11.5px;font-weight:700;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:5px;cursor:pointer;" onclick="event.stopPropagation();confirmDeleteSite(decodeURIComponent(this.dataset.sitename), decodeURIComponent(this.dataset.scope))" data-sitename="\' + encodeURIComponent(s.siteName) + \'" data-scope="newSite" title="신규현장 삭제">삭제</button></td>\';';
   html += '    html += \'          </tr>\';';
   html += '  });';
   html += '  html += \'        </tbody>\';';
@@ -17084,6 +18102,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      mHtml += \'    <div style="display:flex;gap:6px;margin-top:4px;">\';';
   html += '      mHtml += \'      <button type="button" onclick="openEditEstimateModal(\\\'\' + sNameEnc + \'\\\')" style="flex:1;padding:7px;background:#3b82f6;color:#ffffff;border:none;border-radius:6px;font-weight:700;font-size:11.5px;cursor:pointer;">✏️ 정보 수정</button>\';';
   html += '      mHtml += \'      <button type="button" onclick="openSpreadsheetEstimateSheet()" style="flex:1;padding:7px;background:#2563eb;color:#ffffff;border:none;border-radius:6px;font-weight:700;font-size:11.5px;cursor:pointer;">📊 시트에서 보기</button>\';';
+  html += '      mHtml += \'      <button type="button" onclick="confirmDeleteSite(decodeURIComponent(this.dataset.sitename), decodeURIComponent(this.dataset.scope))" data-sitename="\' + sNameEnc + \'" data-scope="newSite" style="padding:7px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;font-weight:700;font-size:11.5px;cursor:pointer;" title="신규현장 삭제">🗑️ 삭제</button>\';';
   html += '      mHtml += \'      <button type="button" onclick="toggleMobileEstimateCard(\\\'\' + sNameEnc + \'\\\')" style="padding:7px 12px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:700;font-size:11.5px;cursor:pointer;">접기 ▲</button>\';';
   html += '      mHtml += \'    </div>\';';
   html += '      mHtml += \'  </div>\';';
@@ -19468,9 +20487,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function confirmDeleteSite(siteName, scope) {';
   html += '  if (!siteName) return;';
-  html += '  const confMsg = "⚠️ [" + siteName + "] 현장을 완전히 삭제하시겠습니까?\\n\\n이 현장에 등록된 모든 공종이 시트에서 영구 삭제됩니다.";';
+  html += '  const isNewScope = (scope === "newSite" || scope === "신규현장" || scope === "신규견적");';
+  html += '  const confMsg = isNewScope';
+  html += '    ? ("⚠️ [" + siteName + "] 신규현장을 완전히 삭제하시겠습니까?\\n\\n신규견적 시트에서 영구 삭제됩니다.")';
+  html += '    : ("⚠️ [" + siteName + "] 현장을 완전히 삭제하시겠습니까?\\n\\n이 현장에 등록된 모든 공종이 시트에서 영구 삭제됩니다.");';
   html += '  if (!confirm(confMsg)) return;';
-  html += '  showToast("🗑️ [" + siteName + "] 현장 및 모든 공정 삭제 중...");';
+  html += '  showToast("🗑️ [" + siteName + "] " + (isNewScope ? "신규현장" : "현장 및 모든 공정") + " 삭제 중...");';
   html += '  if (rawData && Array.isArray(rawData.sites)) {';
   html += '    const sIdx = rawData.sites.findIndex(s => s.siteName === siteName && (s.scope || "site") === (scope || "site"));';
   html += '    if (sIdx !== -1) {';
@@ -19483,7 +20505,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    google.script.run';
   html += '      .withSuccessHandler(res => {';
   html += '        if (res && res.success) {';
-  html += '          showToast("✅ [" + siteName + "] 현장의 모든 공정이 삭제되었습니다.");';
+  html += '          showToast("✅ [" + siteName + "] " + (isNewScope ? "신규현장이" : "현장의 모든 공정이") + " 삭제되었습니다.");';
   html += '          loadDataSilently();';
   html += '        } else {';
   html += '          showToast("❌ 현장 삭제 실패: " + ((res && res.error) || "알 수 없는 오류"));';
@@ -19500,7 +20522,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    fetch(apiUrl + "?action=deleteSite&site=" + encodeURIComponent(siteName) + "&scope=" + encodeURIComponent(scope || "site"))';
   html += '      .then(r => r.json())';
   html += '      .then(res => {';
-  html += '        if (res && res.success) { showToast("✅ [" + siteName + "] 현장이 삭제되었습니다."); loadDataSilently(); }';
+  html += '        if (res && res.success) { showToast("✅ [" + siteName + "] " + (isNewScope ? "신규현장이" : "현장이") + " 삭제되었습니다."); loadDataSilently(); }';
   html += '        else { showToast("❌ 삭제 실패: " + (res && res.error)); loadData(); }';
   html += '      })';
   html += '      .catch(err => { showToast("❌ 통신 오류: " + err); loadData(); });';

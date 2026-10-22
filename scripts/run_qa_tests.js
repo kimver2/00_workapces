@@ -9407,7 +9407,7 @@ assertTest('Step 139-4: 모바일 신규현장 선택 시 일정 체크리스트
 // 139-5: index.html cache buster updated to v=138
 const indexHtml139 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
 assertTest('Step 139-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 138)',
-  indexHtml139.indexOf('exec?v=138') !== -1 || indexHtml139.indexOf('exec?v=139') !== -1 || indexHtml139.indexOf('exec?v=140') !== -1 || indexHtml139.indexOf('exec?v=141') !== -1 || indexHtml139.indexOf('exec?v=142') !== -1
+  (indexHtml139.indexOf('exec?v=') !== -1 && parseInt(indexHtml139.match(/exec\?v=(\d+)/)[1], 10) >= 138)
 );
 
 // 139-6: Runtime rendering simulation for mobile estimate dashboard
@@ -9674,7 +9674,7 @@ assertTest('Step 140-9: 런타임 모바일 견적 카드 상세 렌더링 시 �
 
 // 140-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 139)
 assertTest('Step 140-10: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 139)',
-  indexHtml140.indexOf('exec?v=139') !== -1 || indexHtml140.indexOf('exec?v=140') !== -1 || indexHtml140.indexOf('exec?v=141') !== -1 || indexHtml140.indexOf('exec?v=142') !== -1
+  (indexHtml140.indexOf('exec?v=') !== -1 && parseInt(indexHtml140.match(/exec\?v=(\d+)/)[1], 10) >= 139)
 );
 
 // ========================================================
@@ -9783,7 +9783,7 @@ assertTest('Step 142-6: getSidebarDashboardData scopeCounts 내 siteDone, single
 
 // 142-7: index.html 내 exec?v=141 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 142-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 141)',
-  indexHtml142.indexOf('exec?v=141') !== -1 || indexHtml142.indexOf('exec?v=142') !== -1
+  (indexHtml142.indexOf('exec?v=') !== -1 && parseInt(indexHtml142.match(/exec\?v=(\d+)/)[1], 10) >= 141)
 );
 
 // ========================================================
@@ -9813,9 +9813,140 @@ assertTest('Step 143-3: moveSiteBlockToBottom 특정 현장 시트 최하단 이
   code143.indexOf('var combined = otherRows.concat(targetRows);') !== -1
 );
 
-// 143-4: index.html 내 exec?v=142 최신 캐시 버스팅 파라미터 갱신 검증
+// 143-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 142)
 assertTest('Step 143-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 142)',
-  indexHtml143.indexOf('exec?v=142') !== -1
+  /exec\?v=(\d+)/.test(indexHtml143) && parseInt(indexHtml143.match(/exec\?v=(\d+)/)[1], 10) >= 142
+);
+
+// ========================================================
+// [Step 144]: 신규견적 테이블 수정/삭제 버튼 탑재, 새벽 정렬 정책 준수(웹 등록 시 시트 순서 보존) QA
+// ========================================================
+console.log('\n📋 [Step 144]: 신규견적 테이블 수정/삭제 버튼 탑재, 새벽 정렬 정책 준수(웹 등록 시 시트 순서 보존) QA ---');
+
+const code144 = fs.readFileSync(path.resolve(__dirname, '../현장서식.js'), 'utf8');
+const indexHtml144 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+
+// 144-1: PC 신규견적 데이터 테이블 헤더 관리 열 검증
+assertTest('Step 144-1: PC 신규견적 데이터 테이블 헤더 관리 열(<th ...>관리</th>) 탑재 검증',
+  code144.indexOf('<th style="width:105px;text-align:center;">관리</th>') !== -1
+);
+
+// 144-2: PC 신규견적 데이터 테이블 행별 수정/삭제 버튼 탑재 검증
+assertTest('Step 144-2: PC 신규견적 데이터 테이블 행별 수정/삭제 버튼 탑재 및 stopPropagation 검증',
+  code144.indexOf('class="pc-task-btn-edit" onclick="event.stopPropagation();openEditEstimateModal(decodeURIComponent(this.dataset.sitename))"') !== -1 &&
+  code144.indexOf('class="pc-task-btn-del"') !== -1 &&
+  code144.indexOf('onclick="event.stopPropagation();confirmDeleteSite(decodeURIComponent(this.dataset.sitename), decodeURIComponent(this.dataset.scope))"') !== -1
+);
+
+// 144-3: PC 히어로 카드 영역 현장 삭제 버튼 탑재 검증
+assertTest('Step 144-3: PC 히어로 카드 영역 현장 삭제 버튼 탑재 검증',
+  code144.indexOf('title="이 신규현장 영구 삭제"><span>🗑️</span> 현장 삭제</button>') !== -1
+);
+
+// 144-4: 모바일 신규견적 카드 상세 영역 삭제 버튼 탑재 검증
+assertTest('Step 144-4: 모바일 신규견적 카드 상세 영역 삭제 버튼 탑재 검증',
+  code144.indexOf('title="신규현장 삭제">🗑️ 삭제</button>') !== -1
+);
+
+// 144-5: deleteSiteFromWeb 서버 함수 내 newSite 분기 및 전용 메시지 반환 검증
+assertTest('Step 144-5: deleteSiteFromWeb 서버 함수 내 newSite 분기 및 전용 메시지 반환 검증',
+  code144.indexOf('var isNewSiteScope = (scope === "newSite" || scope === "신규현장" || scope === "신규견적");') !== -1 &&
+  code144.indexOf('!isNewSiteScope && maxDeletedRow < sheet.getLastRow()') !== -1 &&
+  code144.indexOf('? ("[" + cleanSite + "] 신규현장이 삭제되었습니다.")') !== -1
+);
+
+// 144-6: confirmDeleteSite 클라이언트 함수 내 isNewScope 판별 및 확인창/토스트 분기 검증
+assertTest('Step 144-6: confirmDeleteSite 클라이언트 함수 내 isNewScope 판별 및 확인창/토스트 분기 검증',
+  code144.indexOf('const isNewScope = (scope === "newSite" || scope === "신규현장" || scope === "신규견적");') !== -1 &&
+  code144.indexOf('신규견적 시트에서 영구 삭제됩니다.') !== -1 &&
+  code144.indexOf('(isNewScope ? "신규현장이" : "현장의 모든 공정이") + " 삭제되었습니다."') !== -1
+);
+
+// 144-7: sortSiteScheduleTasksByDate의 sortBlocks=false 지원 및 웹 등록 시 현장 블록 순서 보존(새 현장 최하단 보존) 검증
+assertTest('Step 144-7: sortSiteScheduleTasksByDate의 sortBlocks=false 지원 및 웹 등록 시 현장 블록 순서 보존(새 현장 최하단 보존) 검증',
+  code144.indexOf('function sortSiteScheduleTasksByDate(ss, sheet, silent, sortBlocks)') !== -1 &&
+  code144.indexOf('if (sortBlocks === false) {') !== -1 &&
+  code144.indexOf('sortSiteScheduleTasksByDate(ss, sheet, true, false);') !== -1
+);
+
+// 144-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 143)
+assertTest('Step 144-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 143)',
+  /exec\?v=(\d+)/.test(indexHtml144) && parseInt(indexHtml144.match(/exec\?v=(\d+)/)[1], 10) >= 143
+);
+
+// ========================================================
+// [Step 145]: To-Do 매트릭스 보드, 드래그앤드롭, 구성원 연동, 시트 아코디언 무결성 락 QA
+// ========================================================
+console.log('\n📋 [Step 145]: To-Do 매트릭스 보드, 드래그앤드롭, 구성원 연동, 시트 아코디언 무결성 락 QA ---');
+
+const code145 = fs.readFileSync(path.resolve(__dirname, '../현장서식.js'), 'utf8');
+const indexHtml145 = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+
+// 145-1: To-Do 전용 시트 탐색 및 신규 생성 엔진 검증
+assertTest('Step 145-1: findOrCreateTodoSheet To-Do 시트 자동 생성 및 11개 헤더 설정 검증',
+  code145.indexOf('function findOrCreateTodoSheet(ss)') !== -1 &&
+  code145.indexOf('sheet = ss.insertSheet("To-Do");') !== -1 &&
+  code145.indexOf('"ID", "마감일", "상태", "담당자", "업무명", "태그", "상세내용", "현장명", "중요여부", "등록일시", "완료일시"') !== -1
+);
+
+// 145-2: To-Do CRUD 백엔드 5대 함수 검증
+assertTest('Step 145-2: getTodoListFromWeb, addTodoItemFromWeb, updateTodoItemFromWeb, updateTodoStatusFromWeb, deleteTodoItemFromWeb 검증',
+  code145.indexOf('function getTodoListFromWeb()') !== -1 &&
+  code145.indexOf('function addTodoItemFromWeb(todoData)') !== -1 &&
+  code145.indexOf('function updateTodoItemFromWeb(id, updateData)') !== -1 &&
+  code145.indexOf('function updateTodoStatusFromWeb(id, newStatus, newManager)') !== -1 &&
+  code145.indexOf('function deleteTodoItemFromWeb(id)') !== -1
+);
+
+// 145-3: doGet 내 To-Do 라우팅 및 repairSiteGroups 검증
+assertTest('Step 145-3: doGet 내 getTodoList, addTodo, updateTodo, updateTodoStatus, deleteTodo, repairSiteGroups 라우팅 검증',
+  code145.indexOf('action === "getTodoList"') !== -1 &&
+  code145.indexOf('action === "addTodo"') !== -1 &&
+  code145.indexOf('action === "updateTodo"') !== -1 &&
+  code145.indexOf('action === "updateTodoStatus"') !== -1 &&
+  code145.indexOf('action === "deleteTodo"') !== -1 &&
+  code145.indexOf('action === "repairSiteGroups"') !== -1
+);
+
+// 145-4: PC 헤더 [✅ To-Do] 버튼 및 switchToPcView('todo') 전환 검증
+assertTest('Step 145-4: PC 헤더 [✅ To-Do] 버튼 탑재 및 switchToPcView("todo") 전환 로직 검증',
+  code145.indexOf('id="pcViewTabTodo" data-view="todo" onclick="switchToPcView(\\\'todo\\\')"') !== -1 &&
+  code145.indexOf('if (view === "todo") {') !== -1 &&
+  code145.indexOf('loadTodoList();') !== -1
+);
+
+// 145-5: renderTodoDashboard 렌더링 엔진 내 구성원 시트 실제 인원 목록 동적 바인딩 검증
+assertTest('Step 145-5: renderTodoDashboard 내 구성원 시트 실제 인원 목록 동적 필터 칩 바인딩 검증',
+  code145.indexOf('(todoMembersList || []).forEach(m => {') !== -1 &&
+  code145.indexOf('setTodoMemberFilter') !== -1
+);
+
+// 145-6: To-Do 매트릭스 보드 드래그 앤 드롭 핸들러 검증
+assertTest('Step 145-6: onTodoDragStart, onTodoDragOver, onTodoDrop 드래그 앤 드롭 엔진 검증',
+  code145.indexOf('function onTodoDragStart(e, id)') !== -1 &&
+  code145.indexOf('function onTodoDragOver(e)') !== -1 &&
+  code145.indexOf('function onTodoDrop(e, cell)') !== -1 &&
+  code145.indexOf('class="todo-item-card" draggable="true"') !== -1
+);
+
+// 145-7: 업무 추가/수정 모달 (#todoActionModal) 내 공개범위 제외 및 진행중 현장 목록 바인딩 검증
+assertTest('Step 145-7: 업무 추가/수정 모달 (#todoActionModal) 내 공개범위 제외 및 진행중 현장 목록 바인딩 검증',
+  code145.indexOf('id="todoActionModal"') !== -1 &&
+  code145.indexOf('id="todoModalInpSite"') !== -1 &&
+  code145.indexOf('todoModalInpIsImportant') !== -1 &&
+  code145.indexOf('populateTodoSiteOptions') !== -1
+);
+
+// 145-8: 시트 그룹화 무결성 보장 엔진 (이동/삭제 시 groupSheetRowsBySite 훅 및 8회 완전 초기화) 검증
+assertTest('Step 145-8: 시트 그룹화 무결성 보장 엔진 (이동/삭제 시 groupSheetRowsBySite 훅 및 8회 완전 초기화) 검증',
+  code145.indexOf('try { groupSheetRowsBySite(sheet, false); } catch(eGrpMove) {}') !== -1 &&
+  code145.indexOf('try { groupSheetRowsBySite(sheet, false); } catch(eGrpDelSite) {}') !== -1 &&
+  code145.indexOf('try { groupSheetRowsBySite(sheet, false); } catch(eGrpDelTask) {}') !== -1
+);
+
+// 145-9: index.html 내 exec?v=144 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 144)',
+  indexHtml145.indexOf('exec?v=144') !== -1
 );
 
 console.log('\n========================================================');
