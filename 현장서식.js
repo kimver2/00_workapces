@@ -445,6 +445,113 @@ function getAvailableManagers(ss, sheet) {
 }
 
 /**
+ * '02_거래처' 시트 탐색 (GID: 179677299 / 1633721368 또는 시트명 '02_거래처' / '거래처')
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {GoogleAppsScript.Spreadsheet.Sheet|null}
+ */
+function findPartnersSheet(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var s = sheets[i];
+    var gid = s.getSheetId();
+    var name = s.getName();
+    if (gid === 179677299 || gid === 1633721368 || name === "02_거래처" || name === "거래처") {
+      return s;
+    }
+  }
+  return null;
+}
+
+/**
+ * '02_거래처' 시트 11열(K열)에 "대표 공종_업체명" 실시간 동적 자동 계산 수식(ARRAYFORMULA) 열 준비
+ * - 거래처 시트에 새 행이 입력되는 즉시 실시간으로 결합 문자열(예: "도배_이충호 반장 (개인)")이 자동 생성되어 드롭다운에 0초 만에 반영
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} [partnerSheet]
+ * @return {GoogleAppsScript.Spreadsheet.Range|null} K2:K 범위
+ */
+function ensurePartnerDropdownFormulaColumn(ss, partnerSheet) {
+  var pSheet = partnerSheet || findPartnersSheet(ss);
+  if (!pSheet) return null;
+
+  var lastCol = Math.max((typeof pSheet.getLastColumn === "function" ? pSheet.getLastColumn() : 10), 10);
+  var maxCols = Math.max((typeof pSheet.getMaxColumns === "function" ? pSheet.getMaxColumns() : 10), 10);
+
+  // 11열(K열)이 없으면 열 추가
+  if (maxCols < 11 && typeof pSheet.insertColumnAfter === "function") {
+    pSheet.insertColumnAfter(maxCols);
+  }
+
+  // 1행 헤더 설정
+  var headerCell = pSheet.getRange(1, 11);
+  var curHeader = String(headerCell.getValue() || "").trim();
+  if (curHeader !== "선택목록(공종_업체)") {
+    headerCell.setValue("선택목록(공종_업체)")
+      .setBackground("#1e293b")
+      .setFontColor("#ffffff")
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle");
+    pSheet.setRowHeight(1, 36);
+    try { pSheet.setColumnWidth(11, 220); } catch(eW) {}
+  }
+
+  // K2 셀에 ARRAYFORMULA 수식 주입 (A열과 B열을 실시간 결합: "B열(공종)_A열(업체명)")
+  var k2Cell = pSheet.getRange(2, 11);
+  var curFormula = String(k2Cell.getFormula() || "").trim();
+  var targetFormula = '=ARRAYFORMULA(IF(LEN(A2:A)=0, "", IF(LEN(B2:B)=0, A2:A, B2:B & "_" & A2:A)))';
+  if (curFormula !== targetFormula) {
+    k2Cell.setFormula(targetFormula);
+  }
+
+  var maxRows = Math.max((typeof pSheet.getMaxRows === "function" ? pSheet.getMaxRows() : 100), 100);
+  return pSheet.getRange("K2:K" + maxRows);
+}
+
+/**
+ * '02_거래처' 시트에서 유효한 "대표 공종_업체명" 전체 목록 반환
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {string[]}
+ */
+function getAvailablePartners(ss) {
+  var partners = [];
+  try {
+    var pSheet = findPartnersSheet(ss);
+    if (pSheet && pSheet.getLastRow() >= 2) {
+      ensurePartnerDropdownFormulaColumn(ss, pSheet);
+      var lastR = pSheet.getLastRow();
+      // K열(11열) 계산된 값 읽기
+      if (pSheet.getLastColumn() >= 11) {
+        var kVals = pSheet.getRange(2, 11, lastR - 1, 1).getValues();
+        for (var ki = 0; ki < kVals.length; ki++) {
+          var kv = String(kVals[ki][0] || "").trim();
+          if (kv && partners.indexOf(kv) === -1) {
+            partners.push(kv);
+          }
+        }
+      }
+      // 폴백: K열이 비어있는 경우 A열과 B열 직접 조합
+      if (partners.length === 0) {
+        var abVals = pSheet.getRange(2, 1, lastR - 1, 2).getValues();
+        for (var abi = 0; abi < abVals.length; abi++) {
+          var aName = String(abVals[abi][0] || "").trim();
+          var bBiz = String(abVals[abi][1] || "").trim();
+          if (aName) {
+            var comb = bBiz ? (bBiz + "_" + aName) : aName;
+            if (partners.indexOf(comb) === -1) partners.push(comb);
+          }
+        }
+      }
+    }
+  } catch(eP) {
+    Logger.log("getAvailablePartners 예외: " + eP.toString());
+  }
+  return partners;
+}
+
+/**
  * 콤마/슬래시 등으로 연결된 담당자 문자열에서 유효한 인원 이름 배열 추출
  * @param {string} raw
  * @return {string[]}
@@ -658,6 +765,23 @@ function applySiteScheduleValidations(sheet, startRow, numRows) {
     .build();
   sheet.getRange(startRow, 3, numRows, 1).setDataValidation(taskRule);
 
+  // 1-1. 협력업체(4열, D열) 드롭다운: 02_거래처 시트의 K2:K (대표 공종_업체명) 실시간 동적 범위 연동
+  try {
+    var pSheet = findPartnersSheet(ss);
+    if (pSheet) {
+      ensurePartnerDropdownFormulaColumn(ss, pSheet);
+      var pMaxR = Math.max((typeof pSheet.getMaxRows === "function" ? pSheet.getMaxRows() : 100), 100);
+      var partnerRange = pSheet.getRange("K2:K" + pMaxR);
+      var partnerRule = SpreadsheetApp.newDataValidation()
+        .requireValueInRange(partnerRange, true)
+        .setAllowInvalid(true)
+        .build();
+      sheet.getRange(startRow, 4, numRows, 1).setDataValidation(partnerRule);
+    }
+  } catch(ePartnerVal) {
+    Logger.log("협력업체 드롭다운 설정 예외: " + ePartnerVal.toString());
+  }
+
   // 2. 담당자 1(7열, G열) & 담당자 2(8열, H열) 드롭다운: 구성원 시트의 순수 5인만 노출
   var managers = getAvailableManagers(ss, sheet);
   var managerRule = SpreadsheetApp.newDataValidation()
@@ -687,6 +811,114 @@ function applySiteScheduleValidations(sheet, startRow, numRows) {
 }
 
 /**
+ * '현장데이터', '단건', 'AS' 시트의 협력업체(D열) 기존 텍스트를 '02_거래처' 시트의 "대표 공종_업체명" 표준 양식으로 자동 정규화
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {{success: boolean, migratedCount: number, totalOptionsCount: number, message: string}}
+ */
+function migrateSchedulePartnerNames(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { success: false, migratedCount: 0, totalOptionsCount: 0, message: "스프레드시트를 찾을 수 없습니다." };
+
+  var pSheet = findPartnersSheet(ss);
+  if (!pSheet || pSheet.getLastRow() < 2) return { success: false, migratedCount: 0, totalOptionsCount: 0, message: "거래처 시트가 비어있습니다." };
+
+  ensurePartnerDropdownFormulaColumn(ss, pSheet);
+
+  // 거래처 매핑 사전 구축
+  var pLastR = pSheet.getLastRow();
+  var pData = pSheet.getRange(2, 1, pLastR - 1, 2).getValues();
+  var partnerMap = {}; // 검색어(소문자) -> 표준 "공종_업체명"
+  var partnerOptions = [];
+
+  for (var pi = 0; pi < pData.length; pi++) {
+    var aName = String(pData[pi][0] || "").trim();
+    var bBiz = String(pData[pi][1] || "").trim();
+    if (!aName) continue;
+    var stdVal = bBiz ? (bBiz + "_" + aName) : aName;
+    partnerOptions.push(stdVal);
+
+    partnerMap[stdVal.toLowerCase()] = stdVal;
+    partnerMap[aName.toLowerCase()] = stdVal;
+
+    // 괄호 제거 버전
+    var cleanN = aName.split("(")[0].trim();
+    if (cleanN) {
+      partnerMap[cleanN.toLowerCase()] = stdVal;
+      var noTitle = cleanN.replace(/반장|소장|사장|대표|팀장/g, "").trim();
+      if (noTitle) partnerMap[noTitle.toLowerCase()] = stdVal;
+    }
+  }
+
+  // 특수 별칭 매핑
+  var customAliases = {
+    "lx": "창호_LX 케이엘 대리점",
+    "smc사모님": "SMC_현대천정재",
+    "가인청소": "청소_가인",
+    "갤럭시도어 (슬라이딩)": "중문_라이프인도어",
+    "광성유리 (거울&유리)": "유리_광성유리",
+    "라이프인도어 중문": "중문_라이프인도어",
+    "박동연 목공반장님": "목공_박동연 반장 (개인)",
+    "박동연반장님": "목공_박동연 반장 (개인)",
+    "설비 정경식": "설비_정경식 반장 (개인)",
+    "정경식 설비반장님": "설비_정경식 반장 (개인)",
+    "정경식 반장": "설비_정경식 반장 (개인)",
+    "센스 (수납)": "가구_센스",
+    "이수현 철거반장님": "철거_이수현 반장 (개인)",
+    "정소장님": "타일_정종락 소장 (개인)",
+    "조성일반장님": "필름_조성일 반장 (개인)",
+    "조한수사장님": "줄눈_조한수 사장 (개인)",
+    "철거인력(한샘)": "철거_한샘인력",
+    "최성필반장님": "전기_최성필 반장 (개인)",
+    "충호반장님": "도배_이충호 반장 (개인)",
+    "필름 조성일 반장님": "필름_조성일 반장 (개인)",
+    "우성": "창호_영림"
+  };
+
+  var targetSheets = [findSiteScheduleSheet(ss), findSingleTaskSheet(ss, false), findAsSheet(ss, false)];
+  var totalMigrated = 0;
+
+  for (var si = 0; si < targetSheets.length; si++) {
+    var tSheet = targetSheets[si];
+    if (!tSheet || tSheet.getLastRow() < 2) continue;
+
+    var lastR = tSheet.getLastRow();
+    var dRange = tSheet.getRange(2, 4, lastR - 1, 1);
+    var dVals = dRange.getValues();
+    var changed = false;
+
+    for (var r = 0; r < dVals.length; r++) {
+      var rawP = String(dVals[r][0] || "").trim();
+      if (!rawP) continue;
+
+      var target = customAliases[rawP] || partnerMap[rawP.toLowerCase()];
+      if (target && target !== rawP) {
+        dVals[r][0] = target;
+        changed = true;
+        totalMigrated++;
+      }
+    }
+
+    if (changed) {
+      dRange.setValues(dVals);
+    }
+
+    // 유효성 검사 즉시 동기화
+    applySiteScheduleValidations(tSheet, 2, lastR - 1);
+  }
+
+  SpreadsheetApp.flush();
+  invalidateDashboardServerCache();
+
+  return {
+    success: true,
+    migratedCount: totalMigrated,
+    totalOptionsCount: partnerOptions.length,
+    message: "협력업체 데이터 총 " + totalMigrated + "건이 '공종_업체명' 표준 양식으로 성공적으로 정규화되었습니다."
+  };
+}
+
+/**
  * [원클릭 에러 제거] 현장데이터 시트 내 모든 데이터 유효성 검사 빨간 삼각형 에러표시 완전 박멸 함수
  * 1) 04_공종 시트에 현장데이터 시트의 모든 기존 공종(23+종 누락분 포함) 일괄 등록
  * 2) 현장데이터 C열(공종) 드롭다운 유효성 규칙을 전체 공종 목록으로 즉시 재적용
@@ -700,6 +932,12 @@ function cleanAllValidationErrors(ss) {
 
   var siteSheet = findSiteScheduleSheet(ss);
   if (!siteSheet) return { success: false, error: "현장데이터 시트를 찾을 수 없습니다." };
+
+  // 0. '02_거래처' 시트 11열(K열: 공종_업체명 동적 계산 수식) 준비
+  var pSheet = findPartnersSheet(ss);
+  if (pSheet) {
+    try { ensurePartnerDropdownFormulaColumn(ss, pSheet); } catch(ePInit) {}
+  }
 
   var tSheet = findTasksSheet(ss, true);
   var existingTasksInTSheet = {};
@@ -7164,6 +7402,28 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 0-3-3) 협력업체 D열 유효성 검사 및 '02_거래처' K열 수식 일괄 적용 (action=setupPartnerValidation)
+  if (action === "setupPartnerValidation" || action === "applyPartnerValidation") {
+    var pSheet = findPartnersSheet(ss);
+    if (pSheet) ensurePartnerDropdownFormulaColumn(ss, pSheet);
+    var tSheets = [sheet, findSingleTaskSheet(ss, false), findAsSheet(ss, false)];
+    for (var tsi = 0; tsi < tSheets.length; tsi++) {
+      if (tSheets[tsi]) applySiteScheduleValidations(tSheets[tsi]);
+    }
+    invalidateDashboardServerCache();
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      message: "현장데이터, 단건, AS 시트의 협력업체(D열) 드롭다운이 02_거래처 시트의 K2:K(공종_업체명) 범위로 완벽 연동되었습니다."
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-3-4) 협력업체(D열) 기존 데이터 '공종_업체명' 표준 양식으로 자동 정규화 마이그레이션 (action=migratePartnerNames)
+  if (action === "migratePartnerNames" || action === "migrateSchedulePartnerNames") {
+    var migPRes = migrateSchedulePartnerNames(ss);
+    return ContentService.createTextOutput(JSON.stringify(migPRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   // 0-4) 스프레드시트 디버그/진단 정보 요청 (action=debugInfo)
   if (action === "debugInfo" || action === "getSheetsInfo") {
     var allSheets = ss ? ss.getSheets() : [];
@@ -9350,6 +9610,7 @@ function getSidebarDashboardData(forceRefresh) {
       todayStr: todayYYMMDD,
       members: getMemberNames(ss),
       tasks: getAvailableTasks(sheet),
+      partners: getAvailablePartners(ss),
       holidays: getKoreanHolidaysMap(ss),
       sites: sitesList,
       siteInfoMap: getSiteInfoMap(ss)

@@ -43,14 +43,19 @@ const sandbox = {
           builder._allowInvalid = allowInvalid;
           return builder;
         },
+        requireValueInRange: function(range, showDropdown) {
+          builder._range = range;
+          builder._showDropdown = showDropdown;
+          return builder;
+        },
         setAllowInvalid: function(val) {
           builder._allowInvalid = val;
           return builder;
         },
         build: function() {
           return {
-            getCriteriaType: function() { return 'VALUE_IN_LIST'; },
-            getCriteriaValues: function() { return [builder._list.slice(), true]; }
+            getCriteriaType: function() { return builder._range ? 'VALUE_IN_RANGE' : 'VALUE_IN_LIST'; },
+            getCriteriaValues: function() { return builder._range ? [builder._range] : [builder._list.slice(), true]; }
           };
         }
       };
@@ -9228,6 +9233,111 @@ assertTest('Step 117-9: doGet 내 action=migrateToTwoManagers 엔드포인트 �
 const indexHtmlContent117 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
 assertTest('Step 117-10: index.html 내 exec?v=109 이상 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(\d+)/.test(indexHtmlContent117) && parseInt(indexHtmlContent117.match(/exec\?v=(\d+)/)[1], 10) >= 109
+);
+
+// ========================================================
+// 🤝 Step 118: 거래처 시트 연동 협력업체(D열: 공종_업체명) 실시간 드롭다운 및 데이터 정규화 QA
+// ========================================================
+console.log('\n🤝 [Step 118]: 거래처 시트 연동 협력업체(D열: 공종_업체명) 실시간 드롭다운 및 데이터 정규화 QA ---');
+
+const code118 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+
+// 118-1: 핵심 함수 정의 검증
+assertTest('Step 118-1: findPartnersSheet, ensurePartnerDropdownFormulaColumn, getAvailablePartners, migrateSchedulePartnerNames 함수 정의 검증',
+  typeof sandbox.findPartnersSheet === 'function' &&
+  typeof sandbox.ensurePartnerDropdownFormulaColumn === 'function' &&
+  typeof sandbox.getAvailablePartners === 'function' &&
+  typeof sandbox.migrateSchedulePartnerNames === 'function'
+);
+
+// 118-2: ensurePartnerDropdownFormulaColumn 실행 시 11열(K열) 헤더 및 ARRAYFORMULA 수식 주입 검증
+let formulaInjected118 = '';
+let headerInjected118 = '';
+
+const mockPartnerSheet118 = {
+  getName: () => '02_거래처',
+  getSheetId: () => 179677299,
+  getLastRow: () => 4,
+  getLastColumn: () => 10,
+  getMaxColumns: () => 10,
+  getMaxRows: () => 100,
+  insertColumnAfter: () => {},
+  getRange: (r, c, nr, nc) => ({
+    getValue: () => (r === 1 && c === 11 ? headerInjected118 : ''),
+    setValue: (val) => {
+      if (r === 1 && c === 11) headerInjected118 = val;
+      return {
+        setBackground: () => ({ setFontColor: () => ({ setFontWeight: () => ({ setHorizontalAlignment: () => ({ setVerticalAlignment: () => ({}) }) }) }) })
+      };
+    },
+    getFormula: () => formulaInjected118,
+    setFormula: (f) => { formulaInjected118 = f; },
+    getValues: () => [
+      ['SMC_현대천정재'],
+      ['도장_더탄성'],
+      ['도배_이충호 반장 (개인)']
+    ]
+  }),
+  setRowHeight: () => {},
+  setColumnWidth: () => {}
+};
+
+const mockSs118 = {
+  getSheets: () => [mockPartnerSheet118],
+  getSheetByName: () => mockPartnerSheet118
+};
+
+sandbox.ensurePartnerDropdownFormulaColumn(mockSs118, mockPartnerSheet118);
+
+assertTest('Step 118-2: 11열(K열) 헤더가 "선택목록(공종_업체)"로 설정 검증',
+  headerInjected118 === '선택목록(공종_업체)'
+);
+
+assertTest('Step 118-3: K2 셀에 ARRAYFORMULA 공종_업체명 결합 수식 주입 검증',
+  formulaInjected118.includes('ARRAYFORMULA') &&
+  formulaInjected118.includes('B2:B') &&
+  formulaInjected118.includes('A2:A') &&
+  formulaInjected118.includes('_')
+);
+
+// 118-4: getAvailablePartners가 결합된 목록을 정상 반환하는지 검증
+const partnerOpts118 = sandbox.getAvailablePartners(mockSs118);
+assertTest('Step 118-4: getAvailablePartners가 ["SMC_현대천정재", "도장_더탄성", "도배_이충호 반장 (개인)"] 반환 검증',
+  Array.isArray(partnerOpts118) &&
+  partnerOpts118.includes('SMC_현대천정재') &&
+  partnerOpts118.includes('도배_이충호 반장 (개인)')
+);
+
+// 118-5: applySiteScheduleValidations 실행 시 D열(4열)에 requireValueInRange 유효성 검사 적용 검증
+let dRuleApplied118 = false;
+const mockScheduleSheet118 = {
+  getLastRow: () => 10,
+  getLastColumn: () => 11,
+  getMaxRows: () => 100,
+  getParent: () => mockSs118,
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => [],
+    setDataValidation: (rule) => {
+      if (c === 4) dRuleApplied118 = true;
+    }
+  })
+};
+
+sandbox.applySiteScheduleValidations(mockScheduleSheet118, 2, 50);
+assertTest('Step 118-5: applySiteScheduleValidations가 D열(4열, 협력업체)에 거래처 범위 유효성 검사 적용 검증',
+  dRuleApplied118 === true
+);
+
+// 118-6: doGet action=setupPartnerValidation 및 action=migratePartnerNames 지원 검증
+assertTest('Step 118-6: doGet 내 action=setupPartnerValidation 및 action=migratePartnerNames 지원 검증',
+  code118.includes('action === "setupPartnerValidation"') &&
+  code118.includes('action === "migratePartnerNames"')
+);
+
+// 118-7: index.html 내 exec?v=113 이상 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent118 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 118-7: index.html 내 exec?v=113 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent118) && parseInt(indexHtmlContent118.match(/exec\?v=(\d+)/)[1], 10) >= 113
 );
 
 console.log('\n========================================================');
