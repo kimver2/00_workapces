@@ -8353,6 +8353,47 @@ assertTest('Step 124-8: index.html 내 exec?v=123 이상 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent124) && parseInt(indexHtmlContent124.match(/exec\?v=(\d+)/)[1], 10) >= 123
 );
 
+// ========================================================
+// 📱 [Step 125]: 모바일 안내문 모달 사이드 버튼 제거 & 하단 버튼 2단 UI 최적화 QA
+// ========================================================
+console.log('\n📱 [Step 125]: 모바일 안내문 모달 사이드 버튼 제거 & 하단 버튼 2단 UI 최적화 QA ---');
+
+// 125-1: 모바일 환경에서 좌우 사이드 버튼 완전 숨김 CSS 탑재 검증
+assertTest('Step 125-1: 모바일 환경 사이드 내비게이션 버튼 완전 숨김(.btn-partner-guide-nav { display: none !important; }) 검증',
+  dashHtml124.indexOf('.btn-partner-guide-nav { display: none !important; }') !== -1
+);
+
+// 125-2: 모바일 안내문 모달 푸터 2단 분할 레이아웃 검증 (1단: 내비게이션 100%, 2단: 액션 버튼 100%)
+assertTest('Step 125-2: 모바일 푸터 2단 구조(.partner-guide-modal-footer flex-direction: column, .partner-guide-footer-actions) 탑재 검증',
+  dashHtml124.indexOf('.partner-guide-modal-footer { padding: 10px 14px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 8px;') !== -1 &&
+  dashHtml124.indexOf('.partner-guide-footer-actions { display: flex; align-items: center; gap: 6px; width: 100%;') !== -1 &&
+  dashHtml124.indexOf('class="partner-guide-footer-actions"') !== -1
+);
+
+// 125-3: 모바일 하단 액션 버튼 글자 깨짐/줄바꿈 방지(white-space: nowrap !important) 검증
+assertTest('Step 125-3: 모바일 액션 버튼 텍스트 세로 꺾임 방지(white-space: nowrap !important) 검증',
+  dashHtml124.indexOf('.partner-guide-footer-actions .btn-delete-cancel { height: 38px; padding: 0 12px; font-size: 12px; font-weight: 700; border-radius: 8px; white-space: nowrap !important;') !== -1 &&
+  dashHtml124.indexOf('.partner-guide-footer-actions .btn-partner-guide-copy-all { height: 38px; padding: 0 8px; font-size: 11.5px; font-weight: 700; border-radius: 8px; background: #f1f5f9; color: #334155; border: 1.5px solid #cbd5e1; cursor: pointer; white-space: nowrap !important;') !== -1 &&
+  dashHtml124.indexOf('.partner-guide-footer-actions .btn-partner-guide-copy { height: 38px; padding: 0 10px; font-size: 12px; font-weight: 800; border-radius: 8px; background: #2563eb; color: #ffffff; border: none; cursor: pointer; white-space: nowrap !important;') !== -1
+);
+
+// 125-4: PC 환경(min-width: 768px) 내 푸터 1단 횡배치 및 사이드 버튼 허용 유지 검증
+assertTest('Step 125-4: PC 환경(@media (min-width: 768px)) 푸터 횡배치(.partner-guide-modal-footer flex-direction: row !important) 검증',
+  dashHtml124.indexOf('.partner-guide-modal-footer { padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: space-between !important;') !== -1
+);
+
+// 125-5: renderPartnerGuideModalView 내 isPc 가드로 모바일에서 사이드 버튼 style.display flex 인라인 노출 차단 검증
+assertTest('Step 125-5: renderPartnerGuideModalView 내 isPc 가드로 모바일 사이드 버튼 인라인 노출 방어 검증',
+  dashHtml124.indexOf('const isPc = (typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth >= 768);') !== -1 &&
+  dashHtml124.indexOf('prevSideBtn.style.display = isPc ? "flex" : "none";') !== -1 &&
+  dashHtml124.indexOf('nextSideBtn.style.display = isPc ? "flex" : "none";') !== -1
+);
+
+// 125-6: index.html 내 exec?v=124 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 125-6: index.html 내 exec?v=124 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent124) && parseInt(indexHtmlContent124.match(/exec\?v=(\d+)/)[1], 10) >= 124
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
