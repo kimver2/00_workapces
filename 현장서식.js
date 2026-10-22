@@ -424,7 +424,11 @@ function getMemberNames(ss) {
  */
 function getMemberPhoneMap(ss) {
   var phoneMap = {
-    "인경호": "010-9870-9696"
+    "인경호": "010-9870-9696",
+    "조항만": "010-4491-0112",
+    "송지은": "010-7242-2409",
+    "전예린": "010-6325-6553",
+    "한송이": "010-2775-2667"
   };
   try {
     if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -11479,6 +11483,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += 'const isMobileMode = ' + (isMobile ? 'true' : 'false') + ';';
   html += 'const webAppBaseUrl = "' + (webAppUrl || "") + '";';
+  html += 'const DEFAULT_MEMBER_PHONE_MAP = {';
+  html += '  "인경호": "010-9870-9696",';
+  html += '  "조항만": "010-4491-0112",';
+  html += '  "송지은": "010-7242-2409",';
+  html += '  "전예린": "010-6325-6553",';
+  html += '  "한송이": "010-2775-2667"';
+  html += '};';
   html += 'let rawData = null;';
   html += 'function getSiteInfoFromMap(siteName) {';
   html += '  if (!rawData || !rawData.siteInfoMap || !siteName) return {};';
@@ -13853,6 +13864,9 @@ function buildSidebarDashboardHtml(mode) {
   html += 'function renderDashboardPayload(data) {';
   html += '  if (!data || data.error) return;';
   html += '  rawData = data;';
+  html += '  if (!data.memberPhoneMap || typeof data.memberPhoneMap !== "object" || Object.keys(data.memberPhoneMap).length === 0) {';
+  html += '    data.memberPhoneMap = Object.assign({}, DEFAULT_MEMBER_PHONE_MAP);';
+  html += '  }';
   html += '  if (curTaskObj && curSiteName && Array.isArray(data.sites)) {';
   html += '    const matchedSite = data.sites.find(s => s.siteName === curSiteName && !!s.isArchived === !!curTaskObj.isArchived);';
   html += '    if (matchedSite && Array.isArray(matchedSite.tasks)) {';
@@ -15306,14 +15320,28 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function getMemberPhoneNumber(mName) {';
   html += '  if (!mName) return "";';
-  html += '  const clean = String(mName || "").trim();';
+  html += '  let clean = String(mName || "").trim();';
   html += '  if (!clean) return "";';
-  html += '  if (clean === "인경호") return "010-9870-9696";';
-  html += '  if (rawData && rawData.memberPhoneMap) {';
-  html += '    if (rawData.memberPhoneMap[clean]) return rawData.memberPhoneMap[clean];';
-  html += '    if (rawData.memberPhoneMap[clean.toLowerCase()]) return rawData.memberPhoneMap[clean.toLowerCase()];';
-  html += '    const fName = (typeof formatManagerName === "function") ? formatManagerName(clean) : clean;';
-  html += '    if (fName && rawData.memberPhoneMap[fName]) return rawData.memberPhoneMap[fName];';
+  html += '  clean = clean.split(/[,/]/)[0].split("(")[0].split("[")[0].trim();';
+  html += '  if (!clean) return "";';
+  html += '  const firstWord = clean.split(/\\s+/)[0].trim();';
+  html += '  const pMap = (rawData && rawData.memberPhoneMap && typeof rawData.memberPhoneMap === "object" && Object.keys(rawData.memberPhoneMap).length > 0)';
+  html += '    ? rawData.memberPhoneMap';
+  html += '    : ((typeof DEFAULT_MEMBER_PHONE_MAP !== "undefined") ? DEFAULT_MEMBER_PHONE_MAP : {});';
+  html += '  if (clean === "인경호" || firstWord === "인경호") return "010-9870-9696";';
+  html += '  if (pMap[clean]) return pMap[clean];';
+  html += '  if (pMap[clean.toLowerCase()]) return pMap[clean.toLowerCase()];';
+  html += '  if (firstWord && pMap[firstWord]) return pMap[firstWord];';
+  html += '  if (firstWord && pMap[firstWord.toLowerCase()]) return pMap[firstWord.toLowerCase()];';
+  html += '  if (typeof formatManagerName === "function") {';
+  html += '    const fName = formatManagerName(clean);';
+  html += '    if (fName && pMap[fName]) return pMap[fName];';
+  html += '    const fFirst = fName ? fName.split(/\\s+/)[0].trim() : "";';
+  html += '    if (fFirst && pMap[fFirst]) return pMap[fFirst];';
+  html += '  }';
+  html += '  if (typeof DEFAULT_MEMBER_PHONE_MAP !== "undefined" && DEFAULT_MEMBER_PHONE_MAP) {';
+  html += '    if (DEFAULT_MEMBER_PHONE_MAP[clean]) return DEFAULT_MEMBER_PHONE_MAP[clean];';
+  html += '    if (firstWord && DEFAULT_MEMBER_PHONE_MAP[firstWord]) return DEFAULT_MEMBER_PHONE_MAP[firstWord];';
   html += '  }';
   html += '  return "";';
   html += '}';

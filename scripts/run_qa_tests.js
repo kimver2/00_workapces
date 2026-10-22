@@ -8275,16 +8275,22 @@ const clientSandbox124 = {
 vm124.createContext(clientSandbox124);
 vm124.runInContext(clientScript124, clientSandbox124);
 
+// 1) rawData가 null/비어있을 때도 DEFAULT_MEMBER_PHONE_MAP으로 송지은/조항만 즉시 반환 검증
+const phoneEmptyRaw = clientSandbox124.getMemberPhoneNumber('송지은');
+assertTest('Step 124-3-1: rawData 로딩 전/캐시 부재 시에도 DEFAULT_MEMBER_PHONE_MAP 기반 송지은 번호 100% 보장 검증',
+  phoneEmptyRaw === '010-7242-2409'
+);
+
 vm124.runInContext(`rawData = {
   memberPhoneMap: {
-    '조항만': '010-1234-5678',
-    '송지은': '010-9876-5432'
+    '조항만': '010-4491-0112',
+    '송지은': '010-7242-2409'
   },
   sites: [
     {
       siteName: '한남동 준빌라 201호',
       tasks: [
-        { row: 2, taskName: '현장실측', manager: '조항만, 송지은', status: '예정', startDateStr: '2026.09.22' }
+        { row: 2, taskName: '현장실측', manager: '송지은', status: '예정', startDateStr: '2026.09.22' }
       ]
     }
   ],
@@ -8301,12 +8307,14 @@ vm124.runInContext(`rawData = {
 
 const phone1 = clientSandbox124.getMemberPhoneNumber('조항만');
 const phone2 = clientSandbox124.getMemberPhoneNumber('인경호');
+const phoneSong = clientSandbox124.getMemberPhoneNumber('송지은 디자이너');
 const sampleTask124 = vm124.runInContext('rawData.sites[0].tasks[0]', clientSandbox124);
 const guideText124 = clientSandbox124.buildPartnerWorkGuideText('한남동 준빌라 201호', sampleTask124);
-assertTest('Step 124-3: 클라이언트 getMemberPhoneNumber 및 buildPartnerWorkGuideText 런타임 생성 검증',
-  phone1 === '010-1234-5678' &&
+assertTest('Step 124-3-2: 클라이언트 getMemberPhoneNumber 및 buildPartnerWorkGuideText 송지은 디자이너 번호 결합 검증',
+  phone1 === '010-4491-0112' &&
   phone2 === '010-9870-9696' &&
-  guideText124.indexOf('■ 담당 디자이너 : 조항만 | 010-1234-5678') !== -1 &&
+  phoneSong === '010-7242-2409' &&
+  guideText124.indexOf('■ 담당 디자이너 : 송지은 | 010-7242-2409') !== -1 &&
   guideText124.indexOf('■ 현장 소장 : 인경호 | 010-9870-9696') !== -1
 );
 
@@ -8340,9 +8348,9 @@ assertTest('Step 124-7: 모달 내 #sheetPartnerPhoneInput, #sheetCreatePartnerP
   dashHtml124.indexOf('width:34px;height:34px;min-width:34px;') !== -1
 );
 
-// 124-8: index.html 내 exec?v=122 이상 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 124-8: index.html 내 exec?v=122 이상 캐시 버스팅 파라미터 갱신 검증',
-  /exec\?v=(\d+)/.test(indexHtmlContent124) && parseInt(indexHtmlContent124.match(/exec\?v=(\d+)/)[1], 10) >= 122
+// 124-8: index.html 내 exec?v=123 이상 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 124-8: index.html 내 exec?v=123 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent124) && parseInt(indexHtmlContent124.match(/exec\?v=(\d+)/)[1], 10) >= 123
 );
 
 console.log('\n========================================================');
