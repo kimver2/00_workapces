@@ -465,6 +465,78 @@ function parseManagerNamesList(raw) {
 }
 
 /**
+ * 시트 행 데이터에서 10열 체제(담당자 1열) vs 11열 체제(담당자 1, 담당자 2)를 스마트 판별하여 객체로 정규화
+ * @param {Array} rowVals
+ * @param {Array} [sheetHeaderVals]
+ * @return {object} { site, date, task, partner, isShared, memo, manager, manager1, manager2, status, calId }
+ */
+function parseScheduleRowCols(rowVals, sheetHeaderVals) {
+  if (!rowVals || !Array.isArray(rowVals)) return null;
+  var site = String(rowVals[0] || "").trim();
+  var date = rowVals[1];
+  var task = String(rowVals[2] || "").trim();
+  var partner = String(rowVals[3] || "").trim();
+  var isShared = (rowVals[4] === true || String(rowVals[4]).toUpperCase() === "TRUE");
+  var memo = String(rowVals[5] || "").trim();
+
+  // 11열 체제 스마트 판별
+  var is11Col = false;
+  if (sheetHeaderVals && Array.isArray(sheetHeaderVals) && (String(sheetHeaderVals[7] || "").indexOf("담당자 2") !== -1 || String(sheetHeaderVals[7] || "").indexOf("담당자2") !== -1)) {
+    is11Col = true;
+  } else {
+    var v7 = String(rowVals[7] || "").trim();
+    var v8 = String(rowVals[8] || "").trim();
+    var isStatusVal = function(v) {
+      if (!v) return false;
+      var clean = v.replace(/\s+/g, "");
+      return clean.indexOf("예정") !== -1 || clean.indexOf("진행") !== -1 || clean.indexOf("완료") !== -1 || clean.indexOf("AS") !== -1 || clean.indexOf("A/S") !== -1;
+    };
+    if (isStatusVal(v8) && !isStatusVal(v7)) {
+      is11Col = true;
+    } else if (isStatusVal(v7)) {
+      is11Col = false;
+    } else if (rowVals.length >= 11 && (String(rowVals[6] || "").trim() || String(rowVals[7] || "").trim())) {
+      is11Col = true;
+    }
+  }
+
+  var manager1 = "";
+  var manager2 = "";
+  var manager = "";
+  var status = "예정";
+  var calId = "";
+
+  if (is11Col) {
+    manager1 = String(rowVals[6] || "").trim();
+    manager2 = String(rowVals[7] || "").trim();
+    manager = manager2 ? (manager1 ? manager1 + ", " + manager2 : manager2) : manager1;
+    status = String(rowVals[8] || "예정").trim();
+    calId = String(rowVals[9] || "").trim();
+  } else {
+    manager = String(rowVals[6] || "").trim();
+    var mgrParts = parseManagerNamesList(manager);
+    manager1 = mgrParts[0] || "";
+    manager2 = mgrParts[1] || "";
+    status = String(rowVals[7] || "예정").trim();
+    calId = String(rowVals[8] || "").trim();
+  }
+
+  return {
+    site: site,
+    date: date,
+    task: task,
+    partner: partner,
+    isShared: isShared,
+    memo: memo,
+    manager: manager,
+    manager1: manager1,
+    manager2: manager2,
+    status: status,
+    calId: calId
+  };
+}
+
+/**
  * [스마트 2인 담당자 다중 선택 엔진]
  * '현장데이터', '단건', 'AS' 시트 G열(담당자) 셀 편집 감지 시 동작:
  * 1) 드롭다운에서 1명 선택 후 또 1명 선택 시 최대 2명까지 "이름1, 이름2"로 자동 결합
@@ -551,8 +623,9 @@ function ensureManagersInValidation(sheet, newManagers) {
 }
 
 /**
- * 현장데이터 시트 C열(공종), G열(담당자), H열(진행상태) 드롭다운 유효성 검사 일괄 적용
- * - 시트에 입력된 모든 실제 값들을 100% 자동 포함하여 구글 시트의 빨간 삼각형(잘못된 입력) 에러표시를 완벽 차단합니다.
+ * 현장데이터, 단건, AS 시트 C열(공종), G열(담당자 1), H열(담당자 2), I열(진행상태) 드롭다운 유효성 검사 일괄 적용
+ * - 담당자 1(7열) 및 담당자 2(8열) 모두 구성원 시트의 순수 5인 목록만 깔끔하게 노출
+ * - 빨간 삼각형(잘못된 입력) 에러표시 0% 완전 박멸
  */
 function applySiteScheduleValidations(sheet, startRow, numRows) {
   if (!sheet) return;
@@ -563,7 +636,7 @@ function applySiteScheduleValidations(sheet, startRow, numRows) {
 
   var ss = (typeof sheet.getParent === "function") ? sheet.getParent() : SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. 공종(3열, C열) 드롭다운: 04_공종 시트 목록 + 현장데이터 C열에 실제 작성된 모든 공종을 포함하여 빨간 삼각형 완전 차단!
+  // 1. 공종(3열, C열) 드롭다운: 04_공종 시트 목록 + C열에 실제 작성된 모든 공종을 포함하여 빨간 삼각형 완전 차단!
   var tasks = getAvailableTasks(sheet);
   if (typeof sheet.getLastRow === "function" && sheet.getLastRow() >= 2) {
     try {
@@ -585,7 +658,7 @@ function applySiteScheduleValidations(sheet, startRow, numRows) {
     .build();
   sheet.getRange(startRow, 3, numRows, 1).setDataValidation(taskRule);
 
-  // 2. 담당자(7열, G열) 드롭다운: 개별 인원 + 모든 2인 조합 + 시트 실제 작성값 포함하여 빨간 삼각형 완전 차단!
+  // 2. 담당자 1(7열, G열) & 담당자 2(8열, H열) 드롭다운: 구성원 시트의 순수 5인만 노출
   var managers = getAvailableManagers(ss, sheet);
   var managerRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(managers, true)
@@ -593,13 +666,19 @@ function applySiteScheduleValidations(sheet, startRow, numRows) {
     .build();
   sheet.getRange(startRow, 7, numRows, 1).setDataValidation(managerRule);
 
-  // 3. 진행상태(8열, H열) 드롭다운: 표준 4대 상태
+  var is11Col = (typeof sheet.getLastColumn === "function" && sheet.getLastColumn() >= 11);
+  if (is11Col) {
+    sheet.getRange(startRow, 8, numRows, 1).setDataValidation(managerRule); // H열(담당자 2)
+  }
+
+  // 3. 진행상태 드롭다운: 11열 체제 시 9열(I열), 10열 체제 시 8열(H열)
+  var statusCol = is11Col ? 9 : 8;
   var statuses = ["예정", "진행 중", "완료", "AS"];
   var statusRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(statuses, true)
     .setAllowInvalid(true)
     .build();
-  sheet.getRange(startRow, 8, numRows, 1).setDataValidation(statusRule);
+  sheet.getRange(startRow, statusCol, numRows, 1).setDataValidation(statusRule);
 
   // 4. 조건부 서식(담당자 색상, 공종, 진행상태) 자동 동기화
   try {
@@ -710,7 +789,7 @@ function cleanAllValidationErrorsMenu() {
   if (res && res.success) {
     SpreadsheetApp.getUi().alert(
       "🛡️ 유효성 검사 에러 표시 제거 완료",
-      "현장데이터 시트의 모든 공종, 담당자(2인 담당자 포함), 진행상태 유효성 검사가 성공적으로 재정비되었습니다.\n\n" +
+      "현장데이터, 단건, AS 시트의 모든 공종, 담당자(2인 담당자 포함), 진행상태 유효성 검사가 성공적으로 재정비되었습니다.\n\n" +
       "• 등록/동기화된 공종 수: " + (res.totalTasksCount || 0) + "개\n" +
       "• 신규 추가된 누락 공종: " + (res.addedTasksCount || 0) + "개\n\n" +
       "모든 셀의 빨간색/주황색 에러 표시(삼각형)가 말끔하게 해제되었습니다.",
@@ -718,6 +797,151 @@ function cleanAllValidationErrorsMenu() {
     );
   } else {
     SpreadsheetApp.getUi().alert("⚠️ 오류", (res && res.error) || "알 수 없는 오류가 발생했습니다.", SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * 단일 시트를 '담당자 1', '담당자 2' 2개 열 양식으로 변경하고 기존 복합 데이터를 분리 보존
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @return {{migrated: boolean, inserted: boolean, count: number}}
+ */
+function migrateSingleSheetToTwoManagers(sheet) {
+  if (!sheet) return { migrated: false, inserted: false, count: 0 };
+  var lastRow = Math.max((typeof sheet.getLastRow === "function" ? sheet.getLastRow() : 1), 1);
+  var lastCol = Math.max((typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 1), 1);
+
+  var headerVals = sheet.getRange(1, 1, 1, Math.max(lastCol, 11)).getValues()[0];
+  var col7Header = String(headerVals[6] || "").trim(); // G열
+  var col8Header = String(headerVals[7] || "").trim(); // H열
+
+  var didInsert = false;
+  // H열이 아직 "담당자 2"가 아니고 "진행상태"나 "상태"이거나 G열이 "담당자"인 경우 -> 8열 위치에 1개 열 삽입!
+  if (col8Header.indexOf("담당자 2") === -1 && (col8Header.indexOf("상태") !== -1 || col7Header === "담당자" || col8Header === "")) {
+    if (typeof sheet.insertColumnAfter === "function") {
+      sheet.insertColumnAfter(7);
+      didInsert = true;
+    }
+  }
+
+  // 1행 11개 헤더 표준화 적용
+  var newHeaders = [["현장명", "날짜", "공종", "협력업체", "공유", "비고", "담당자 1", "담당자 2", "진행상태", "캘린더ID", "최종수정일시"]];
+  try {
+    sheet.getRange(1, 1, 1, 11).setValues(newHeaders)
+      .setBackground("#1e293b")
+      .setFontColor("#ffffff")
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle");
+    sheet.setRowHeight(1, 36);
+  } catch(eHdr) {}
+
+  var migratedRowsCount = 0;
+  if (lastRow >= 2) {
+    try {
+      var mgrRange = sheet.getRange(2, 7, lastRow - 1, 2);
+      var mgrVals = mgrRange.getValues();
+      var changed = false;
+
+      for (var r = 0; r < mgrVals.length; r++) {
+        var rawG = String(mgrVals[r][0] || "").trim();
+        var rawH = String(mgrVals[r][1] || "").trim();
+
+        // 오타 보정 ("한송0" -> "한송이")
+        if (rawG.indexOf("한송0") !== -1) rawG = rawG.replace(/한송0/g, "한송이");
+        if (rawH.indexOf("한송0") !== -1) rawH = rawH.replace(/한송0/g, "한송이");
+
+        // G열에 쉼표나 슬래시로 2명이 묶여있는 경우 분리
+        if (rawG && (rawG.indexOf(",") !== -1 || rawG.indexOf("/") !== -1)) {
+          var parts = parseManagerNamesList(rawG);
+          mgrVals[r][0] = parts[0] || "";
+          mgrVals[r][1] = parts[1] || "";
+          changed = true;
+          migratedRowsCount++;
+        } else {
+          // 이미 분리되어 있거나 단일인 경우 오타 보정 반영
+          if (mgrVals[r][0] !== rawG || mgrVals[r][1] !== rawH) {
+            mgrVals[r][0] = rawG;
+            mgrVals[r][1] = rawH;
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        mgrRange.setValues(mgrVals);
+      }
+    } catch(eMgr) {}
+  }
+
+  // 10, 11열(캘린더ID, 최종수정일시) 숨김 처리
+  try {
+    sheet.hideColumns(10, 2);
+  } catch(eHide) {}
+
+  // 유효성 검사 및 조건부 서식 재적용
+  var maxRows = Math.max((typeof sheet.getMaxRows === "function" ? sheet.getMaxRows() : 100), 100);
+  applySiteScheduleValidations(sheet, 2, maxRows - 1);
+
+  return { migrated: true, inserted: didInsert, count: migratedRowsCount };
+}
+
+/**
+ * '현장데이터', '단건', 'AS' 시트 3개 모두에 대해 '담당자 1', '담당자 2' 2개 열 양식 변경 및 기존 데이터 분리 일괄 실행
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {{site: object, single: object, as: object, totalMigratedRows: number}}
+ */
+function migrateSheetsToTwoManagers(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { totalMigratedRows: 0 };
+
+  var res = {
+    site: { migrated: false, count: 0 },
+    single: { migrated: false, count: 0 },
+    as: { migrated: false, count: 0 },
+    totalMigratedRows: 0
+  };
+
+  var siteSheet = findSiteScheduleSheet(ss);
+  if (siteSheet) {
+    res.site = migrateSingleSheetToTwoManagers(siteSheet);
+  }
+
+  var singleSheet = findSingleTaskSheet(ss, false);
+  if (singleSheet) {
+    res.single = migrateSingleSheetToTwoManagers(singleSheet);
+  }
+
+  var asSheet = findAsSheet(ss, false);
+  if (asSheet) {
+    res.as = migrateSingleSheetToTwoManagers(asSheet);
+  }
+
+  res.totalMigratedRows = (res.site.count || 0) + (res.single.count || 0) + (res.as.count || 0);
+
+  SpreadsheetApp.flush();
+  invalidateDashboardServerCache();
+
+  return res;
+}
+
+/**
+ * 상단 메뉴용: 담당자 1 / 담당자 2 양식 변경 및 기존 데이터 분리
+ */
+function migrateSheetsToTwoManagersMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  var res = migrateSheetsToTwoManagers(ss);
+  if (res) {
+    SpreadsheetApp.getUi().alert(
+      "👥 담당자 1 / 담당자 2 양식 변경 완료",
+      "'현장데이터', '단건', 'AS' 시트가 '담당자 1'과 '담당자 2' 2개 열 양식으로 변경되었습니다.\n\n" +
+      "• 분리된 2인 담당자 데이터: 총 " + (res.totalMigratedRows || 0) + "건\n" +
+      "• 드롭다운 목록: 구성원 시트의 5인만 깔끔하게 노출\n" +
+      "• 빨간 삼각형 에러표시: 100% 완전 해제\n\n" +
+      "이제 담당자 1과 담당자 2를 각각 선택하여 최대 2명까지 안전하게 관리하실 수 있습니다.",
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
   }
 }
 
@@ -814,20 +1038,22 @@ function getManagerColorMap(ss, sheet) {
 function setupSiteSheetConditionalFormatting(sheet) {
   if (!sheet) return;
   var lastRow = Math.max(sheet.getLastRow(), 100);
+  var is11Col = (typeof sheet.getLastColumn === "function" && sheet.getLastColumn() >= 11);
   var rangeC = sheet.getRange(2, 3, lastRow - 1, 1); // C열: 공종
-  var rangeG = sheet.getRange(2, 7, lastRow - 1, 1); // G열: 담당자
-  var statusRange = sheet.getRange(2, 8, lastRow - 1, 1); // H열: 진행상태
+  var rangeG = sheet.getRange(2, 7, lastRow - 1, is11Col ? 2 : 1); // 7열(담당자 1) 및 8열(담당자 2)
+  var statusCol = is11Col ? 9 : 8; // 11열 체제 시 9열(I열), 10열 체제 시 8열(H열)
+  var statusRange = sheet.getRange(2, statusCol, lastRow - 1, 1);
   var ss = sheet.getParent() || getAppSpreadsheet();
 
   var rules = [];
 
-  // 1. 진행상태 색상 (H열)
+  // 1. 진행상태 색상
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("진행").setFontColor("#1d4ed8").setBackground("#dbeafe").setBold(true).setRanges([statusRange]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("완료").setFontColor("#15803d").setBackground("#dcfce7").setBold(true).setRanges([statusRange]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("AS").setFontColor("#b91c1c").setBackground("#fee2e2").setBold(true).setRanges([statusRange]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains("예정").setFontColor("#b45309").setBackground("#fef3c7").setBold(true).setRanges([statusRange]).build());
 
-  // 2. 담당자 인물 뱃지 색상 (G열: 한송이, 인경호 + 신규 등록 담당자 전수 동적 배정)
+  // 2. 담당자 인물 뱃지 색상 (담당자 1 및 담당자 2 범위 모두 적용)
   var managerColorMap = getManagerColorMap(ss, sheet);
   managerColorMap.forEach(function(item) {
     rules.push(SpreadsheetApp.newConditionalFormatRule()
@@ -910,6 +1136,7 @@ function onOpen() {
     .addItem("📑 '단건', 'AS' 시트 생성 및 서식 동기화", "ensureCustomCategorySheetsMenu")
     .addItem("📁 '단건'/'AS' 동일 현장 묶기 (접기/펼치기)", "groupCategorySheetsMenu")
     .addItem("📖 '단건'/'AS' 전체 펼치기", "expandCategorySheetsMenu")
+    .addItem("👥 '현장/단건/AS' 담당자 1 / 담당자 2 양식 변경", "migrateSheetsToTwoManagersMenu")
     .addItem("🛡️ '현장데이터' 빨간 에러표시(유효성 경고) 전체 제거", "cleanAllValidationErrorsMenu")
     .addSeparator()
 
@@ -1319,9 +1546,10 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     }
   }
 
-  // 전체 데이터 읽기 (1~10열: A~J열)
+  // 전체 데이터 읽기 (11개 열 기준 동적 지원)
   var totalRows = lastRow - 1;
-  var rangeAll = sheet.getRange(2, 1, totalRows, 10);
+  var numCols = Math.max((typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 11), 11);
+  var rangeAll = sheet.getRange(2, 1, totalRows, numCols);
   var values = rangeAll.getValues();
   var backgrounds = rangeAll.getBackgrounds();
 
@@ -1371,14 +1599,19 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
         items: [],
         explicitCount: 0,
         firstRowIdx: i,
-        defaultManager: ""
+        defaultManager1: "",
+        defaultManager2: ""
       };
       siteOrder.push(effectiveSite);
     }
 
-    var mgrVal = String(rowVals[6] || "").trim();
-    if (mgrVal && !siteGroups[effectiveSite].defaultManager) {
-      siteGroups[effectiveSite].defaultManager = mgrVal;
+    var mgr1Val = String(rowVals[6] || "").trim();
+    var mgr2Val = String(rowVals[7] || "").trim();
+    if (mgr1Val && !siteGroups[effectiveSite].defaultManager1) {
+      siteGroups[effectiveSite].defaultManager1 = mgr1Val;
+    }
+    if (mgr2Val && !siteGroups[effectiveSite].defaultManager2) {
+      siteGroups[effectiveSite].defaultManager2 = mgr2Val;
     }
 
     if (rawSite) {
@@ -1428,10 +1661,13 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     }
 
     // 담당자 자동 상속: 해당 현장의 대표 담당자가 있고, 특정 행의 담당자가 비어있으면 자동 상속
-    if (grp.defaultManager) {
+    if (grp.defaultManager1) {
       for (var mr = 0; mr < grp.items.length; mr++) {
         if (!String(grp.items[mr].vals[6] || "").trim()) {
-          grp.items[mr].vals[6] = grp.defaultManager;
+          grp.items[mr].vals[6] = grp.defaultManager1;
+          if (grp.defaultManager2 && !String(grp.items[mr].vals[7] || "").trim()) {
+            grp.items[mr].vals[7] = grp.defaultManager2;
+          }
         }
       }
     }
@@ -1489,7 +1725,7 @@ function sortSiteScheduleTasksByDate(ss, sheet, silent) {
     for (var ch = 0; ch < values.length; ch++) {
       var vRow = values[ch];
       var nvRow = newValues[ch];
-      for (var col = 0; col < 10; col++) {
+      for (var col = 0; col < numCols; col++) {
         if (vRow[col] !== nvRow[col]) {
           anyChanged = true;
           break;
@@ -2976,8 +3212,8 @@ function findAsSheet(ss, createIfMissing) {
  */
 function initCategorySheetFormat(newSheet, ss, typeName) {
   if (!newSheet) return;
-  var headers = [["현장명", "날짜", "공종", "협력업체", "공유", "비고", "담당자", "진행상태", "캘린더ID", "최종수정일시"]];
-  var headerRange = newSheet.getRange(1, 1, 1, 10);
+  var headers = [["현장명", "날짜", "공종", "협력업체", "공유", "비고", "담당자 1", "담당자 2", "진행상태", "캘린더ID", "최종수정일시"]];
+  var headerRange = newSheet.getRange(1, 1, 1, 11);
   headerRange.setValues(headers)
     .setBackground("#1e293b")
     .setFontColor("#ffffff")
@@ -2990,21 +3226,22 @@ function initCategorySheetFormat(newSheet, ss, typeName) {
   // 현장데이터 시트와 동일한 열 너비 복사 적용
   var srcSheet = findSiteScheduleSheet(ss);
   if (srcSheet) {
-    for (var c = 1; c <= 10; c++) {
+    var numCols = Math.max((typeof srcSheet.getLastColumn === "function" ? srcSheet.getLastColumn() : 11), 11);
+    for (var c = 1; c <= numCols; c++) {
       try {
         newSheet.setColumnWidth(c, srcSheet.getColumnWidth(c));
       } catch(eW) {}
     }
-    // 9, 10열(캘린더ID, 타임스탬프) 숨김 처리
+    // 10, 11열(캘린더ID, 타임스탬프) 숨김 처리
     try {
-      newSheet.hideColumns(9, 2);
+      newSheet.hideColumns(10, 2);
     } catch(eH) {}
   } else {
-    var defaultWidths = [180, 110, 130, 140, 60, 200, 100, 90, 100, 130];
+    var defaultWidths = [180, 110, 130, 140, 60, 200, 90, 90, 90, 100, 130];
     for (var dw = 0; dw < defaultWidths.length; dw++) {
       try { newSheet.setColumnWidth(dw + 1, defaultWidths[dw]); } catch(eDw) {}
     }
-    try { newSheet.hideColumns(9, 2); } catch(eH2) {}
+    try { newSheet.hideColumns(10, 2); } catch(eH2) {}
   }
 
   // 드롭다운 및 유효성 검사 일괄 적용
@@ -6158,8 +6395,12 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
       rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName, newDate);
     }
 
-    // 1단계: 시트 셀 원자적 즉시 쓰기 (락 대기 없이 100% 즉시 저장 보장)
-    sheet.getRange(rowNum, 8).setValue(newStatus); // H열 진행상태 업데이트
+    var is11Col = (typeof sheet.getLastColumn === "function" && sheet.getLastColumn() >= 11);
+    var statusCol = is11Col ? 9 : 8;
+    var timeCol = is11Col ? 11 : 10;
+
+    // 1단계: 시트 셀 원자적 즉시 쓰기 (락 대기 없이 100% 즉시 저장 보장: sheet.getRange(rowNum, 8).setValue(newStatus))
+    sheet.getRange(rowNum, statusCol).setValue(newStatus); // 진행상태 업데이트 (11열 체제 시 9열, 10열 체제 시 8열)
 
     // B열 날짜 업데이트 (파라미터가 명시적으로 전달된 경우)
     if (newDate !== undefined && newDate !== null && String(newDate).trim() !== "") {
@@ -6173,11 +6414,20 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
       updatedDate = finalDateToSave;
     }
 
-    // G열 담당자 업데이트 (파라미터가 명시적으로 전달된 경우)
+    // 담당자 업데이트 (파라미터가 명시적으로 전달된 경우)
     if (newManager !== undefined && newManager !== null) {
       var cleanManager = String(newManager).trim();
-      sheet.getRange(rowNum, 7).setValue(cleanManager); // G열(7열) 담당자 업데이트
-      updatedManager = cleanManager;
+      if (is11Col) {
+        var mgrParts = parseManagerNamesList(cleanManager);
+        var m1 = mgrParts[0] || "";
+        var m2 = mgrParts[1] || "";
+        sheet.getRange(rowNum, 7).setValue(m1); // G열(7열) 담당자 1 업데이트
+        sheet.getRange(rowNum, 8).setValue(m2); // H열(8열) 담당자 2 업데이트
+        updatedManager = m2 ? (m1 ? m1 + ", " + m2 : m2) : m1;
+      } else {
+        sheet.getRange(rowNum, 7).setValue(cleanManager); // G열(7열) 담당자 업데이트
+        updatedManager = cleanManager;
+      }
     }
 
     // D열 협력업체 업데이트 (파라미터가 명시적으로 전달된 경우)
@@ -6202,7 +6452,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     }
 
     var now = new Date();
-    sheet.getRange(rowNum, 10).setValue(now.getTime()); // J열 타임스탬프 업데이트
+    sheet.getRange(rowNum, timeCol).setValue(now.getTime()); // 타임스탬프 업데이트 (10열 호환: sheet.getRange(rowNum, 10).setValue(now.getTime()))
     SpreadsheetApp.flush(); // 시트에 영구 커밋
 
     // AS 시트에서 상태를 '완료'로 변경하는 경우 -> 완료현장 시트로 즉시 자동 이동 (동일 현장명 그룹 편입)
@@ -6471,13 +6721,15 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     } catch (eConsPre) {}
 
     var lastRow = sheet.getLastRow();
+    var is11Col = (typeof sheet.getLastColumn === "function" && sheet.getLastColumn() >= 11);
+    var colCount = is11Col ? 11 : 10;
     var siteStartRow = -1;
     var siteEndRow = -1;
     var hasExplicitSiteInAllRows = true;
     var siteDefaultManager = "";
 
     if (lastRow >= 2) {
-      var existingVals = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+      var existingVals = sheet.getRange(2, 1, lastRow - 1, colCount).getValues();
       var lastKnown = "";
       for (var rIdx = 0; rIdx < existingVals.length; rIdx++) {
         var rRow = existingVals[rIdx];
@@ -6496,7 +6748,14 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
           }
           siteEndRow = rIdx + 2;
           if (!rSite) hasExplicitSiteInAllRows = false;
-          var rowMgr = String(rRow[6] || "").trim();
+          var rowMgr = "";
+          if (is11Col) {
+            var rm1 = String(rRow[6] || "").trim();
+            var rm2 = String(rRow[7] || "").trim();
+            rowMgr = rm2 ? (rm1 ? rm1 + ", " + rm2 : rm2) : rm1;
+          } else {
+            rowMgr = String(rRow[6] || "").trim();
+          }
           if (rowMgr && !siteDefaultManager) {
             siteDefaultManager = rowMgr;
           }
@@ -6511,7 +6770,15 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     }
 
     var siteColVal = (siteStartRow !== -1 && !hasExplicitSiteInAllRows) ? "" : cleanSite;
-    var newRowValues = [siteColVal, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, cleanManager, cleanStatus, "", nowMs];
+    var newRowValues = [];
+    if (is11Col) {
+      var mgrParts = parseManagerNamesList(cleanManager);
+      var m1 = mgrParts[0] || "";
+      var m2 = mgrParts[1] || "";
+      newRowValues = [siteColVal, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, m1, m2, cleanStatus, "", nowMs];
+    } else {
+      newRowValues = [siteColVal, finalDate, cleanTask, cleanPartner, isSharedBool, cleanMemo, cleanManager, cleanStatus, "", nowMs];
+    }
     var newRow = Math.max(2, lastRow + 1);
 
     if (siteEndRow >= 2) {
@@ -6519,7 +6786,7 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
         // 기존 현장 그룹(2행 이상)의 마지막 행 앞(그룹 내부)에 삽입하여 구글 시트 행 그룹([+]/[-])에 자동 편입
         sheet.insertRowBefore(siteEndRow);
         newRow = siteEndRow;
-        var insBeforeRange = sheet.getRange(newRow, 1, 1, 10);
+        var insBeforeRange = sheet.getRange(newRow, 1, 1, colCount);
         if (insBeforeRange && typeof insBeforeRange.setValues === "function") {
           insBeforeRange.setValues([newRowValues]);
         } else {
@@ -6531,7 +6798,7 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
       } else if (typeof sheet.insertRowAfter === "function") {
         sheet.insertRowAfter(siteEndRow);
         newRow = siteEndRow + 1;
-        var insRange = sheet.getRange(newRow, 1, 1, 10);
+        var insRange = sheet.getRange(newRow, 1, 1, colCount);
         if (insRange && typeof insRange.setValues === "function") {
           insRange.setValues([newRowValues]);
         } else {
@@ -6546,17 +6813,17 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
           } catch (eGrp) {}
         }
       } else if (siteEndRow < lastRow) {
-        var allRows = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+        var allRows = sheet.getRange(2, 1, lastRow - 1, colCount).getValues();
         allRows.splice(siteEndRow - 1, 0, newRowValues);
         newRow = siteEndRow + 1;
-        var fullRange = sheet.getRange(2, 1, allRows.length, 10);
+        var fullRange = sheet.getRange(2, 1, allRows.length, colCount);
         if (fullRange && typeof fullRange.setValues === "function") {
           fullRange.setValues(allRows);
         }
         formatInsertedScheduleRow(sheet, newRow, isSharedBool);
       } else {
         newRow = lastRow + 1;
-        var endRange = sheet.getRange(newRow, 1, 1, 10);
+        var endRange = sheet.getRange(newRow, 1, 1, colCount);
         if (endRange && typeof endRange.setValues === "function") {
           endRange.setValues([newRowValues]);
         } else {
@@ -6567,7 +6834,7 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
         formatInsertedScheduleRow(sheet, newRow, isSharedBool);
       }
     } else {
-      var targetRange = sheet.getRange(newRow, 1, 1, 10);
+      var targetRange = sheet.getRange(newRow, 1, 1, colCount);
       if (targetRange && typeof targetRange.setValues === "function") {
         targetRange.setValues([newRowValues]);
       } else {
@@ -6582,9 +6849,10 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
       sortSiteScheduleTasksByDate(ss, sheet, true);
       var afterLastRow = sheet.getLastRow();
       if (afterLastRow >= 2) {
-        var afterVals = sheet.getRange(2, 1, afterLastRow - 1, 10).getValues();
+        var afterVals = sheet.getRange(2, 1, afterLastRow - 1, colCount).getValues();
+        var timeColIdx = is11Col ? 10 : 9;
         for (var fIdx = 0; fIdx < afterVals.length; fIdx++) {
-          if (afterVals[fIdx][9] === nowMs && String(afterVals[fIdx][2] || "").trim() === cleanTask) {
+          if (afterVals[fIdx][timeColIdx] === nowMs && String(afterVals[fIdx][2] || "").trim() === cleanTask) {
             newRow = fIdx + 2;
             break;
           }
@@ -6789,6 +7057,14 @@ function doGet(e) {
   if (action === "initCategorySheets" || action === "setupCategorySheets") {
     var catInitRes = ensureCustomCategorySheets(ss);
     return ContentService.createTextOutput(JSON.stringify(catInitRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-10) '현장데이터', '단건', 'AS' 시트 '담당자 1', '담당자 2' 2개 열 양식 개편 및 복합 데이터 분리 마이그레이션 (action=migrateToTwoManagers)
+  if (action === "migrateToTwoManagers" || action === "migrateSheetsToTwoManagers") {
+    var migRes = migrateSheetsToTwoManagers(ss);
+    invalidateDashboardServerCache();
+    return ContentService.createTextOutput(JSON.stringify(migRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -8364,9 +8640,18 @@ function getSidebarDashboardData(forceRefresh) {
       }
     } catch (eAutoHealSplit) {}
 
-    var values = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+    var sNumCols = Math.max((typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 11), 11);
+    var values = sheet.getRange(2, 1, lastRow - 1, sNumCols).getValues();
     var today = new Date();
     var todayYYMMDD = formatDateYYMMDD(today);
+
+    var sheetHeaders = null;
+    try {
+      if (sheet && typeof sheet.getLastRow === "function" && sheet.getLastRow() >= 1) {
+        var colLimit = Math.min((typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 11), 12);
+        sheetHeaders = sheet.getRange(1, 1, 1, colLimit).getValues()[0];
+      }
+    } catch(eH) {}
 
     var sitesMap = {};
     var siteOrder = [];
@@ -8386,12 +8671,15 @@ function getSidebarDashboardData(forceRefresh) {
 
       if (!siteName || !dateVal || !taskName) continue;
 
-      var partner = String(rowVals[3] || "").trim();
-      var isShared = (rowVals[4] === true || String(rowVals[4]).toUpperCase() === "TRUE");
-      var memo = String(rowVals[5] || "").trim();
-      var manager = String(rowVals[6] || "").trim();
-      var status = String(rowVals[7] || "예정").trim();
-      var calId = String(rowVals[8] || "").trim();
+      var parsedCols = parseScheduleRowCols(rowVals, sheetHeaders);
+      var partner = parsedCols ? parsedCols.partner : String(rowVals[3] || "").trim();
+      var isShared = parsedCols ? parsedCols.isShared : (rowVals[4] === true || String(rowVals[4]).toUpperCase() === "TRUE");
+      var memo = parsedCols ? parsedCols.memo : String(rowVals[5] || "").trim();
+      var manager = parsedCols ? parsedCols.manager : String(rowVals[6] || "").trim();
+      var manager1 = parsedCols ? parsedCols.manager1 : manager;
+      var manager2 = parsedCols ? parsedCols.manager2 : "";
+      var status = parsedCols ? parsedCols.status : String(rowVals[7] || "예정").trim();
+      var calId = parsedCols ? parsedCols.calId : String(rowVals[8] || "").trim();
 
       var parsed = null;
       try {
@@ -8484,7 +8772,10 @@ function getSidebarDashboardData(forceRefresh) {
     try {
       var singleSheet = findSingleTaskSheet(ss, false);
       if (singleSheet && singleSheet.getLastRow() >= 2) {
-        var singleData = singleSheet.getRange(2, 1, singleSheet.getLastRow() - 1, 10).getValues();
+        var sNumCols = Math.max((typeof singleSheet.getLastColumn === "function" ? singleSheet.getLastColumn() : 11), 11);
+        var singleData = singleSheet.getRange(2, 1, singleSheet.getLastRow() - 1, sNumCols).getValues();
+        var sSheetHeaders = null;
+        try { if (singleSheet.getLastRow() >= 1) sSheetHeaders = singleSheet.getRange(1, 1, 1, sNumCols).getValues()[0]; } catch(eSh) {}
         var sLastKnownSite = "";
         for (var si = 0; si < singleData.length; si++) {
           var sRowVals = singleData[si];
@@ -8495,12 +8786,15 @@ function getSidebarDashboardData(forceRefresh) {
           var sTaskName = String(sRowVals[2] || "").trim();
           if (!sSiteName || !sDateVal || !sTaskName) continue;
 
-          var sPartner = String(sRowVals[3] || "").trim();
-          var sIsShared = (sRowVals[4] === true || String(sRowVals[4]).toUpperCase() === "TRUE");
-          var sMemo = String(sRowVals[5] || "").trim();
-          var sManager = String(sRowVals[6] || "").trim();
-          var sStatus = String(sRowVals[7] || "예정").trim();
-          var sCalId = String(sRowVals[8] || "").trim();
+          var sParsedCols = parseScheduleRowCols(sRowVals, sSheetHeaders);
+          var sPartner = sParsedCols ? sParsedCols.partner : String(sRowVals[3] || "").trim();
+          var sIsShared = sParsedCols ? sParsedCols.isShared : (sRowVals[4] === true || String(sRowVals[4]).toUpperCase() === "TRUE");
+          var sMemo = sParsedCols ? sParsedCols.memo : String(sRowVals[5] || "").trim();
+          var sManager = sParsedCols ? sParsedCols.manager : String(sRowVals[6] || "").trim();
+          var sManager1 = sParsedCols ? sParsedCols.manager1 : sManager;
+          var sManager2 = sParsedCols ? sParsedCols.manager2 : "";
+          var sStatus = sParsedCols ? sParsedCols.status : String(sRowVals[7] || "예정").trim();
+          var sCalId = sParsedCols ? sParsedCols.calId : String(sRowVals[8] || "").trim();
 
           var sParsed = null;
           try { sParsed = parseScheduleDateRange(sDateVal); } catch(eP) {}
@@ -8553,6 +8847,8 @@ function getSidebarDashboardData(forceRefresh) {
             endDateStr: sEndDateStr,
             partner: sPartner,
             manager: sManager,
+            manager1: sManager1,
+            manager2: sManager2,
             status: sStatus,
             isShared: sIsShared,
             memo: sMemo,
@@ -8571,7 +8867,10 @@ function getSidebarDashboardData(forceRefresh) {
     try {
       var asSheet = findAsSheet(ss, false);
       if (asSheet && asSheet.getLastRow() >= 2) {
-        var asData = asSheet.getRange(2, 1, asSheet.getLastRow() - 1, 10).getValues();
+        var asNumCols = Math.max((typeof asSheet.getLastColumn === "function" ? asSheet.getLastColumn() : 11), 11);
+        var asData = asSheet.getRange(2, 1, asSheet.getLastRow() - 1, asNumCols).getValues();
+        var asSheetHeaders = null;
+        try { if (asSheet.getLastRow() >= 1) asSheetHeaders = asSheet.getRange(1, 1, 1, asNumCols).getValues()[0]; } catch(eAh) {}
         var asLastKnownSite = "";
         for (var ai = 0; ai < asData.length; ai++) {
           var asRowVals = asData[ai];
@@ -8582,12 +8881,15 @@ function getSidebarDashboardData(forceRefresh) {
           var asTaskName = String(asRowVals[2] || "").trim();
           if (!asSiteName || !asDateVal || !asTaskName) continue;
 
-          var asPartner = String(asRowVals[3] || "").trim();
-          var asIsShared = (asRowVals[4] === true || String(asRowVals[4]).toUpperCase() === "TRUE");
-          var asMemo = String(asRowVals[5] || "").trim();
-          var asManager = String(asRowVals[6] || "").trim();
-          var asStatus = String(asRowVals[7] || "예정").trim();
-          var asCalId = String(asRowVals[8] || "").trim();
+          var asParsedCols = parseScheduleRowCols(asRowVals, asSheetHeaders);
+          var asPartner = asParsedCols ? asParsedCols.partner : String(asRowVals[3] || "").trim();
+          var asIsShared = asParsedCols ? asParsedCols.isShared : (asRowVals[4] === true || String(asRowVals[4]).toUpperCase() === "TRUE");
+          var asMemo = asParsedCols ? asParsedCols.memo : String(asRowVals[5] || "").trim();
+          var asManager = asParsedCols ? asParsedCols.manager : String(asRowVals[6] || "").trim();
+          var asManager1 = asParsedCols ? asParsedCols.manager1 : asManager;
+          var asManager2 = asParsedCols ? asParsedCols.manager2 : "";
+          var asStatus = asParsedCols ? asParsedCols.status : String(asRowVals[7] || "예정").trim();
+          var asCalId = asParsedCols ? asParsedCols.calId : String(asRowVals[8] || "").trim();
 
           var asParsed = null;
           try { asParsed = parseScheduleDateRange(asDateVal); } catch(eP) {}
@@ -8640,6 +8942,8 @@ function getSidebarDashboardData(forceRefresh) {
             endDateStr: asEndDateStr,
             partner: asPartner,
             manager: asManager,
+            manager1: asManager1,
+            manager2: asManager2,
             status: asStatus,
             isShared: asIsShared,
             memo: asMemo,
@@ -8658,7 +8962,10 @@ function getSidebarDashboardData(forceRefresh) {
     try {
       var compSheet = findCompletedSitesSheet(ss, false);
       if (compSheet && compSheet.getLastRow() >= 2) {
-        var compData = compSheet.getRange(2, 1, compSheet.getLastRow() - 1, 10).getValues();
+        var compNumCols = Math.max((typeof compSheet.getLastColumn === "function" ? compSheet.getLastColumn() : 11), 11);
+        var compData = compSheet.getRange(2, 1, compSheet.getLastRow() - 1, compNumCols).getValues();
+        var compSheetHeaders = null;
+        try { if (compSheet.getLastRow() >= 1) compSheetHeaders = compSheet.getRange(1, 1, 1, compNumCols).getValues()[0]; } catch(eCh) {}
         var compLastKnownSite = "";
         for (var ci = 0; ci < compData.length; ci++) {
           var cRowVals = compData[ci];
@@ -8670,12 +8977,15 @@ function getSidebarDashboardData(forceRefresh) {
 
           if (!cSiteName || !cDateVal || !cTaskName) continue;
 
-          var cPartner = String(cRowVals[3] || "").trim();
-          var cIsShared = (cRowVals[4] === true || String(cRowVals[4]).toUpperCase() === "TRUE");
-          var cMemo = String(cRowVals[5] || "").trim();
-          var cManager = String(cRowVals[6] || "").trim();
-          var cStatus = String(cRowVals[7] || "완료").trim();
-          var cCalId = String(cRowVals[8] || "").trim();
+          var cParsedCols = parseScheduleRowCols(cRowVals, compSheetHeaders);
+          var cPartner = cParsedCols ? cParsedCols.partner : String(cRowVals[3] || "").trim();
+          var cIsShared = cParsedCols ? cParsedCols.isShared : (cRowVals[4] === true || String(cRowVals[4]).toUpperCase() === "TRUE");
+          var cMemo = cParsedCols ? cParsedCols.memo : String(cRowVals[5] || "").trim();
+          var cManager = cParsedCols ? cParsedCols.manager : String(cRowVals[6] || "").trim();
+          var cManager1 = cParsedCols ? cParsedCols.manager1 : cManager;
+          var cManager2 = cParsedCols ? cParsedCols.manager2 : "";
+          var cStatus = cParsedCols ? (cParsedCols.status || "완료") : String(cRowVals[7] || "완료").trim();
+          var cCalId = cParsedCols ? cParsedCols.calId : String(cRowVals[8] || "").trim();
 
           var cParsed = null;
           try { cParsed = parseScheduleDateRange(cDateVal); } catch(eP) {}

@@ -9093,6 +9093,143 @@ assertTest('Step 116-6: index.html 내 exec?v=108 이상 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent116) && parseInt(indexHtmlContent116.match(/exec\?v=(\d+)/)[1], 10) >= 108
 );
 
+// ========================================================
+// 👥 Step 117: '담당자 1' / '담당자 2' 2열 양식 개편 및 복합 데이터 분리 보존 마이그레이션 QA
+// ========================================================
+console.log('\n👥 [Step 117]: \'담당자 1\' / \'담당자 2\' 2열 양식 개편 및 복합 데이터 분리 보존 마이그레이션 QA ---');
+
+// 117-1: 핵심 마이그레이션 함수 정의 및 상단 메뉴 등록 검증
+const code117 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf-8');
+assertTest('Step 117-1: migrateSingleSheetToTwoManagers, migrateSheetsToTwoManagers, 메뉴 함수 정의 검증',
+  typeof sandbox.migrateSingleSheetToTwoManagers === 'function' &&
+  typeof sandbox.migrateSheetsToTwoManagers === 'function' &&
+  typeof sandbox.migrateSheetsToTwoManagersMenu === 'function' &&
+  code117.includes('migrateSheetsToTwoManagersMenu')
+);
+
+// 117-2: 10열 양식 시트 마이그레이션 시 8열(H열) 삽입 및 11열 확장, 헤더 표준화 검증
+let mockValues117 = [
+  ['현장명', '날짜', '공종', '협력업체', '공유', '비고', '담당자', '진행상태', '캘린더ID', '최종수정일시'],
+  ['신대방우성', '2026-10-25', '철거', '우성에이전시', true, '', '전예린, 한송0', '예정', 'cal_1', 1000],
+  ['압구정현대', '2026-10-26', '설비', '설비팀', true, '', '전예린, 인경호', '진행 중', 'cal_2', 2000],
+  ['반포자이', '2026-10-27', '타일', '타일팀', true, '', '조항만', '완료', 'cal_3', 3000]
+];
+let hiddenCols117 = [];
+let insertedColIdx117 = -1;
+
+const mockSheet117 = {
+  getName: () => '현장데이터',
+  getLastRow: () => mockValues117.length,
+  getLastColumn: () => mockValues117[0].length,
+  insertColumnAfter: (afterCol) => {
+    insertedColIdx117 = afterCol + 1;
+    for (let r = 0; r < mockValues117.length; r++) {
+      mockValues117[r].splice(afterCol, 0, (r === 0 ? '담당자 2' : ''));
+    }
+  },
+  getRange: (r, c, nr, nc) => ({
+    getValues: () => {
+      let sub = [];
+      for (let i = 0; i < (nr || 1); i++) {
+        let rowIdx = r - 1 + i;
+        if (rowIdx < mockValues117.length) {
+          sub.push(mockValues117[rowIdx].slice(c - 1, c - 1 + (nc || 1)));
+        }
+      }
+      return sub;
+    },
+    setValues: (newVals) => {
+      for (let i = 0; i < newVals.length; i++) {
+        let rowIdx = r - 1 + i;
+        for (let j = 0; j < newVals[i].length; j++) {
+          mockValues117[rowIdx][c - 1 + j] = newVals[i][j];
+        }
+      }
+      return {
+        setBackground: () => ({ setFontColor: () => ({ setFontWeight: () => ({ setHorizontalAlignment: () => ({ setVerticalAlignment: () => ({}) }) }) }) })
+      };
+    },
+    setValue: (val) => {
+      if (mockValues117[r - 1]) mockValues117[r - 1][c - 1] = val;
+    },
+    setBackground: () => ({ setFontColor: () => ({ setFontWeight: () => ({ setHorizontalAlignment: () => ({ setVerticalAlignment: () => ({}) }) }) }) }),
+    setDataValidation: () => ({})
+  }),
+  setColumnWidth: () => ({}),
+  getColumnWidth: () => 100,
+  hideColumns: (col, num) => {
+    hiddenCols117.push({ col, num });
+  },
+  showColumns: () => ({}),
+  getParent: () => ({
+    getSheetByName: (n) => ({
+      getLastRow: () => 6,
+      getRange: () => ({
+        getValues: () => [['조항만'], ['송지은'], ['전예린'], ['한송이'], ['인경호']]
+      })
+    })
+  })
+};
+
+const migResult117 = sandbox.migrateSingleSheetToTwoManagers(mockSheet117);
+
+assertTest('Step 117-2: 8열에 "담당자 2" 열 자동 삽입 및 마이그레이션 성공 반환 검증',
+  migResult117.migrated === true &&
+  migResult117.inserted === true &&
+  insertedColIdx117 === 8 &&
+  mockValues117[0].length === 11
+);
+
+assertTest('Step 117-3: 헤더 1행이 11개 표준 열("담당자 1", "담당자 2", "진행상태")로 갱신 검증',
+  mockValues117[0][6] === '담당자 1' &&
+  mockValues117[0][7] === '담당자 2' &&
+  mockValues117[0][8] === '진행상태' &&
+  mockValues117[0][9] === '캘린더ID' &&
+  mockValues117[0][10] === '최종수정일시'
+);
+
+assertTest('Step 117-4: 복합 2인 데이터 분리 및 오타 보정("전예린, 한송0" -> "전예린" & "한송이") 검증',
+  mockValues117[1][6] === '전예린' &&
+  mockValues117[1][7] === '한송이' &&
+  mockValues117[1][8] === '예정'
+);
+
+assertTest('Step 117-5: 복합 2인 데이터 분리("전예린, 인경호" -> "전예린" & "인경호") 검증',
+  mockValues117[2][6] === '전예린' &&
+  mockValues117[2][7] === '인경호' &&
+  mockValues117[2][8] === '진행 중'
+);
+
+assertTest('Step 117-6: 단일 담당자("조항만")는 담당자 1에만 들어가고 담당자 2는 빈 문자열 유지 검증',
+  mockValues117[3][6] === '조항만' &&
+  mockValues117[3][7] === '' &&
+  mockValues117[3][8] === '완료'
+);
+
+assertTest('Step 117-7: 10~11열(J, K열: 캘린더ID, 최종수정일시) 2개 열 숨김 처리 검증',
+  hiddenCols117.some(h => h.col === 10 && h.num === 2)
+);
+
+// 117-8: 이미 11열 체제인 시트는 열 추가 없이(inserted===false) 안전 재정비 검증
+const migResultAgain117 = sandbox.migrateSingleSheetToTwoManagers(mockSheet117);
+assertTest('Step 117-8: 이미 11열 양식인 시트는 중복 열 삽입 없이(inserted===false) 데이터 보존 검증',
+  migResultAgain117.migrated === true &&
+  migResultAgain117.inserted === false &&
+  mockValues117[0].length === 11
+);
+
+// 117-9: doGet action=migrateToTwoManagers 지원 검증
+assertTest('Step 117-9: doGet 내 action=migrateToTwoManagers 엔드포인트 지원 검증',
+  code117.includes('action === "migrateToTwoManagers"') &&
+  code117.includes('migrateSheetsToTwoManagers(ss)')
+);
+
+// 117-10: index.html 내 exec?v=109 이상 캐시 버스팅 파라미터 갱신 검증
+const indexHtmlContent117 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+assertTest('Step 117-10: index.html 내 exec?v=109 이상 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent117) && parseInt(indexHtmlContent117.match(/exec\?v=(\d+)/)[1], 10) >= 109
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
