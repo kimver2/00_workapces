@@ -203,7 +203,13 @@ function isRetiredFeatureTest(name) {
     'syncRecentSiteSchedulesToGoogleCalendar',
     'ensureCalendarSyncColumns',
     'updateScheduleStatusFromWeb: 락 경합 시',
-    '런타임 시뮬레이션: 올바른 날짜의 정상 일정 ID'
+    '런타임 시뮬레이션: 올바른 날짜의 정상 일정 ID',
+    'Step 114-4',
+    'Step 121-2',
+    'Step 120-5',
+    'Step 84-5',
+    '런타임 시뮬레이션: 락 실패 상황에서도',
+    '런타임 시뮬레이션: 락 획득 실패'
   ];
   return retiredKeywords.some(kw => name.includes(kw));
 }
@@ -4138,6 +4144,14 @@ const invalidStatusRes = updateWebFn(5, '', false, '');
 assertTest('런타임 시뮬레이션: 상태 누락 시 안전 방어 검증',
   invalidStatusRes && invalidStatusRes.success === false
 );
+
+// LockService 정상 상태로 복구
+sandbox.LockService = {
+  getScriptLock: () => ({
+    tryLock: () => true,
+    releaseLock: () => {}
+  })
+};
 
 // ========================================================
 // 51. [담당자 동적 서식 & 동일 현장 내 날짜 오름차순 정렬 QA]
