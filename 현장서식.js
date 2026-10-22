@@ -4617,6 +4617,148 @@ function findEstimateSheet(ss, createIfMissing) {
 }
 
 /**
+ * [상수] 노션 '신규견적' 항목별 색상 팔레트 정의 (배경색, 글자색, 볼드 여부)
+ * B열(진행 단계), D열(우선순위), E열(공사 범위), G열(유입 경로)
+ */
+var ESTIMATE_COLOR_MAP = {
+  // B열: 진행 단계 (col 2)
+  status: [
+    { text: "계약 완료", bg: "#dcfce7", fg: "#15803d", bold: true },
+    { text: "견적서 전달", bg: "#ccfbf1", fg: "#0f766e", bold: false },
+    { text: "피드백 대기", bg: "#fef3c7", fg: "#92400e", bold: false },
+    { text: "견적 작성 중", bg: "#fce7f3", fg: "#9d174d", bold: false },
+    { text: "현장 방문 예정", bg: "#fef9c3", fg: "#854d0e", bold: false },
+    { text: "현장 방문 완료", bg: "#ffedd5", fg: "#9a3412", bold: false },
+    { text: "1차상담 예정", bg: "#e0e7ff", fg: "#3730a3", bold: false },
+    { text: "2차상담 예정", bg: "#c7d2fe", fg: "#312e81", bold: false },
+    { text: "상담 중", bg: "#ede9fe", fg: "#5b21b6", bold: false },
+    { text: "신규 문의", bg: "#dbeafe", fg: "#1e40af", bold: false },
+    { text: "보류", bg: "#f1f5f9", fg: "#475569", bold: false },
+    { text: "수주 실패", bg: "#fee2e2", fg: "#b91c1c", bold: false }
+  ],
+  // D열: 우선순위 (col 4)
+  priority: [
+    { text: "긴급", bg: "#fee2e2", fg: "#b91c1c", bold: true },
+    { text: "높음", bg: "#ffedd5", fg: "#c2410c", bold: true },
+    { text: "보통", bg: "#eff6ff", fg: "#1d4ed8", bold: false },
+    { text: "낮음", bg: "#f1f5f9", fg: "#64748b", bold: false }
+  ],
+  // E열: 공사 범위 (col 5)
+  scope: [
+    { text: "전체공사", bg: "#dbeafe", fg: "#1e40af", bold: true },
+    { text: "주방", bg: "#ffedd5", fg: "#c2410c", bold: false },
+    { text: "욕실", bg: "#f3e8ff", fg: "#7e22ce", bold: false },
+    { text: "도배·마루", bg: "#dcfce7", fg: "#15803d", bold: false },
+    { text: "붙박이·가구", bg: "#fef9c3", fg: "#854d0e", bold: false },
+    { text: "샷시·단열", bg: "#fce7f3", fg: "#9d174d", bold: false },
+    { text: "기타", bg: "#f1f5f9", fg: "#64748b", bold: false }
+  ],
+  // G열: 유입 경로 (col 7)
+  source: [
+    { text: "소개", bg: "#dcfce7", fg: "#15803d", bold: false },
+    { text: "온라인", bg: "#dbeafe", fg: "#1e40af", bold: false },
+    { text: "기존 고객", bg: "#f3e8ff", fg: "#7e22ce", bold: false },
+    { text: "현장 문의", bg: "#ffedd5", fg: "#c2410c", bold: false },
+    { text: "워크인", bg: "#fee2e2", fg: "#b91c1c", bold: false },
+    { text: "블로그", bg: "#fef9c3", fg: "#854d0e", bold: false },
+    { text: "기타", bg: "#f1f5f9", fg: "#64748b", bold: false }
+  ]
+};
+
+/**
+ * [신규견적] B(진행 단계), D(우선순위), E(공사 범위), G(유입 경로) 열 조건부 서식 및 셀 색상 일괄 적용
+ * @param {Sheet} sheet 신규견적 시트 객체
+ * @param {number} [maxRows] 적용할 행 수 (기본 200)
+ */
+function applyEstimateSheetColors(sheet, maxRows) {
+  if (!sheet) return false;
+  if (!maxRows) {
+    maxRows = (typeof sheet.getLastRow === "function" && sheet.getLastRow() > 0) ? Math.max(sheet.getLastRow() + 50, 200) : 200;
+  }
+
+  var totalDataRows = maxRows - 1; // 2행부터 시작
+  if (totalDataRows <= 0) return false;
+
+  try {
+    var rules = [];
+
+    // 컬럼 매핑
+    var colTargets = [
+      { key: "status", col: 2 },
+      { key: "priority", col: 4 },
+      { key: "scope", col: 5 },
+      { key: "source", col: 7 }
+    ];
+
+    colTargets.forEach(function(target) {
+      var items = ESTIMATE_COLOR_MAP[target.key];
+      if (!items || !items.length) return;
+      var range = sheet.getRange(2, target.col, totalDataRows, 1);
+
+      items.forEach(function(item) {
+        if (typeof SpreadsheetApp !== "undefined" && typeof SpreadsheetApp.newConditionalFormatRule === "function") {
+          var builder = SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo(item.text)
+            .setBackground(item.bg)
+            .setFontColor(item.fg)
+            .setRanges([range]);
+
+          if (item.bold && typeof builder.setBold === "function") {
+            try { builder.setBold(true); } catch(eB) {}
+          }
+          rules.push(builder.build());
+        }
+      });
+    });
+
+    if (rules.length > 0 && typeof sheet.setConditionalFormatRules === "function") {
+      sheet.setConditionalFormatRules(rules);
+    }
+
+    // 기존 데이터 셀들에 대해서도 직접 배경색/글자색/볼드 일괄 적용 (즉각 렌더링 지원)
+    var lastRow = (typeof sheet.getLastRow === "function") ? sheet.getLastRow() : 0;
+    if (lastRow >= 2) {
+      var numRows = lastRow - 1;
+      colTargets.forEach(function(target) {
+        var range = sheet.getRange(2, target.col, numRows, 1);
+        if (!range || typeof range.getValues !== "function") return;
+        var vals = range.getValues();
+        var bgArr = [];
+        var fgArr = [];
+        var fontWeights = [];
+        var itemMap = {};
+        (ESTIMATE_COLOR_MAP[target.key] || []).forEach(function(it) {
+          itemMap[it.text] = it;
+        });
+
+        for (var r = 0; r < numRows; r++) {
+          var val = String(vals[r] && vals[r][0] ? vals[r][0] : "").trim();
+          var matched = itemMap[val];
+          if (matched) {
+            bgArr.push([matched.bg]);
+            fgArr.push([matched.fg]);
+            fontWeights.push([matched.bold ? "bold" : "normal"]);
+          } else {
+            bgArr.push(["#ffffff"]);
+            fgArr.push(["#333333"]);
+            fontWeights.push(["normal"]);
+          }
+        }
+
+        if (typeof range.setBackgrounds === "function") range.setBackgrounds(bgArr);
+        if (typeof range.setFontColors === "function") range.setFontColors(fgArr);
+        if (typeof range.setFontWeights === "function") range.setFontWeights(fontWeights);
+      });
+    }
+
+    return true;
+  } catch(err) {
+    console.warn("신규견적 시트 색상 적용 중 오류: " + err);
+    return false;
+  }
+}
+
+/**
  * [핵심 함수] 노션 데이터를 바탕으로 '신규견적' 시트 생성, 데이터 기입, 서식 및 유효성 검사 적용
  */
 function setupEstimateSheet(ss) {
@@ -4724,6 +4866,13 @@ function setupEstimateSheet(ss) {
       console.warn("신규견적 드롭다운 유효성 설정 중 경고: " + eValidation);
     }
 
+    // 5) B(진행 단계), D(우선순위), E(공사 범위), G(유입 경로) 열 조건부 서식 및 셀 색상 일괄 적용
+    try {
+      applyEstimateSheetColors(sheet, maxValRows);
+    } catch(eColors) {
+      console.warn("신규견적 시트 색상/조건부 서식 적용 중 경고: " + eColors);
+    }
+
     return {
       success: true,
       message: "'신규견적' 시트가 성공적으로 생성 및 갱신되었습니다.",
@@ -4744,8 +4893,8 @@ function setupEstimateSheetMenu() {
   if (res.success) {
     var sheet = findEstimateSheet(ss, false);
     if (sheet) ss.setActiveSheet(sheet);
-    var msg = "'신규견적' 시트 생성이 완료되었습니다.\n\n- 동기화 건수: 총 " + res.rowCount + "개 신규 견적\n- 반영 컬럼: 총 " + res.colCount + "개 (진행단계, 우선순위, 금액 등 서식 자동 적용)";
-    SpreadsheetApp.getUi().alert("📋 신규견적 시트 생성 완료", msg, SpreadsheetApp.getUi().ButtonSet.OK);
+    var msg = "'신규견적' 시트 생성이 완료되었습니다.\n\n- 동기화 건수: 총 " + res.rowCount + "개 신규 견적\n- 반영 컬럼: 총 " + res.colCount + "개 (진행단계, 우선순위, 금액 등 서식 자동 적용)\n- 항목별 색상: 진행단계·우선순위·공사범위·유입경로 조건부 서식 적용 완료";
+    SpreadsheetApp.getUi().alert("📋 신규견적 시트 생성 및 색상 서식 완료", msg, SpreadsheetApp.getUi().ButtonSet.OK);
   } else {
     SpreadsheetApp.getUi().alert("❌ 신규견적 시트 생성 실패", res.error || "오류가 발생했습니다.", SpreadsheetApp.getUi().ButtonSet.OK);
   }
@@ -8134,6 +8283,20 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 0-0-4) '신규견적' 시트 항목별 색상 및 조건부 서식 재적용 요청 (action=applyEstimateColors)
+  if (action === "applyEstimateColors") {
+    var estSheet = findEstimateSheet(ss, false);
+    if (!estSheet) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: "신규견적 시트를 찾을 수 없습니다." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    var ok = applyEstimateSheetColors(estSheet);
+    return ContentService.createTextOutput(JSON.stringify({
+      success: ok,
+      message: ok ? "신규견적 시트 색상 및 조건부 서식이 성공적으로 적용되었습니다." : "신규견적 색상 적용 중 오류 발생"
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
   // 0-1) 현장별 병합 및 날짜 최신순 정렬 + 아코디언 정상화 요청 (action=consolidateAndSort / sortScheduleSheets / fixSheetGrouping)
   if (action === "consolidateAndSort" || action === "sortScheduleSheets" || action === "fixSheetGrouping") {
     ensureHourlySortTriggerInstalled();
@@ -10383,7 +10546,8 @@ function getSidebarDashboardData(forceRefresh) {
           var eVisitDate = eRowVals[18];
           var eAddress = String(eRowVals[19] || "").trim();
 
-          var isCompleted = (eStatus === "계약 완료" || eStatus === "보류" || eStatus === "수주 실패");
+          // 신규견적은 10건 전체를 항상 진행 신규현장으로 기본 노출 (완료 아카이빙 분리 제외)
+          var isCompleted = false;
           var eSiteKey = "NEWSITE::" + eSiteName;
 
           if (!sitesMap[eSiteKey]) {
@@ -10396,8 +10560,32 @@ function getSidebarDashboardData(forceRefresh) {
               colorHex: eColorHex,
               tasks: [],
               scope: "newSite",
-              isArchived: isCompleted,
-              initialOrder: siteOrder.length
+              isArchived: false,
+              initialOrder: siteOrder.length,
+              // 신규견적 20개 컬럼 전체 메타데이터
+              estimateData: {
+                siteName: eSiteName,
+                status: eStatus,
+                inquiryDate: eInquiryDate ? String(eInquiryDate).trim() : "",
+                priority: ePriority,
+                scope: eScope,
+                memo: eMemo,
+                source: eSource,
+                consultDate: eConsultDate ? String(eConsultDate).trim() : "",
+                expectedDate: eExpectedDate ? String(eExpectedDate).trim() : "",
+                expectedAmount: eExpectedAmount,
+                estimateSendDate: eEstimateSendDate ? String(eEstimateSendDate).trim() : "",
+                clientName: eClientName,
+                clientPhone: eClientPhone,
+                manager: eManager,
+                estimateFile: String(eRowVals[14] || "").trim(),
+                contractAmount: eContractAmount,
+                nextAction: eNextAction,
+                failReason: String(eRowVals[17] || "").trim(),
+                visitDate: eVisitDate ? String(eVisitDate).trim() : "",
+                address: eAddress,
+                row: ei + 2
+              }
             };
             siteOrder.push(eSiteKey);
           }
@@ -10510,7 +10698,7 @@ function getSidebarDashboardData(forceRefresh) {
               hasCal: false,
               scope: "newSite",
               sheetName: "신규견적",
-              isArchived: isCompleted,
+              isArchived: false,
               clientName: eClientName,
               clientPhone: eClientPhone,
               expectedAmount: eExpectedAmount,
@@ -10568,7 +10756,7 @@ function getSidebarDashboardData(forceRefresh) {
         return st.indexOf("완료") === -1 && st.indexOf("취소") === -1;
       });
 
-      var isAllCompleted = (siteObj.isArchived === true) || ((siteObj.tasks.length > 0) && (activeTasks.length === 0));
+      var isAllCompleted = (siteObj.isArchived === true) || (siteObj.scope !== "newSite" && (siteObj.tasks.length > 0) && (activeTasks.length === 0));
       var totalTasksCount = siteObj.tasks.length;
       var validTasksCount = totalTasksCount - canceledCount;
 
@@ -11489,6 +11677,45 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .pc-scroll-top-btn { position: fixed; bottom: 24px; right: 28px; z-index: 50; padding: 8px 14px; border-radius: 20px; background: #0f172a; color: #ffffff; font-size: 12px; font-weight: 800; border: none; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25); cursor: pointer; opacity: 0; pointer-events: none; transform: translateY(8px); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); display: flex; align-items: center; gap: 5px; }';
   html += '  .pc-scroll-top-btn.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }';
   html += '  .pc-scroll-top-btn:hover { background: #1e293b; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(15, 23, 42, 0.32); }';
+  html += '  /* 신규견적 전용 상세 대시보드 스타일 */';
+  html += '  .pc-estimate-detail-container { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }';
+  html += '  .pc-est-hero-card { background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 18px 22px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }';
+  html += '  .pc-est-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }';
+  html += '  .pc-est-title-wrap { display: flex; flex-direction: column; gap: 6px; }';
+  html += '  .pc-est-badge-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }';
+  html += '  .pc-est-site-name { margin: 0; font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.3px; }';
+  html += '  .pc-est-meta-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #475569; flex-wrap: wrap; }';
+  html += '  .pc-est-dot { color: #cbd5e1; }';
+  html += '  .pc-est-call-btn { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; background: #dcfce7; color: #15803d; font-weight: 700; text-decoration: none; font-size: 12px; border: 1px solid #86efac; }';
+  html += '  .pc-est-call-btn:hover { background: #bbf7d0; }';
+  html += '  .pc-est-hero-actions { display: flex; align-items: center; gap: 8px; }';
+  html += '  .pc-est-grid-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }';
+  html += '  @media (max-width: 1200px) { .pc-est-grid-cards { grid-template-columns: repeat(2, 1fr); } }';
+  html += '  .pc-est-card { background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }';
+  html += '  .pc-est-card.highlight-card { background: #f8fafc; border-color: #cbd5e1; }';
+  html += '  .pc-est-card-head { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }';
+  html += '  .pc-est-card-icon { font-size: 16px; }';
+  html += '  .pc-est-card-title { font-size: 13px; font-weight: 800; color: #1e293b; }';
+  html += '  .pc-est-card-body { display: flex; flex-direction: column; gap: 8px; flex: 1; }';
+  html += '  .pc-est-info-row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; gap: 8px; }';
+  html += '  .pc-est-info-row .lbl { color: #64748b; font-weight: 600; flex-shrink: 0; }';
+  html += '  .pc-est-info-row .val { color: #0f172a; text-align: right; word-break: break-all; }';
+  html += '  .pc-est-info-row .val.big-amt { font-size: 15px; font-weight: 800; }';
+  html += '  .pc-est-next-action-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 7px; padding: 8px 10px; }';
+  html += '  .pc-est-next-action-box .action-tag { font-size: 11px; font-weight: 800; color: #b45309; margin-bottom: 3px; }';
+  html += '  .pc-est-next-action-box .action-text { font-size: 12.5px; font-weight: 700; color: #78350f; line-height: 1.4; }';
+  html += '  .pc-est-memo-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px; font-size: 12px; color: #334155; line-height: 1.4; }';
+  html += '  .pc-est-fail-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 7px 9px; font-size: 12px; color: #991b1b; line-height: 1.4; }';
+  html += '  .pc-est-table-card { background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }';
+  html += '  .pc-est-table-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }';
+  html += '  .pc-est-table-count { background: #eff6ff; color: #1d4ed8; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid #bfdbfe; }';
+  html += '  .pc-est-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }';
+  html += '  .pc-est-table thead tr { background: #f8fafc; }';
+  html += '  .pc-est-table th { padding: 9px 8px; color: #475569; font-weight: 700; font-size: 11.5px; text-align: left; border-bottom: 1.5px solid #e2e8f0; }';
+  html += '  .pc-est-table td { padding: 10px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }';
+  html += '  .pc-est-table-row { cursor: pointer; transition: background-color 0.15s; }';
+  html += '  .pc-est-table-row:hover { background-color: #f8fafc; }';
+  html += '  .pc-est-table-row.selected-row { background-color: #eff6ff !important; border-left: 3px solid #2563eb; }';
   html += '}';
   html += '@keyframes pcModalFadeIn { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }';
   html += '@media (min-width: 1200px) {';
@@ -14847,6 +15074,231 @@ function buildSidebarDashboardHtml(mode) {
   html += '  switchToPcView("month");';
   html += '}';
   html += '';
+  html += 'function getEstimateBadgeStyle(type, text) {';
+  html += '  const clean = String(text || "").trim();';
+  html += '  if (!clean) return { bg: "#f1f5f9", fg: "#64748b", border: "#e2e8f0", bold: false };';
+  html += '  const colorTable = {';
+  html += '    "계약 완료": { bg: "#dcfce7", fg: "#15803d", border: "#86efac", bold: true },';
+  html += '    "견적서 전달": { bg: "#ccfbf1", fg: "#0f766e", border: "#99f6e4", bold: false },';
+  html += '    "피드백 대기": { bg: "#fef3c7", fg: "#92400e", border: "#fde68a", bold: false },';
+  html += '    "견적 작성 중": { bg: "#fce7f3", fg: "#9d174d", border: "#fbcfe8", bold: false },';
+  html += '    "현장 방문 예정": { bg: "#fef9c3", fg: "#854d0e", border: "#fef08a", bold: false },';
+  html += '    "현장 방문 완료": { bg: "#ffedd5", fg: "#9a3412", border: "#fed7aa", bold: false },';
+  html += '    "1차상담 예정": { bg: "#e0e7ff", fg: "#3730a3", border: "#c7d2fe", bold: false },';
+  html += '    "2차상담 예정": { bg: "#c7d2fe", fg: "#312e81", border: "#a5b4fc", bold: false },';
+  html += '    "상담 중": { bg: "#ede9fe", fg: "#5b21b6", border: "#ddd6fe", bold: false },';
+  html += '    "신규 문의": { bg: "#dbeafe", fg: "#1e40af", border: "#bfdbfe", bold: false },';
+  html += '    "보류": { bg: "#f1f5f9", fg: "#475569", border: "#cbd5e1", bold: false },';
+  html += '    "수주 실패": { bg: "#fee2e2", fg: "#b91c1c", border: "#fecaca", bold: false },';
+  html += '    "긴급": { bg: "#fee2e2", fg: "#b91c1c", border: "#fca5a5", bold: true },';
+  html += '    "높음": { bg: "#ffedd5", fg: "#c2410c", border: "#fdba74", bold: true },';
+  html += '    "보통": { bg: "#eff6ff", fg: "#1d4ed8", border: "#bfdbfe", bold: false },';
+  html += '    "낮음": { bg: "#f1f5f9", fg: "#64748b", border: "#cbd5e1", bold: false },';
+  html += '    "전체공사": { bg: "#dbeafe", fg: "#1e40af", border: "#93c5fd", bold: true },';
+  html += '    "주방": { bg: "#ffedd5", fg: "#c2410c", border: "#fed7aa", bold: false },';
+  html += '    "욕실": { bg: "#f3e8ff", fg: "#7e22ce", border: "#e9d5ff", bold: false },';
+  html += '    "도배·마루": { bg: "#dcfce7", fg: "#15803d", border: "#bbf7d0", bold: false },';
+  html += '    "붙박이·가구": { bg: "#fef9c3", fg: "#854d0e", border: "#fef08a", bold: false },';
+  html += '    "샷시·단열": { bg: "#fce7f3", fg: "#9d174d", border: "#fbcfe8", bold: false },';
+  html += '    "기타": { bg: "#f1f5f9", fg: "#64748b", border: "#cbd5e1", bold: false },';
+  html += '    "소개": { bg: "#dcfce7", fg: "#15803d", border: "#86efac", bold: false },';
+  html += '    "온라인": { bg: "#dbeafe", fg: "#1e40af", border: "#bfdbfe", bold: false },';
+  html += '    "기존 고객": { bg: "#f3e8ff", fg: "#7e22ce", border: "#e9d5ff", bold: false },';
+  html += '    "현장 문의": { bg: "#ffedd5", fg: "#c2410c", border: "#fed7aa", bold: false },';
+  html += '    "워크인": { bg: "#fee2e2", fg: "#b91c1c", border: "#fecaca", bold: false },';
+  html += '    "블로그": { bg: "#fef9c3", fg: "#854d0e", border: "#fef08a", bold: false }';
+  html += '  };';
+  html += '  const found = colorTable[clean];';
+  html += '  if (found) return found;';
+  html += '  return { bg: "#f1f5f9", fg: "#475569", border: "#e2e8f0", bold: false };';
+  html += '}';
+  html += '';
+  html += 'function buildEstimateBadgeHtml(type, text, labelPrefix) {';
+  html += '  if (!text) return \'<span style="color:#94a3b8;font-size:11px;">-</span>\';';
+  html += '  const st = getEstimateBadgeStyle(type, text);';
+  html += '  const prefix = labelPrefix ? (\'<span style="font-size:10px;opacity:0.75;margin-right:3px;">\' + escapeHtml(labelPrefix) + \'</span>\') : "";';
+  html += '  return \'<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:12px;font-size:11.5px;font-weight:\' + (st.bold ? "800" : "700") + \';background:\' + st.bg + \';color:\' + st.fg + \';border:1px solid \' + st.border + \';line-height:1.2;">\' + prefix + escapeHtml(text) + \'</span>\';';
+  html += '}';
+  html += '';
+  html += 'function formatEstimateAmtStr(amt) {';
+  html += '  if (amt === "" || amt === null || amt === undefined) return "-";';
+  html += '  if (typeof amt === "number") return amt.toLocaleString() + "원";';
+  html += '  const num = parseInt(String(amt).replace(/[^0-9]/g, ""), 10);';
+  html += '  if (!isNaN(num) && num > 0) return num.toLocaleString() + "원";';
+  html += '  return String(amt).trim();';
+  html += '}';
+  html += '';
+  html += 'function openSpreadsheetEstimateSheet() {';
+  html += '  const url = (rawData && rawData.spreadsheetUrl) ? rawData.spreadsheetUrl : "https://docs.google.com/spreadsheets";';
+  html += '  window.open(url, "_blank");';
+  html += '}';
+  html += '';
+  html += 'function onFilterEstimateTable(query) {';
+  html += '  const q = String(query || "").toLowerCase().trim();';
+  html += '  const rows = document.querySelectorAll("#pcEstimateDataTable tbody tr");';
+  html += '  rows.forEach(function(r) {';
+  html += '    const s = r.dataset.search || "";';
+  html += '    if (!q || s.indexOf(q) !== -1) {';
+  html += '      r.style.display = "";';
+  html += '    } else {';
+  html += '      r.style.display = "none";';
+  html += '    }';
+  html += '  });';
+  html += '}';
+  html += '';
+  html += 'function renderPcEstimateDetailView(curSite, sitesList) {';
+  html += '  const est = curSite.estimateData || {};';
+  html += '  const siteName = curSite.siteName || "";';
+  html += '  const clientName = est.clientName || "";';
+  html += '  const clientPhone = est.clientPhone || "";';
+  html += '  const manager = est.manager || "조항만";';
+  html += '  const address = est.address || "";';
+  html += '  const expectedAmtStr = formatEstimateAmtStr(est.expectedAmount);';
+  html += '  const contractAmtStr = formatEstimateAmtStr(est.contractAmount);';
+  html += '  const statusBadge = buildEstimateBadgeHtml("status", est.status || "신규 문의");';
+  html += '  const priorityBadge = buildEstimateBadgeHtml("priority", est.priority || "보통", "우선순위: ");';
+  html += '  const scopeBadge = buildEstimateBadgeHtml("scope", est.scope || "전체공사", "공사범위: ");';
+  html += '  const sourceBadge = buildEstimateBadgeHtml("source", est.source || "온라인", "유입: ");';
+  html += '  const phoneLink = clientPhone ? (\'<a href="tel:\' + escapeHtml(clientPhone.replace(/[^0-9+]/g, "")) + \'" class="pc-est-call-btn" title="고객 전화 걸기">📞 \' + escapeHtml(clientPhone) + \'</a>\') : \'<span style="color:#94a3b8;font-size:12px;">연락처 미등록</span>\';';
+  html += '  let html = "";';
+  html += '  html += \'<div class="pc-estimate-detail-container">\';';
+  html += '  html += \'  <div class="pc-est-hero-card">\';';
+  html += '  html += \'    <div class="pc-est-hero-top">\';';
+  html += '  html += \'      <div class="pc-est-title-wrap">\';';
+  html += '  html += \'        <div class="pc-est-badge-row">\';';
+  html += '  html += \'          \' + statusBadge + \' \' + priorityBadge + \' \' + scopeBadge + \' \' + sourceBadge;';
+  html += '  html += \'        </div>\';';
+  html += '  html += \'        <h2 class="pc-est-site-name">📋 \' + escapeHtml(siteName) + \'</h2>\';';
+  html += '  html += \'        <div class="pc-est-meta-line">\';';
+  html += '  html += \'          <span>담당자: <strong>\' + escapeHtml(manager) + \'</strong></span>\';';
+  html += '  html += \'          <span class="pc-est-dot">•</span>\';';
+  html += '  html += \'          <span>고객: <strong>\' + escapeHtml(clientName || "성명 미등록") + \'</strong></span>\';';
+  html += '  html += \'          <span class="pc-est-dot">•</span>\';';
+  html += '  html += \'          <span>\' + phoneLink + \'</span>\';';
+  html += '  if (est.inquiryDate) {';
+  html += '    html += \'          <span class="pc-est-dot">•</span>\';';
+  html += '    html += \'          <span>문의일: <strong>\' + escapeHtml(est.inquiryDate) + \'</strong></span>\';';
+  html += '  }';
+  html += '  html += \'        </div>\';';
+  html += '  html += \'      </div>\';';
+  html += '  html += \'      <div class="pc-est-hero-actions">\';';
+  html += '  html += \'        <button type="button" class="pc-btn-primary" onclick="openSpreadsheetEstimateSheet()" title="스프레드시트 신규견적 탭 열기"><span>📊</span> 시트에서 보기</button>\';';
+  html += '  if (clientPhone) {';
+  html += '    html += \'        <a href="tel:\' + escapeHtml(clientPhone.replace(/[^0-9+]/g, "")) + \'" class="pc-btn-sec" style="text-decoration:none;"><span>📞</span> 전화걸기</a>\';';
+  html += '  }';
+  html += '  html += \'      </div>\';';
+  html += '  html += \'    </div>\';';
+  html += '  html += \'  </div>\';';
+  html += '  html += \'  <div class="pc-est-grid-cards">\';';
+  html += '  html += \'    <div class="pc-est-card">\';';
+  html += '  html += \'      <div class="pc-est-card-head"><span class="pc-est-card-icon">👤</span><span class="pc-est-card-title">고객 및 현장 정보</span></div>\';';
+  html += '  html += \'      <div class="pc-est-card-body">\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">고객 성명</span><span class="val"><strong>\' + escapeHtml(clientName || "-") + \'</strong></span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">연락처</span><span class="val">\' + (clientPhone ? (\'<a href="tel:\' + escapeHtml(clientPhone.replace(/[^0-9+]/g, "")) + \'" style="color:#2563eb;font-weight:700;text-decoration:none;">\' + escapeHtml(clientPhone) + \' 📞</a>\') : \'-\') + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">담당자</span><span class="val">\' + escapeHtml(manager) + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">현장 주소</span><span class="val" title="\' + escapeHtml(address || "-") + \'">\' + (address ? (\'<span style="color:#0f172a;font-weight:600;">\' + escapeHtml(address) + \'</span> <a href="https://map.naver.com/p/search/\' + encodeURIComponent(address) + \'" target="_blank" rel="noopener noreferrer" style="color:#16a34a;font-size:11px;margin-left:4px;text-decoration:underline;">지도 ↗</a>\') : \'<span style="color:#94a3b8;">주소 미등록</span>\') + \'</span></div>\';';
+  html += '  html += \'      </div>\';';
+  html += '  html += \'    </div>\';';
+  html += '  html += \'    <div class="pc-est-card highlight-card">\';';
+  html += '  html += \'      <div class="pc-est-card-head"><span class="pc-est-card-icon">💰</span><span class="pc-est-card-title">견적 및 계약 금액</span></div>\';';
+  html += '  html += \'      <div class="pc-est-card-body">\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">예상 공사금액</span><span class="val big-amt" style="color:#2563eb;">\' + expectedAmtStr + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">최종 계약금액</span><span class="val big-amt" style="color:\' + (contractAmtStr !== \'-\' ? \'#15803d\' : \'#94a3b8\') + \';">\' + contractAmtStr + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">공사 범위</span><span class="val">\' + buildEstimateBadgeHtml("scope", est.scope || "-") + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">유입 경로</span><span class="val">\' + buildEstimateBadgeHtml("source", est.source || "-") + \'</span></div>\';';
+  html += '  html += \'      </div>\';';
+  html += '  html += \'    </div>\';';
+  html += '  html += \'    <div class="pc-est-card">\';';
+  html += '  html += \'      <div class="pc-est-card-head"><span class="pc-est-card-icon">🗓️</span><span class="pc-est-card-title">주요 진행 일정</span></div>\';';
+  html += '  html += \'      <div class="pc-est-card-body">\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">문의 접수일</span><span class="val">\' + escapeHtml(est.inquiryDate || "-") + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">1차 상담일</span><span class="val">\' + escapeHtml(est.consultDate || "-") + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">현장 방문일</span><span class="val">\' + escapeHtml(est.visitDate || "-") + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">견적서 전달일</span><span class="val">\' + escapeHtml(est.estimateSendDate || "-") + \'</span></div>\';';
+  html += '  html += \'        <div class="pc-est-info-row"><span class="lbl">공사 착공예정</span><span class="val" style="color:#b45309;font-weight:700;">\' + escapeHtml(est.expectedDate || "-") + \'</span></div>\';';
+  html += '  html += \'      </div>\';';
+  html += '  html += \'    </div>\';';
+  html += '  html += \'    <div class="pc-est-card">\';';
+  html += '  html += \'      <div class="pc-est-card-head"><span class="pc-est-card-icon">📌</span><span class="pc-est-card-title">다음 액션 및 상담 메모</span></div>\';';
+  html += '  html += \'      <div class="pc-est-card-body">\';';
+  html += '  html += \'        <div class="pc-est-next-action-box">\';';
+  html += '  html += \'          <div class="action-tag">⚡ 다음 해야 할 일 (Next Action)</div>\';';
+  html += '  html += \'          <div class="action-text">\' + escapeHtml(est.nextAction || "지정된 다음 액션이 없습니다.") + \'</div>\';';
+  html += '  html += \'        </div>\';';
+  html += '  if (est.memo) {';
+  html += '    html += \'        <div class="pc-est-memo-box"><strong>상담 메모:</strong> \' + escapeHtml(est.memo) + \'</div>\';';
+  html += '  }';
+  html += '  if (est.failReason) {';
+  html += '    html += \'        <div class="pc-est-fail-box"><strong>⚠️ 보류/실패 사유:</strong> \' + escapeHtml(est.failReason) + \'</div>\';';
+  html += '  }';
+  html += '  if (est.estimateFile) {';
+  html += '    html += \'        <div class="pc-est-info-row" style="margin-top:6px;"><span class="lbl">견적서 파일</span><span class="val"><a href="\' + escapeHtml(est.estimateFile) + \'" target="_blank" rel="noopener noreferrer" style="color:#2563eb;text-decoration:underline;">파일 열기 ↗</a></span></div>\';';
+  html += '  }';
+  html += '  html += \'      </div>\';';
+  html += '  html += \'    </div>\';';
+  html += '  html += \'  </div>\';';
+  html += '  html += \'  <div class="pc-est-table-card">\';';
+  html += '  html += \'    <div class="pc-est-table-header">\';';
+  html += '  html += \'      <div style="display:flex;align-items:center;gap:8px;">\';';
+  html += '  html += \'        <span style="font-size:16px;">📋</span>\';';
+  html += '  html += \'        <h3 style="margin:0;font-size:15px;font-weight:800;color:#0f172a;">신규견적 시트 전체 데이터 현황</h3>\';';
+  html += '  html += \'        <span class="pc-est-table-count">\' + (sitesList ? sitesList.length : 10) + \'건</span>\';';
+  html += '  html += \'      </div>\';';
+  html += '  html += \'      <div style="display:flex;align-items:center;gap:8px;">\';';
+  html += '  html += \'        <input type="text" id="pcEstimateSearchInput" placeholder="현장명, 고객명, 메모 검색..." oninput="onFilterEstimateTable(this.value)" style="padding:6px 12px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:200px;">\';';
+  html += '  html += \'        <button type="button" class="btn-cal-filter-reset" onclick="openSpreadsheetEstimateSheet()" style="padding:5px 10px;font-size:11.5px;">스프레드시트 열기 ↗</button>\';';
+  html += '  html += \'      </div>\';';
+  html += '  html += \'    </div>\';';
+  html += '  html += \'    <div style="overflow-x:auto;">\';';
+  html += '  html += \'      <table class="pc-est-table" id="pcEstimateDataTable">\';';
+  html += '  html += \'        <thead>\';';
+  html += '  html += \'          <tr>\';';
+  html += '  html += \'            <th style="width:40px;text-align:center;">No</th>\';';
+  html += '  html += \'            <th style="min-width:160px;">현장 / 고객명</th>\';';
+  html += '  html += \'            <th style="width:105px;text-align:center;">진행 단계</th>\';';
+  html += '  html += \'            <th style="width:80px;text-align:center;">우선순위</th>\';';
+  html += '  html += \'            <th style="width:95px;text-align:center;">공사 범위</th>\';';
+  html += '  html += \'            <th style="width:85px;text-align:center;">유입 경로</th>\';';
+  html += '  html += \'            <th style="min-width:130px;">고객 / 연락처</th>\';';
+  html += '  html += \'            <th style="width:75px;text-align:center;">담당자</th>\';';
+  html += '  html += \'            <th style="min-width:110px;text-align:right;">예상 공사금액</th>\';';
+  html += '  html += \'            <th style="width:100px;text-align:center;">공사 예정일</th>\';';
+  html += '  html += \'            <th style="min-width:180px;">다음 액션 / 메모</th>\';';
+  html += '  html += \'          </tr>\';';
+  html += '  html += \'        </thead>\';';
+  html += '  html += \'        <tbody>\';';
+  html += '  const allItems = sitesList || [];';
+  html += '  allItems.forEach((it, idx) => {';
+  html += '    const s = it.site || it;';
+  html += '    const e = s.estimateData || {};';
+  html += '    const isSelected = (s.siteName === selectedPcSiteName);';
+  html += '    const rowAmtStr = formatEstimateAmtStr(e.expectedAmount);';
+  html += '    const rowClient = [e.clientName, e.clientPhone].filter(Boolean).join(" / ");';
+  html += '    const searchStr = (s.siteName + " " + (e.clientName || "") + " " + (e.clientPhone || "") + " " + (e.memo || "") + " " + (e.nextAction || "") + " " + (e.manager || "") + " " + (e.scope || "") + " " + (e.status || "")).toLowerCase();';
+  html += '    html += \'          <tr class="pc-est-table-row\' + (isSelected ? \' selected-row\' : \'\') + \'" data-search="\' + escapeHtml(searchStr) + \'" data-sitename="\' + encodeURIComponent(s.siteName) + \'" onclick="selectPcSite(decodeURIComponent(this.dataset.sitename))" title="클릭 시 상단 상세 화면으로 이동">\';';
+  html += '    html += \'            <td style="text-align:center;color:#94a3b8;font-weight:700;">\' + (idx + 1) + \'</td>\';';
+  html += '    html += \'            <td><strong style="color:\' + (isSelected ? \'#1d4ed8\' : \'#0f172a\') + \';font-size:13px;">\' + (isSelected ? \'👉 \' : \'\') + escapeHtml(s.siteName) + \'</strong></td>\';';
+  html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("status", e.status || "신규 문의") + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("priority", e.priority || "보통") + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("scope", e.scope || "전체공사") + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;">\' + buildEstimateBadgeHtml("source", e.source || "온라인") + \'</td>\';';
+  html += '    html += \'            <td>\' + (rowClient ? escapeHtml(rowClient) : \'<span style="color:#94a3b8;">-</span>\') + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;"><span class="pc-manager-pill"><span>\' + escapeHtml(e.manager || "조항만") + \'</span></span></td>\';';
+  html += '    html += \'            <td style="text-align:right;font-weight:700;color:#2563eb;">\' + rowAmtStr + \'</td>\';';
+  html += '    html += \'            <td style="text-align:center;font-size:12px;color:#475569;">\' + escapeHtml(e.expectedDate || "-") + \'</td>\';';
+  html += '    const memoCombined = [e.nextAction ? (\'[다음] \' + e.nextAction) : \'\', e.memo].filter(Boolean).join(" | ");';
+  html += '    html += \'            <td><span style="font-size:12px;color:#475569;">\' + escapeHtml(memoCombined || "-") + \'</span></td>\';';
+  html += '    html += \'          </tr>\';';
+  html += '  });';
+  html += '  html += \'        </tbody>\';';
+  html += '  html += \'      </table>\';';
+  html += '  html += \'    </div>\';';
+  html += '  html += \'  </div>\';';
+  html += '  html += \'</div>\';';
+  html += '  return html;';
+  html += '}';
+  html += '';
+  html += '';
   html += 'function renderPcSiteDashboard(matchedSites) {';
   html += '  const container = document.getElementById("contentArea");';
   html += '  if (!container) return;';
@@ -14972,8 +15424,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'    <div class="pc-carousel-head">\';';
   html += '  dHtml += \'      <div class="pc-carousel-title-group">\';';
   html += '  dHtml += \'        <div class="pc-carousel-status-tabs">\';';
-  html += '  dHtml += \'          <button type="button" class="pc-c-status-tab\' + (!isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'active\\\')" title="진행 \' + curScopeName + \' 보기">\' + curScopeIcon + \' 진행 \' + curScopeName + \' <span class="pc-badge-count">\' + curScopeActiveSites + \'</span></button>\';';
-  html += '  dHtml += \'          <button type="button" class="pc-c-status-tab done-tab\' + (isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'done\\\')" title="완료 \' + curScopeName + \' 보기">✅ 완료 \' + curScopeName + \' <span class="pc-badge-count-done">\' + curScopeDoneSites + \'</span></button>\';';
+  html += '  if (curScopeName === "신규현장" || currentScope === "newSite") {';
+  html += '    dHtml += \'          <button type="button" class="pc-c-status-tab active" title="전체 신규현장 보기">📋 전체 신규현장 <span class="pc-badge-count">\' + curScopeActiveSites + \'</span></button>\';';
+  html += '  } else {';
+  html += '    dHtml += \'          <button type="button" class="pc-c-status-tab\' + (!isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'active\\\')" title="진행 \' + curScopeName + \' 보기">\' + curScopeIcon + \' 진행 \' + curScopeName + \' <span class="pc-badge-count">\' + curScopeActiveSites + \'</span></button>\';';
+  html += '    dHtml += \'          <button type="button" class="pc-c-status-tab done-tab\' + (isDoneView ? " active" : "") + \'" onclick="setPcSiteStatusFilter(\\\'done\\\')" title="완료 \' + curScopeName + \' 보기">✅ 완료 \' + curScopeName + \' <span class="pc-badge-count-done">\' + curScopeDoneSites + \'</span></button>\';';
+  html += '  }';
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'        <div class="pc-carousel-sorts">\';';
   html += '  dHtml += \'          <button type="button" class="pc-c-sort-btn\' + (pcSiteSortMode === "rate" ? " active" : "") + \'" onclick="setPcSiteSortMode(\\\'rate\\\')" title="공정 진척률이 높은 순서로 정렬합니다">진척률순</button>\';';
@@ -14997,34 +15453,75 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const sMgr = formatManagerName(s.primaryManager || s.manager || (s.tasks && s.tasks[0] ? s.tasks[0].manager : ""));';
   html += '    const barCol = s.isAllCompleted ? "#10b981" : (s.colorHex || "#2563eb");';
   html += '    const sNameEnc = encodeURIComponent(s.siteName);';
-  html += '    dHtml += \'      <div class="pc-c-card\' + (isSel ? " active" : "") + \'" onclick="selectPcSite(decodeURIComponent(this.dataset.sitename))" data-sitename="\' + sNameEnc + \'">\';';
-  html += '    dHtml += \'        <div class="pc-c-card-top">\';';
-  html += '    dHtml += \'          <div class="pc-c-name-group">\';';
-  html += '    dHtml += \'            <span class="pc-c-dot" style="background:\' + (s.colorHex || "#2563eb") + \';"></span>\';';
-  html += '    dHtml += \'            <span class="pc-c-name" title="\' + escapeHtml(s.siteName) + \'">\' + escapeHtml(s.siteName) + \'</span>\';';
-  html += '    dHtml += \'          </div>\';';
-  html += '    dHtml += \'          <span class="pc-c-rate \' + sRateCls + \'">\' + sRate + \'%</span>\';';
-  html += '    dHtml += \'        </div>\';';
-  html += '    dHtml += \'        <div class="pc-c-prog-bar"><div class="pc-c-prog-fill" style="width:\' + sRate + \'%;background:\' + barCol + \';"></div></div>\';';
-  html += '    dHtml += \'        <div class="pc-c-card-meta">\';';
-  html += '    dHtml += \'          <span>👤 \' + escapeHtml(sMgr || "미지정") + \'</span>\';';
-  html += '    dHtml += \'          <span>\' + sComp + \'/\' + sTot + \' 완료</span>\';';
-  html += '    const cardStatus = getSiteStatusInfo(s, todayStr);';
-  html += '    if (cardStatus.status === "check_needed") {';
-  html += '      dHtml += \'        <span class="pc-c-delay-tag" style="background:#fef3c7;color:#b45309;">⚠️ 확인필요</span>\';';
-  html += '    } else if (cardStatus.status === "plan") {';
-  html += '      dHtml += \'        <span class="pc-c-delay-tag" style="background:#f1f5f9;color:#64748b;">착공예정</span>\';';
-  html += '    } else if (s.delayedTasksCount > 0) {';
-  html += '      dHtml += \'        <span class="pc-c-delay-tag">⚠️ 지연 \' + s.delayedTasksCount + \'</span>\';';
+  html += '    if (curScopeName === "신규현장" || s.scope === "newSite") {';
+  html += '      const eData = s.estimateData || {};';
+  html += '      const eSt = eData.status || "신규 문의";';
+  html += '      const eAmtStr = formatEstimateAmtStr(eData.expectedAmount);';
+  html += '      const stStyle = getEstimateBadgeStyle("status", eSt);';
+  html += '      dHtml += \'      <div class="pc-c-card\' + (isSel ? " active" : "") + \'" onclick="selectPcSite(decodeURIComponent(this.dataset.sitename))" data-sitename="\' + sNameEnc + \'">\';';
+  html += '      dHtml += \'        <div class="pc-c-card-top">\';';
+  html += '      dHtml += \'          <div class="pc-c-name-group">\';';
+  html += '      dHtml += \'            <span class="pc-c-dot" style="background:\' + stStyle.fg + \';"></span>\';';
+  html += '      dHtml += \'            <span class="pc-c-name" title="\' + escapeHtml(s.siteName) + \'">\' + escapeHtml(s.siteName) + \'</span>\';';
+  html += '      dHtml += \'          </div>\';';
+  html += '      dHtml += \'          <span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:10px;background:\' + stStyle.bg + \';color:\' + stStyle.fg + \';border:1px solid \' + stStyle.border + \';">\' + escapeHtml(eSt) + \'</span>\';';
+  html += '      dHtml += \'        </div>\';';
+  html += '      dHtml += \'        <div class="pc-c-prog-bar"><div class="pc-c-prog-fill" style="width:100%;background:\' + stStyle.fg + \';"></div></div>\';';
+  html += '      dHtml += \'        <div class="pc-c-card-meta">\';';
+  html += '      dHtml += \'          <span>👤 \' + escapeHtml(sMgr || "미지정") + \'</span>\';';
+  html += '      dHtml += \'          <span style="color:#2563eb;font-weight:700;">\' + (eAmtStr !== "-" ? eAmtStr : (eData.scope || "신규견적")) + \'</span>\';';
+  html += '      if (eData.priority === "긴급") {';
+  html += '        dHtml += \'        <span class="pc-c-delay-tag" style="background:#fee2e2;color:#b91c1c;">🚨 긴급</span>\';';
+  html += '      }';
+  html += '      dHtml += \'        </div>\';';
+  html += '      dHtml += \'      </div>\';';
+  html += '    } else {';
+  html += '      dHtml += \'      <div class="pc-c-card\' + (isSel ? " active" : "") + \'" onclick="selectPcSite(decodeURIComponent(this.dataset.sitename))" data-sitename="\' + sNameEnc + \'">\';';
+  html += '      dHtml += \'        <div class="pc-c-card-top">\';';
+  html += '      dHtml += \'          <div class="pc-c-name-group">\';';
+  html += '      dHtml += \'            <span class="pc-c-dot" style="background:\' + (s.colorHex || "#2563eb") + \';"></span>\';';
+  html += '      dHtml += \'            <span class="pc-c-name" title="\' + escapeHtml(s.siteName) + \'">\' + escapeHtml(s.siteName) + \'</span>\';';
+  html += '      dHtml += \'          </div>\';';
+  html += '      dHtml += \'          <span class="pc-c-rate \' + sRateCls + \'">\' + sRate + \'%</span>\';';
+  html += '      dHtml += \'        </div>\';';
+  html += '      dHtml += \'        <div class="pc-c-prog-bar"><div class="pc-c-prog-fill" style="width:\' + sRate + \'%;background:\' + barCol + \';"></div></div>\';';
+  html += '      dHtml += \'        <div class="pc-c-card-meta">\';';
+  html += '      dHtml += \'          <span>👤 \' + escapeHtml(sMgr || "미지정") + \'</span>\';';
+  html += '      dHtml += \'          <span>\' + sComp + \'/\' + sTot + \' 완료</span>\';';
+  html += '      const cardStatus = getSiteStatusInfo(s, todayStr);';
+  html += '      if (cardStatus.status === "check_needed") {';
+  html += '        dHtml += \'        <span class="pc-c-delay-tag" style="background:#fef3c7;color:#b45309;">⚠️ 확인필요</span>\';';
+  html += '      } else if (cardStatus.status === "plan") {';
+  html += '        dHtml += \'        <span class="pc-c-delay-tag" style="background:#f1f5f9;color:#64748b;">착공예정</span>\';';
+  html += '      } else if (s.delayedTasksCount > 0) {';
+  html += '        dHtml += \'        <span class="pc-c-delay-tag">⚠️ 지연 \' + s.delayedTasksCount + \'</span>\';';
+  html += '      }';
+  html += '      dHtml += \'        </div>\';';
+  html += '      dHtml += \'      </div>\';';
   html += '    }';
-  html += '    dHtml += \'        </div>\';';
-  html += '    dHtml += \'      </div>\';';
   html += '  });';
   html += '  dHtml += \'      </div>\';';
   html += '  dHtml += \'      <button type="button" id="btnCarouselNext" class="pc-carousel-bar-nav next" onclick="scrollPcSiteCarousel(320)" title="다음 현장" aria-label="다음 현장">›</button>\';';
   html += '  dHtml += \'    </div>\';';
   html += '  dHtml += \'  </div>\';';
   html += '  dHtml += \'  <div class="pc-site-detail-pane">\';';
+  html += '  if (curScopeName === "신규현장" || curSite.scope === "newSite" || currentScope === "newSite") {';
+  html += '    dHtml += renderPcEstimateDetailView(curSite, sitesList);';
+  html += '    dHtml += \'    <button type="button" id="pcScrollTopBtn" class="pc-scroll-top-btn" onclick="scrollPcDetailTop()" title="맨 위로 이동">⬆ 맨 위로</button>\';';
+  html += '    dHtml += \'  </div>\';';
+  html += '    dHtml += \'</div>\';';
+  html += '    container.innerHTML = dHtml;';
+  html += '    const newTrack = document.getElementById("pcSiteCarouselTrack");';
+  html += '    if (newTrack) {';
+  html += '      if (isSortChange) newTrack.scrollLeft = 0;';
+  html += '      else if (prevScrollLeft !== null) newTrack.scrollLeft = prevScrollLeft;';
+  html += '      newTrack.addEventListener("scroll", updateCarouselNavButtons, { passive: true });';
+  html += '      window.removeEventListener("resize", updateCarouselNavButtons);';
+  html += '      window.addEventListener("resize", updateCarouselNavButtons);';
+  html += '    }';
+  html += '    updateCarouselNavButtons();';
+  html += '    return;';
+  html += '  }';
   html += '  dHtml += \'    <div class="pc-detail-hero">\';';
   html += '  dHtml += \'      <div class="pc-detail-hero-left">\';';
   html += '  dHtml += \'        <div class="pc-detail-breadcrumb">\' + (isDoneView ? "현장 공정 관리 › 완료 현장 상세" : "현장 공정 관리 › 선택 현장 상세") + \'</div>\';';

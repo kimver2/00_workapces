@@ -8675,6 +8675,249 @@ assertTest('Step 131-6: index.html 내 exec?v=130 최신 캐시 버스팅 파라
   /exec\?v=(\d+)/.test(indexHtmlContent131) && parseInt(indexHtmlContent131.match(/exec\?v=(\d+)/)[1], 10) >= 130
 );
 
+// ========================================================
+// 📋 [Step 132]: '신규견적' B(진행단계)·D(우선순위)·E(공사범위)·G(유입경로) 항목별 색상 및 조건부 서식 무결성 QA
+// ========================================================
+console.log('\n📋 [Step 132]: 신규견적 항목별 색상 및 조건부 서식 무결성 QA ---');
+
+const code132 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent132 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 132-1: ESTIMATE_COLOR_MAP 4개 열(status 12종, priority 4종, scope 7종, source 7종) 정의 및 헥스 컬러 유효성 검증
+assertTest('Step 132-1: ESTIMATE_COLOR_MAP 4개 열 및 헥스 컬러 정의 검증',
+  code132.indexOf('var ESTIMATE_COLOR_MAP = {') !== -1 &&
+  code132.indexOf('"계약 완료"') !== -1 &&
+  code132.indexOf('"긴급"') !== -1 &&
+  code132.indexOf('"전체공사"') !== -1 &&
+  code132.indexOf('"온라인"') !== -1 &&
+  code132.indexOf('#dcfce7') !== -1 &&
+  code132.indexOf('#15803d') !== -1 &&
+  code132.indexOf('#fee2e2') !== -1 &&
+  code132.indexOf('#b91c1c') !== -1
+);
+
+// 132-2: applyEstimateSheetColors 함수 정의 및 조건부 서식 규칙 등록 검증
+assertTest('Step 132-2: applyEstimateSheetColors 함수 정의 및 조건부 서식 API 연동 검증',
+  code132.indexOf('function applyEstimateSheetColors(sheet, maxRows) {') !== -1 &&
+  code132.indexOf('SpreadsheetApp.newConditionalFormatRule()') !== -1 &&
+  code132.indexOf('.whenTextEqualTo(item.text)') !== -1 &&
+  code132.indexOf('.setBackground(item.bg)') !== -1 &&
+  code132.indexOf('.setFontColor(item.fg)') !== -1 &&
+  code132.indexOf('sheet.setConditionalFormatRules(rules)') !== -1
+);
+
+// 132-3: applyEstimateSheetColors 내 초기 데이터 셀 직접 배경색/글자색/볼드 일괄 적용 검증
+assertTest('Step 132-3: applyEstimateSheetColors 내 데이터 행 즉각 렌더링(setBackgrounds, setFontColors, setFontWeights) 검증',
+  code132.indexOf('range.setBackgrounds(bgArr);') !== -1 &&
+  code132.indexOf('range.setFontColors(fgArr);') !== -1 &&
+  code132.indexOf('range.setFontWeights(fontWeights);') !== -1
+);
+
+// 132-4: setupEstimateSheet 내 applyEstimateSheetColors 연동 및 메뉴 핸들러 검증
+assertTest('Step 132-4: setupEstimateSheet 내 applyEstimateSheetColors 연동 및 메뉴 메시지 검증',
+  code132.indexOf('applyEstimateSheetColors(sheet, maxValRows);') !== -1 &&
+  code132.indexOf('📋 신규견적 시트 생성 및 색상 서식 완료') !== -1
+);
+
+// 132-5: doGet 내 action === "applyEstimateColors" 독립 갱신 엔드포인트 탑재 검증
+assertTest('Step 132-5: doGet 내 action === "applyEstimateColors" 독립 갱신 엔드포인트 탑재 검증',
+  code132.indexOf('if (action === "applyEstimateColors") {') !== -1 &&
+  code132.indexOf('applyEstimateSheetColors(estSheet)') !== -1
+);
+
+// 132-6: index.html 내 exec?v=131 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 132-6: index.html 내 exec?v=131 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent132) && parseInt(indexHtmlContent132.match(/exec\?v=(\d+)/)[1], 10) >= 131
+);
+
+// 132-7: 가상 Apps Script 런타임에서 applyEstimateSheetColors 실행 무결성 검증
+let createdRules132 = [];
+let appliedBg132 = {};
+let appliedFg132 = {};
+let appliedWeights132 = {};
+
+const mockEstimateSheet132 = {
+  getLastRow: () => 11, // 헤더 1 + 데이터 10행
+  getRange: (r, c, nr, nc) => {
+    return {
+      getValues: () => {
+        if (c === 2) return [["계약 완료"], ["계약 완료"], ["피드백 대기"], ["신규 문의"], ["견적 작성 중"], ["견적 작성 중"], ["견적 작성 중"], ["현장 방문 예정"], ["2차상담 예정"], ["상담 중"]];
+        if (c === 4) return [["높음"], ["높음"], ["보통"], ["보통"], ["보통"], ["보통"], ["낮음"], ["긴급"], ["보통"], ["보통"]];
+        if (c === 5) return [["전체공사"], ["전체공사"], ["전체공사"], ["전체공사"], ["욕실"], ["욕실"], ["샷시·단열"], ["붙박이·가구"], ["주방"], ["전체공사"]];
+        if (c === 7) return [["온라인"], ["온라인"], ["온라인"], ["기존 고객"], ["소개"], ["기존 고객"], ["소개"], ["기존 고객"], ["블로그"], ["소개"]];
+        return [];
+      },
+      setBackgrounds: (bgs) => { appliedBg132[c] = bgs; },
+      setFontColors: (fgs) => { appliedFg132[c] = fgs; },
+      setFontWeights: (wts) => { appliedWeights132[c] = wts; }
+    };
+  },
+  setConditionalFormatRules: (rules) => {
+    createdRules132 = rules;
+  }
+};
+
+const vm132 = require('vm');
+const sandbox132 = {
+  console: console,
+  SpreadsheetApp: {
+    newConditionalFormatRule: () => {
+      const ruleObj = {
+        whenTextEqualTo: (txt) => { ruleObj.txt = txt; return ruleObj; },
+        setBackground: (bg) => { ruleObj.bg = bg; return ruleObj; },
+        setFontColor: (fg) => { ruleObj.fg = fg; return ruleObj; },
+        setBold: (b) => { ruleObj.bold = b; return ruleObj; },
+        setRanges: (rngs) => { ruleObj.ranges = rngs; return ruleObj; },
+        build: () => ruleObj
+      };
+      return ruleObj;
+    }
+  }
+};
+vm132.createContext(sandbox132);
+vm132.runInContext(code132 + '\nthis.applyEstimateSheetColors = applyEstimateSheetColors; this.ESTIMATE_COLOR_MAP = ESTIMATE_COLOR_MAP;', sandbox132);
+
+const colorRunRes132 = sandbox132.applyEstimateSheetColors(mockEstimateSheet132, 200);
+
+assertTest('Step 132-7: applyEstimateSheetColors 런타임 실행 및 30개 조건부 서식 생성 검증',
+  colorRunRes132 === true &&
+  createdRules132.length === 30 && // 12 + 4 + 7 + 7 = 30개 규칙
+  appliedBg132[2] && appliedBg132[2].length === 10 &&
+  appliedBg132[2][0][0] === '#dcfce7' && // 계약 완료 bg
+  appliedFg132[2][0][0] === '#15803d' && // 계약 완료 fg
+  appliedWeights132[2][0][0] === 'bold' && // 계약 완료 bold
+  appliedBg132[4][7][0] === '#fee2e2' && // 8번째 행 긴급 bg
+  appliedFg132[4][7][0] === '#b91c1c'    // 8번째 행 긴급 fg
+);
+
+// ========================================================
+// 📋 [Step 133]: 신규현장 10건 전체 노출 및 신규견적 전용 화면(CRM 상세카드 + 시트 데이터 테이블) 무결성 QA
+// ========================================================
+console.log('\n📋 [Step 133]: 신규현장 10건 전체 노출 및 신규견적 전용 화면 무결성 QA ---');
+
+const code133 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtmlContent133 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 133-1: getSidebarDashboardData 내 newSite 10건 전체 진행 목록 노출 검증
+assertTest('Step 133-1: getSidebarDashboardData 내 newSite 10건 전체 진행 목록 노출 검증',
+  code133.indexOf('siteObj.scope !== "newSite"') !== -1 &&
+  code133.indexOf('estimateData: {') !== -1
+);
+
+// 133-2: 신규견적 전용 CSS 스타일 클래스 탑재 검증
+assertTest('Step 133-2: 신규견적 전용 CSS 클래스 정의 검증',
+  code133.indexOf('.pc-estimate-detail-container {') !== -1 &&
+  code133.indexOf('.pc-est-hero-card {') !== -1 &&
+  code133.indexOf('.pc-est-grid-cards {') !== -1 &&
+  code133.indexOf('.pc-est-card {') !== -1 &&
+  code133.indexOf('.pc-est-table {') !== -1 &&
+  code133.indexOf('.pc-est-table-row.selected-row {') !== -1
+);
+
+// 133-3: 헬퍼 함수(getEstimateBadgeStyle, buildEstimateBadgeHtml, formatEstimateAmtStr) 정의 검증
+assertTest('Step 133-3: 신규견적 배지/금액 헬퍼 함수 구현 검증',
+  code133.indexOf('function getEstimateBadgeStyle(type, text) {') !== -1 &&
+  code133.indexOf('function buildEstimateBadgeHtml(type, text, labelPrefix) {') !== -1 &&
+  code133.indexOf('function formatEstimateAmtStr(amt) {') !== -1 &&
+  code133.indexOf('function openSpreadsheetEstimateSheet() {') !== -1 &&
+  code133.indexOf('function onFilterEstimateTable(query) {') !== -1
+);
+
+// 133-4: renderPcEstimateDetailView 함수 및 핵심 4대 카드 + 10건 전체 테이블 렌더링 검증
+assertTest('Step 133-4: renderPcEstimateDetailView 전용 뷰 함수 구현 검증',
+  code133.indexOf('function renderPcEstimateDetailView(curSite, sitesList) {') !== -1 &&
+  code133.indexOf('고객 및 현장 정보') !== -1 &&
+  code133.indexOf('견적 및 계약 금액') !== -1 &&
+  code133.indexOf('주요 진행 일정') !== -1 &&
+  code133.indexOf('다음 해야 할 일 (Next Action)') !== -1 &&
+  code133.indexOf('신규견적 시트 전체 데이터 현황') !== -1
+);
+
+// 133-5: renderPcSiteDashboard 내 신규현장 분기 및 전용 뷰 연동 검증
+assertTest('Step 133-5: renderPcSiteDashboard 내 신규현장 전용 화면 연동 검증',
+  code133.indexOf('if (curScopeName === "신규현장" || currentScope === "newSite") {') !== -1 &&
+  code133.indexOf('📋 전체 신규현장 <span class="pc-badge-count">') !== -1 &&
+  code133.indexOf('renderPcEstimateDetailView(curSite, sitesList)') !== -1
+);
+
+// 133-6: index.html 내 exec?v=132 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 133-6: index.html 내 exec?v=132 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(\d+)/.test(indexHtmlContent133) && parseInt(indexHtmlContent133.match(/exec\?v=(\d+)/)[1], 10) >= 132
+);
+
+// 133-7: 가상 런타임 환경에서 renderPcEstimateDetailView HTML 출력 무결성 검증
+const mockSampleNewSite = {
+  siteName: "신대방현대 102동 9층호",
+  scope: "newSite",
+  estimateData: {
+    siteName: "신대방현대 102동 9층호",
+    status: "피드백 대기",
+    inquiryDate: "2026-09-28",
+    priority: "보통",
+    scope: "전체공사",
+    memo: "",
+    source: "온라인",
+    consultDate: "2026-09-30",
+    expectedDate: "2027-01-01",
+    expectedAmount: 75000000,
+    estimateSendDate: "2026-09-30",
+    clientName: "",
+    clientPhone: "010-5346-4012",
+    manager: "조항만",
+    contractAmount: "",
+    nextAction: "",
+    failReason: "",
+    visitDate: "",
+    address: "",
+    row: 4
+  }
+};
+
+const vm133 = require('vm');
+const serverSandbox133 = {
+  console: console,
+  Logger: { log: () => {} },
+  SpreadsheetApp: { getActiveSpreadsheet: () => null }
+};
+vm133.createContext(serverSandbox133);
+vm133.runInContext(code133, serverSandbox133);
+const builtHtml133 = serverSandbox133.buildSidebarDashboardHtml('pc');
+const clientScriptMatch133 = builtHtml133.match(/<script>([\s\S]*?)<\/script>/);
+const clientScript133 = clientScriptMatch133 ? clientScriptMatch133[1] : '';
+
+const clientSandbox133 = {
+  console: console,
+  setTimeout: setTimeout,
+  clearTimeout: clearTimeout,
+  Date: Date,
+  Math: Math,
+  Object: Object,
+  Array: Array,
+  Set: Set,
+  JSON: JSON,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  parseInt: parseInt,
+  String: String,
+  selectedPcSiteName: "신대방현대 102동 9층호",
+  rawData: { spreadsheetUrl: "https://docs.google.com/spreadsheets/d/test" },
+  document: { readyState: 'loading', getElementById: () => null, querySelectorAll: () => [] },
+  window: { addEventListener: () => {} }
+};
+vm133.createContext(clientSandbox133);
+vm133.runInContext(clientScript133, clientSandbox133);
+
+const renderedNewSiteHtml133 = clientSandbox133.renderPcEstimateDetailView(mockSampleNewSite, [mockSampleNewSite]);
+
+assertTest('Step 133-7: renderPcEstimateDetailView 런타임 HTML 생성 및 핵심 필드 검증',
+  typeof renderedNewSiteHtml133 === 'string' &&
+  renderedNewSiteHtml133.indexOf('신대방현대 102동 9층호') !== -1 &&
+  renderedNewSiteHtml133.indexOf('피드백 대기') !== -1 &&
+  renderedNewSiteHtml133.indexOf('75,000,000원') !== -1 &&
+  renderedNewSiteHtml133.indexOf('010-5346-4012') !== -1 &&
+  renderedNewSiteHtml133.indexOf('신규견적 시트 전체 데이터 현황') !== -1
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
