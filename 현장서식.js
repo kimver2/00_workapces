@@ -1587,6 +1587,8 @@ function ensureHourlySortTriggerInstalled() {
 }
 
 function runHourlyAutoSortTrigger() {
+  // 사용자가 웹에서 저장/삭제 중일 때 정렬로 행이 뒤섞이지 않도록 쓰기 락 공유 (락 획득 실패 시 이번 회차 생략)
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(runHourlyAutoSortTrigger, this, arguments, null);
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) ss = getAppSpreadsheet();
@@ -6819,11 +6821,17 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
     });
   }
 
+  var isDateMatch = function(dNorm) {
+    return !!dNorm && (dNorm === normTargetDate || dNorm.indexOf(normTargetDate) !== -1 || normTargetDate.indexOf(dNorm) !== -1);
+  };
+
   // 1) 전달받은 rowNum 위치가 이미 (cleanSite, cleanTask)와 일치하는지 확인
+  var curRowSiteTaskOk = false;
   if (rowNum >= 2 && rowNum <= lastRow) {
     var cur = rowMeta[rowNum - 2];
     if (cur && (!cleanSite || cur.site === cleanSite) && (!cleanTask || cur.task === cleanTask)) {
-      if (!normTargetDate || !cur.dateNorm || cur.dateNorm === normTargetDate || cur.dateNorm.indexOf(normTargetDate) !== -1 || normTargetDate.indexOf(cur.dateNorm) !== -1) {
+      curRowSiteTaskOk = true;
+      if (!normTargetDate || !cur.dateNorm || isDateMatch(cur.dateNorm)) {
         return rowNum;
       }
     }
@@ -6841,19 +6849,55 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
     }
   }
 
-  if (siteTaskMatches.length > 0) {
-    if (normTargetDate && siteTaskMatches.length > 1) {
-      for (var k = 0; k < siteTaskMatches.length; k++) {
-        var cand = siteTaskMatches[k];
-        if (cand.dateNorm && (cand.dateNorm === normTargetDate || cand.dateNorm.indexOf(normTargetDate) !== -1 || normTargetDate.indexOf(cand.dateNorm) !== -1)) {
-          return cand.row;
-        }
+  if (normTargetDate) {
+    for (var k = 0; k < siteTaskMatches.length; k++) {
+      if (isDateMatch(siteTaskMatches[k].dateNorm)) {
+        return siteTaskMatches[k].row;
       }
     }
-    return siteTaskMatches[0].row;
   }
 
-  return rowNum;
+  // [데이터 무결성 가드] 날짜로 특정하지 못한 경우:
+  // - 전달받은 행이 여전히 동일 현장/공종이면 그 행을 신뢰 (엉뚱한 첫 번째 동명 공종 행으로 튀는 오작동 방지)
+  // - 후보가 정확히 1개일 때만 그 행으로 보정
+  // - 후보가 없거나 2개 이상(모호)하면 -1 반환 → 호출부에서 저장/삭제를 거부 (다른 일정 덮어쓰기/삭제 원천 차단)
+  if (curRowSiteTaskOk) return rowNum;
+  if (siteTaskMatches.length === 1) return siteTaskMatches[0].row;
+  return -1;
+}
+
+/**
+ * 웹/모바일 쓰기 작업 동시성 가드 (Script Lock)
+ * - 여러 사용자가 동시에 추가/삭제/이동/저장하거나 1시간 자동 정렬 트리거와 겹칠 때
+ *   행 번호가 밀려 다른 일정을 덮어쓰는 레이스 컨디션을 방지
+ * - 동일 실행 내 중첩 호출(재진입)은 락을 다시 잡지 않고 그대로 통과
+ * @param {Function} fn 실행할 함수
+ * @param {*} thisArg this 바인딩
+ * @param {Arguments|Array} args 인자 목록
+ * @param {*} [busyResult] 락 획득 실패 시 반환값
+ * @return {*}
+ */
+var __woosungWriteLockHeld_ = false;
+function runWithWriteLock_(fn, thisArg, args, busyResult) {
+  if (busyResult === undefined) {
+    busyResult = { success: false, error: "다른 사용자가 저장 중입니다. 잠시 후 다시 시도해주세요." };
+  }
+  var lock = null;
+  try {
+    if (typeof LockService !== "undefined" && LockService && typeof LockService.getScriptLock === "function") {
+      lock = LockService.getScriptLock();
+    }
+  } catch (eLk) { lock = null; }
+  if (lock && typeof lock.tryLock === "function" && !lock.tryLock(15000)) {
+    return busyResult;
+  }
+  __woosungWriteLockHeld_ = true;
+  try {
+    return fn.apply(thisArg, Array.prototype.slice.call(args));
+  } finally {
+    __woosungWriteLockHeld_ = false;
+    try { if (lock && typeof lock.releaseLock === "function") lock.releaseLock(); } catch (eRl) {}
+  }
 }
 
 /**
@@ -6863,7 +6907,11 @@ function resolveActualSheetRow(sheet, rowNumber, siteName, taskName, dateStr) {
  *   락 경합 타임아웃으로 인한 저장 실패(409/Lock timeout)를 원천 차단하고 0.1초 내 성공 응답 보장
  */
 function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchived, siteName, taskName, newPartner) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(updateScheduleStatusFromWeb, this, arguments);
   var targetSheetName = arguments[10];
+  // [행 추적용 기존 날짜]: 사용자가 날짜를 바꾼 경우 새 날짜(newDate)로 행을 찾으면 동일 현장의 동명 공종 다른 행이 수정되므로
+  // 클라이언트가 보낸 '변경 전 날짜'로만 행을 추적 (구버전 호출 시 날짜 없이 현장/공종으로 추적)
+  var origDateForMatch = (arguments.length > 11 && arguments[11] !== undefined && arguments[11] !== null) ? String(arguments[11]) : "";
   var rowNum = parseInt(row, 10);
   if (!rowNum || rowNum < 2) {
     return { success: false, error: "유효하지 않은 행 번호입니다. (" + row + ")" };
@@ -6877,6 +6925,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
   var updatedDate = null;
   var updatedManager = null;
   var updatedPartner = null;
+  var updatedTask = null;
 
   try {
     var ss = getAppSpreadsheet();
@@ -6898,8 +6947,14 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     }
 
     // 0단계: 날짜 정렬 등으로 행 번호가 변경되었을 경우 실제 행 번호 자동 추적
-    if (siteName || taskName) {
-      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, taskName, newDate);
+    var origTaskForMatch = (arguments.length > 12 && arguments[12] !== undefined && arguments[12] !== null && String(arguments[12]).trim() !== "")
+      ? String(arguments[12]).trim()
+      : (taskName ? String(taskName).trim() : "");
+    if (siteName || origTaskForMatch) {
+      rowNum = resolveActualSheetRow(sheet, rowNum, siteName, origTaskForMatch, origDateForMatch);
+    }
+    if (rowNum < 2 || rowNum > sheet.getLastRow()) {
+      return { success: false, error: "수정할 일정을 시트에서 찾을 수 없습니다. (다른 사용자가 변경/삭제했을 수 있습니다) 새로고침 후 다시 시도해주세요." };
     }
 
     var is11Col = (typeof sheet.getLastColumn === "function" && sheet.getLastColumn() >= 11);
@@ -6908,6 +6963,16 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
 
     // 1단계: 시트 셀 원자적 즉시 쓰기 (락 대기 없이 100% 즉시 저장 보장: sheet.getRange(rowNum, 8).setValue(newStatus))
     sheet.getRange(rowNum, statusCol).setValue(newStatus); // 진행상태 업데이트 (11열 체제 시 9열, 10열 체제 시 8열)
+
+    // C열(3열) 공종 업데이트 (신규 공종명이 전달된 경우)
+    if (taskName !== undefined && taskName !== null && String(taskName).trim() !== "") {
+      var cleanNewTask = String(taskName).trim();
+      sheet.getRange(rowNum, 3).setValue(cleanNewTask); // C열(3열) 공종 업데이트
+      updatedTask = cleanNewTask;
+      try {
+        ensureTasksInValidation(sheet, [cleanNewTask]);
+      } catch (eTaskVal) {}
+    }
 
     // B열 날짜 업데이트 (파라미터가 명시적으로 전달된 경우)
     if (newDate !== undefined && newDate !== null && String(newDate).trim() !== "") {
@@ -6969,6 +7034,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
       return {
         success: true,
         row: rowNum,
+        taskName: updatedTask || taskName,
         movedToCompleted: true,
         status: "완료",
         shared: updatedShared,
@@ -6987,6 +7053,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
     return { 
       success: true,
       row: rowNum,
+      taskName: updatedTask || taskName,
       status: newStatus,
       shared: updatedShared,
       memo: updatedMemo,
@@ -7011,6 +7078,7 @@ function updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate
  * @return {object} { success: boolean, message?: string, error?: string }
  */
 function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(deleteScheduleTaskFromWeb, this, arguments);
   var targetSheetName = arguments[5];
   var rowNum = parseInt(row, 10);
   if (!rowNum || rowNum < 2) {
@@ -7119,6 +7187,7 @@ function deleteScheduleTaskFromWeb(row, siteName, taskName, eventId, isArchived)
  * @return {object} { success: boolean, row: number, newDate: string, error?: string }
  */
 function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchived, targetSheetName) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(moveScheduleTaskDateFromWeb, this, arguments);
   var rowNum = parseInt(row, 10);
   if (!rowNum || rowNum < 2) {
     return { success: false, error: "유효하지 않은 행 번호입니다. (" + row + ")" };
@@ -7156,9 +7225,11 @@ function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchive
     } catch(eNorm) {}
     var finalDate = normalized || cleanNewDate;
 
-    // B열(2열) 날짜 업데이트 & J열 타임스탬프
+    // B열(2열) 날짜 업데이트 & 최종수정 타임스탬프 (11열 체제: K열 / 10열 체제: J열)
+    // [버그 수정] 11열 체제에서 J열(10열)은 '캘린더ID' 열이므로 타임스탬프로 덮어쓰지 않도록 열 위치 분기
+    var moveTimeCol = (typeof sheet.getLastColumn === "function" && sheet.getLastColumn() >= 11) ? 11 : 10;
     sheet.getRange(rowNum, 2).setValue(finalDate);
-    sheet.getRange(rowNum, 10).setValue(Date.now());
+    sheet.getRange(rowNum, moveTimeCol).setValue(Date.now());
     SpreadsheetApp.flush();
     invalidateDashboardServerCache();
 
@@ -7184,6 +7255,7 @@ function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchive
  * 모바일/사이드바 대시보드에서 새 일정(공종) 빠른 추가
  */
 function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, isShared, memo, partner, category) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(addScheduleTaskFromWeb, this, arguments);
   try {
     var cleanSite = String(siteName || "").trim();
     var cleanTask = String(taskName || "").trim();
@@ -7654,7 +7726,12 @@ function doGet(e) {
   if (sheet && (targetId || targetSite || targetTask)) {
     var lastRow = sheet.getLastRow();
     if (lastRow >= 2) {
-      var allData = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
+      var resolveColCnt = Math.max(9, Math.min(11, (typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 9) || 9));
+      var allData = sheet.getRange(2, 1, lastRow - 1, resolveColCnt).getValues();
+      // [버그 수정] 11열 체제(담당자 2 삽입)에서는 캘린더ID가 J열(index 9), 10열 체제에서는 I열(index 8)
+      var resolveHdr = [];
+      try { resolveHdr = sheet.getRange(1, 1, 1, resolveColCnt).getValues()[0]; } catch (eRh) {}
+      var calIdIdx = (String(resolveHdr[7] || "").replace(/\s+/g, "").indexOf("담당자2") !== -1) ? 9 : 8;
       var isCurrentRowMatch = false;
 
       // 1. 전달받은 row 위치의 행이 실제로 해당 현장/공종인지 확인
@@ -7662,7 +7739,7 @@ function doGet(e) {
         var curRowVals = allData[row - 2];
         var curSite = String(curRowVals[0] || "").trim();
         var curTask = String(curRowVals[2] || "").trim();
-        var curId = String(curRowVals[8] || "").trim();
+        var curId = String(curRowVals[calIdIdx] || "").trim();
 
         if (targetId && curId === targetId) {
           isCurrentRowMatch = true;
@@ -7677,7 +7754,7 @@ function doGet(e) {
         // 1순위: 캘린더 고유 Event ID 일치 행 탐색
         if (targetId) {
           for (var i = 0; i < allData.length; i++) {
-            if (String(allData[i][8] || "").trim() === targetId) {
+            if (String(allData[i][calIdIdx] || "").trim() === targetId) {
               resolvedRow = i + 2;
               break;
             }
@@ -7713,7 +7790,7 @@ function doGet(e) {
   // 1) 상태 업데이트 요청 (URL 파라미터 직접 호출 또는 GET 이동 폴백)
   if ((action === "update" || action === "updateScheduleStatus") && row >= 2 && newStatus && sheet) {
     var isArchivedParam = (p.isArchived === "true" || p.isArchived === true);
-    var resObj = updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchivedParam, targetSite, targetTask, p.partner, p.sheetName || p.targetSheetName);
+    var resObj = updateScheduleStatusFromWeb(row, newStatus, newShared, newMemo, newDate, newManager, isArchivedParam, targetSite, targetTask, p.partner, p.sheetName || p.targetSheetName, p.origDate || p.dateStr, p.origTask || p.origTaskName);
     if (p.format === "json") {
       return ContentService.createTextOutput(JSON.stringify(resObj))
         .setMimeType(ContentService.MimeType.JSON);
@@ -7741,7 +7818,7 @@ function doGet(e) {
 
     var memoNotice = "";
     if (newMemo !== undefined && newMemo !== null && String(newMemo).trim()) {
-      memoNotice = "<br>비고 메모: <b>" + String(newMemo).trim() + "</b>";
+      memoNotice = "<br>비고 메모: <b>" + escapeHtmlForInput(String(newMemo).trim()) + "</b>";
     }
 
     var resHtml = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
@@ -7753,7 +7830,7 @@ function doGet(e) {
       "</style></head><body>" +
       "<div class='box'>" +
       "<h2>✅ 공유/진행상태/비고 변경 완료</h2>" +
-      "<p>[" + (siteName || "현장") + "] <b>" + (taskName || "공정") + "</b>의" + shareNotice + "<br>진행상태가 <b>[" + newStatus + "]</b>(으)로" + memoNotice + "<br>정상 변경되었습니다.<br><br>시트와 구글 캘린더에 실시간 반영되었습니다.</p>" +
+      "<p>[" + escapeHtmlForInput(siteName || "현장") + "] <b>" + escapeHtmlForInput(taskName || "공정") + "</b>의" + shareNotice + "<br>진행상태가 <b>[" + escapeHtmlForInput(newStatus) + "]</b>(으)로" + memoNotice + "<br>정상 변경되었습니다.<br><br>시트와 구글 캘린더에 실시간 반영되었습니다.</p>" +
       "<a href='javascript:window.close()' class='btn'>창 닫기</a>" +
       "</div></body></html>";
     return HtmlService.createHtmlOutput(resHtml)
@@ -7782,7 +7859,11 @@ function doGet(e) {
       return HtmlService.createHtmlOutput(notFoundHtml);
     }
 
-    var rowVals = sheet.getRange(row, 1, 1, 9).getValues()[0];
+    var singleColCnt = Math.max(9, Math.min(11, (typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 9) || 9));
+    var rowVals = sheet.getRange(row, 1, 1, singleColCnt).getValues()[0];
+    var singleHeaderVals = null;
+    try { singleHeaderVals = sheet.getRange(1, 1, 1, singleColCnt).getValues()[0]; } catch (eHdr) {}
+    var singleParsed = parseScheduleRowCols(rowVals, singleHeaderVals);
     var siteName = String(rowVals[0] || "").trim();
     if (!siteName && row > 2) {
       try {
@@ -7799,8 +7880,9 @@ function doGet(e) {
     var rawShare = rowVals[4];
     var isShared = (rawShare === true || String(rawShare).trim().toUpperCase() === "TRUE" || String(rawShare).trim() === "1" || String(rawShare).trim() === "V" || String(rawShare).trim() === "O");
     var memo = String(rowVals[5] || "").trim(); // F열 비고
-    var currentStatus = String(rowVals[7] || "예정").trim() || "예정";
-    var eventIdVal = String(rowVals[8] || targetId || "").trim();
+    // [버그 수정] 11열 체제(담당자 1/2)에서는 H열이 '담당자 2'이므로 열 체제를 판별하는 파서로 진행상태/캘린더ID 추출
+    var currentStatus = (singleParsed && singleParsed.status) ? singleParsed.status : (String(rowVals[7] || "예정").trim() || "예정");
+    var eventIdVal = String((singleParsed && singleParsed.calId) || targetId || "").trim();
     var webAppUrl = getWebAppUrl();
 
     var html = buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, webAppUrl, isShared, memo, eventIdVal);
@@ -7829,6 +7911,18 @@ function escapeHtmlForInput(text) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+/**
+ * 서버 렌더링 <script> 내부에 문자열을 안전하게 삽입하기 위한 JS 문자열 리터럴 변환 헬퍼
+ * - 따옴표/역슬래시/줄바꿈 이스케이프 + "</script>" 조기 종료 방지
+ */
+function jsStringLiteral_(value) {
+  return JSON.stringify(String(value === undefined || value === null ? "" : value))
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }
 
 /**
@@ -7892,13 +7986,13 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "    </div>" +
     "    <div class='header'>" +
     "      <div class='badge'>현장 공정 공유/진행상태/비고 관리</div>" +
-    "      <div class='title'>" + siteName + "</div>" +
-    "      <div class='subtitle'>" + taskName + "</div>" +
+    "      <div class='title'>" + escapeHtmlForInput(siteName) + "</div>" +
+    "      <div class='subtitle'>" + escapeHtmlForInput(taskName) + "</div>" +
     "    </div>" +
     "    <div class='info-box'>" +
-    "      <div class='info-row'><span class='info-label'>일시:</span><span class='info-val'>" + formattedDateStr + "</span></div>" +
+    "      <div class='info-row'><span class='info-label'>일시:</span><span class='info-val'>" + escapeHtmlForInput(formattedDateStr) + "</span></div>" +
     "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 공유:</span><span class='info-val' id='currShareDisplay'>" + (isSharedBool ? "🟦 공유 완료" : "🟥 미공유") + "</span></div>" +
-    "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 상태:</span><span class='info-val' id='currStatusDisplay'>" + currentStatus + "</span></div>" +
+    "      <div class='info-row' style='margin-top:6px;'><span class='info-label'>현재 상태:</span><span class='info-val' id='currStatusDisplay'>" + escapeHtmlForInput(currentStatus) + "</span></div>" +
     "    </div>" +
     "    <div class='section-label'>🔗 공유 상태 설정</div>" +
     "    <div class='share-grid'>" +
@@ -7921,7 +8015,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "    <div class='footer'>우성아이디 현장관리 시스템</div>" +
     "  </div>" +
     "  <script>" +
-    "    var selected = '" + currentStatus + "';" +
+    "    var selected = " + jsStringLiteral_(currentStatus) + ";" +
     "    var selectedShare = " + (isSharedBool ? "true" : "false") + ";" +
     "    function selectShare(val) {" +
     "      selectedShare = val;" +
@@ -7979,7 +8073,7 @@ function buildMobileStatusHtml(row, siteName, dateStr, taskName, currentStatus, 
     "            console.warn('google.script.run 실패, URL 폴백 시도:', err);" +
     "            execFallback();" +
     "          })" +
-    "          .updateScheduleStatusFromWeb(" + row + ", selected, selectedShare, memoVal);" +
+    "          .updateScheduleStatusFromWeb(" + row + ", selected, selectedShare, memoVal, undefined, undefined, false, " + jsStringLiteral_(siteName === "-" ? "" : siteName) + ", " + jsStringLiteral_(taskName === "-" ? "" : taskName) + ");" +
     "        return;" +
     "      }" +
     "      execFallback();" +
@@ -10118,6 +10212,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '.pcal-quick-btn:hover { background: #e2e8f0; }';
   html += '.pcal-close-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #64748b; font-size: 11px; font-weight: 700; cursor: pointer; }';
   html += '.sheet-manager-wrap { width: 100%; }';
+  html += '.sheet-partner-wrap { width: 100%; }';
+  html += '.btn-sheet-task-edit { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; font-size: 11px; font-weight: 700; color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; cursor: pointer; vertical-align: middle; line-height: 1.4; transition: all 0.15s ease; }';
+  html += '.btn-sheet-task-edit:hover { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }';
+  html += '.btn-sheet-task-cancel { padding: 4px 9px; border-radius: 6px; background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }';
+  html += '.btn-sheet-task-cancel:hover { background: #e2e8f0; color: #1e293b; }';
   html += '.sheet-field-select { width: 100%; height: 38px; padding: 6px 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff; outline: none; cursor: pointer; }';
   html += '.sheet-field-select:focus { border-color: #2563eb; }';
   html += '.sheet-sec-label { font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 7px; display: flex; align-items: center; gap: 5px; }';
@@ -10795,7 +10894,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '          <button type="button" id="sheetAddSameDateBtn" class="btn-sheet-goto-mini" style="background:#ecfdf5;color:#047857;border-color:#a7f3d0;" onclick="openNewTaskOnCurrentDate()" title="이 날짜에 새 공정 일정 추가">➕ 같은 날 추가</button>';
   html += '        </div>';
   html += '        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px;">';
-  html += '          <div class="sheet-task" id="sheetTaskName">-</div>';
+  html += '          <div id="sheetTaskDisplayWrap" style="display:inline-flex;align-items:center;gap:6px;">';
+  html += '            <div class="sheet-task" id="sheetTaskName">-</div>';
+  html += '            <button type="button" id="sheetEditTaskBtn" class="btn-sheet-task-edit" onclick="startDetailTaskEdit()" title="현장데이터 시트와 동일하게 공종 변경">✏️ 수정</button>';
+  html += '          </div>';
+  html += '          <div id="sheetTaskEditWrap" style="display:none;align-items:center;gap:6px;width:100%;margin-top:4px;">';
+  html += '            <select id="sheetDetailTaskSelect" class="sheet-field-select" style="flex:1;font-size:13.5px;font-weight:700;padding:5px 8px;height:34px;border-color:#3b82f6;" onchange="onDetailTaskSelectChange(this.value)">';
+  html += '              <option value="">공종을 선택하세요</option>';
+  html += '            </select>';
+  html += '            <input type="text" id="sheetDetailTaskCustomInput" class="sheet-field-input" placeholder="공종 직접 입력" style="display:none;flex:1;font-size:13px;padding:5px 8px;height:34px;">';
+  html += '            <button type="button" class="btn-sheet-task-cancel" onclick="cancelDetailTaskEdit()">취소</button>';
+  html += '          </div>';
   html += '          <span id="sheetTaskPartnerBadge" class="sheet-partner-badge" style="display:none;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:12px;font-weight:700;padding:2px 8px;border-radius:12px;"></span>';
   html += '        </div>';
   html += '      </div>';
@@ -10848,12 +10957,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div class="sheet-field-row" style="margin-top:8px;">';
   html += '        <div class="sheet-field-col" style="flex:1;">';
   html += '          <label class="sheet-field-label">협력업체</label>';
-  html += '          <input type="text" id="sheetPartnerInput" list="sheetPartnerDatalist" class="sheet-field-input" placeholder="협력업체명 (선택)" oninput="onCreatePartnerInputChange(this.value)">';
+  html += '          <div class="sheet-partner-wrap">';
+  html += '            <select id="sheetPartnerSelect" class="sheet-field-select" onchange="onSheetPartnerSelect(this.value, true)">';
+  html += '              <option value="">협력업체 미등록 (선택)</option>';
+  html += '            </select>';
+  html += '            <input type="text" id="sheetPartnerCustomInput" class="sheet-field-input" placeholder="협력업체 직접 입력" style="display:none;margin-top:4px;" oninput="onSheetPartnerCustomInput(this.value, true)">';
+  html += '          </div>';
   html += '        </div>';
   html += '        <div class="sheet-field-col" style="flex:1;">';
   html += '          <label class="sheet-field-label">📞 연락처</label>';
   html += '          <div style="display:flex;gap:6px;align-items:center;">';
-  html += '            <input type="text" id="sheetCreatePartnerPhoneInput" class="sheet-field-input" placeholder="연락처 없음" readonly style="background:#f8fafc;color:#1e293b;font-weight:600;flex:1;cursor:default;">';
+  html += '            <input type="text" id="sheetCreatePartnerPhoneInput" class="sheet-field-input" placeholder="연락처 미등록" readonly style="background:#f8fafc;color:#94a3b8;font-size:11.5px;font-weight:500;flex:1;cursor:default;">';
   html += '            <a id="sheetCreatePartnerCallBtn" href="javascript:void(0)" class="sheet-call-btn" style="display:none;width:38px;height:38px;min-width:38px;border-radius:8px;background:#22c55e;color:#ffffff;align-items:center;justify-content:center;text-decoration:none;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,0.1);" title="전화 걸기">📞</a>';
   html += '          </div>';
   html += '        </div>';
@@ -10890,12 +11004,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div class="sheet-field-row" id="sheetEditPartnerRow" style="margin-top:8px;">';
   html += '        <div class="sheet-field-col" style="flex:1;">';
   html += '          <label class="sheet-field-label">협력업체</label>';
-  html += '          <input type="text" id="sheetEditPartnerInput" list="sheetPartnerDatalist" class="sheet-field-input" placeholder="협력업체명 (선택)" oninput="onPartnerInputChange(this.value)">';
+  html += '          <div class="sheet-partner-wrap">';
+  html += '            <select id="sheetEditPartnerSelect" class="sheet-field-select" onchange="onSheetPartnerSelect(this.value, false)">';
+  html += '              <option value="">협력업체 미등록 (선택)</option>';
+  html += '            </select>';
+  html += '            <input type="text" id="sheetEditPartnerCustomInput" class="sheet-field-input" placeholder="협력업체 직접 입력" style="display:none;margin-top:4px;" oninput="onSheetPartnerCustomInput(this.value, false)">';
+  html += '          </div>';
   html += '        </div>';
   html += '        <div class="sheet-field-col" style="flex:1;">';
   html += '          <label class="sheet-field-label">📞 연락처</label>';
   html += '          <div style="display:flex;gap:6px;align-items:center;">';
-  html += '            <input type="text" id="sheetPartnerPhoneInput" class="sheet-field-input" placeholder="연락처 없음" readonly style="background:#f8fafc;color:#1e293b;font-weight:600;flex:1;cursor:default;">';
+  html += '            <input type="text" id="sheetPartnerPhoneInput" class="sheet-field-input" placeholder="연락처 미등록" readonly style="background:#f8fafc;color:#94a3b8;font-size:11.5px;font-weight:500;flex:1;cursor:default;">';
   html += '            <a id="sheetPartnerCallBtn" href="javascript:void(0)" class="sheet-call-btn" style="display:none;width:38px;height:38px;min-width:38px;border-radius:8px;background:#22c55e;color:#ffffff;align-items:center;justify-content:center;text-decoration:none;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,0.1);" title="전화 걸기">📞</a>';
   html += '          </div>';
   html += '        </div>';
@@ -13839,10 +13958,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      dHtml += \'            <td style="text-align:center;"><span class="pc-status-pill \' + badgeCls + \'"><span class="pill-icon">\' + badgeIcon + \'</span><span>\' + escapeHtml(badgeText) + \'</span></span></td>\';';
   html += '      dHtml += \'            <td><strong style="color:#0f172a;font-size:13px;">\' + escapeHtml(task.taskName) + \'</strong></td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-weight:800;\' : \'font-weight:600;\') + \'">\' + escapeHtml(dateStr || "일정 미정") + \'</span>\' + ddayChip + \'</td>\';';
-  html += '      dHtml += \'            <td style="text-align:center;">\' + (tMgr ? \'<span class="pc-manager-pill"><span class="mgr-icon">👤</span><span>\' + escapeHtml(tMgr) + \'</span></span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
+  html += '      dHtml += \'            <td style="text-align:center;">\' + (tMgr ? \'<span class="pc-manager-pill"><span class="mgr-icon">👤</span><span>\' + escapeHtml(tMgr) + \'</span></span>\' : \'<span style="color:#94a3b8;font-size:11.5px;">미등록</span>\') + \'</td>\';';
   html += '      const pcPPhone = task.partner ? getPartnerPhoneNumber(task.partner) : "";';
   html += '      const pcPCallHtml = pcPPhone ? (\' <a href="tel:\' + escapeHtml(pcPPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#22c55e;color:#fff;text-decoration:none;font-size:10px;vertical-align:middle;margin-left:4px;" title="전화 걸기: \' + escapeHtml(pcPPhone) + \'">📞</a>\') : "";';
-  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span class="pc-partner-pill">\' + escapeHtml(task.partner) + pcPCallHtml + \'</span>\' : \'<span style="color:#cbd5e1;">-</span>\') + \'</td>\';';
+  html += '      dHtml += \'            <td>\' + (task.partner ? \'<span class="pc-partner-pill">\' + escapeHtml(task.partner) + pcPCallHtml + \'</span>\' : \'<span style="color:#94a3b8;font-size:11.5px;">미등록</span>\') + \'</td>\';';
   html += '      dHtml += \'            <td><span style="\' + (isDelayed ? \'color:#dc2626;font-size:12px;\' : \'color:#475569;font-size:12px;\') + \'">\' + escapeHtml(task.memo || "-") + \'</span></td>\';';
   html += '      dHtml += \'            <td style="text-align:center;"><button type="button" class="pc-task-btn-edit" onclick="event.stopPropagation();openEditModal(\\\'\' + task.row + \'\\\', \\\'\' + encCurSite + \'\\\')">수정</button></td>\';';
   html += '      dHtml += \'          </tr>\';';
@@ -14123,7 +14242,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'  <div class="task-meta">\';';
   html += '      const pPhone = task.partner ? getPartnerPhoneNumber(task.partner) : "";';
   html += '      const pCallHtml = pPhone ? (\' <a href="tel:\' + escapeHtml(pPhone.replace(/[^0-9+]/g, "")) + \'" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#22c55e;color:#fff;text-decoration:none;font-size:11px;vertical-align:middle;margin-left:4px;box-shadow:0 1px 2px rgba(0,0,0,0.15);" title="전화 걸기: \' + escapeHtml(pPhone) + \'">📞</a>\') : "";';
-  html += '      html += \'    <span>👤 \' + escapeHtml(task.manager || "-") + (task.partner ? (" / " + escapeHtml(task.partner) + pCallHtml) : "") + \'</span>\';';
+  html += '      const cardMgrHtml = task.manager ? (\'<span>👤 \' + escapeHtml(formatManagerName(task.manager)) + \'</span>\') : \'<span style="color:#94a3b8;font-size:11px;">👤 미등록</span>\';';
+  html += '      const cardPartnerHtml = task.partner ? (\'<span> / \' + escapeHtml(task.partner) + pCallHtml + \'</span>\') : \'<span style="color:#94a3b8;font-size:11px;"> / 협력업체 미등록</span>\';';
+  html += '      html += \'    <span>\' + cardMgrHtml + cardPartnerHtml + \'</span>\';';
   html += '      html += \'    <div style="display:flex;align-items:center;gap:4px;">\';';
   html += '      html += \'      <span class="\' + shareTagClass + \'">\' + shareTagText + \'</span>\';';
   html += '      const stIcon = getTaskStatusIcon(task.status);';
@@ -14469,6 +14590,19 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
   html += '';
+  html += 'function updateManagerSelectStyle(sel) {';
+  html += '  if (!sel) return;';
+  html += '  if (!sel.value) {';
+  html += '    sel.style.color = "#94a3b8";';
+  html += '    sel.style.fontSize = "11.5px";';
+  html += '    sel.style.fontWeight = "500";';
+  html += '  } else {';
+  html += '    sel.style.color = "#0f172a";';
+  html += '    sel.style.fontSize = "13px";';
+  html += '    sel.style.fontWeight = "700";';
+  html += '  }';
+  html += '}';
+  html += '';
   html += 'function populateManagerSelectOptions(members) {';
   html += '  const sel1 = document.getElementById("sheetManagerSelect");';
   html += '  const sel2 = document.getElementById("sheetManagerSelect2");';
@@ -14484,7 +14618,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });';
   html += '  if (sel1) {';
   html += '    sel1._populated = true;';
-  html += '    sel1.innerHTML = \'<option value="">담당자</option>\';';
+  html += '    sel1.innerHTML = \'<option value="">담당자 미등록 (선택)</option>\';';
   html += '    allList.forEach(m => {';
   html += '      const opt = document.createElement("option");';
   html += '      opt.value = m;';
@@ -14495,10 +14629,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '    customOpt.value = "__CUSTOM__";';
   html += '    customOpt.innerText = "✏️ 직접 입력...";';
   html += '    sel1.appendChild(customOpt);';
+  html += '    updateManagerSelectStyle(sel1);';
   html += '  }';
   html += '  if (sel2) {';
   html += '    sel2._populated = true;';
-  html += '    sel2.innerHTML = \'<option value="">담당자</option>\';';
+  html += '    sel2.innerHTML = \'<option value="">+ 부담당자 (선택)</option>\';';
   html += '    allList.forEach(m => {';
   html += '      const opt = document.createElement("option");';
   html += '      opt.value = m;';
@@ -14509,6 +14644,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    customOpt2.value = "__CUSTOM__";';
   html += '    customOpt2.innerText = "✏️ 직접 입력...";';
   html += '    sel2.appendChild(customOpt2);';
+  html += '    updateManagerSelectStyle(sel2);';
   html += '  }';
   html += '}';
   html += '';
@@ -14528,15 +14664,109 @@ function buildSidebarDashboardHtml(mode) {
   html += '  return "";';
   html += '}';
   html += '';
-  html += 'function populatePartnerDatalist(partners) {';
-  html += '  const dl = document.getElementById("sheetPartnerDatalist");';
-  html += '  if (!dl) return;';
+  html += 'function updatePartnerSelectStyle(sel) {';
+  html += '  if (!sel) return;';
+  html += '  if (!sel.value) {';
+  html += '    sel.style.color = "#94a3b8";';
+  html += '    sel.style.fontSize = "11.5px";';
+  html += '    sel.style.fontWeight = "500";';
+  html += '  } else {';
+  html += '    sel.style.color = "#0f172a";';
+  html += '    sel.style.fontSize = "13px";';
+  html += '    sel.style.fontWeight = "700";';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function populatePartnerSelectOptions(partners) {';
   html += '  const list = Array.isArray(partners) ? partners : [];';
-  html += '  let dHtml = "";';
-  html += '  list.forEach(p => {';
-  html += '    dHtml += \'<option value="\' + escapeHtml(p) + \'"></option>\';';
+  html += '  ["sheetPartnerSelect", "sheetEditPartnerSelect"].forEach(id => {';
+  html += '    const sel = document.getElementById(id);';
+  html += '    if (!sel) return;';
+  html += '    sel.innerHTML = \'<option value="">협력업체 미등록 (선택)</option>\';';
+  html += '    list.forEach(p => {';
+  html += '      const pClean = String(p || "").trim();';
+  html += '      if (pClean) {';
+  html += '        const opt = document.createElement("option");';
+  html += '        opt.value = pClean;';
+  html += '        opt.innerText = pClean;';
+  html += '        sel.appendChild(opt);';
+  html += '      }';
+  html += '    });';
+  html += '    const customOpt = document.createElement("option");';
+  html += '    customOpt.value = "__CUSTOM__";';
+  html += '    customOpt.innerText = "✏️ 직접 입력...";';
+  html += '    sel.appendChild(customOpt);';
+  html += '    updatePartnerSelectStyle(sel);';
   html += '  });';
-  html += '  dl.innerHTML = dHtml;';
+  html += '}';
+  html += '';
+  html += 'function populatePartnerDatalist(partners) {';
+  html += '  populatePartnerSelectOptions(partners);';
+  html += '}';
+  html += '';
+  html += 'function setPartnerSelectValue(val, isCreate) {';
+  html += '  const selId = isCreate ? "sheetPartnerSelect" : "sheetEditPartnerSelect";';
+  html += '  const customId = isCreate ? "sheetPartnerCustomInput" : "sheetEditPartnerCustomInput";';
+  html += '  const sel = document.getElementById(selId);';
+  html += '  const custom = document.getElementById(customId);';
+  html += '  const cleanVal = String(val || "").trim();';
+  html += '  if (!sel) return;';
+  html += '  let found = false;';
+  html += '  for (let i = 0; i < sel.options.length; i++) {';
+  html += '    if (sel.options[i].value === cleanVal) {';
+  html += '      found = true;';
+  html += '      break;';
+  html += '    }';
+  html += '  }';
+  html += '  if (!cleanVal) {';
+  html += '    sel.value = "";';
+  html += '    if (custom) { custom.value = ""; custom.style.display = "none"; }';
+  html += '  } else if (found) {';
+  html += '    sel.value = cleanVal;';
+  html += '    if (custom) { custom.value = ""; custom.style.display = "none"; }';
+  html += '  } else {';
+  html += '    sel.value = "__CUSTOM__";';
+  html += '    if (custom) { custom.value = cleanVal; custom.style.display = "block"; }';
+  html += '  }';
+  html += '  updatePartnerSelectStyle(sel);';
+  html += '  updateModalPartnerPhone(cleanVal, isCreate);';
+  html += '}';
+  html += '';
+  html += 'function getSelectedPartnerValue(isCreate) {';
+  html += '  const selId = isCreate ? "sheetPartnerSelect" : "sheetEditPartnerSelect";';
+  html += '  const customId = isCreate ? "sheetPartnerCustomInput" : "sheetEditPartnerCustomInput";';
+  html += '  const sel = document.getElementById(selId);';
+  html += '  const custom = document.getElementById(customId);';
+  html += '  if (!sel) return "";';
+  html += '  if (sel.value === "__CUSTOM__") {';
+  html += '    return custom ? custom.value.trim() : "";';
+  html += '  }';
+  html += '  return sel.value.trim();';
+  html += '}';
+  html += '';
+  html += 'function onSheetPartnerSelect(val, isCreate) {';
+  html += '  const customId = isCreate ? "sheetPartnerCustomInput" : "sheetEditPartnerCustomInput";';
+  html += '  const custom = document.getElementById(customId);';
+  html += '  const selId = isCreate ? "sheetPartnerSelect" : "sheetEditPartnerSelect";';
+  html += '  const sel = document.getElementById(selId);';
+  html += '  if (sel) updatePartnerSelectStyle(sel);';
+  html += '  if (val === "__CUSTOM__") {';
+  html += '    if (custom) {';
+  html += '      custom.style.display = "block";';
+  html += '      custom.focus();';
+  html += '    }';
+  html += '    updateModalPartnerPhone(custom ? custom.value.trim() : "", isCreate);';
+  html += '  } else {';
+  html += '    if (custom) {';
+  html += '      custom.style.display = "none";';
+  html += '      custom.value = "";';
+  html += '    }';
+  html += '    updateModalPartnerPhone(val, isCreate);';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onSheetPartnerCustomInput(val, isCreate) {';
+  html += '  updateModalPartnerPhone(val, isCreate);';
   html += '}';
   html += '';
   html += 'function updateModalPartnerPhone(pName, isCreate) {';
@@ -14546,7 +14776,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const inp = document.getElementById(inpId);';
   html += '  const btn = document.getElementById(btnId);';
   html += '  if (inp) {';
-  html += '    inp.value = phone ? phone : (pName ? "연락처 미등록" : "연락처 없음");';
+  html += '    if (phone) {';
+  html += '      inp.value = phone;';
+  html += '      inp.placeholder = "";';
+  html += '      inp.style.color = "#0f172a";';
+  html += '      inp.style.fontSize = "13px";';
+  html += '      inp.style.fontWeight = "700";';
+  html += '      inp.style.background = "#ffffff";';
+  html += '    } else {';
+  html += '      inp.value = "";';
+  html += '      inp.placeholder = pName ? "등록된 연락처 없음" : "연락처 미등록";';
+  html += '      inp.style.color = "#94a3b8";';
+  html += '      inp.style.fontSize = "11.5px";';
+  html += '      inp.style.fontWeight = "500";';
+  html += '      inp.style.background = "#f8fafc";';
+  html += '    }';
   html += '  }';
   html += '  if (btn) {';
   html += '    if (phone) {';
@@ -14562,15 +14806,17 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function onPartnerInputChange(val) {';
-  html += '  updateModalPartnerPhone(val, false);';
+  html += '  setPartnerSelectValue(val, false);';
   html += '}';
   html += '';
   html += 'function onCreatePartnerInputChange(val) {';
-  html += '  updateModalPartnerPhone(val, true);';
+  html += '  setPartnerSelectValue(val, true);';
   html += '}';
   html += '';
   html += 'function onSheetManagerSelect(val) {';
   html += '  const custom = document.getElementById("sheetManagerCustomInput");';
+  html += '  const sel = document.getElementById("sheetManagerSelect");';
+  html += '  if (sel) updateManagerSelectStyle(sel);';
   html += '  if (!custom) return;';
   html += '  if (val === "__CUSTOM__") {';
   html += '    custom.style.display = "block";';
@@ -14583,6 +14829,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '';
   html += 'function onSheetManagerSelect2(val) {';
   html += '  const custom = document.getElementById("sheetManagerCustomInput2");';
+  html += '  const sel = document.getElementById("sheetManagerSelect2");';
+  html += '  if (sel) updateManagerSelectStyle(sel);';
   html += '  if (!custom) return;';
   html += '  if (val === "__CUSTOM__") {';
   html += '    custom.style.display = "block";';
@@ -14590,6 +14838,94 @@ function buildSidebarDashboardHtml(mode) {
   html += '  } else {';
   html += '    custom.style.display = "none";';
   html += '    custom.value = "";';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function populateDetailTaskSelectOptions(tasks, currentTaskName) {';
+  html += '  const sel = document.getElementById("sheetDetailTaskSelect");';
+  html += '  const custom = document.getElementById("sheetDetailTaskCustomInput");';
+  html += '  if (!sel) return;';
+  html += '  sel.innerHTML = \'<option value="">공종을 선택하세요</option>\';';
+  html += '  const defaultTasks = [';
+  html += '    "철거", "설비", "누수보수", "전기", "전기입선", "전기마감", "조명", "에어컨",';
+  html += '    "목공", "도어설치", "중문", "창호", "창호실측", "타일", "줄눈", "도기", "SMC",';
+  html += '    "필름", "도장", "도배", "마루", "바닥", "가구", "주방", "보양", "청소", "마감",';
+  html += '    "상담", "현장실측", "AS"';
+  html += '  ];';
+  html += '  const allTasks = [];';
+  html += '  const seen = {};';
+  html += '  (tasks && tasks.length > 0 ? tasks : defaultTasks).forEach(t => {';
+  html += '    const name = String(t || "").trim();';
+  html += '    if (name && !seen[name]) {';
+  html += '      seen[name] = true;';
+  html += '      allTasks.push(name);';
+  html += '    }';
+  html += '  });';
+  html += '  allTasks.forEach(t => {';
+  html += '    const opt = document.createElement("option");';
+  html += '    opt.value = t;';
+  html += '    opt.innerText = t;';
+  html += '    sel.appendChild(opt);';
+  html += '  });';
+  html += '  const customOpt = document.createElement("option");';
+  html += '  customOpt.value = "__CUSTOM__";';
+  html += '  customOpt.innerText = "✏️ 직접 입력...";';
+  html += '  sel.appendChild(customOpt);';
+  html += '  const cur = String(currentTaskName || "").trim();';
+  html += '  let found = false;';
+  html += '  for (let i = 0; i < sel.options.length; i++) {';
+  html += '    if (sel.options[i].value === cur) { found = true; break; }';
+  html += '  }';
+  html += '  if (cur && found) {';
+  html += '    sel.value = cur;';
+  html += '    if (custom) { custom.value = ""; custom.style.display = "none"; }';
+  html += '  } else if (cur) {';
+  html += '    sel.value = "__CUSTOM__";';
+  html += '    if (custom) { custom.value = cur; custom.style.display = "block"; }';
+  html += '  } else {';
+  html += '    sel.value = "";';
+  html += '    if (custom) { custom.value = ""; custom.style.display = "none"; }';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function startDetailTaskEdit() {';
+  html += '  const curName = (curTaskObj && curTaskObj.taskName) || (document.getElementById("sheetTaskName") ? document.getElementById("sheetTaskName").innerText : "") || "";';
+  html += '  populateDetailTaskSelectOptions(rawData ? rawData.tasks : [], curName);';
+  html += '  const disp = document.getElementById("sheetTaskDisplayWrap");';
+  html += '  const editWrap = document.getElementById("sheetTaskEditWrap");';
+  html += '  if (disp) disp.style.display = "none";';
+  html += '  if (editWrap) {';
+  html += '    editWrap.style.display = "flex";';
+  html += '    const sel = document.getElementById("sheetDetailTaskSelect");';
+  html += '    if (sel) sel.focus();';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function cancelDetailTaskEdit() {';
+  html += '  const disp = document.getElementById("sheetTaskDisplayWrap");';
+  html += '  const editWrap = document.getElementById("sheetTaskEditWrap");';
+  html += '  if (editWrap) editWrap.style.display = "none";';
+  html += '  if (disp) disp.style.display = "inline-flex";';
+  html += '  const tNameEl = document.getElementById("sheetTaskName");';
+  html += '  if (tNameEl && curTaskObj) {';
+  html += '    tNameEl.innerText = curTaskObj.taskName;';
+  html += '  }';
+  html += '}';
+  html += '';
+  html += 'function onDetailTaskSelectChange(val) {';
+  html += '  const custom = document.getElementById("sheetDetailTaskCustomInput");';
+  html += '  if (val === "__CUSTOM__") {';
+  html += '    if (custom) {';
+  html += '      custom.style.display = "block";';
+  html += '      custom.focus();';
+  html += '    }';
+  html += '  } else {';
+  html += '    if (custom) {';
+  html += '      custom.style.display = "none";';
+  html += '      custom.value = "";';
+  html += '    }';
+  html += '    const tNameEl = document.getElementById("sheetTaskName");';
+  html += '    if (tNameEl && val) tNameEl.innerText = val;';
   html += '  }';
   html += '}';
   html += '';
@@ -14925,10 +15261,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const taskCustom = document.getElementById("sheetTaskCustomInput");';
   html += '  if (taskSelect) taskSelect.value = "";';
   html += '  if (taskCustom) { taskCustom.value = ""; taskCustom.style.display = "none"; }';
-  html += '  const partnerInput = document.getElementById("sheetPartnerInput");';
-  html += '  if (partnerInput) partnerInput.value = "";';
-  html += '  populatePartnerDatalist(rawData ? rawData.partners : []);';
-  html += '  updateModalPartnerPhone("", true);';
+  html += '  populatePartnerSelectOptions(rawData ? rawData.partners : []);';
+  html += '  setPartnerSelectValue("", true);';
+  html += '  const taskDispWrap = document.getElementById("sheetTaskDisplayWrap");';
+  html += '  const taskEditWrap = document.getElementById("sheetTaskEditWrap");';
+  html += '  const editTaskBtn = document.getElementById("sheetEditTaskBtn");';
+  html += '  if (taskDispWrap) taskDispWrap.style.display = "none";';
+  html += '  if (taskEditWrap) taskEditWrap.style.display = "none";';
+  html += '  if (editTaskBtn) editTaskBtn.style.display = "none";';
   html += '  const dateInput = document.getElementById("sheetDateInput");';
   html += '  const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
   html += '  let targetIso = "";';
@@ -14954,10 +15294,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const defaultSiteMgr = prefillSite ? findSiteDefaultManager(prefillSite) : "";';
   html += '    mgrSelect.value = defaultSiteMgr || (selectedMember && selectedMember !== "__NONE__" ? selectedMember : "");';
   html += '    if (mgrCustom) { mgrCustom.value = ""; mgrCustom.style.display = "none"; }';
+  html += '    updateManagerSelectStyle(mgrSelect);';
   html += '  }';
   html += '  if (mgrSelect2) {';
   html += '    mgrSelect2.value = "";';
   html += '    if (mgrCustom2) { mgrCustom2.value = ""; mgrCustom2.style.display = "none"; }';
+  html += '    updateManagerSelectStyle(mgrSelect2);';
   html += '  }';
   html += '  const memoInput = document.getElementById("sheetMemoInput");';
   html += '  if (memoInput) memoInput.value = "";';
@@ -14988,10 +15330,16 @@ function buildSidebarDashboardHtml(mode) {
   html += '  selectedShare = (task.isShared === true);';
   html += '  document.getElementById("sheetSiteName").innerText = site;';
   html += '  document.getElementById("sheetTaskName").innerText = task.taskName;';
+  html += '  const taskDispWrap = document.getElementById("sheetTaskDisplayWrap");';
+  html += '  const taskEditWrap = document.getElementById("sheetTaskEditWrap");';
+  html += '  const editTaskBtn = document.getElementById("sheetEditTaskBtn");';
+  html += '  if (taskDispWrap) taskDispWrap.style.display = "inline-flex";';
+  html += '  if (taskEditWrap) taskEditWrap.style.display = "none";';
+  html += '  if (editTaskBtn) editTaskBtn.style.display = "inline-flex";';
+  html += '  populateDetailTaskSelectOptions(rawData ? rawData.tasks : [], task.taskName);';
   html += '  updateSheetModalSiteInfo(site);';
   html += '  const curPartnerVal = (task && task.partner) || "";';
   html += '  const partnerBadge = document.getElementById("sheetTaskPartnerBadge");';
-  html += '  const editPartnerInp = document.getElementById("sheetEditPartnerInput");';
   html += '  const editPartnerRow = document.getElementById("sheetEditPartnerRow");';
   html += '  if (partnerBadge) {';
   html += '    if (curPartnerVal) {';
@@ -15004,9 +15352,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '  }';
   html += '  if (editPartnerRow) editPartnerRow.style.display = "flex";';
-  html += '  if (editPartnerInp) editPartnerInp.value = curPartnerVal;';
-  html += '  populatePartnerDatalist(rawData ? rawData.partners : []);';
-  html += '  updateModalPartnerPhone(curPartnerVal, false);';
+  html += '  populatePartnerSelectOptions(rawData ? rawData.partners : []);';
+  html += '  setPartnerSelectValue(curPartnerVal, false);';
   html += '  const dateInput = document.getElementById("sheetDateInput");';
   html += '  const hiddenPicker = document.getElementById("sheetNativeDatePicker");';
   html += '  if (dateInput) {';
@@ -15036,6 +15383,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      mgrSelect.value = m1;';
   html += '      if (mgrCustom) { mgrCustom.value = ""; mgrCustom.style.display = "none"; }';
   html += '    }';
+  html += '    updateManagerSelectStyle(mgrSelect);';
   html += '    if (mgrSelect2) {';
   html += '      let found2 = false;';
   html += '      for (let j = 0; j < mgrSelect2.options.length; j++) {';
@@ -15048,6 +15396,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        mgrSelect2.value = m2;';
   html += '        if (mgrCustom2) { mgrCustom2.value = ""; mgrCustom2.style.display = "none"; }';
   html += '      }';
+  html += '      updateManagerSelectStyle(mgrSelect2);';
   html += '    }';
   html += '  }';
   html += '  document.getElementById("sheetMemoInput").value = task.memo || "";';
@@ -15069,6 +15418,10 @@ function buildSidebarDashboardHtml(mode) {
   html += 'function closeBottomSheet(e) {';
   html += '  if (e && e.target !== document.getElementById("sheetOverlay") && !e.target.classList.contains("sheet-close")) return;';
   html += '  closeCustomDatePicker();';
+  html += '  const taskDispWrap = document.getElementById("sheetTaskDisplayWrap");';
+  html += '  const taskEditWrap = document.getElementById("sheetTaskEditWrap");';
+  html += '  if (taskEditWrap) taskEditWrap.style.display = "none";';
+  html += '  if (taskDispWrap) taskDispWrap.style.display = "inline-flex";';
   html += '  document.getElementById("sheetOverlay").classList.remove("show");';
   html += '  isCreateMode = false;';
   html += '  popBottomSheetHistoryStateIfNeeded();';
@@ -15097,8 +15450,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  document.getElementById("sheetShareOff").classList.toggle("active-off", !selectedShare);';
   html += '}';
   html += '';
-  html += 'function applyOptimisticTaskUpdate(taskObj, newStatus, newShare, newMemo, newDateStr, newMgr, newPartner) {';
+  html += 'function applyOptimisticTaskUpdate(taskObj, newStatus, newShare, newMemo, newDateStr, newMgr, newPartner, newTaskName) {';
   html += '  if (!taskObj) return;';
+  html += '  if (newTaskName) taskObj.taskName = newTaskName;';
   html += '  taskObj.status = newStatus;';
   html += '  taskObj.isShared = !!newShare;';
   html += '  taskObj.memo = newMemo;';
@@ -15213,8 +15567,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (!taskVal && taskInp) {';
   html += '      taskVal = taskInp.value.trim();';
   html += '    }';
-  html += '    const partnerInp = document.getElementById("sheetPartnerInput");';
-  html += '    const partnerVal = partnerInp ? partnerInp.value.trim() : "";';
+  html += '    const partnerVal = getSelectedPartnerValue(true);';
   html += '    if (!siteVal) { showToast("⚠️ 현장을 선택해주세요."); return; }';
   html += '    if (!taskVal) { showToast("⚠️ 공종(작업내용)을 입력해주세요."); return; }';
   html += '    if (!dateVal) { showToast("⚠️ 일정(날짜)을 입력해주세요."); return; }';
@@ -15280,15 +15633,30 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '  }';
   html += '  const prevSnapshot = Object.assign({}, targetTask);';
-  html += '  const editPartnerInp = document.getElementById("sheetEditPartnerInput");';
-  html += '  const partnerValForSave = editPartnerInp ? editPartnerInp.value.trim() : ((curTaskObj && curTaskObj.partner) || "");';
-  html += '  applyOptimisticTaskUpdate(targetTask, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, partnerValForSave);';
+  html += '  const editTaskSelect = document.getElementById("sheetDetailTaskSelect");';
+  html += '  const editTaskCustom = document.getElementById("sheetDetailTaskCustomInput");';
+  html += '  const editTaskWrap = document.getElementById("sheetTaskEditWrap");';
+  html += '  let newTaskVal = "";';
+  html += '  if (editTaskWrap && editTaskWrap.style.display !== "none") {';
+  html += '    newTaskVal = (editTaskSelect && editTaskSelect.value === "__CUSTOM__")';
+  html += '      ? (editTaskCustom ? editTaskCustom.value.trim() : "")';
+  html += '      : (editTaskSelect ? editTaskSelect.value.trim() : "");';
+  html += '  }';
+  html += '  const taskNameForSave = newTaskVal || (targetTask && targetTask.taskName) || (curTaskObj && curTaskObj.taskName) || "";';
+  html += '  const origTaskNameForSave = prevSnapshot.taskName || (curTaskObj && curTaskObj.taskName) || taskNameForSave;';
+  html += '  const partnerValForSave = getSelectedPartnerValue(false);';
+  html += '  applyOptimisticTaskUpdate(targetTask, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, partnerValForSave, taskNameForSave);';
+  html += '  if (curTaskObj) curTaskObj.taskName = taskNameForSave;';
+  html += '  const tDispWrap = document.getElementById("sheetTaskDisplayWrap");';
+  html += '  if (tDispWrap) tDispWrap.style.display = "inline-flex";';
+  html += '  if (editTaskWrap) editTaskWrap.style.display = "none";';
+  html += '  const tNameEl = document.getElementById("sheetTaskName");';
+  html += '  if (tNameEl) tNameEl.innerText = taskNameForSave;';
   html += '  closeCustomDatePicker();';
   html += '  const overlayEl = document.getElementById("sheetOverlay");';
   html += '  if (overlayEl) overlayEl.classList.remove("show");';
   html += '  popBottomSheetHistoryStateIfNeeded();';
   html += '  const siteNameForSave = curSiteName || "";';
-  html += '  const taskNameForSave = (targetTask && targetTask.taskName) || (curTaskObj && curTaskObj.taskName) || "";';
   html += '  showToast("✅ [" + taskNameForSave + "] 일정/담당자/협력업체/상태가 저장되었습니다!");';
   html += '  const runner = google.script.run';
   html += '    .withSuccessHandler(res => {';
@@ -15298,21 +15666,30 @@ function buildSidebarDashboardHtml(mode) {
   html += '        loadDataSilently();';
   html += '      } else {';
   html += '        Object.assign(targetTask, prevSnapshot);';
-  html += '        applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "", prevSnapshot.partner || "");';
+  html += '        applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "", prevSnapshot.partner || "", prevSnapshot.taskName);';
+  html += '        if (curTaskObj) curTaskObj.taskName = prevSnapshot.taskName;';
+  html += '        const tNameFailEl = document.getElementById("sheetTaskName");';
+  html += '        if (tNameFailEl) tNameFailEl.innerText = prevSnapshot.taskName;';
+  html += '        renderDashboardPayload(rawData);';
   html += '        showToast("⚠️ 저장 실패: " + ((res && res.error) || "알 수 없는 오류"));';
   html += '      }';
   html += '    })';
   html += '    .withFailureHandler(err => {';
   html += '      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = "💾 저장하기"; }';
   html += '      Object.assign(targetTask, prevSnapshot);';
-  html += '      applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "", prevSnapshot.partner || "");';
+  html += '      applyOptimisticTaskUpdate(targetTask, prevSnapshot.status, prevSnapshot.isShared, prevSnapshot.memo, prevSnapshot.dateDisplay || "", prevSnapshot.manager || "", prevSnapshot.partner || "", prevSnapshot.taskName);';
+  html += '      if (curTaskObj) curTaskObj.taskName = prevSnapshot.taskName;';
+  html += '      const tNameFailEl = document.getElementById("sheetTaskName");';
+  html += '      if (tNameFailEl) tNameFailEl.innerText = prevSnapshot.taskName;';
+  html += '      renderDashboardPayload(rawData);';
   html += '      showToast("⚠️ 에러: " + (err.message || err));';
   html += '    });';
   html += '  const targetSheetNameForSave = (curTaskObj && curTaskObj.sheetName) ? curTaskObj.sheetName : (curTaskObj && curTaskObj.isArchived ? "완료현장" : "현장데이터");';
+  html += '  const origDateForSave = prevSnapshot.dateDisplay || prevSnapshot.startDateStr || "";';
   html += '  if (curTaskObj.isArchived) {';
-  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true, siteNameForSave, taskNameForSave, partnerValForSave, targetSheetNameForSave);';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, true, siteNameForSave, taskNameForSave, partnerValForSave, targetSheetNameForSave, origDateForSave, origTaskNameForSave);';
   html += '  } else {';
-  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, false, siteNameForSave, taskNameForSave, partnerValForSave, targetSheetNameForSave);';
+  html += '    runner.updateScheduleStatusFromWeb(curTaskObj.row, selectedStatus, selectedShare, memoVal, dateVal, mgrVal, false, siteNameForSave, taskNameForSave, partnerValForSave, targetSheetNameForSave, origDateForSave, origTaskNameForSave);';
   html += '  }';
   html += '}';
   html += '';
