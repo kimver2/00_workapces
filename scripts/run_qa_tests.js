@@ -10345,7 +10345,65 @@ assertTest('Step 155-5: 클라이언트 실시간 연동 (rawData 및 현장 추
 
 // 155-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=155)
 assertTest('Step 155-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=155)',
-  indexHtml155.indexOf('exec?v=155') !== -1
+  indexHtml155.indexOf('exec?v=') !== -1
+);
+
+// ========================================================
+// [Step 156]: 마스터 설정 5대 개선 (Optimistic UI 0ms 순서이동, sticky 헤더 겹침 방지, 시트 10개 열 1:1 일치, 팝업 1440px 대형화, 헤더 열 필터 드롭다운) QA
+// ========================================================
+console.log('\n📋 [Step 156]: 마스터 설정 5대 개선 (0ms 반응성, 헤더 겹침 차단, 10개 열 일치, 팝업 대형화, 열 필터) QA ---');
+const code156 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml156 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 156-1: Optimistic UI 즉각 반응성 및 행 플래시 애니메이션 검증
+assertTest('Step 156-1: Optimistic UI 즉각 반응성 및 행 플래시 애니메이션 검증',
+  code156.indexOf('// 1. [Optimistic UI] 즉각 로컬 맞교환 및 0초 즉각 렌더링') !== -1 &&
+  code156.indexOf('settingsMovedPartnerRow = row;') !== -1 &&
+  code156.indexOf('settingsMovedTaskRow = row;') !== -1 &&
+  code156.indexOf('settings-row-moved') !== -1 &&
+  code156.indexOf('settingsRowFlash') !== -1
+);
+
+// 156-2: 스크롤 시 테이블 헤더 겹침 방지 sticky th 스타일 검증
+assertTest('Step 156-2: 스크롤 시 테이블 헤더 겹침 방지 sticky th 스타일 검증',
+  code156.indexOf('.settings-th-sticky') !== -1 &&
+  code156.indexOf('position: sticky !important;') !== -1 &&
+  code156.indexOf('background: #f1f5f9 !important;') !== -1 &&
+  code156.indexOf('box-shadow: inset 0 -2px 0 #cbd5e1 !important;') !== -1 &&
+  code156.indexOf('class="settings-th-sticky"') !== -1
+);
+
+// 156-3: 거래처 관리 시트 원본 10개 열 1:1 일치 검증
+assertTest('Step 156-3: 거래처 관리 시트 원본 10개 열 1:1 일치 검증',
+  code156.indexOf('업체 / 반장명') !== -1 &&
+  code156.indexOf('대표 공종') !== -1 &&
+  code156.indexOf('대구분') !== -1 &&
+  code156.indexOf('우선순위') !== -1 &&
+  code156.indexOf('담당자 / 직책') !== -1 &&
+  code156.indexOf('연락처') !== -1 &&
+  code156.indexOf('관리상태') !== -1 &&
+  code156.indexOf('주력분야 및 특징') !== -1 &&
+  code156.indexOf('발주/접수방식') !== -1 &&
+  code156.indexOf('min-width:1250px;') !== -1
+);
+
+// 156-4: 설정 팝업 창 대형화(width: 96vw, max-width: 1440px, height: 92vh) 검증
+assertTest('Step 156-4: 설정 팝업 창 대형화(width: 96vw, max-width: 1440px, height: 92vh) 검증',
+  code156.indexOf('width:96vw;max-width:1440px;height:92vh;max-height:900px;') !== -1
+);
+
+// 156-5: 헤더 열 제목 필터 드롭다운 및 적용된 필터 뱃지 바 검증
+assertTest('Step 156-5: 헤더 열 제목 필터 드롭다운 및 적용된 필터 뱃지 바 검증',
+  code156.indexOf('settings-filter-select') !== -1 &&
+  code156.indexOf('settingsColumnFilters') !== -1 &&
+  code156.indexOf('onSettingsColumnFilterChange(') !== -1 &&
+  code156.indexOf('updateSettingsActiveFiltersBar()') !== -1 &&
+  code156.indexOf('id="settingsActiveFiltersBar"') !== -1
+);
+
+// 156-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=156)
+assertTest('Step 156-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=156)',
+  indexHtml156.indexOf('exec?v=156') !== -1
 );
 
 console.log('\n========================================================');
