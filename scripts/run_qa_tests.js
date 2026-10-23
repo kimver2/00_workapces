@@ -9944,9 +9944,58 @@ assertTest('Step 145-8: 시트 그룹화 무결성 보장 엔진 (이동/삭제 
   code145.indexOf('try { groupSheetRowsBySite(sheet, false); } catch(eGrpDelTask) {}') !== -1
 );
 
-// 145-9: index.html 내 exec?v=144 최신 캐시 버스팅 파라미터 갱신 검증
+// 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 144)',
-  indexHtml145.indexOf('exec?v=144') !== -1
+  indexHtml145.indexOf('exec?v=144') !== -1 || indexHtml145.indexOf('exec?v=145') !== -1
+);
+
+// [Step 146]: 모바일 하단 푸터 바 [✅ To-Do] 버튼 전환, 토글 엔진 및 모바일 반응형 매트릭스 QA
+console.log('\n📋 [Step 146]: 모바일 하단 푸터 바 [✅ To-Do] 버튼 전환, 토글 엔진 및 모바일 반응형 매트릭스 QA ---');
+
+const code146 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml146 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 146-1: 모바일 하단 푸터 바 [✅ To-Do] 버튼(id="mobileTodoBtn") 탑재 검증
+assertTest('Step 146-1: 모바일 푸터 바 새로고침 버튼 -> [✅ To-Do](id="mobileTodoBtn") 변경 검증',
+  code146.indexOf('id="mobileTodoBtn"') !== -1 &&
+  code146.indexOf('onclick="toggleMobileTodoView()"') !== -1 &&
+  code146.indexOf('<span>✅</span> To-Do') !== -1
+);
+
+// 146-2: toggleMobileTodoView 모바일 To-Do 및 현장 목록 토글 엔진 검증
+assertTest('Step 146-2: toggleMobileTodoView 함수 및 현장목록/To-Do 양방향 전환 로직 검증',
+  code146.indexOf('function toggleMobileTodoView()') !== -1 &&
+  code146.indexOf('todoBtn.innerHTML = "<span>📋</span> 현장 목록"') !== -1 &&
+  code146.indexOf('addTaskBtn.innerHTML = "➕ 할 일 추가"') !== -1
+);
+
+// 146-3: updateMobileHeaderVisibility 모바일 상단 현장 전용 UI 은닉/표시 제어 검증
+assertTest('Step 146-3: updateMobileHeaderVisibility 상단 현장 전용 필터/KPI 은닉 제어 검증',
+  code146.indexOf('function updateMobileHeaderVisibility(isTodo)') !== -1 &&
+  code146.indexOf('.kpi-grid') !== -1 &&
+  code146.indexOf('.search-box') !== -1
+);
+
+// 146-4: toggleCalendarView 및 onLogoClick 내 To-Do 모드 해제 연동 검증
+assertTest('Step 146-4: toggleCalendarView 및 onLogoClick 내 To-Do 상태 초기화 및 복원 연동 검증',
+  code146.indexOf('if (typeof isMobileTodoMode !== "undefined" && isMobileTodoMode)') !== -1
+);
+
+// 146-5: todoModalInpStatus 팝업 내 상태 드롭다운 탑재 검증
+assertTest('Step 146-5: #todoActionModal 내 진행 상태 선택 드롭다운(id="todoModalInpStatus") 탑재 검증',
+  code146.indexOf('id="todoModalInpStatus"') !== -1 &&
+  code146.indexOf('selectedStatus || (isImportant ? "중요" : "미완료")') !== -1
+);
+
+// 146-6: todo-matrix-table 모바일 가로 스크롤(overflow-x:auto, min-width:680px) 반응형 검증
+assertTest('Step 146-6: todo-matrix-table 모바일 터치 스크롤(overflow-x:auto, min-width:680px) 검증',
+  code146.indexOf('overflow-x:auto;-webkit-overflow-scrolling:touch') !== -1 &&
+  code146.indexOf('min-width:680px') !== -1
+);
+
+// 146-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 145)
+assertTest('Step 146-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 145)',
+  indexHtml146.indexOf('exec?v=145') !== -1
 );
 
 console.log('\n========================================================');

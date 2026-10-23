@@ -13255,7 +13255,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '</div>';
 
   html += '<div class="footer-bar">';
-  html += '  <button class="btn btn-secondary btn-refresh-action" onclick="loadData(true)">🔄 새로고침</button>';
+  html += '  <button type="button" id="mobileTodoBtn" class="btn btn-secondary" onclick="toggleMobileTodoView()" style="background:#f0fdf4;color:#166534;border:1.5px solid #86efac;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:4px;"><span>✅</span> To-Do</button>';
   html += '  <button type="button" id="btnOpenAddTask" class="btn btn-add-action" onclick="openNewTaskModal()">➕ 일정 추가</button>';
   html += '  <button type="button" id="calendarToggleBtn" class="btn btn-primary" onclick="toggleCalendarView()">📅 캘린더 보기</button>';
   html += '</div>';
@@ -13757,6 +13757,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '        </div>';
   html += '        <div style="margin-left:79px;margin-top:4px;font-size:11px;color:#94a3b8;font-weight:500;">현장 없이 등록 — 팀 업무로 저장됩니다(현장에 안 묶인 회사 할 일).</div>';
   html += '      </div>';
+  html += '      <div style="display:flex;align-items:center;gap:14px;">';
+  html += '        <span style="width:65px;font-size:13px;font-weight:700;color:#475569;flex-shrink:0;">진행 상태</span>';
+  html += '        <select id="todoModalInpStatus" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:700;color:#1e293b;outline:none;background:#ffffff;">';
+  html += '          <option value="미완료">미완료</option>';
+  html += '          <option value="중요">중요 ★</option>';
+  html += '          <option value="완료">완료 ✅</option>';
+  html += '        </select>';
+  html += '      </div>';
   html += '      <div style="display:flex;justify-content:flex-end;margin-top:4px;">';
   html += '        <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:700;color:#0f172a;">';
   html += '          <input type="checkbox" id="todoModalInpIsImportant" style="width:16px;height:16px;cursor:pointer;accent-color:#eab308;">';
@@ -13842,7 +13850,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const contentArea = document.getElementById("contentArea");\n';
   html += '  if (!contentArea) return;\n';
   html += '  let tHtml = "";\n';
-  html += '  tHtml += \'<div class="todo-dashboard-container" style="padding:16px 20px;max-width:1440px;margin:0 auto;">\';\n';
+  html += '  tHtml += \'<div class="todo-dashboard-container" style="padding:\' + (isMobileMode ? \'12px 8px 80px 8px;\' : \'16px 20px;\') + \'max-width:1440px;margin:0 auto;">\';\n';
   html += '\n';
 
   // 1. 상단 담당자 필터 칩 바
@@ -13901,8 +13909,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '\n';
 
   // 4. 담당자 × 진행상태 매트릭스 테이블
-  html += '  tHtml += \'  <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">\';\n';
-  html += '  tHtml += \'    <table class="todo-matrix-table" style="width:100%;border-collapse:collapse;table-layout:fixed;">\';\n';
+  html += '  tHtml += \'  <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;box-shadow:0 1px 3px rgba(0,0,0,0.04);">\';\n';
+  html += '  tHtml += \'    <table class="todo-matrix-table" style="width:100%;min-width:680px;border-collapse:collapse;table-layout:fixed;">\';\n';
   html += '  tHtml += \'      <thead>\';\n';
   html += '  tHtml += \'        <tr style="border-bottom:1.5px solid #cbd5e1;background:#f8fafc;">\';\n';
   html += '  tHtml += \'          <th style="width:180px;padding:12px 14px;text-align:left;font-size:12px;font-weight:800;color:#64748b;border-right:1px solid #e2e8f0;">담당자 \\ 상태</th>\';\n';
@@ -14165,6 +14173,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (inpSite) populateTodoSiteOptions(inpSite, "");\n';
   html += '  const inpImp = document.getElementById("todoModalInpIsImportant");\n';
   html += '  if (inpImp) inpImp.checked = false;\n';
+  html += '  const inpSt = document.getElementById("todoModalInpStatus");\n';
+  html += '  if (inpSt) inpSt.value = "미완료";\n';
   html += '  const modal = document.getElementById("todoActionModal");\n';
   html += '  if (modal) modal.style.display = "flex";\n';
   html += '  if (inpTitle) setTimeout(() => inpTitle.focus(), 100);\n';
@@ -14190,6 +14200,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (inpSite) populateTodoSiteOptions(inpSite, item.siteName || "");\n';
   html += '  const inpImp = document.getElementById("todoModalInpIsImportant");\n';
   html += '  if (inpImp) inpImp.checked = (item.isImportant === true || item.status === "중요");\n';
+  html += '  const inpSt = document.getElementById("todoModalInpStatus");\n';
+  html += '  if (inpSt) inpSt.value = item.status || (item.isImportant ? "중요" : "미완료");\n';
   html += '  const modal = document.getElementById("todoActionModal");\n';
   html += '  if (modal) modal.style.display = "flex";\n';
   html += '}\n';
@@ -14235,8 +14247,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const tag = (document.getElementById("todoModalInpTag") || {}).value || "";\n';
   html += '  const detail = (document.getElementById("todoModalInpDetail") || {}).value || "";\n';
   html += '  const siteName = (document.getElementById("todoModalInpSite") || {}).value || "";\n';
-  html += '  const isImportant = (document.getElementById("todoModalInpIsImportant") || {}).checked === true;\n';
-  html += '  const status = isImportant ? "중요" : "미완료";\n';
+  html += '  const inpSt = document.getElementById("todoModalInpStatus");\n';
+  html += '  const selectedStatus = inpSt ? inpSt.value : "";\n';
+  html += '  const isImportant = (selectedStatus === "중요" || (document.getElementById("todoModalInpIsImportant") || {}).checked === true);\n';
+  html += '  const status = selectedStatus || (isImportant ? "중요" : "미완료");\n';
   html += '\n';
   html += '  const payload = { title, dueDate, manager, tag, detail, siteName, isImportant, status };\n';
   html += '  closeTodoModal();\n';
@@ -15159,6 +15173,9 @@ function buildSidebarDashboardHtml(mode) {
 
   html += 'function onLogoClick() {';
   html += '  try {';
+  html += '    if (typeof isMobileTodoMode !== "undefined" && isMobileTodoMode) {';
+  html += '      if (typeof toggleMobileTodoView === "function") { toggleMobileTodoView(); return; }';
+  html += '    }';
   html += '    if (typeof closeBottomSheet === "function") closeBottomSheet();';
   html += '    if (typeof closePcSiteDetailModal === "function") closePcSiteDetailModal();';
   html += '    if (typeof closeCustomDatePicker === "function") closeCustomDatePicker();';
@@ -15506,7 +15523,78 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });';
   html += '}';
 
+  html += 'let isMobileTodoMode = false;';
+  html += 'function updateMobileHeaderVisibility(isTodo) {';
+  html += '  const selectors = [".kpi-grid", ".search-box", ".filter-tabs", "#memberFilterBar", "#mobileScopeTabsWrapper", "#checkedActionBar"];';
+  html += '  selectors.forEach(sel => {';
+  html += '    const el = document.querySelector(sel);';
+  html += '    if (el) el.style.display = isTodo ? "none" : "";';
+  html += '  });';
+  html += '}';
+  html += '';
+  html += 'function toggleMobileTodoView() {';
+  html += '  isMobileTodoMode = !isMobileTodoMode;';
+  html += '  const todoBtn = document.getElementById("mobileTodoBtn");';
+  html += '  const addTaskBtn = document.getElementById("btnOpenAddTask");';
+  html += '  const calBtn = document.getElementById("calendarToggleBtn");';
+  html += '  const pageTitle = document.getElementById("pageTitle");';
+  html += '  const contentArea = document.getElementById("contentArea");';
+  html += '  const calArea = document.getElementById("calendarArea");';
+  html += '  if (isMobileTodoMode) {';
+  html += '    if (isCalendarMode) {';
+  html += '      isCalendarMode = false;';
+  html += '      if (calArea) { if (calArea.classList) calArea.classList.add("hidden"); calArea.style.display = "none"; }';
+  html += '      if (calBtn) calBtn.innerText = "📅 캘린더 보기";';
+  html += '    }';
+  html += '    if (contentArea) { if (contentArea.classList) contentArea.classList.remove("hidden"); contentArea.style.display = ""; }';
+  html += '    updateMobileHeaderVisibility(true);';
+  html += '    if (todoBtn) {';
+  html += '      todoBtn.innerHTML = "<span>📋</span> 현장 목록";';
+  html += '      todoBtn.style.background = "#eff6ff";';
+  html += '      todoBtn.style.color = "#1d4ed8";';
+  html += '      todoBtn.style.borderColor = "#93c5fd";';
+  html += '    }';
+  html += '    if (addTaskBtn) {';
+  html += '      addTaskBtn.innerHTML = "➕ 할 일 추가";';
+  html += '      addTaskBtn.onclick = function() { openAddTodoModal(); };';
+  html += '    }';
+  html += '    if (pageTitle) pageTitle.innerText = "✅ 우성아이디 To-Do 할 일";';
+  html += '    loadTodoList();';
+  html += '  } else {';
+  html += '    updateMobileHeaderVisibility(false);';
+  html += '    if (todoBtn) {';
+  html += '      todoBtn.innerHTML = "<span>✅</span> To-Do";';
+  html += '      todoBtn.style.background = "#f0fdf4";';
+  html += '      todoBtn.style.color = "#166534";';
+  html += '      todoBtn.style.borderColor = "#86efac";';
+  html += '    }';
+  html += '    if (addTaskBtn) {';
+  html += '      addTaskBtn.innerHTML = "➕ 일정 추가";';
+  html += '      addTaskBtn.onclick = function() { openNewTaskModal(); };';
+  html += '    }';
+  html += '    if (pageTitle) pageTitle.innerText = isMobileMode ? "📱 우성아이디 현장 대시보드" : "🏗️ 우성아이디 현장 대시보드";';
+  html += '    if (contentArea) { if (contentArea.classList) contentArea.classList.remove("hidden"); contentArea.style.display = ""; }';
+  html += '    renderList();';
+  html += '  }';
+  html += '}';
+  html += '';
   html += 'function toggleCalendarView() {';
+  html += '  if (typeof isMobileTodoMode !== "undefined" && isMobileTodoMode) {';
+  html += '    isMobileTodoMode = false;';
+  html += '    if (typeof updateMobileHeaderVisibility === "function") updateMobileHeaderVisibility(false);';
+  html += '    const tBtn = document.getElementById("mobileTodoBtn");';
+  html += '    if (tBtn) {';
+  html += '      tBtn.innerHTML = "<span>✅</span> To-Do";';
+  html += '      tBtn.style.background = "#f0fdf4";';
+  html += '      tBtn.style.color = "#166534";';
+  html += '      tBtn.style.borderColor = "#86efac";';
+  html += '    }';
+  html += '    const addBtn = document.getElementById("btnOpenAddTask");';
+  html += '    if (addBtn) {';
+  html += '      addBtn.innerHTML = "➕ 일정 추가";';
+  html += '      addBtn.onclick = function() { openNewTaskModal(); };';
+  html += '    }';
+  html += '  }';
   html += '  isCalendarMode = !isCalendarMode;';
   html += '  const btn = document.getElementById("calendarToggleBtn");';
   html += '  const contentArea = document.getElementById("contentArea");';
@@ -16836,6 +16924,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function loadData(isManual) {';
+  html += '  if (typeof isMobileTodoMode !== "undefined" && isMobileTodoMode) {';
+  html += '    loadTodoList(true);';
+  html += '    return;';
+  html += '  }';
   html += '  if (isManual === true) isManualRefreshPending = true;';
   html += '  if (isManual !== true && !rawData) {';
   html += '    try {';
