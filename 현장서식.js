@@ -13086,7 +13086,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    </div>';
   html += '  </div>';
   html += '  <div class="pc-top-right">';
-  html += '    <button type="button" class="pc-view-tab" id="pcViewTabTodo" data-view="todo" onclick="switchToPcView(\'todo\')" style="background:#f0fdf4;color:#166534;border:1.5px solid #86efac;font-weight:800;display:inline-flex;align-items:center;gap:4px;margin-right:8px;border-radius:8px;padding:6px 12px;box-shadow:0 1px 2px rgba(22,101,52,0.1);" title="할 일 · 업무 관리 보드"><span>✅</span> To-Do</button>';
+  html += '    <button type="button" class="pc-view-tab" id="pcViewTabTodo" data-view="todo" onclick="switchToPcView(\'todo\')" style="background:#f0fdf4;color:#166534;border:1.5px solid #86efac;font-weight:800;display:inline-flex;align-items:center;gap:4px;margin-right:8px;border-radius:8px;padding:6px 14px;box-shadow:0 1px 2px rgba(22,101,52,0.1);" title="To-Do">To-Do</button>';
   html += '    <div class="pc-view-switcher">';
   html += '      <button type="button" class="pc-view-tab active" data-view="month" onclick="switchToPcView(\'month\')">월간</button>';
   html += '      <button type="button" class="pc-view-tab" data-view="week" onclick="switchToPcView(\'week\')">주간</button>';
@@ -13255,7 +13255,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '</div>';
 
   html += '<div class="footer-bar">';
-  html += '  <button type="button" id="mobileTodoBtn" class="btn btn-secondary" onclick="toggleMobileTodoView()" style="background:#f0fdf4;color:#166534;border:1.5px solid #86efac;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:4px;"><span>✅</span> To-Do</button>';
+  html += '  <button type="button" id="mobileTodoBtn" class="btn btn-secondary" onclick="toggleMobileTodoView()" style="background:#f0fdf4;color:#166534;border:1.5px solid #86efac;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:4px;">To-Do</button>';
   html += '  <button type="button" id="btnOpenAddTask" class="btn btn-add-action" onclick="openNewTaskModal()">➕ 일정 추가</button>';
   html += '  <button type="button" id="calendarToggleBtn" class="btn btn-primary" onclick="toggleCalendarView()">📅 캘린더 보기</button>';
   html += '</div>';
@@ -13785,6 +13785,18 @@ function buildSidebarDashboardHtml(mode) {
   // ========================================================
   // [To-Do 매트릭스 보드 클라이언트 엔진]
   // ========================================================
+  html += 'function formatTodoDateYmd(d) {\n';
+  html += '  if (!d) return "";\n';
+  html += '  const dt = (d instanceof Date) ? d : new Date(d);\n';
+  html += '  if (isNaN(dt.getTime())) return String(d);\n';
+  html += '  const y = dt.getFullYear();\n';
+  html += '  const m = String(dt.getMonth() + 1).padStart(2, "0");\n';
+  html += '  const day = String(dt.getDate()).padStart(2, "0");\n';
+  html += '  return y + "-" + m + "-" + day;\n';
+  html += '}\n';
+  html += 'function formatDateYYMMDD(d) {\n';
+  html += '  return formatTodoDateYmd(d);\n';
+  html += '}\n';
   html += 'let todoDataList = [];\n';
   html += 'let todoMembersList = [];\n';
   html += 'let todoActiveSitesList = [];\n';
@@ -15222,7 +15234,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      tab.classList.toggle("active", tab.dataset.view === "todo");';
   html += '    });';
   html += '    const pcTitle = document.getElementById("pcMonthTitle");';
-  html += '    if (pcTitle) pcTitle.innerText = "To-Do 할 일 보드";';
+  html += '    if (pcTitle) pcTitle.innerText = "To-Do";';
   html += '    loadTodoList();';
   html += '    return;';
   html += '  }';
@@ -15558,12 +15570,12 @@ function buildSidebarDashboardHtml(mode) {
   html += '      addTaskBtn.innerHTML = "➕ 할 일 추가";';
   html += '      addTaskBtn.onclick = function() { openAddTodoModal(); };';
   html += '    }';
-  html += '    if (pageTitle) pageTitle.innerText = "✅ 우성아이디 To-Do 할 일";';
+  html += '    if (pageTitle) pageTitle.innerText = "To-Do";';
   html += '    loadTodoList();';
   html += '  } else {';
   html += '    updateMobileHeaderVisibility(false);';
   html += '    if (todoBtn) {';
-  html += '      todoBtn.innerHTML = "<span>✅</span> To-Do";';
+  html += '      todoBtn.innerHTML = "To-Do";';
   html += '      todoBtn.style.background = "#f0fdf4";';
   html += '      todoBtn.style.color = "#166534";';
   html += '      todoBtn.style.borderColor = "#86efac";';
@@ -15584,7 +15596,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (typeof updateMobileHeaderVisibility === "function") updateMobileHeaderVisibility(false);';
   html += '    const tBtn = document.getElementById("mobileTodoBtn");';
   html += '    if (tBtn) {';
-  html += '      tBtn.innerHTML = "<span>✅</span> To-Do";';
+  html += '      tBtn.innerHTML = "To-Do";';
   html += '      tBtn.style.background = "#f0fdf4";';
   html += '      tBtn.style.color = "#166534";';
   html += '      tBtn.style.borderColor = "#86efac";';

@@ -9946,7 +9946,7 @@ assertTest('Step 145-8: 시트 그룹화 무결성 보장 엔진 (이동/삭제 
 
 // 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 144)',
-  indexHtml145.indexOf('exec?v=144') !== -1 || indexHtml145.indexOf('exec?v=145') !== -1
+  indexHtml145.indexOf('exec?v=144') !== -1 || indexHtml145.indexOf('exec?v=145') !== -1 || indexHtml145.indexOf('exec?v=146') !== -1
 );
 
 // [Step 146]: 모바일 하단 푸터 바 [✅ To-Do] 버튼 전환, 토글 엔진 및 모바일 반응형 매트릭스 QA
@@ -9955,11 +9955,11 @@ console.log('\n📋 [Step 146]: 모바일 하단 푸터 바 [✅ To-Do] 버튼 �
 const code146 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
 const indexHtml146 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
-// 146-1: 모바일 하단 푸터 바 [✅ To-Do] 버튼(id="mobileTodoBtn") 탑재 검증
-assertTest('Step 146-1: 모바일 푸터 바 새로고침 버튼 -> [✅ To-Do](id="mobileTodoBtn") 변경 검증',
+// 146-1: 모바일 하단 푸터 바 [To-Do] 버튼(id="mobileTodoBtn") 탑재 검증
+assertTest('Step 146-1: 모바일 푸터 바 새로고침 버튼 -> [To-Do](id="mobileTodoBtn") 변경 검증',
   code146.indexOf('id="mobileTodoBtn"') !== -1 &&
   code146.indexOf('onclick="toggleMobileTodoView()"') !== -1 &&
-  code146.indexOf('<span>✅</span> To-Do') !== -1
+  code146.indexOf('>To-Do</button>') !== -1
 );
 
 // 146-2: toggleMobileTodoView 모바일 To-Do 및 현장 목록 토글 엔진 검증
@@ -9995,7 +9995,35 @@ assertTest('Step 146-6: todo-matrix-table 모바일 터치 스크롤(overflow-x:
 
 // 146-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 145)
 assertTest('Step 146-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 145)',
-  indexHtml146.indexOf('exec?v=145') !== -1
+  indexHtml146.indexOf('exec?v=145') !== -1 || indexHtml146.indexOf('exec?v=146') !== -1
+);
+
+// [Step 147]: 클라이언트 formatDateYYMMDD 정의(로딩 멈춤 버그 방어), 타이틀 To-Do 통일 QA
+console.log('\n📋 [Step 147]: 클라이언트 formatDateYYMMDD 정의(로딩 멈춤 버그 방어), 타이틀 To-Do 통일 QA ---');
+
+const code147 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml147 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 147-1: 클라이언트 측 formatTodoDateYmd 및 formatDateYYMMDD 함수 선언 검증
+assertTest('Step 147-1: 클라이언트 측 formatTodoDateYmd 및 formatDateYYMMDD 헬퍼 탑재 검증',
+  code147.indexOf('function formatTodoDateYmd(d)') !== -1 &&
+  code147.indexOf('function formatDateYYMMDD(d)') !== -1
+);
+
+// 147-2: switchToPcView('todo') 시 상단 타이틀 "To-Do" 간결화 검증
+assertTest('Step 147-2: switchToPcView("todo") 시 상단 타이틀 pcTitle.innerText = "To-Do" 간결화 검증',
+  code147.indexOf('if (pcTitle) pcTitle.innerText = "To-Do";') !== -1
+);
+
+// 147-3: PC 헤더 탭 버튼 문구 "To-Do" 적용 검증
+assertTest('Step 147-3: PC 상단 탭 버튼 문구 "To-Do" 적용 검증',
+  code147.indexOf('id="pcViewTabTodo" data-view="todo" onclick="switchToPcView(\\\'todo\\\')"') !== -1 &&
+  code147.indexOf('>To-Do</button>') !== -1
+);
+
+// 147-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 146)
+assertTest('Step 147-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 146)',
+  indexHtml147.indexOf('exec?v=146') !== -1
 );
 
 console.log('\n========================================================');
