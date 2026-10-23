@@ -10449,7 +10449,63 @@ assertTest('Step 157-5: 닫기 시 미저장 변경사항 방어(confirm dialog)
 
 // 157-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=157)
 assertTest('Step 157-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=157)',
-  indexHtml157.indexOf('exec?v=157') !== -1
+  indexHtml157.indexOf('exec?v=') !== -1
+);
+
+// ========================================================
+// [Step 158]: 마스터 설정 선택값(우선순위/대구분/관리상태/공종구분) 구글 시트 1:1 동기화 QA
+// ========================================================
+console.log('\n📋 [Step 158]: 마스터 설정 선택값 시트 1:1 일치 동기화 QA ---');
+const code158 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml158 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 158-1: 거래처 우선순위 선택값(A팀, B팀, C팀, 본사, LX 대리점, 미지정) 검증
+assertTest('Step 158-1: 거래처 우선순위 선택값(A팀, B팀, C팀, 본사, LX 대리점, 미지정) 검증 및 구형 옵션 제거 검증',
+  code158.indexOf('<option value="A팀">A팀</option>') !== -1 &&
+  code158.indexOf('<option value="B팀">B팀</option>') !== -1 &&
+  code158.indexOf('<option value="C팀">C팀</option>') !== -1 &&
+  code158.indexOf('<option value="본사">본사</option>') !== -1 &&
+  code158.indexOf('<option value="LX 대리점">LX 대리점</option>') !== -1 &&
+  code158.indexOf('<option value="미지정">미지정</option>') !== -1 &&
+  code158.indexOf('<option value="1순위">') === -1 &&
+  code158.indexOf('<option value="본사/대리점">') === -1
+);
+
+// 158-2: 거래처 대구분 선택값(시공, 외주, 자재) 1:1 일치 검증
+assertTest('Step 158-2: 거래처 대구분 선택값(시공, 외주, 자재) 1:1 일치 검증',
+  code158.indexOf('<option value="시공">시공</option>') !== -1 &&
+  code158.indexOf('<option value="외주">외주</option>') !== -1 &&
+  code158.indexOf('<option value="자재">자재</option>') !== -1 &&
+  code158.indexOf('<option value="가구">') === -1 &&
+  code158.indexOf('<option value="철물">') === -1
+);
+
+// 158-3: 거래처 관리상태 선택값(운영 중, 확인 필요, 신규 발굴, 보류) 1:1 일치 검증
+assertTest('Step 158-3: 거래처 관리상태 선택값(운영 중, 확인 필요, 신규 발굴, 보류) 1:1 일치 검증',
+  code158.indexOf('<option value="운영 중">운영 중</option>') !== -1 &&
+  code158.indexOf('<option value="확인 필요">확인 필요</option>') !== -1 &&
+  code158.indexOf('<option value="신규 발굴">신규 발굴</option>') !== -1 &&
+  code158.indexOf('<option value="보류">보류</option>') !== -1 &&
+  code158.indexOf('<option value="협의 중">') === -1 &&
+  code158.indexOf('<option value="계약종료">') === -1
+);
+
+// 158-4: 공종 구분 선택값 내 '기존공종' 포함 14개 공종 구분 탑재 검증
+assertTest('Step 158-4: 공종 구분 선택값 내 기존공종 포함 검증',
+  code158.indexOf('<option value="기존공종">기존공종</option>') !== -1
+);
+
+// 158-5: getSettingsPriorityStyle 및 상태 뱃지 스타일 매핑 검증
+assertTest('Step 158-5: getSettingsPriorityStyle 및 상태 뱃지 스타일 매핑 검증',
+  code158.indexOf('if (p === "A팀") return') !== -1 &&
+  code158.indexOf('if (p === "LX 대리점") return') !== -1 &&
+  code158.indexOf('st === "확인 필요"') !== -1 &&
+  code158.indexOf('st === "신규 발굴"') !== -1
+);
+
+// 158-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=158)
+assertTest('Step 158-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=158)',
+  indexHtml158.indexOf('exec?v=158') !== -1
 );
 
 console.log('\n========================================================');
