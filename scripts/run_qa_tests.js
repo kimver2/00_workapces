@@ -9894,7 +9894,7 @@ assertTest('Step 145-2: getTodoListFromWeb, addTodoItemFromWeb, updateTodoItemFr
   code145.indexOf('function getTodoListFromWeb()') !== -1 &&
   code145.indexOf('function addTodoItemFromWeb(todoData)') !== -1 &&
   code145.indexOf('function updateTodoItemFromWeb(id, updateData)') !== -1 &&
-  code145.indexOf('function updateTodoStatusFromWeb(id, newStatus, newManager)') !== -1 &&
+  code145.indexOf('function updateTodoStatusFromWeb(id, newStatus, newManager') !== -1 &&
   code145.indexOf('function deleteTodoItemFromWeb(id)') !== -1
 );
 
@@ -10143,7 +10143,80 @@ assertTest('Step 150-3: 모바일 사이드바 분류 탭 "신규" 일치 검증
 
 // 150-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 150)
 assertTest('Step 150-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 150)',
-  indexHtml150.indexOf('exec?v=150') !== -1
+  /exec\?v=(150|15[1-9])/.test(indexHtml150)
+);
+
+// [Step 151]: To-Do 모바일 3대 뷰(담당자별/상태별/우선순위) 전환 스위처 및 원터치 상태변경 QA
+console.log('\n📋 [Step 151]: To-Do 모바일 3대 뷰(담당자별/상태별/우선순위) 전환 스위처 및 원터치 상태변경 QA ---');
+
+const code151 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml151 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 151-1: 모바일 3대 뷰 스위처 엔진 선언 검증
+assertTest('Step 151-1: 모바일 3대 뷰 스위처(setMobileTodoViewType, mobileTodoViewType) 구현 검증',
+  code151.indexOf('let mobileTodoViewType = "manager";') !== -1 &&
+  code151.indexOf('function setMobileTodoViewType(type)') !== -1 &&
+  code151.indexOf('mobile-todo-switcher') !== -1
+);
+
+// 151-2: 모바일 3대 뷰 렌더링 분기(담당자별 아코디언, 상태별 3대 탭, 우선순위 피드) 검증
+assertTest('Step 151-2: 모바일 3대 뷰 분기(manager, status, priority) 구현 검증',
+  code151.indexOf('mobileTodoViewType === "manager"') !== -1 &&
+  code151.indexOf('mobileTodoViewType === "status"') !== -1 &&
+  code151.indexOf('renderMobileTodoCardHtml') !== -1 &&
+  code151.indexOf('toggleManagerCollapse') !== -1
+);
+
+// 151-3: 원터치 빠른 상태 변경 바 (changeTodoStatusQuick) 검증
+assertTest('Step 151-3: 모바일 원터치 빠른 상태 변경 바(changeTodoStatusQuick) 검증',
+  code151.indexOf('function changeTodoStatusQuick(id, newStatus)') !== -1 &&
+  code151.indexOf('changeTodoStatusQuick(') !== -1
+);
+
+// 151-4: 날짜 정규화 포맷터(formatTodoDateYmd) YYYY-MM-DD 보강 검증
+assertTest('Step 151-4: 날짜 정규화 포맷터(formatTodoDateYmd) 견고성 검증',
+  code151.indexOf('function formatTodoDateYmd(d)') !== -1 &&
+  code151.indexOf('s.split("-")') !== -1
+);
+
+// 151-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 151)
+assertTest('Step 151-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 151)',
+  /exec\?v=(151|15[2-9])/.test(indexHtml151)
+);
+
+// [Step 152]: PC 신규현장 히어로 액션 전화 아이콘 삭제 및 To-Do 완료 시 중요 여부(isImportant) 보존 QA
+console.log('\n📋 [Step 152]: PC 신규현장 히어로 액션 전화 아이콘 삭제 및 To-Do 완료 시 중요 여부(isImportant) 보존 QA ---');
+
+const code152 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml152 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 152-1: PC 신규현장 히어로 액션 버튼 그룹 내 전화 아이콘 버튼 완전 제거 검증
+assertTest('Step 152-1: PC 신규현장 히어로 액션 버튼 그룹 내 전화 아이콘 버튼 완전 제거 검증',
+  code152.indexOf('pc-est-hero-actions') !== -1 &&
+  !code152.includes('class="pc-btn-sec" style="text-decoration:none;padding:8px 12px;" title="고객 전화 걸기')
+);
+
+// 152-2: updateTodoStatusFromWeb 내 완료 시 isImportant 보존 로직 검증
+assertTest('Step 152-2: updateTodoStatusFromWeb 내 완료 시 기존 중요여부(curImp) 보존 및 인자 수신 검증',
+  code152.indexOf('function updateTodoStatusFromWeb(id, newStatus, newManager, isImportant)') !== -1 &&
+  code152.indexOf('isImp = curImp;') !== -1
+);
+
+// 152-3: addTodoItemFromWeb & updateTodoItemFromWeb 내 완료 상태 시 isImp 유지 검증
+assertTest('Step 152-3: addTodoItemFromWeb & updateTodoItemFromWeb 내 완료 상태 시 isImp 무손실 보존 검증',
+  code152.indexOf('if (status !== "완료") {\n      status = isImp ? "중요" : "미완료";\n    }') !== -1
+);
+
+// 152-4: 클라이언트 상태변경 함수들에서 item.isImportant 서버 전달 검증
+assertTest('Step 152-4: 클라이언트(changeTodoStatusQuick, onTodoDrop, toggleTodoComplete) isImportant 인자 전달 검증',
+  code152.indexOf('.updateTodoStatusFromWeb(id, newStatus, item.manager, item.isImportant);') !== -1 &&
+  code152.indexOf('.updateTodoStatusFromWeb(id, targetStatus, item.manager, item.isImportant);') !== -1 &&
+  code152.indexOf('.updateTodoStatusFromWeb(id, newSt, item.manager, item.isImportant);') !== -1
+);
+
+// 152-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=152)
+assertTest('Step 152-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=152)',
+  indexHtml152.indexOf('exec?v=152') !== -1
 );
 
 console.log('\n========================================================');

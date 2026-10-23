@@ -8516,8 +8516,11 @@ function addTodoItemFromWeb(todoData) {
 
     var id = String(data.id || "").trim() || ("TD_" + Date.now() + "_" + Math.floor(Math.random() * 1000));
     var dueDate = String(data.dueDate || "").trim();
-    var isImp = (data.isImportant === true || data.isImportant === "true");
-    var status = isImp ? "중요" : (String(data.status || "미완료").trim());
+    var status = String(data.status || "미완료").trim();
+    var isImp = (data.isImportant === true || data.isImportant === "true" || status === "중요");
+    if (status !== "완료") {
+      status = isImp ? "중요" : "미완료";
+    }
     var manager = String(data.manager || "").trim();
     var tag = String(data.tag || "").trim();
     var detail = String(data.detail || "").trim();
@@ -8595,8 +8598,11 @@ function updateTodoItemFromWeb(id, updateData) {
 
     var title = String(data.title || "").trim();
     var dueDate = String(data.dueDate || "").trim();
-    var isImp = (data.isImportant === true || data.isImportant === "true");
-    var status = isImp ? "중요" : (String(data.status || "미완료").trim());
+    var status = String(data.status || "미완료").trim();
+    var isImp = (data.isImportant === true || data.isImportant === "true" || status === "중요");
+    if (status !== "완료") {
+      status = isImp ? "중요" : "미완료";
+    }
     var manager = String(data.manager || "").trim();
     var tag = String(data.tag || "").trim();
     var detail = String(data.detail || "").trim();
@@ -8635,7 +8641,7 @@ function updateTodoItemFromWeb(id, updateData) {
 /**
  * To-Do 상태 및 담당자 변경 (드래그앤드롭 / 체크박스)
  */
-function updateTodoStatusFromWeb(id, newStatus, newManager) {
+function updateTodoStatusFromWeb(id, newStatus, newManager, isImportant) {
   if (!__woosungWriteLockHeld_) return runWithWriteLock_(updateTodoStatusFromWeb, this, arguments);
   try {
     var cleanId = String(id || "").trim();
@@ -8660,7 +8666,22 @@ function updateTodoStatusFromWeb(id, newStatus, newManager) {
     if (targetRow === -1) return { success: false, error: "해당 할 일을 찾을 수 없습니다." };
 
     var cleanStatus = String(newStatus || "미완료").trim();
-    var isImp = (cleanStatus === "중요");
+    var curImpVal = sheet.getRange(targetRow, 9).getValue();
+    var curImp = (curImpVal === true || String(curImpVal).toUpperCase() === "TRUE");
+
+    var isImp;
+    if (isImportant !== undefined && isImportant !== null && isImportant !== "") {
+      isImp = (isImportant === true || String(isImportant).toLowerCase() === "true");
+    } else {
+      if (cleanStatus === "중요") {
+        isImp = true;
+      } else if (cleanStatus === "미완료") {
+        isImp = false;
+      } else {
+        // 완료 상태일 때는 기존 시트에 저장된 중요 여부(curImp)를 100% 그대로 보존
+        isImp = curImp;
+      }
+    }
     sheet.getRange(targetRow, 3).setValue(cleanStatus);
     sheet.getRange(targetRow, 9).setValue(isImp);
 
@@ -9347,7 +9368,8 @@ function doGet(e) {
     var sId = p.id || "";
     var sStatus = p.status || "";
     var sMgr = p.manager !== undefined ? p.manager : null;
-    var updateStatusRes = updateTodoStatusFromWeb(sId, sStatus, sMgr);
+    var sImp = p.isImportant !== undefined ? p.isImportant : null;
+    var updateStatusRes = updateTodoStatusFromWeb(sId, sStatus, sMgr, sImp);
     return ContentService.createTextOutput(JSON.stringify(updateStatusRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -13787,12 +13809,22 @@ function buildSidebarDashboardHtml(mode) {
   // ========================================================
   html += 'function formatTodoDateYmd(d) {\n';
   html += '  if (!d) return "";\n';
-  html += '  const dt = (d instanceof Date) ? d : new Date(d);\n';
-  html += '  if (isNaN(dt.getTime())) return String(d);\n';
-  html += '  const y = dt.getFullYear();\n';
-  html += '  const m = String(dt.getMonth() + 1).padStart(2, "0");\n';
-  html += '  const day = String(dt.getDate()).padStart(2, "0");\n';
-  html += '  return y + "-" + m + "-" + day;\n';
+  html += '  if (d instanceof Date) {\n';
+  html += '    if (isNaN(d.getTime())) return "";\n';
+  html += '    const y = d.getFullYear();\n';
+  html += '    const m = String(d.getMonth() + 1).padStart(2, "0");\n';
+  html += '    const day = String(d.getDate()).padStart(2, "0");\n';
+  html += '    return y + "-" + m + "-" + day;\n';
+  html += '  }\n';
+  html += '  let s = String(d).trim().replace(/\\./g, "-").replace(/\\//g, "-");\n';
+  html += '  const parts = s.split("-");\n';
+  html += '  if (parts.length === 3) {\n';
+  html += '    const y = parts[0].length === 2 ? ("20" + parts[0]) : parts[0];\n';
+  html += '    const m = parts[1].padStart(2, "0");\n';
+  html += '    const day = parts[2].padStart(2, "0");\n';
+  html += '    return y + "-" + m + "-" + day;\n';
+  html += '  }\n';
+  html += '  return s;\n';
   html += '}\n';
   html += 'function formatDateYYMMDD(d) {\n';
   html += '  return formatTodoDateYmd(d);\n';
@@ -13805,6 +13837,110 @@ function buildSidebarDashboardHtml(mode) {
   html += 'let isTodoLoaded = false;\n';
   html += 'let currentEditingTodoId = null;\n';
   html += 'let expandedCompletedManagers = new Set();\n';
+  html += 'let mobileTodoViewType = "manager";\n';
+  html += 'let mobileTodoSelectedStatusTab = "important";\n';
+  html += 'let collapsedManagerSet = new Set();\n';
+  html += '\n';
+  html += 'function setMobileTodoViewType(type) {\n';
+  html += '  mobileTodoViewType = type || "manager";\n';
+  html += '  renderTodoDashboard();\n';
+  html += '}\n';
+  html += 'function setMobileTodoStatusTab(tab) {\n';
+  html += '  mobileTodoSelectedStatusTab = tab || "important";\n';
+  html += '  renderTodoDashboard();\n';
+  html += '}\n';
+  html += 'function toggleManagerCollapse(mem) {\n';
+  html += '  if (collapsedManagerSet.has(mem)) collapsedManagerSet.delete(mem);\n';
+  html += '  else collapsedManagerSet.add(mem);\n';
+  html += '  renderTodoDashboard();\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function changeTodoStatusQuick(id, newStatus) {\n';
+  html += '  const item = (todoDataList || []).find(it => it.id === id);\n';
+  html += '  if (!item) return;\n';
+  html += '  item.status = newStatus;\n';
+  html += '  if (newStatus === "중요") {\n';
+  html += '    item.isImportant = true;\n';
+  html += '  } else if (newStatus === "미완료") {\n';
+  html += '    item.isImportant = false;\n';
+  html += '  }\n';
+  html += '  if (newStatus === "완료") {\n';
+  html += '    item.completedAt = formatDateYYMMDD(new Date()) + " " + (new Date().toTimeString().slice(0, 8));\n';
+  html += '  } else {\n';
+  html += '    item.completedAt = "";\n';
+  html += '  }\n';
+  html += '  renderTodoDashboard();\n';
+  html += '  showToast("💾 [" + item.title + "] " + newStatus + "(으)로 변경 중...");\n';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '    google.script.run\n';
+  html += '      .withSuccessHandler(res => {\n';
+  html += '        if (res && res.success) showToast("✅ [" + item.title + "] " + newStatus + "(으)로 변경되었습니다.");\n';
+  html += '        else { showToast("❌ 상태 저장 실패: " + ((res && res.error) || "")); loadTodoList(true); }\n';
+  html += '      })\n';
+  html += '      .withFailureHandler(err => {\n';
+  html += '        showToast("❌ 통신 오류: " + err);\n';
+  html += '        loadTodoList(true);\n';
+  html += '      })\n';
+  html += '      .updateTodoStatusFromWeb(id, newStatus, item.manager, item.isImportant);\n';
+  html += '  } else {\n';
+  html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(newStatus) + "&manager=" + encodeURIComponent(item.manager || "") + "&isImportant=" + encodeURIComponent(item.isImportant ? "true" : "false"))\n';
+  html += '      .then(r => r.json()).then(res => {\n';
+  html += '        if (res && res.success) showToast("✅ [" + item.title + "] " + newStatus + "(으)로 변경되었습니다.");\n';
+  html += '        else { showToast("❌ 실패: " + res.error); loadTodoList(true); }\n';
+  html += '      })\n';
+  html += '      .catch(err => { showToast("❌ 통신 에러: " + err); loadTodoList(true); });\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function renderMobileTodoCardHtml(card, todayYmd, showManagerBadge) {\n';
+  html += '  const isDone = (card.status === "완료");\n';
+  html += '  const isOverdue = (!isDone && card.dueDate && card.dueDate < todayYmd);\n';
+  html += '  const isImp = (card.isImportant === true || card.status === "중요") && !isDone;\n';
+  html += '  let cHtml = "";\n';
+  html += '  cHtml += \'<div class="mobile-todo-card" style="background:#ffffff;border:1.5px solid \' + (isOverdue ? "#fca5a5;box-shadow:0 1px 3px rgba(225,29,72,0.08);" : (isImp ? "#fde68a;box-shadow:0 1px 3px rgba(217,119,6,0.08);" : "#e2e8f0;")) + \'border-radius:10px;padding:12px;margin-bottom:10px;">\';\n';
+  html += '  cHtml += \'  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">\';\n';
+  html += '  cHtml += \'    <label style="display:inline-flex;align-items:center;gap:8px;flex:1;min-width:0;margin:0;cursor:pointer;">\';\n';
+  html += '  cHtml += \'      <input type="checkbox" \' + (isDone ? "checked" : "") + \' onclick="event.stopPropagation();toggleTodoComplete(\\\'\' + card.id + \'\\\', this.checked)" style="width:17px;height:17px;cursor:pointer;accent-color:#2563eb;flex-shrink:0;">\';\n';
+  html += '  cHtml += \'      <span style="font-size:14px;font-weight:800;color:\' + (isDone ? "#94a3b8" : "#0f172a") + \';\' + (isDone ? "text-decoration:line-through;" : "") + \'word-break:break-all;line-height:1.4;">\' + escapeHtml(card.title) + \'</span>\';\n';
+  html += '  cHtml += \'    </label>\';\n';
+  html += '  cHtml += \'    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">\';\n';
+  html += '  cHtml += \'      <span onclick="event.stopPropagation();toggleTodoImportant(\\\'\' + card.id + \'\\\')" style="cursor:pointer;font-size:16px;color:\' + (card.isImportant ? "#eab308" : "#cbd5e1") + \';" title="중요 표시 토글">★</span>\';\n';
+  html += '  cHtml += \'      <span onclick="event.stopPropagation();openEditTodoModal(\\\'\' + card.id + \'\\\')" style="cursor:pointer;font-size:13px;color:#64748b;padding:2px 4px;" title="수정">✏️</span>\';\n';
+  html += '  cHtml += \'      <span onclick="event.stopPropagation();confirmDeleteTodo(\\\'\' + card.id + \'\\\')" style="cursor:pointer;font-size:13px;color:#cbd5e1;padding:2px 4px;" title="삭제">🗑️</span>\';\n';
+  html += '  cHtml += \'    </div>\';\n';
+  html += '  cHtml += \'  </div>\';\n';
+  html += '  cHtml += \'  <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:8px;font-size:11px;">\';\n';
+  html += '  if (showManagerBadge && card.manager) {\n';
+  html += '    cHtml += \'    <span style="background:#eff6ff;color:#1d4ed8;padding:2px 7px;border-radius:4px;font-weight:800;">👤 \' + escapeHtml(card.manager) + \'</span>\';\n';
+  html += '  } else if (showManagerBadge && !card.manager) {\n';
+  html += '    cHtml += \'    <span style="background:#f1f5f9;color:#94a3b8;padding:2px 7px;border-radius:4px;font-weight:700;">👤 미지정</span>\';\n';
+  html += '  }\n';
+  html += '  if (card.tag) {\n';
+  html += '    cHtml += \'    <span style="background:#e0f2fe;color:#0369a1;padding:2px 6px;border-radius:4px;font-weight:700;">\' + escapeHtml(card.tag) + \'</span>\';\n';
+  html += '  }\n';
+  html += '  if (card.siteName) {\n';
+  html += '    cHtml += \'    <span style="background:#f1f5f9;color:#475569;padding:2px 6px;border-radius:4px;font-weight:600;">📍 \' + escapeHtml(card.siteName) + \'</span>\';\n';
+  html += '  }\n';
+  html += '  if (card.dueDate) {\n';
+  html += '    cHtml += \'    <span style="color:\' + (isOverdue ? "#e11d48;font-weight:800;background:#fff1f2;padding:2px 6px;border-radius:4px;" : "#64748b;") + \'">📅 \' + escapeHtml(card.dueDate) + (isOverdue ? " (지남)" : "") + \'</span>\';\n';
+  html += '  }\n';
+  html += '  cHtml += \'  </div>\';\n';
+  html += '  if (card.detail) {\n';
+  html += '    cHtml += \'  <div style="margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:6px;font-size:12px;color:#475569;line-height:1.4;word-break:break-word;">\' + escapeHtml(card.detail) + \'</div>\';\n';
+  html += '  }\n';
+  html += '  const curSt = card.status || "미완료";\n';
+  html += '  cHtml += \'  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px dashed #f1f5f9;">\';\n';
+  html += '  cHtml += \'    <span style="font-size:11px;font-weight:700;color:#94a3b8;">상태 변경</span>\';\n';
+  html += '  cHtml += \'    <div style="display:inline-flex;gap:4px;">\';\n';
+  html += '  cHtml += \'      <button type="button" onclick="event.stopPropagation();changeTodoStatusQuick(\\\'\' + card.id + \'\\\', \\\'미완료\\\')" style="padding:4px 9px;border-radius:5px;border:1px solid \' + (curSt === "미완료" && !card.isImportant ? "#64748b;background:#f1f5f9;color:#1e293b;font-weight:800;" : "#e2e8f0;background:#ffffff;color:#94a3b8;font-weight:600;") + \'font-size:11px;cursor:pointer;">미완료</button>\';\n';
+  html += '  cHtml += \'      <button type="button" onclick="event.stopPropagation();changeTodoStatusQuick(\\\'\' + card.id + \'\\\', \\\'중요\\\')" style="padding:4px 9px;border-radius:5px;border:1px solid \' + (curSt === "중요" || card.isImportant ? "#fde68a;background:#fffbeb;color:#d97706;font-weight:800;" : "#e2e8f0;background:#ffffff;color:#94a3b8;font-weight:600;") + \'font-size:11px;cursor:pointer;">★ 중요</button>\';\n';
+  html += '  cHtml += \'      <button type="button" onclick="event.stopPropagation();changeTodoStatusQuick(\\\'\' + card.id + \'\\\', \\\'완료\\\')" style="padding:4px 9px;border-radius:5px;border:1px solid \' + (curSt === "완료" ? "#86efac;background:#f0fdf4;color:#16a34a;font-weight:800;" : "#e2e8f0;background:#ffffff;color:#94a3b8;font-weight:600;") + \'font-size:11px;cursor:pointer;">✅ 완료</button>\';\n';
+  html += '  cHtml += \'    </div>\';\n';
+  html += '  cHtml += \'  </div>\';\n';
+  html += '  cHtml += \'</div>\';\n';
+  html += '  return cHtml;\n';
+  html += '}\n';
   html += '\n';
 
   html += 'function toggleCompletedExpand(mem) {\n';
@@ -13866,7 +14002,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    google.script.run\n';
   html += '      .withSuccessHandler(res => {\n';
   html += '        if (res && res.success) {\n';
-  html += '          todoDataList = res.list || [];\n';
+  html += '          todoDataList = (res.list || []).map(it => (it ? Object.assign({}, it, { dueDate: formatTodoDateYmd(it.dueDate) }) : it));\n';
   html += '          if (res.members && res.members.length > 0) todoMembersList = res.members;\n';
   html += '          if (res.activeSites && res.activeSites.length > 0) todoActiveSitesList = res.activeSites;\n';
   html += '          isTodoLoaded = true;\n';
@@ -13885,7 +14021,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      .then(r => r.json())\n';
   html += '      .then(res => {\n';
   html += '        if (res && res.success) {\n';
-  html += '          todoDataList = res.list || [];\n';
+  html += '          todoDataList = (res.list || []).map(it => (it ? Object.assign({}, it, { dueDate: formatTodoDateYmd(it.dueDate) }) : it));\n';
   html += '          if (res.members && res.members.length > 0) todoMembersList = res.members;\n';
   html += '          if (res.activeSites && res.activeSites.length > 0) todoActiveSitesList = res.activeSites;\n';
   html += '          isTodoLoaded = true;\n';
@@ -13966,21 +14102,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  tHtml += \'  </div>\';\n';
   html += '\n';
 
-  // 4. 담당자 × 진행상태 매트릭스 테이블
-  html += '  tHtml += \'  <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;box-shadow:0 1px 3px rgba(0,0,0,0.04);">\';\n';
-  html += '  tHtml += \'    <table class="todo-matrix-table" style="width:100%;min-width:680px;border-collapse:collapse;table-layout:fixed;">\';\n';
-  html += '  tHtml += \'      <thead>\';\n';
-  html += '  tHtml += \'        <tr style="border-bottom:1.5px solid #cbd5e1;background:#f8fafc;">\';\n';
-  html += '  tHtml += \'          <th style="width:180px;padding:12px 14px;text-align:left;font-size:12px;font-weight:800;color:#64748b;border-right:1px solid #e2e8f0;">담당자 \\ 상태</th>\';\n';
-  html += '  tHtml += \'          <th style="width:28%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#d97706;background:#fffdfa;border-right:1px solid #e2e8f0;">중요</th>\';\n';
-  html += '  tHtml += \'          <th style="width:36%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#334155;border-right:1px solid #e2e8f0;">미완료</th>\';\n';
-  html += '  tHtml += \'          <th style="width:36%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#16a34a;background:#fcfdfc;">완료</th>\';\n';
-  html += '  tHtml += \'        </tr>\';\n';
-  html += '  tHtml += \'      </thead>\';\n';
-  html += '  tHtml += \'      <tbody>\';\n';
-  html += '\n';
-
-  // 담당자 행 목록 산출
+  // 4. 담당자 목록 산출 및 모바일/PC 반응형 분기
   html += '  let targetMembers = [];\n';
   html += '  if (currentTodoMemberFilter === "all") {\n';
   html += '    targetMembers = (todoMembersList && todoMembersList.length > 0) ? [...todoMembersList, "담당 미지정"] : ["담당 미지정"];\n';
@@ -13990,6 +14112,169 @@ function buildSidebarDashboardHtml(mode) {
   html += '    targetMembers = [currentTodoMemberFilter];\n';
   html += '  }\n';
   html += '\n';
+
+  html += '  const isMobileTodoView = (typeof isMobileMode !== "undefined" && isMobileMode) || (typeof window !== "undefined" && window.innerWidth <= 768);\n';
+  html += '  if (isMobileTodoView) {\n';
+
+  // 4-M1. 상단 모바일 3대 뷰 스위처
+  html += '    tHtml += \'  <div class="mobile-todo-switcher" style="display:flex;align-items:center;background:#f1f5f9;border-radius:10px;padding:4px;margin-bottom:14px;border:1px solid #cbd5e1;gap:4px;">\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="setMobileTodoViewType(\\\'manager\\\')" style="flex:1;padding:8px 4px;border:none;border-radius:7px;font-size:12.5px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;\' + (mobileTodoViewType === "manager" ? "background:#2563eb;color:#ffffff;box-shadow:0 1px 3px rgba(37,99,235,0.3);" : "background:transparent;color:#475569;") + \'"><span>👤</span> 담당자별</button>\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="setMobileTodoViewType(\\\'status\\\')" style="flex:1;padding:8px 4px;border:none;border-radius:7px;font-size:12.5px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;\' + (mobileTodoViewType === "status" ? "background:#2563eb;color:#ffffff;box-shadow:0 1px 3px rgba(37,99,235,0.3);" : "background:transparent;color:#475569;") + \'"><span>📊</span> 상태별</button>\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="setMobileTodoViewType(\\\'priority\\\')" style="flex:1;padding:8px 4px;border:none;border-radius:7px;font-size:12.5px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;\' + (mobileTodoViewType === "priority" ? "background:#2563eb;color:#ffffff;box-shadow:0 1px 3px rgba(37,99,235,0.3);" : "background:transparent;color:#475569;") + \'"><span>⚡</span> 우선순위</button>\';\n';
+  html += '    tHtml += \'  </div>\';\n';
+
+  // 4-M2. [방안 1] 담당자별 세로 아코디언 카드 뷰
+  html += '    if (mobileTodoViewType === "manager") {\n';
+  html += '      targetMembers.forEach(mem => {\n';
+  html += '        const isUnassigned = (mem === "담당 미지정" || !mem);\n';
+  html += '        const memClean = isUnassigned ? "담당 미지정" : String(mem).trim();\n';
+  html += '        const firstLetter = isUnassigned ? "?" : memClean.charAt(0);\n';
+  html += '        let memUncomp = 0;\n';
+  html += '        let memOverdue = 0;\n';
+  html += '        let memImp = 0;\n';
+  html += '        const memCards = (todoDataList || []).filter(it => {\n';
+  html += '          const itMem = String(it.manager || "").trim();\n';
+  html += '          return isUnassigned ? (!itMem || itMem === "담당 미지정") : (itMem === memClean);\n';
+  html += '        });\n';
+  html += '        memCards.forEach(it => {\n';
+  html += '          if (it.status !== "완료") {\n';
+  html += '            memUncomp++;\n';
+  html += '            if (it.dueDate && it.dueDate < todayYmd) memOverdue++;\n';
+  html += '            if (it.isImportant || it.status === "중요") memImp++;\n';
+  html += '          }\n';
+  html += '        });\n';
+  html += '        const isCollapsed = collapsedManagerSet.has(memClean);\n';
+  html += '        tHtml += \'    <div style="background:#ffffff;border:1px solid #cbd5e1;border-radius:10px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.03);">\';\n';
+  html += '        tHtml += \'      <div onclick="toggleManagerCollapse(\\\'\' + escapeHtml(memClean) + \'\\\')" style="padding:12px 14px;background:#f8fafc;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border-bottom:\' + (isCollapsed ? "none" : "1px solid #e2e8f0") + \';">\';\n';
+  html += '        tHtml += \'        <div style="display:flex;align-items:center;gap:8px;">\';\n';
+  html += '        tHtml += \'          <span style="width:26px;height:26px;border-radius:50%;background:\' + (isUnassigned ? "#f1f5f9;color:#94a3b8;border:1px solid #cbd5e1;" : "#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;") + \'display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;">\' + escapeHtml(firstLetter) + \'</span>\';\n';
+  html += '        tHtml += \'          <div>\';\n';
+  html += '        tHtml += \'            <span style="font-size:14px;font-weight:800;color:#0f172a;">\' + escapeHtml(memClean) + \'</span>\';\n';
+  html += '        tHtml += \'            <span style="font-size:11.5px;color:#64748b;margin-left:6px;">미완료 \' + memUncomp + (memOverdue > 0 ? (\' · <span style="color:#e11d48;font-weight:700;">지남 \' + memOverdue + \'</span>\') : "") + (memImp > 0 ? (\' · <span style="color:#d97706;font-weight:700;">중요 \' + memImp + \'</span>\') : "") + \'</span>\';\n';
+  html += '        tHtml += \'          </div>\';\n';
+  html += '        tHtml += \'        </div>\';\n';
+  html += '        tHtml += \'        <span style="font-size:14px;color:#94a3b8;font-weight:700;">\' + (isCollapsed ? "▾" : "▴") + \'</span>\';\n';
+  html += '        tHtml += \'      </div>\';\n';
+  html += '        if (!isCollapsed) {\n';
+  html += '          tHtml += \'      <div style="padding:12px;">\';\n';
+  html += '          if (memCards.length === 0) {\n';
+  html += '            tHtml += \'        <div style="padding:20px;text-align:center;font-size:12px;color:#94a3b8;background:#fafbfc;border-radius:8px;">등록된 할 일이 없습니다.</div>\';\n';
+  html += '          } else {\n';
+  html += '            const activeCards = memCards.filter(it => it.status !== "완료");\n';
+  html += '            activeCards.sort((a, b) => {\n';
+  html += '              const aImp = (a.isImportant || a.status === "중요") ? 1 : 0;\n';
+  html += '              const bImp = (b.isImportant || b.status === "중요") ? 1 : 0;\n';
+  html += '              if (aImp !== bImp) return bImp - aImp;\n';
+  html += '              const aOver = (a.dueDate && a.dueDate < todayYmd) ? 1 : 0;\n';
+  html += '              const bOver = (b.dueDate && b.dueDate < todayYmd) ? 1 : 0;\n';
+  html += '              if (aOver !== bOver) return bOver - aOver;\n';
+  html += '              return String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999"));\n';
+  html += '            });\n';
+  html += '            activeCards.forEach(c => { tHtml += renderMobileTodoCardHtml(c, todayYmd, false); });\n';
+  html += '            const doneCards = memCards.filter(it => it.status === "완료");\n';
+  html += '            doneCards.sort((a, b) => String(b.completedAt || b.id || "").localeCompare(String(a.completedAt || a.id || "")));\n';
+  html += '            if (doneCards.length > 0) {\n';
+  html += '              const isExp = expandedCompletedManagers.has(memClean);\n';
+  html += '              const visDone = (doneCards.length > 3 && !isExp) ? doneCards.slice(0, 3) : doneCards;\n';
+  html += '              tHtml += \'        <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1;">\';\n';
+  html += '              tHtml += \'          <div style="font-size:12px;font-weight:800;color:#16a34a;margin-bottom:8px;">✅ 완료된 업무 (\' + doneCards.length + \')</div>\';\n';
+  html += '              visDone.forEach(c => { tHtml += renderMobileTodoCardHtml(c, todayYmd, false); });\n';
+  html += '              if (doneCards.length > 3) {\n';
+  html += '                const hiddenDone = doneCards.length - 3;\n';
+  html += '                tHtml += \'          <button type="button" onclick="toggleCompletedExpand(\\\'\' + escapeHtml(memClean) + \'\\\')" style="width:100%;margin-top:4px;padding:7px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:6px;font-size:12px;font-weight:700;color:#64748b;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;">\' + (isExp ? "▴ 완료 접기" : ("▾ 완료 " + hiddenDone + "건 펼치기")) + \'</button>\';\n';
+  html += '              }\n';
+  html += '              tHtml += \'        </div>\';\n';
+  html += '            }\n';
+  html += '          }\n';
+  html += '          tHtml += \'      </div>\';\n';
+  html += '        }\n';
+  html += '        tHtml += \'    </div>\';\n';
+  html += '      });\n';
+
+  // 4-M3. [방안 2] 상태별 3대 탭 전환 칸반 뷰
+  html += '    } else if (mobileTodoViewType === "status") {\n';
+  html += '      tHtml += \'    <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">\';\n';
+  html += '      tHtml += \'      <button type="button" onclick="setMobileTodoStatusTab(\\\'important\\\')" style="flex:1;padding:8px 4px;border-radius:8px;border:1.5px solid \' + (mobileTodoSelectedStatusTab === "important" ? "#f59e0b;background:#fffbeb;color:#b45309;font-weight:800;" : "#e2e8f0;background:#ffffff;color:#64748b;font-weight:600;") + \'font-size:12.5px;cursor:pointer;">★ 중요 (\' + importantCount + \')</button>\';\n';
+  html += '      tHtml += \'      <button type="button" onclick="setMobileTodoStatusTab(\\\'uncompleted\\\')" style="flex:1;padding:8px 4px;border-radius:8px;border:1.5px solid \' + (mobileTodoSelectedStatusTab === "uncompleted" ? "#2563eb;background:#eff6ff;color:#1d4ed8;font-weight:800;" : "#e2e8f0;background:#ffffff;color:#64748b;font-weight:600;") + \'font-size:12.5px;cursor:pointer;">미완료 (\' + uncompletedCount + \')</button>\';\n';
+  html += '      tHtml += \'      <button type="button" onclick="setMobileTodoStatusTab(\\\'completed\\\')" style="flex:1;padding:8px 4px;border-radius:8px;border:1.5px solid \' + (mobileTodoSelectedStatusTab === "completed" ? "#16a34a;background:#f0fdf4;color:#15803d;font-weight:800;" : "#e2e8f0;background:#ffffff;color:#64748b;font-weight:600;") + \'font-size:12.5px;cursor:pointer;">✅ 완료 (\' + completedCount + \')</button>\';\n';
+  html += '      tHtml += \'    </div>\';\n';
+  html += '      let statusCards = (todoDataList || []).filter(it => {\n';
+  html += '        const itMem = String(it.manager || "").trim();\n';
+  html += '        if (currentTodoMemberFilter !== "all") {\n';
+  html += '          if (currentTodoMemberFilter === "unassigned") {\n';
+  html += '            if (itMem && itMem !== "담당 미지정") return false;\n';
+  html += '          } else if (itMem !== currentTodoMemberFilter) return false;\n';
+  html += '        }\n';
+  html += '        if (mobileTodoSelectedStatusTab === "important") return (it.isImportant === true || it.status === "중요") && it.status !== "완료";\n';
+  html += '        if (mobileTodoSelectedStatusTab === "uncompleted") return (it.status === "미완료" || !it.status) && !it.isImportant;\n';
+  html += '        if (mobileTodoSelectedStatusTab === "completed") return it.status === "완료";\n';
+  html += '        return false;\n';
+  html += '      });\n';
+  html += '      if (mobileTodoSelectedStatusTab === "completed") {\n';
+  html += '        statusCards.sort((a, b) => String(b.completedAt || b.id || "").localeCompare(String(a.completedAt || a.id || "")));\n';
+  html += '      } else {\n';
+  html += '        statusCards.sort((a, b) => {\n';
+  html += '          const aOver = (a.dueDate && a.dueDate < todayYmd) ? 1 : 0;\n';
+  html += '          const bOver = (b.dueDate && b.dueDate < todayYmd) ? 1 : 0;\n';
+  html += '          if (aOver !== bOver) return bOver - aOver;\n';
+  html += '          return String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999"));\n';
+  html += '        });\n';
+  html += '      }\n';
+  html += '      if (statusCards.length === 0) {\n';
+  html += '        tHtml += \'    <div style="padding:40px 20px;text-align:center;font-size:13px;color:#94a3b8;background:#ffffff;border:1px solid #cbd5e1;border-radius:10px;">해당 상태의 할 일이 없습니다.</div>\';\n';
+  html += '      } else {\n';
+  html += '        statusCards.forEach(c => { tHtml += renderMobileTodoCardHtml(c, todayYmd, true); });\n';
+  html += '      }\n';
+
+  // 4-M4. [방안 3] 우선순위 타임라인 피드 뷰
+  html += '    } else {\n';
+  html += '      let feedCards = (todoDataList || []).filter(it => {\n';
+  html += '        const itMem = String(it.manager || "").trim();\n';
+  html += '        if (currentTodoMemberFilter !== "all") {\n';
+  html += '          if (currentTodoMemberFilter === "unassigned") {\n';
+  html += '            if (itMem && itMem !== "담당 미지정") return false;\n';
+  html += '          } else if (itMem !== currentTodoMemberFilter) return false;\n';
+  html += '        }\n';
+  html += '        return true;\n';
+  html += '      });\n';
+  html += '      const overdueGroup = feedCards.filter(it => it.status !== "완료" && it.dueDate && it.dueDate < todayYmd);\n';
+  html += '      const impGroup = feedCards.filter(it => it.status !== "완료" && (it.isImportant || it.status === "중요") && (!it.dueDate || it.dueDate >= todayYmd));\n';
+  html += '      const todayGroup = feedCards.filter(it => it.status !== "완료" && it.dueDate === todayYmd && !it.isImportant && it.status !== "중요");\n';
+  html += '      const normalGroup = feedCards.filter(it => it.status !== "완료" && (!it.dueDate || it.dueDate > todayYmd) && !it.isImportant && it.status !== "중요");\n';
+  html += '      const doneGroup = feedCards.filter(it => it.status === "완료");\n';
+  html += '      doneGroup.sort((a, b) => String(b.completedAt || b.id || "").localeCompare(String(a.completedAt || a.id || "")));\n';
+  html += '      const renderFeedSec = (title, icon, color, list) => {\n';
+  html += '        if (list.length === 0) return "";\n';
+  html += '        let sHtml = "";\n';
+  html += '        sHtml += \'    <div style="margin-bottom:14px;">\';\n';
+  html += '        sHtml += \'      <div style="font-size:13px;font-weight:900;color:\' + color + \';margin-bottom:8px;display:flex;align-items:center;gap:6px;"><span>\' + icon + \'</span><span>\' + title + \'</span><span style="font-size:11px;padding:1px 6px;border-radius:10px;background:#ffffff;border:1px solid #cbd5e1;color:#475569;">\' + list.length + \'</span></div>\';\n';
+  html += '        list.forEach(c => { sHtml += renderMobileTodoCardHtml(c, todayYmd, true); });\n';
+  html += '        sHtml += \'    </div>\';\n';
+  html += '        return sHtml;\n';
+  html += '      };\n';
+  html += '      tHtml += renderFeedSec("기한 지난 업무", "🚨", "#e11d48", overdueGroup);\n';
+  html += '      tHtml += renderFeedSec("중요 업무", "⭐", "#d97706", impGroup);\n';
+  html += '      tHtml += renderFeedSec("오늘 마감 업무", "📅", "#2563eb", todayGroup);\n';
+  html += '      tHtml += renderFeedSec("일반 할 일", "📋", "#475569", normalGroup);\n';
+  html += '      tHtml += renderFeedSec("완료된 업무", "✅", "#16a34a", doneGroup);\n';
+  html += '      if (feedCards.length === 0) {\n';
+  html += '        tHtml += \'    <div style="padding:40px 20px;text-align:center;font-size:13px;color:#94a3b8;background:#ffffff;border:1px solid #cbd5e1;border-radius:10px;">등록된 할 일이 없습니다.</div>\';\n';
+  html += '      }\n';
+  html += '    }\n';
+
+  // 4-PC. PC 전용 매트릭스 테이블
+  html += '  } else {\n';
+  html += '    tHtml += \'  <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;box-shadow:0 1px 3px rgba(0,0,0,0.04);">\';\n';
+  html += '    tHtml += \'    <table class="todo-matrix-table" style="width:100%;min-width:680px;border-collapse:collapse;table-layout:fixed;">\';\n';
+  html += '    tHtml += \'      <thead>\';\n';
+  html += '    tHtml += \'        <tr style="border-bottom:1.5px solid #cbd5e1;background:#f8fafc;">\';\n';
+  html += '    tHtml += \'          <th style="width:180px;padding:12px 14px;text-align:left;font-size:12px;font-weight:800;color:#64748b;border-right:1px solid #e2e8f0;">담당자 \\ 상태</th>\';\n';
+  html += '    tHtml += \'          <th style="width:28%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#d97706;background:#fffdfa;border-right:1px solid #e2e8f0;">중요</th>\';\n';
+  html += '    tHtml += \'          <th style="width:36%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#334155;border-right:1px solid #e2e8f0;">미완료</th>\';\n';
+  html += '    tHtml += \'          <th style="width:36%;padding:12px 14px;text-align:center;font-size:13px;font-weight:900;color:#16a34a;background:#fcfdfc;">완료</th>\';\n';
+  html += '    tHtml += \'        </tr>\';\n';
+  html += '    tHtml += \'      </thead>\';\n';
+  html += '    tHtml += \'      <tbody>\';\n';
 
   html += '  targetMembers.forEach(mem => {\n';
   html += '    const isUnassigned = (mem === "담당 미지정" || !mem);\n';
@@ -14073,6 +14358,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  tHtml += \'      </tbody>\';\n';
   html += '  tHtml += \'    </table>\';\n';
   html += '  tHtml += \'  </div>\';\n';
+  html += '  }\n';
   html += '  tHtml += \'</div>\';\n';
   html += '\n';
   html += '  contentArea.innerHTML = tHtml;\n';
@@ -14115,7 +14401,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '\n';
   html += '  // 낙관적 즉시 업데이트\n';
   html += '  item.status = targetStatus;\n';
-  html += '  item.isImportant = (targetStatus === "중요");\n';
+  html += '  if (targetStatus === "중요") {\n';
+  html += '    item.isImportant = true;\n';
+  html += '  } else if (targetStatus === "미완료") {\n';
+  html += '    item.isImportant = false;\n';
+  html += '  }\n';
   html += '  if (targetStatus === "완료") {\n';
   html += '    item.completedAt = formatDateYYMMDD(new Date()) + " " + (new Date().toTimeString().slice(0, 8));\n';
   html += '  } else {\n';
@@ -14144,10 +14434,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '        showToast("❌ 통신 오류: " + err);\n';
   html += '        loadTodoList(true);\n';
   html += '      })\n';
-  html += '      .updateTodoStatusFromWeb(id, targetStatus, item.manager);\n';
+  html += '      .updateTodoStatusFromWeb(id, targetStatus, item.manager, item.isImportant);\n';
   html += '  } else {\n';
   html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
-  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(targetStatus) + "&manager=" + encodeURIComponent(item.manager || ""))\n';
+  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(targetStatus) + "&manager=" + encodeURIComponent(item.manager || "") + "&isImportant=" + encodeURIComponent(item.isImportant ? "true" : "false"))\n';
   html += '      .then(r => r.json())\n';
   html += '      .then(res => {\n';
   html += '        if (res && res.success) showToast("✅ [" + item.title + "] " + targetStatus + "로 이동되었습니다.");\n';
@@ -14171,10 +14461,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }\n';
   html += '  renderTodoDashboard();\n';
   html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
-  html += '    google.script.run.updateTodoStatusFromWeb(id, newSt, item.manager);\n';
+  html += '    google.script.run.updateTodoStatusFromWeb(id, newSt, item.manager, item.isImportant);\n';
   html += '  } else {\n';
   html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
-  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(newSt));\n';
+  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(newSt) + "&manager=" + encodeURIComponent(item.manager || "") + "&isImportant=" + encodeURIComponent(item.isImportant ? "true" : "false"));\n';
   html += '  }\n';
   html += '}\n';
   html += '\n';
@@ -14187,10 +14477,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }\n';
   html += '  renderTodoDashboard();\n';
   html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
-  html += '    google.script.run.updateTodoStatusFromWeb(id, item.status, item.manager);\n';
+  html += '    google.script.run.updateTodoStatusFromWeb(id, item.status, item.manager, item.isImportant);\n';
   html += '  } else {\n';
   html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
-  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(item.status));\n';
+  html += '    fetch(apiUrl + "?action=updateTodoStatus&id=" + encodeURIComponent(id) + "&status=" + encodeURIComponent(item.status) + "&manager=" + encodeURIComponent(item.manager || "") + "&isImportant=" + encodeURIComponent(item.isImportant ? "true" : "false"));\n';
   html += '  }\n';
   html += '}\n';
   html += '\n';
@@ -17556,9 +17846,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '  html += \'        <button type="button" class="pc-btn-primary" onclick="openSpreadsheetEstimateSheet()" title="스프레드시트 신규견적 탭 열기"><span>📊</span> 시트에서 보기</button>\';';
   html += '  html += \'        <button type="button" class="pc-btn-primary" onclick="openEditEstimateModal(\\\'\' + encodeURIComponent(siteName) + \'\\\')" style="background:#3b82f6;" title="신규현장 정보 수정"><span>✏️</span> 정보 수정</button>\';';
   html += '  html += \'        <button type="button" class="pc-btn-danger" style="background:#ef4444;color:#ffffff;border:none;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 2px rgba(239,68,68,0.25);" onclick="confirmDeleteSite(decodeURIComponent(this.dataset.sitename), decodeURIComponent(this.dataset.scope))" data-sitename="\' + encodeURIComponent(siteName) + \'" data-scope="newSite" title="이 신규현장 영구 삭제"><span>🗑️</span> 현장 삭제</button>\';';
-  html += '  if (hasPhone) {';
-  html += '    html += \'        <a href="tel:\' + escapeHtml(cleanPhone) + \'" class="pc-btn-sec" style="text-decoration:none;padding:8px 12px;" title="고객 전화 걸기 (\' + escapeHtml(rawPhone) + \')"><span>📞</span></a>\';';
-  html += '  }';
   html += '  html += \'      </div>\';';
   html += '  html += \'    </div>\';';
   html += '  html += \'  </div>\';';
