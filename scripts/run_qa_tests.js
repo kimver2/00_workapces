@@ -10671,9 +10671,45 @@ assertTest('Step 163-4: 2단계 성능 최적화 순수 읽기(Read-Only) 엔진
   getDashFnCode163.indexOf('[2단계 성능 최적화] 대시보드 조회 API는 100% 순수 읽기(Read-Only) 전용으로 동작') !== -1
 );
 
-// 163-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=163)
-assertTest('Step 163-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=163)',
-  indexHtml163.indexOf('exec?v=163') !== -1
+// 163-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=163 이상)
+assertTest('Step 163-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=163 이상)',
+  /exec\?v=(16[3-9]|1[7-9][0-9])/.test(indexHtml163)
+);
+
+// ========================================================
+// [Step 164]: 3단계 도어락 앞자리 0 보존 범용 규칙 확장 및 한남동 데이터 보존 QA
+// ========================================================
+console.log('\n📋 [Step 164]: 3단계 도어락 앞자리 0 보존 범용 규칙 확장 및 기존 데이터 보존 QA ---');
+const code164 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml164 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 164-1: onEdit 내 전체 현장 3자리 도어락 앞자리 0 자동 복구 범용 규칙 탑재 검증
+assertTest('Step 164-1: onEdit 내 전체 현장 3자리 도어락 앞자리 0 자동 복구 범용 규칙 탑재 검증',
+  code164.indexOf('e.range.setValue("0" + sVal);') !== -1 &&
+  code164.indexOf('/^[0-9]{3}$/.test(sVal)') !== -1
+);
+
+// 164-2: fixSiteInfoSheetFormat 내 전체 현장 3자리 도어락 앞자리 0 자동 복구 검증
+assertTest('Step 164-2: fixSiteInfoSheetFormat 내 전체 현장 3자리 도어락 앞자리 0 자동 복구 검증',
+  code164.indexOf('var targetPwd = (curPwd === "304") ? "0304" : ("0" + curPwd);') !== -1 &&
+  code164.indexOf('/^[0-9]{3}$/.test(curPwd)') !== -1
+);
+
+// 164-3: getSiteInfoMap 내 전체 현장 3자리 도어락 앞자리 0 보존 범용 규칙 탑재 검증
+assertTest('Step 164-3: getSiteInfoMap 내 전체 현장 3자리 도어락 앞자리 0 보존 범용 규칙 탑재 검증',
+  code164.indexOf('rawPwd = "0" + rawPwd;') !== -1 &&
+  code164.indexOf('/^[0-9]{3}$/.test(rawPwd)') !== -1
+);
+
+// 164-4: 기존 한남동 0304 보존 로직 100% 무결성 유지 검증
+assertTest('Step 164-4: 기존 한남동 0304 보존 로직 100% 무결성 유지 검증',
+  code164.indexOf('sVal === "304" && rSite.indexOf("한남동") !== -1') !== -1 &&
+  code164.indexOf('rawPwd === "304" && rawSiteName.indexOf("한남동") !== -1') !== -1
+);
+
+// 164-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=164)
+assertTest('Step 164-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=164)',
+  indexHtml164.indexOf('exec?v=164') !== -1
 );
 
 console.log('\n========================================================');

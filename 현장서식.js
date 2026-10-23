@@ -2597,6 +2597,9 @@ function onEdit(e) {
           var rSite = String(sheet.getRange(rowIdx, 1).getValue() || "").trim();
           if (sVal === "304" && rSite.indexOf("한남동") !== -1) {
             e.range.setValue("0304");
+          } else if (/^[0-9]{3}$/.test(sVal)) {
+            // [범용 규칙] 3자리 숫자로 앞자리 0이 소실된 경우 4자리 도어락 번호로 자동 복구
+            e.range.setValue("0" + sVal);
           }
         }
       } else if (col === 4 || col === 2) {
@@ -4462,9 +4465,10 @@ function fixSiteInfoSheetFormat(ss) {
             sheet.getRange(rowNum, 3).setNumberFormat("@").setValue("0304");
             fixedItems.push({ site: sName, row: rowNum, oldPwd: curPwd, newPwd: "0304" });
           }
-        } else if (curPwd === "304") {
-          sheet.getRange(rowNum, 3).setNumberFormat("@").setValue("0304");
-          fixedItems.push({ site: sName, row: rowNum, oldPwd: curPwd, newPwd: "0304" });
+        } else if (curPwd === "304" || /^[0-9]{3}$/.test(curPwd)) {
+          var targetPwd = (curPwd === "304") ? "0304" : ("0" + curPwd);
+          sheet.getRange(rowNum, 3).setNumberFormat("@").setValue(targetPwd);
+          fixedItems.push({ site: sName, row: rowNum, oldPwd: curPwd, newPwd: targetPwd });
         }
       }
     }
@@ -4667,6 +4671,9 @@ function getSiteInfoMap(ss) {
       var rawPwd = (row.length > 2 && row[2] !== undefined && row[2] !== null) ? String(row[2]).trim() : "";
       if (rawPwd === "304" && rawSiteName.indexOf("한남동") !== -1) {
         rawPwd = "0304";
+      } else if (/^[0-9]{3}$/.test(rawPwd)) {
+        // [범용 규칙] 전체 현장 3자리 숫자 도어락 앞자리 0 자동 복구 (예: 304 -> 0304)
+        rawPwd = "0" + rawPwd;
       }
 
       var infoItem = {
