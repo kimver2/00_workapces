@@ -10603,9 +10603,41 @@ assertTest('Step 161-5: 00_사용가이드 내 5대 입력 수칙 및 9대 시�
   code161.indexOf('4. ⚡ 자동화 엔진 및 상단 메뉴 활용 매뉴얼') !== -1
 );
 
-// 161-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=161)
-assertTest('Step 161-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=161)',
-  indexHtml161.indexOf('exec?v=161') !== -1
+// 161-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=161 이상)
+assertTest('Step 161-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=161 이상)',
+  /exec\?v=(16[1-9]|1[7-9][0-9])/.test(indexHtml161)
+);
+
+// ========================================================
+// [Step 162]: 1단계 레거시 더미 데이터 및 빈 스텁 다이어트 최적화 QA
+// ========================================================
+console.log('\n📋 [Step 162]: 1단계 레거시 더미 데이터 및 빈 스텁 다이어트 최적화 QA ---');
+const code162 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml162 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 162-1: RAW_PARTNERS_FALLBACK_DATA 거대 더미 배열(1,322줄) 제거 및 빈 배열 경량화 검증
+assertTest('Step 162-1: RAW_PARTNERS_FALLBACK_DATA 1,322줄 거대 더미 배열 제거 및 빈 배열 경량화 검증',
+  code162.indexOf('var RAW_PARTNERS_FALLBACK_DATA = [];') !== -1 &&
+  code162.indexOf('var RAW_PARTNERS_FALLBACK_DATA = [\n  [') === -1
+);
+
+// 162-2: 구글 캘린더 연동 잔여 스텁 1줄 경량화 검증
+assertTest('Step 162-2: 구글 캘린더 연동 잔여 스텁 1줄 초경량화 검증',
+  code162.indexOf('function getTargetCalendar() { return null; }') !== -1 &&
+  code162.indexOf('function getAppCalendar() { return null; }') !== -1 &&
+  code162.indexOf('function syncSingleRowToCalendar() { return; }') !== -1
+);
+
+// 162-3: 구 00_calendar 대시보드 시트 스텁 1줄 경량화 검증
+assertTest('Step 162-3: 구 00_calendar 대시보드 시트 스텁 1줄 초경량화 검증',
+  code162.indexOf('function refreshDashboardCalendar() { try { invalidateDashboardServerCache(); } catch(e) {} }') !== -1 &&
+  code162.indexOf('function syncAllSiteSchedulesToDashboard() { refreshDashboardCalendar(); }') !== -1 &&
+  code162.indexOf('function isDashboardSheet(sheet) {') !== -1
+);
+
+// 162-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=162)
+assertTest('Step 162-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=162)',
+  indexHtml162.indexOf('exec?v=162') !== -1
 );
 
 console.log('\n========================================================');
