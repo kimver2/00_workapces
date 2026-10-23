@@ -10284,9 +10284,68 @@ assertTest('Step 154-4: updateMobileHeaderVisibility 내 모바일 To-Do 헤더 
   code154.indexOf('titleRow.style.marginBottom = isTodo ? "0px" : "";') !== -1
 );
 
-// 154-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=154)
-assertTest('Step 154-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=154)',
-  indexHtml154.indexOf('exec?v=154') !== -1
+// 154-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 154)
+assertTest('Step 154-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 154)',
+  /exec\?v=(15[4-9]|16[0-9])/.test(indexHtml154)
+);
+
+// [Step 155]: 마스터 설정 (거래처 & 공종 관리 메뉴/페이지, CRUD, 순서조절, 현장 연동) QA
+console.log('\n📋 [Step 155]: 마스터 설정 (거래처 & 공종 관리 메뉴/페이지, CRUD, 순서조절, 현장 연동) QA ---');
+
+const code155 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml155 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 155-1: PC 및 모바일 상단 설정 버튼 탑재 검증
+assertTest('Step 155-1: PC 및 모바일 상단 설정 버튼(pc-settings-badge-btn, btn-settings-action) 탑재 검증',
+  code155.indexOf('class="pc-settings-badge-btn"') !== -1 &&
+  code155.indexOf('onclick="openSettingsModal()"') !== -1 &&
+  code155.indexOf('btn-settings-action') !== -1
+);
+
+// 155-2: 마스터 설정 모달 및 서브 모달 2종(거래처/공종) 렌더링 검증
+assertTest('Step 155-2: 마스터 설정 모달(#settingsModalOverlay) 및 거래처/공종 모달 렌더링 검증',
+  code155.indexOf('id="settingsModalOverlay"') !== -1 &&
+  code155.indexOf('id="partnerFormModal"') !== -1 &&
+  code155.indexOf('id="taskFormModal"') !== -1 &&
+  code155.indexOf('id="settingsTabPartners"') !== -1 &&
+  code155.indexOf('id="settingsTabTasks"') !== -1
+);
+
+// 155-3: 서버 측 마스터 설정 9대 CRUD 및 순서 변경 함수 탑재 검증
+assertTest('Step 155-3: 서버 측 마스터 설정 9대 CRUD 및 순서 변경 함수 탑재 검증',
+  code155.indexOf('function getSettingsManagementData()') !== -1 &&
+  code155.indexOf('function addPartnerItemFromWeb(') !== -1 &&
+  code155.indexOf('function updatePartnerItemFromWeb(') !== -1 &&
+  code155.indexOf('function deletePartnerItemFromWeb(') !== -1 &&
+  code155.indexOf('function reorderPartnerItemFromWeb(') !== -1 &&
+  code155.indexOf('function addTaskItemFromWeb(') !== -1 &&
+  code155.indexOf('function updateTaskItemFromWeb(') !== -1 &&
+  code155.indexOf('function deleteTaskItemFromWeb(') !== -1 &&
+  code155.indexOf('function reorderTaskItemFromWeb(') !== -1
+);
+
+// 155-4: doGet API 라우팅 엔드포인트 9종 연동 검증
+assertTest('Step 155-4: doGet API 라우팅 엔드포인트 9종 연동 검증',
+  code155.indexOf('action === "getSettingsData"') !== -1 &&
+  code155.indexOf('action === "addPartner"') !== -1 &&
+  code155.indexOf('action === "updatePartner"') !== -1 &&
+  code155.indexOf('action === "deletePartner"') !== -1 &&
+  code155.indexOf('action === "reorderPartner"') !== -1 &&
+  code155.indexOf('action === "addTask"') !== -1 &&
+  code155.indexOf('action === "updateTask"') !== -1 &&
+  code155.indexOf('action === "deleteTask"') !== -1 &&
+  code155.indexOf('action === "reorderTask"') !== -1
+);
+
+// 155-5: 클라이언트 실시간 연동 (rawData 및 현장 추가/수정 드롭다운 동기화) 검증
+assertTest('Step 155-5: 클라이언트 실시간 연동 (rawData 및 현장 추가/수정 드롭다운 동기화) 검증',
+  code155.indexOf('populateTaskSelectOptions(rawData.tasks)') !== -1 &&
+  code155.indexOf('populatePartnerSelectOptions(rawData.partners)') !== -1
+);
+
+// 155-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=155)
+assertTest('Step 155-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=155)',
+  indexHtml155.indexOf('exec?v=155') !== -1
 );
 
 console.log('\n========================================================');

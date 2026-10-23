@@ -8752,6 +8752,486 @@ function deleteTodoItemFromWeb(id) {
   }
 }
 
+/**
+ * ========================================================
+ * [마스터 설정 관리] 거래처 및 공종 실시간 CRUD & 순서 제어 엔진
+ * ========================================================
+ */
+
+/**
+ * [마스터 설정] 거래처 및 공종 데이터 전체 조회
+ */
+function getSettingsManagementData() {
+  try {
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+
+    // 1. 거래처 데이터 수집 (02_거래처)
+    var pSheet = findPartnersSheet(ss);
+    var partners = [];
+    if (pSheet && pSheet.getLastRow() >= 2) {
+      ensurePartnerDropdownFormulaColumn(ss, pSheet);
+      var pLastR = pSheet.getLastRow();
+      var pLastC = Math.max((typeof pSheet.getLastColumn === "function" ? pSheet.getLastColumn() : 11), 11);
+      var pData = pSheet.getRange(2, 1, pLastR - 1, pLastC).getValues();
+      for (var pi = 0; pi < pData.length; pi++) {
+        var pRowVals = pData[pi];
+        var pName = String(pRowVals[0] || "").trim();
+        if (!pName) continue;
+        var pBiz = String(pRowVals[1] || "").trim();
+        var pCat = String(pRowVals[2] || "").trim();
+        var pPrio = String(pRowVals[3] || "").trim();
+        var pMgr = String(pRowVals[4] || "").trim();
+        var pPhone = String(pRowVals[5] || "").trim();
+        var pStatus = String(pRowVals[6] || "").trim();
+        var pFeature = String(pRowVals[7] || "").trim();
+        var pOrder = String(pRowVals[8] || "").trim();
+        var pNote = String(pRowVals[9] || "").trim();
+        var pDropdown = (pRowVals.length >= 11 ? String(pRowVals[10] || "").trim() : "") || (pBiz ? (pBiz + "_" + pName) : pName);
+        partners.push({
+          row: pi + 2,
+          name: pName,
+          biz: pBiz,
+          category: pCat,
+          priority: pPrio,
+          manager: pMgr,
+          phone: pPhone,
+          status: pStatus,
+          feature: pFeature,
+          orderMethod: pOrder,
+          note: pNote,
+          dropdownVal: pDropdown
+        });
+      }
+    }
+
+    // 2. 공종 데이터 수집 (04_공종)
+    var tSheet = findTasksSheet(ss, true);
+    var tasks = [];
+    if (tSheet && tSheet.getLastRow() >= 2) {
+      var tLastR = tSheet.getLastRow();
+      var tLastC = Math.max((typeof tSheet.getLastColumn === "function" ? tSheet.getLastColumn() : 3), 3);
+      var tData = tSheet.getRange(2, 1, tLastR - 1, tLastC).getValues();
+      for (var ti = 0; ti < tData.length; ti++) {
+        var tRowVals = tData[ti];
+        var tName = String(tRowVals[0] || "").trim();
+        if (!tName) continue;
+        tasks.push({
+          row: ti + 2,
+          taskName: tName,
+          category: String(tRowVals[1] || "").trim(),
+          note: String(tRowVals[2] || "").trim()
+        });
+      }
+    }
+
+    return {
+      success: true,
+      partners: partners,
+      tasks: tasks,
+      availablePartners: getAvailablePartners(ss),
+      availableTasks: getAvailableTasks(null),
+      partnerPhoneMap: getPartnerPhoneMap(ss)
+    };
+  } catch(err) {
+    Logger.log("getSettingsManagementData 오류: " + err.toString());
+    return { success: false, error: err.toString(), partners: [], tasks: [] };
+  }
+}
+
+/**
+ * [마스터 설정] 신규 거래처 추가
+ */
+function addPartnerItemFromWeb(partnerData) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(addPartnerItemFromWeb, this, arguments);
+  try {
+    var data = (typeof partnerData === "string") ? JSON.parse(partnerData) : (partnerData || {});
+    var name = String(data.name || "").trim();
+    if (!name) return { success: false, error: "업체/반장명을 입력해주세요." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var pSheet = findPartnersSheet(ss);
+    if (!pSheet) {
+      pSheet = ss.insertSheet("02_거래처");
+      var headers = [["업체/반장명", "대표 공종", "대구분", "우선순위", "담당자 / 직책", "연락처", "관리상태", "주력분야 및 특징", "발주/접수방식", "비고", "선택목록(공종_업체)"]];
+      pSheet.getRange(1, 1, 1, 11).setValues(headers).setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
+    }
+
+    ensurePartnerDropdownFormulaColumn(ss, pSheet);
+
+    var cleanPhone = String(data.phone || "").trim().replace(/\s+/g, "");
+    if (/^010\d{8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(010)(\d{4})(\d{4})$/, "$1-$2-$3");
+    } else if (/^02\d{7,8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(02)(\d{3,4})(\d{4})$/, "$1-$2-$3");
+    }
+
+    var newRow = [
+      name,
+      String(data.biz || "").trim(),
+      String(data.category || "시공").trim(),
+      String(data.priority || "미지정").trim(),
+      String(data.manager || "").trim(),
+      cleanPhone,
+      String(data.status || "운영 중").trim(),
+      String(data.feature || "").trim(),
+      String(data.orderMethod || "").trim(),
+      String(data.note || "").trim()
+    ];
+
+    pSheet.appendRow(newRow);
+    SpreadsheetApp.flush();
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "거래처 [" + name + "]이(가) 성공적으로 추가되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("addPartnerItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 기존 거래처 정보 수정
+ */
+function updatePartnerItemFromWeb(row, partnerData) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(updatePartnerItemFromWeb, this, arguments);
+  try {
+    var targetRow = parseInt(row, 10);
+    var data = (typeof partnerData === "string") ? JSON.parse(partnerData) : (partnerData || {});
+    var name = String(data.name || "").trim();
+    if (!name) return { success: false, error: "업체/반장명을 입력해주세요." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var pSheet = findPartnersSheet(ss);
+    if (!pSheet) return { success: false, error: "02_거래처 시트를 찾을 수 없습니다." };
+
+    var lastRow = pSheet.getLastRow();
+    if (targetRow < 2 || targetRow > lastRow) {
+      return { success: false, error: "유효하지 않은 행 번호입니다. (" + targetRow + ")" };
+    }
+
+    var cleanPhone = String(data.phone || "").trim().replace(/\s+/g, "");
+    if (/^010\d{8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(010)(\d{4})(\d{4})$/, "$1-$2-$3");
+    } else if (/^02\d{7,8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(02)(\d{3,4})(\d{4})$/, "$1-$2-$3");
+    }
+
+    var updateVals = [
+      name,
+      String(data.biz || "").trim(),
+      String(data.category || "시공").trim(),
+      String(data.priority || "미지정").trim(),
+      String(data.manager || "").trim(),
+      cleanPhone,
+      String(data.status || "운영 중").trim(),
+      String(data.feature || "").trim(),
+      String(data.orderMethod || "").trim(),
+      String(data.note || "").trim()
+    ];
+
+    pSheet.getRange(targetRow, 1, 1, 10).setValues([updateVals]);
+    SpreadsheetApp.flush();
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "거래처 [" + name + "]이(가) 수정되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("updatePartnerItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 거래처 삭제
+ */
+function deletePartnerItemFromWeb(row, partnerName) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(deletePartnerItemFromWeb, this, arguments);
+  try {
+    var targetRow = parseInt(row, 10);
+    var targetName = String(partnerName || "").trim();
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var pSheet = findPartnersSheet(ss);
+    if (!pSheet) return { success: false, error: "02_거래처 시트를 찾을 수 없습니다." };
+
+    var lastRow = pSheet.getLastRow();
+    if (lastRow < 2) return { success: false, error: "데이터가 없습니다." };
+
+    var actualName = "";
+    if (targetRow >= 2 && targetRow <= lastRow) {
+      actualName = String(pSheet.getRange(targetRow, 1).getValue() || "").trim();
+    }
+    if (actualName !== targetName && targetName) {
+      var allNames = pSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      targetRow = -1;
+      for (var i = 0; i < allNames.length; i++) {
+        if (String(allNames[i][0] || "").trim() === targetName) {
+          targetRow = i + 2;
+          break;
+        }
+      }
+    }
+
+    if (targetRow < 2 || targetRow > lastRow) {
+      return { success: false, error: "삭제할 거래처 행을 찾을 수 없습니다." };
+    }
+
+    pSheet.deleteRow(targetRow);
+    SpreadsheetApp.flush();
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "거래처 [" + (targetName || targetRow + "행") + "]이(가) 삭제되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("deletePartnerItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 거래처 노출 순서 변경 (위/아래 행 교환)
+ */
+function reorderPartnerItemFromWeb(row, direction) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(reorderPartnerItemFromWeb, this, arguments);
+  try {
+    var curRow = parseInt(row, 10);
+    var dir = String(direction || "up").toLowerCase();
+    var otherRow = (dir === "up") ? (curRow - 1) : (curRow + 1);
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var pSheet = findPartnersSheet(ss);
+    if (!pSheet) return { success: false, error: "02_거래처 시트를 찾을 수 없습니다." };
+
+    var lastRow = pSheet.getLastRow();
+    if (curRow < 2 || curRow > lastRow || otherRow < 2 || otherRow > lastRow) {
+      return { success: false, error: "더 이상 순서를 변경할 수 없습니다." };
+    }
+
+    var r1Range = pSheet.getRange(curRow, 1, 1, 10);
+    var r2Range = pSheet.getRange(otherRow, 1, 1, 10);
+    var v1 = r1Range.getValues();
+    var v2 = r2Range.getValues();
+    var b1 = r1Range.getBackgrounds();
+    var b2 = r2Range.getBackgrounds();
+
+    r1Range.setValues(v2);
+    r2Range.setValues(v1);
+    r1Range.setBackgrounds(b2);
+    r2Range.setBackgrounds(b1);
+
+    SpreadsheetApp.flush();
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "거래처 순서가 변경되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("reorderPartnerItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 신규 공종 추가
+ */
+function addTaskItemFromWeb(taskData) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(addTaskItemFromWeb, this, arguments);
+  try {
+    var data = (typeof taskData === "string") ? JSON.parse(taskData) : (taskData || {});
+    var taskName = String(data.taskName || "").trim();
+    if (!taskName) return { success: false, error: "공종명을 입력해주세요." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var tSheet = findTasksSheet(ss, true);
+    if (!tSheet) return { success: false, error: "04_공종 시트를 찾을 수 없습니다." };
+
+    var newRow = [
+      taskName,
+      String(data.category || "기타").trim(),
+      String(data.note || "").trim()
+    ];
+
+    tSheet.appendRow(newRow);
+    SpreadsheetApp.flush();
+
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+    } catch(eVal) {}
+
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "공종 [" + taskName + "]이(가) 성공적으로 추가되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("addTaskItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 기존 공종 수정
+ */
+function updateTaskItemFromWeb(row, taskData) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(updateTaskItemFromWeb, this, arguments);
+  try {
+    var targetRow = parseInt(row, 10);
+    var data = (typeof taskData === "string") ? JSON.parse(taskData) : (taskData || {});
+    var taskName = String(data.taskName || "").trim();
+    if (!taskName) return { success: false, error: "공종명을 입력해주세요." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var tSheet = findTasksSheet(ss, true);
+    if (!tSheet) return { success: false, error: "04_공종 시트를 찾을 수 없습니다." };
+
+    var lastRow = tSheet.getLastRow();
+    if (targetRow < 2 || targetRow > lastRow) {
+      return { success: false, error: "유효하지 않은 행 번호입니다. (" + targetRow + ")" };
+    }
+
+    var updateVals = [
+      taskName,
+      String(data.category || "기타").trim(),
+      String(data.note || "").trim()
+    ];
+
+    tSheet.getRange(targetRow, 1, 1, 3).setValues([updateVals]);
+    SpreadsheetApp.flush();
+
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+    } catch(eVal) {}
+
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "공종 [" + taskName + "]이(가) 수정되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("updateTaskItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 공종 삭제
+ */
+function deleteTaskItemFromWeb(row, taskName) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(deleteTaskItemFromWeb, this, arguments);
+  try {
+    var targetRow = parseInt(row, 10);
+    var targetName = String(taskName || "").trim();
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var tSheet = findTasksSheet(ss, true);
+    if (!tSheet) return { success: false, error: "04_공종 시트를 찾을 수 없습니다." };
+
+    var lastRow = tSheet.getLastRow();
+    if (lastRow < 2) return { success: false, error: "데이터가 없습니다." };
+
+    var actualName = "";
+    if (targetRow >= 2 && targetRow <= lastRow) {
+      actualName = String(tSheet.getRange(targetRow, 1).getValue() || "").trim();
+    }
+    if (actualName !== targetName && targetName) {
+      var allNames = tSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      targetRow = -1;
+      for (var i = 0; i < allNames.length; i++) {
+        if (String(allNames[i][0] || "").trim() === targetName) {
+          targetRow = i + 2;
+          break;
+        }
+      }
+    }
+
+    if (targetRow < 2 || targetRow > lastRow) {
+      return { success: false, error: "삭제할 공종 행을 찾을 수 없습니다." };
+    }
+
+    tSheet.deleteRow(targetRow);
+    SpreadsheetApp.flush();
+
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+    } catch(eVal) {}
+
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "공종 [" + (targetName || targetRow + "행") + "]이(가) 삭제되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("deleteTaskItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 공종 노출 순서 변경 (위/아래 행 교환)
+ */
+function reorderTaskItemFromWeb(row, direction) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(reorderTaskItemFromWeb, this, arguments);
+  try {
+    var curRow = parseInt(row, 10);
+    var dir = String(direction || "up").toLowerCase();
+    var otherRow = (dir === "up") ? (curRow - 1) : (curRow + 1);
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var tSheet = findTasksSheet(ss, true);
+    if (!tSheet) return { success: false, error: "04_공종 시트를 찾을 수 없습니다." };
+
+    var lastRow = tSheet.getLastRow();
+    if (curRow < 2 || curRow > lastRow || otherRow < 2 || otherRow > lastRow) {
+      return { success: false, error: "더 이상 순서를 변경할 수 없습니다." };
+    }
+
+    var r1Range = tSheet.getRange(curRow, 1, 1, 3);
+    var r2Range = tSheet.getRange(otherRow, 1, 1, 3);
+    var v1 = r1Range.getValues();
+    var v2 = r2Range.getValues();
+    var b1 = r1Range.getBackgrounds();
+    var b2 = r2Range.getBackgrounds();
+
+    r1Range.setValues(v2);
+    r2Range.setValues(v1);
+    r1Range.setBackgrounds(b2);
+    r2Range.setBackgrounds(b1);
+
+    SpreadsheetApp.flush();
+
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+    } catch(eVal) {}
+
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "공종 순서가 변경되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("reorderTaskItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+
 
 function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchived, targetSheetName) {
   if (!__woosungWriteLockHeld_) return runWithWriteLock_(moveScheduleTaskDateFromWeb, this, arguments);
@@ -9378,6 +9858,58 @@ function doGet(e) {
     var delTodoRes = deleteTodoItemFromWeb(delId);
     return ContentService.createTextOutput(JSON.stringify(delTodoRes))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0-0-0-Settings) 마스터 설정 (거래처 & 공종 관리) 액션 라우팅
+  if (action === "getSettingsData") {
+    var sData = getSettingsManagementData();
+    return ContentService.createTextOutput(JSON.stringify(sData)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "addPartner") {
+    var pAddData = p.data ? JSON.parse(p.data) : p;
+    var addPRes = addPartnerItemFromWeb(pAddData);
+    return ContentService.createTextOutput(JSON.stringify(addPRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "updatePartner") {
+    var pUpdateRow = parseInt(p.row, 10);
+    var pUpdateData = p.data ? JSON.parse(p.data) : p;
+    var updatePRes = updatePartnerItemFromWeb(pUpdateRow, pUpdateData);
+    return ContentService.createTextOutput(JSON.stringify(updatePRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "deletePartner") {
+    var pDelRow = parseInt(p.row, 10);
+    var pDelName = p.name || "";
+    var delPRes = deletePartnerItemFromWeb(pDelRow, pDelName);
+    return ContentService.createTextOutput(JSON.stringify(delPRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "reorderPartner") {
+    var pReRow = parseInt(p.row, 10);
+    var pReDir = p.direction || "up";
+    var reorderPRes = reorderPartnerItemFromWeb(pReRow, pReDir);
+    return ContentService.createTextOutput(JSON.stringify(reorderPRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "addTask") {
+    var tAddData = p.data ? JSON.parse(p.data) : p;
+    var addTRes = addTaskItemFromWeb(tAddData);
+    return ContentService.createTextOutput(JSON.stringify(addTRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "updateTask") {
+    var tUpdateRow = parseInt(p.row, 10);
+    var tUpdateData = p.data ? JSON.parse(p.data) : p;
+    var updateTRes = updateTaskItemFromWeb(tUpdateRow, tUpdateData);
+    return ContentService.createTextOutput(JSON.stringify(updateTRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "deleteTask") {
+    var tDelRow = parseInt(p.row, 10);
+    var tDelName = p.name || "";
+    var delTRes = deleteTaskItemFromWeb(tDelRow, tDelName);
+    return ContentService.createTextOutput(JSON.stringify(delTRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "reorderTask") {
+    var tReRow = parseInt(p.row, 10);
+    var tReDir = p.direction || "up";
+    var reorderTRes = reorderTaskItemFromWeb(tReRow, tReDir);
+    return ContentService.createTextOutput(JSON.stringify(reorderTRes)).setMimeType(ContentService.MimeType.JSON);
   }
 
   // 0-0-0-Repair) 현장 아코디언 그룹 무결성 즉시 복구 요청 (action=repairSiteGroups)
@@ -13074,6 +13606,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .cal-event-pill { padding: 4px 8px; font-size: 11.5px; }';
   html += '  .cal-pill-text { font-size: 11.5px !important; }';
   html += '}';
+  html += '  .pc-settings-badge-btn { display: inline-flex; align-items: center; gap: 4px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 3px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; user-select: none; }';
+  html += '  .pc-settings-badge-btn:hover { background: #e2e8f0; color: #0f172a; border-color: #94a3b8; transform: translateY(-1px); }';
+  html += '  .btn-settings-action { background: #f8fafc !important; color: #334155 !important; border: 1.5px solid #cbd5e1 !important; font-weight: 800 !important; }';
+  html += '  @keyframes settingsFadeIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }';
   html += '</style></head><body>';
 
   // 새로고침 글로벌 로딩바 및 오버레이 (목록 뷰 & 캘린더 뷰 공용)
@@ -13092,6 +13628,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="pc-logo-badge">';
   html += '      <span class="pc-logo-title-link" onclick="onLogoClick()" title="우성아이디 대시보드 새로고침 및 메인 이동">🏢 우성아이디</span>';
   html += '      <a href="https://docs.google.com/spreadsheets/d/1V6Nb5ZB8gOfwDFsN8svMDZQYWXIJjGa9tuUYrVu0JhY/edit?gid=244837509#gid=244837509" target="_blank" rel="noopener noreferrer" class="pc-sheet-badge-btn" onclick="event.stopPropagation();" title="구글 스프레드시트 현장데이터 시트 열기 (새 창)">현장데이터 시트 ↗</a>';
+  html += '      <button type="button" class="pc-settings-badge-btn" onclick="openSettingsModal()" title="마스터 설정 (거래처 / 공종 관리)">⚙️ 설정</button>';
   html += '    </div>';
   html += '  </div>';
   html += '  <div class="pc-top-nav-wrap">';
@@ -13127,6 +13664,7 @@ function buildSidebarDashboardHtml(mode) {
   if (!isModal && !isMobile) {
     html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 8px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:3px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #93c5fd;" onclick="openWideModalView()" title="대시보드를 넓은 대형 팝업 창(1020px)으로 엽니다">⛶ 크게 보기</button>';
   }
+  html += '      <button type="button" class="btn btn-secondary btn-settings-action" style="flex:none;padding:4px 8px;font-size:11.5px;font-weight:700;" onclick="openSettingsModal()" title="마스터 설정 (거래처 / 공종 관리)">⚙️ 설정</button>';
   html += '      <button type="button" class="btn btn-secondary btn-refresh-action" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData(true)">🔄 새로고침</button>';
   html += '    </div>';
   html += '  </div>';
@@ -13801,8 +14339,681 @@ function buildSidebarDashboardHtml(mode) {
   html += '  </div>';
   html += '</div>';
 
+  // ========================================================
+  // [마스터 설정 모달 HTML (거래처 & 공종 관리)]
+  // ========================================================
+  html += '<div id="settingsModalOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.65);z-index:99998;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:14px;box-sizing:border-box;" onclick="if(event.target===this)closeSettingsModal()">';
+  html += '  <div style="background:#ffffff;border-radius:16px;width:100%;max-width:960px;height:90vh;max-height:820px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);overflow:hidden;display:flex;flex-direction:column;animation:settingsFadeIn 0.2s ease;">';
+  html += '    <div style="padding:16px 22px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;background:#ffffff;flex-shrink:0;">';
+  html += '      <div style="display:flex;align-items:center;gap:10px;">';
+  html += '        <span style="font-size:20px;">⚙️</span>';
+  html += '        <div>';
+  html += '          <h3 style="margin:0;font-size:16px;font-weight:900;color:#0f172a;letter-spacing:-0.3px;">마스터 설정 (거래처 · 공종 관리)</h3>';
+  html += '          <p style="margin:2px 0 0 0;font-size:11.5px;color:#64748b;font-weight:500;">추가, 수정, 삭제 및 노출 순서 변경 시 현장 추가/수정 드롭다운에 즉시 실시간 연동됩니다.</p>';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <button type="button" onclick="closeSettingsModal()" style="border:none;background:#f1f5f9;color:#64748b;font-size:16px;font-weight:700;width:32px;height:32px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background=\'#e2e8f0\'" onmouseout="this.style.background=\'#f1f5f9\'">✕</button>';
+  html += '    </div>';
+  html += '    <div style="padding:10px 22px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;flex-shrink:0;">';
+  html += '      <div style="display:flex;align-items:center;gap:8px;">';
+  html += '        <button type="button" id="settingsTabPartners" onclick="switchSettingsTab(\'partners\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:13px;font-weight:800;border:none;cursor:pointer;background:#2563eb;color:#ffffff;transition:all 0.15s;box-shadow:0 1px 2px rgba(37,99,235,0.2);">';
+  html += '          <span>🤝 거래처 관리</span>';
+  html += '          <span id="settingsCountPartners" style="background:rgba(255,255,255,0.25);padding:1px 6px;border-radius:10px;font-size:11px;">0</span>';
+  html += '        </button>';
+  html += '        <button type="button" id="settingsTabTasks" onclick="switchSettingsTab(\'tasks\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:13px;font-weight:800;border:none;cursor:pointer;background:#f1f5f9;color:#475569;transition:all 0.15s;">';
+  html += '          <span>🏷️ 공종 관리</span>';
+  html += '          <span id="settingsCountTasks" style="background:#e2e8f0;color:#475569;padding:1px 6px;border-radius:10px;font-size:11px;">0</span>';
+  html += '        </button>';
+  html += '      </div>';
+  html += '      <div style="display:flex;align-items:center;gap:10px;">';
+  html += '        <div style="position:relative;display:flex;align-items:center;">';
+  html += '          <span style="position:absolute;left:10px;font-size:12px;color:#94a3b8;pointer-events:none;">🔍</span>';
+  html += '          <input type="text" id="settingsSearchInput" placeholder="검색 (업체명, 공종, 구분...)" oninput="onSettingsSearchInput(this.value)" style="padding:6px 10px 6px 30px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:180px;background:#ffffff;">';
+  html += '        </div>';
+  html += '        <button type="button" id="settingsAddBtn" onclick="openAddPartnerModal()" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;background:#10b981;color:#ffffff;border:none;border-radius:8px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 1px 2px rgba(16,185,129,0.2);transition:background 0.15s;" onmouseover="this.style.background=\'#059669\'" onmouseout="this.style.background=\'#10b981\'">+ 신규 거래처 추가</button>';
+  html += '      </div>';
+  html += '    </div>';
+  html += '    <div id="settingsListContent" style="flex:1;overflow-y:auto;overflow-x:auto;padding:14px 22px;background:#ffffff;"></div>';
+  html += '    <div style="padding:10px 22px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">';
+  html += '      <div style="font-size:11.5px;color:#64748b;display:flex;align-items:center;gap:6px;">';
+  html += '        <span>💡</span>';
+  html += '        <span><b>▲ / ▼</b> 버튼을 클릭하여 드롭다운에 노출될 우선순위 순서를 자유롭게 조정할 수 있습니다.</span>';
+  html += '      </div>';
+  html += '      <button type="button" onclick="closeSettingsModal()" style="padding:6px 16px;background:#ffffff;border:1.5px solid #cbd5e1;color:#475569;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">닫기</button>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '</div>';
+  html += '<div id="partnerFormModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.5);z-index:99999;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closePartnerFormModal()">';
+  html += '  <div style="background:#ffffff;border-radius:14px;width:100%;max-width:520px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.2);overflow:hidden;display:flex;flex-direction:column;">';
+  html += '    <div style="padding:16px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;">';
+  html += '      <h4 id="partnerFormTitle" style="margin:0;font-size:15px;font-weight:900;color:#0f172a;">🤝 거래처 등록</h4>';
+  html += '      <button type="button" onclick="closePartnerFormModal()" style="border:none;background:none;color:#64748b;font-size:16px;cursor:pointer;">✕</button>';
+  html += '    </div>';
+  html += '    <div style="padding:18px 20px;display:flex;flex-direction:column;gap:11px;max-height:calc(85vh - 120px);overflow-y:auto;">';
+  html += '      <div style="display:flex;gap:10px;">';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">업체 / 반장명 <span style="color:#ef4444;">*</span></label>';
+  html += '          <input type="text" id="partnerInpName" placeholder="예: 현대천정재" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:13px;font-weight:700;outline:none;">';
+  html += '        </div>';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">대표 공종 <span style="color:#ef4444;">*</span></label>';
+  html += '          <input type="text" id="partnerInpBiz" list="partnerBizSuggestions" placeholder="예: SMC, 도배, 전기" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:13px;font-weight:700;outline:none;">';
+  html += '          <datalist id="partnerBizSuggestions"></datalist>';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div style="display:flex;gap:10px;">';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">대구분</label>';
+  html += '          <select id="partnerInpCategory" style="width:100%;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;background:#ffffff;">';
+  html += '            <option value="시공">시공</option>';
+  html += '            <option value="자재">자재</option>';
+  html += '            <option value="가구">가구</option>';
+  html += '            <option value="설비">설비</option>';
+  html += '            <option value="철물">철물</option>';
+  html += '            <option value="기타">기타</option>';
+  html += '          </select>';
+  html += '        </div>';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">우선순위 (팀)</label>';
+  html += '          <select id="partnerInpPriority" style="width:100%;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;background:#ffffff;">';
+  html += '            <option value="1순위">1순위 (최우선)</option>';
+  html += '            <option value="2순위">2순위</option>';
+  html += '            <option value="3순위">3순위</option>';
+  html += '            <option value="A팀">A팀</option>';
+  html += '            <option value="B팀">B팀</option>';
+  html += '            <option value="C팀">C팀</option>';
+  html += '            <option value="본사/대리점">본사/대리점</option>';
+  html += '            <option value="미지정">미지정</option>';
+  html += '          </select>';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div style="display:flex;gap:10px;">';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">담당자 / 직책</label>';
+  html += '          <input type="text" id="partnerInpManager" placeholder="예: 대표님, 사모님, 김반장" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;">';
+  html += '        </div>';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">연락처</label>';
+  html += '          <input type="text" id="partnerInpPhone" placeholder="예: 010-1234-5678" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;">';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div style="display:flex;gap:10px;">';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">관리상태</label>';
+  html += '          <select id="partnerInpStatus" style="width:100%;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;background:#ffffff;">';
+  html += '            <option value="운영 중">운영 중</option>';
+  html += '            <option value="협의 중">협의 중</option>';
+  html += '            <option value="보류">보류</option>';
+  html += '            <option value="계약종료">계약종료</option>';
+  html += '          </select>';
+  html += '        </div>';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">발주 / 접수방식</label>';
+  html += '          <input type="text" id="partnerInpOrderMethod" placeholder="예: 카카오톡 / 유선" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;">';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div>';
+  html += '        <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">주력분야 및 특징</label>';
+  html += '        <input type="text" id="partnerInpFeature" placeholder="예: SMC 천정재 / 실리콘 마감 우수" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;">';
+  html += '      </div>';
+  html += '      <div>';
+  html += '        <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">비고</label>';
+  html += '        <input type="text" id="partnerInpNote" placeholder="추가 메모 사항" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;">';
+  html += '      </div>';
+  html += '    </div>';
+  html += '    <div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;justify-content:flex-end;gap:8px;">';
+  html += '      <button type="button" onclick="closePartnerFormModal()" style="padding:7px 14px;border:1.5px solid #cbd5e1;background:#ffffff;color:#475569;border-radius:7px;font-size:12.5px;font-weight:700;cursor:pointer;">취소</button>';
+  html += '      <button type="button" onclick="savePartnerForm()" style="padding:7px 18px;border:none;background:#2563eb;color:#ffffff;border-radius:7px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 1px 2px rgba(37,99,235,0.3);">저장하기</button>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '</div>';
+  html += '<div id="taskFormModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.5);z-index:99999;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeTaskFormModal()">';
+  html += '  <div style="background:#ffffff;border-radius:14px;width:100%;max-width:480px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.2);overflow:hidden;display:flex;flex-direction:column;">';
+  html += '    <div style="padding:16px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;">';
+  html += '      <h4 id="taskFormTitle" style="margin:0;font-size:15px;font-weight:900;color:#0f172a;">🏷️ 공종 등록</h4>';
+  html += '      <button type="button" onclick="closeTaskFormModal()" style="border:none;background:none;color:#64748b;font-size:16px;cursor:pointer;">✕</button>';
+  html += '    </div>';
+  html += '    <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;">';
+  html += '      <div>';
+  html += '        <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">공종명 <span style="color:#ef4444;">*</span></label>';
+  html += '        <input type="text" id="taskInpName" placeholder="예: 욕실철거, 줄눈, 도배" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:13.5px;font-weight:700;outline:none;">';
+  html += '      </div>';
+  html += '      <div>';
+  html += '        <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">구분</label>';
+  html += '        <select id="taskInpCategory" style="width:100%;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:13px;outline:none;background:#ffffff;">';
+  html += '          <option value="철거/설비">철거/설비</option>';
+  html += '          <option value="전기/조명">전기/조명</option>';
+  html += '          <option value="공조/설비">공조/설비</option>';
+  html += '          <option value="목공/창호">목공/창호</option>';
+  html += '          <option value="타일/욕실">타일/욕실</option>';
+  html += '          <option value="마감/도장">마감/도장</option>';
+  html += '          <option value="마감/바닥">마감/바닥</option>';
+  html += '          <option value="가구/주방">가구/주방</option>';
+  html += '          <option value="사전/준비">사전/준비</option>';
+  html += '          <option value="준공/마감">준공/마감</option>';
+  html += '          <option value="고객/계약">고객/계약</option>';
+  html += '          <option value="사후관리">사후관리</option>';
+  html += '          <option value="기타">기타</option>';
+  html += '        </select>';
+  html += '      </div>';
+  html += '      <div>';
+  html += '        <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">비고 / 설명</label>';
+  html += '        <input type="text" id="taskInpNote" placeholder="예: 배관, 방수, 위생설비" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:13px;outline:none;">';
+  html += '      </div>';
+  html += '    </div>';
+  html += '    <div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;justify-content:flex-end;gap:8px;">';
+  html += '      <button type="button" onclick="closeTaskFormModal()" style="padding:7px 14px;border:1.5px solid #cbd5e1;background:#ffffff;color:#475569;border-radius:7px;font-size:12.5px;font-weight:700;cursor:pointer;">취소</button>';
+  html += '      <button type="button" onclick="saveTaskForm()" style="padding:7px 18px;border:none;background:#2563eb;color:#ffffff;border-radius:7px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 1px 2px rgba(37,99,235,0.3);">저장하기</button>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '</div>';
+
   // Script
   html += '<script>';
+
+  // ========================================================
+  // [마스터 설정 관리: 거래처 & 공종 실시간 클라이언트 엔진]
+  // ========================================================
+  html += '\n';
+  html += 'let currentSettingsTab = "partners";\n';
+  html += 'let currentSettingsData = { partners: [], tasks: [] };\n';
+  html += 'let settingsSearchQuery = "";\n';
+  html += 'let editingPartnerRow = null;\n';
+  html += 'let editingTaskRow = null;\n';
+  html += '\n';
+  html += 'function openSettingsModal() {\n';
+  html += '  const modal = document.getElementById("settingsModalOverlay");\n';
+  html += '  if (!modal) return;\n';
+  html += '  modal.style.display = "flex";\n';
+  html += '  renderSettingsView();\n';
+  html += '  loadSettingsData();\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function closeSettingsModal() {\n';
+  html += '  const modal = document.getElementById("settingsModalOverlay");\n';
+  html += '  if (modal) modal.style.display = "none";\n';
+  html += '  closePartnerFormModal();\n';
+  html += '  closeTaskFormModal();\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function switchSettingsTab(tab) {\n';
+  html += '  currentSettingsTab = tab;\n';
+  html += '  const tabP = document.getElementById("settingsTabPartners");\n';
+  html += '  const tabT = document.getElementById("settingsTabTasks");\n';
+  html += '  if (tab === "partners") {\n';
+  html += '    if (tabP) { tabP.style.background = "#2563eb"; tabP.style.color = "#ffffff"; tabP.style.boxShadow = "0 1px 2px rgba(37,99,235,0.2)"; }\n';
+  html += '    if (tabT) { tabT.style.background = "#f1f5f9"; tabT.style.color = "#475569"; tabT.style.boxShadow = "none"; }\n';
+  html += '  } else {\n';
+  html += '    if (tabP) { tabP.style.background = "#f1f5f9"; tabP.style.color = "#475569"; tabP.style.boxShadow = "none"; }\n';
+  html += '    if (tabT) { tabT.style.background = "#2563eb"; tabT.style.color = "#ffffff"; tabT.style.boxShadow = "0 1px 2px rgba(37,99,235,0.2)"; }\n';
+  html += '  }\n';
+  html += '  const addBtn = document.getElementById("settingsAddBtn");\n';
+  html += '  if (addBtn) {\n';
+  html += '    addBtn.innerText = (tab === "partners") ? "+ 신규 거래처 추가" : "+ 신규 공종 추가";\n';
+  html += '    addBtn.onclick = (tab === "partners") ? openAddPartnerModal : openAddTaskModal;\n';
+  html += '  }\n';
+  html += '  renderSettingsView();\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function onSettingsSearchInput(val) {\n';
+  html += '  settingsSearchQuery = String(val || "").trim().toLowerCase();\n';
+  html += '  renderSettingsView();\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function loadSettingsData(silent) {\n';
+  html += '  if (!silent) {\n';
+  html += '    const listArea = document.getElementById("settingsListContent");\n';
+  html += '    if (listArea && (!currentSettingsData.partners.length && !currentSettingsData.tasks.length)) {\n';
+  html += '      listArea.innerHTML = \'<div style="text-align:center;padding:50px 20px;color:#64748b;font-weight:600;"><div class="spinner" style="width:26px;height:26px;border-width:3px;margin:0 auto 12px;"></div>설정 데이터를 불러오는 중입니다...</div>\';\n';
+  html += '    }\n';
+  html += '  }\n';
+  html += '  callSettingsApi("getSettingsData", {}, function(res) {\n';
+  html += '    applySettingsDataResponse(res);\n';
+  html += '  });\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function applySettingsDataResponse(res) {\n';
+  html += '  if (res && res.success) {\n';
+  html += '    currentSettingsData = {\n';
+  html += '      partners: res.partners || [],\n';
+  html += '      tasks: res.tasks || []\n';
+  html += '    };\n';
+  html += '    const pCountEl = document.getElementById("settingsCountPartners");\n';
+  html += '    const tCountEl = document.getElementById("settingsCountTasks");\n';
+  html += '    if (pCountEl) pCountEl.innerText = currentSettingsData.partners.length;\n';
+  html += '    if (tCountEl) tCountEl.innerText = currentSettingsData.tasks.length;\n';
+  html += '\n';
+  html += '    // 현장 추가/수정에 실시간 연동 (rawData 갱신 및 드롭다운 즉시 동기화)\n';
+  html += '    if (typeof rawData !== "undefined" && rawData) {\n';
+  html += '      if (res.availablePartners) rawData.partners = res.availablePartners;\n';
+  html += '      else if (res.partners) rawData.partners = res.partners.map(function(p) { return p.dropdownVal || p.name; });\n';
+  html += '      if (res.availableTasks) rawData.tasks = res.availableTasks;\n';
+  html += '      else if (res.tasks) rawData.tasks = res.tasks.map(function(t) { return t.taskName; });\n';
+  html += '      if (res.partnerPhoneMap) rawData.partnerPhoneMap = res.partnerPhoneMap;\n';
+  html += '      if (typeof populateTaskSelectOptions === "function") {\n';
+  html += '        populateTaskSelectOptions(rawData.tasks);\n';
+  html += '      }\n';
+  html += '      if (typeof populatePartnerSelectOptions === "function") {\n';
+  html += '        populatePartnerSelectOptions(rawData.partners);\n';
+  html += '      }\n';
+  html += '    }\n';
+  html += '    renderSettingsView();\n';
+  html += '  } else {\n';
+  html += '    showToast("⚠️ " + ((res && res.error) || "데이터 로드 실패"));\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function renderSettingsView() {\n';
+  html += '  const container = document.getElementById("settingsListContent");\n';
+  html += '  if (!container) return;\n';
+  html += '  if (currentSettingsTab === "partners") {\n';
+  html += '    renderPartnersTable(container);\n';
+  html += '  } else {\n';
+  html += '    renderTasksTable(container);\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function renderPartnersTable(container) {\n';
+  html += '  let list = currentSettingsData.partners || [];\n';
+  html += '  if (settingsSearchQuery) {\n';
+  html += '    const q = settingsSearchQuery;\n';
+  html += '    list = list.filter(function(p) {\n';
+  html += '      return (p.name && p.name.toLowerCase().includes(q)) ||\n';
+  html += '             (p.biz && p.biz.toLowerCase().includes(q)) ||\n';
+  html += '             (p.category && p.category.toLowerCase().includes(q)) ||\n';
+  html += '             (p.manager && p.manager.toLowerCase().includes(q)) ||\n';
+  html += '             (p.phone && p.phone.includes(q)) ||\n';
+  html += '             (p.priority && p.priority.toLowerCase().includes(q)) ||\n';
+  html += '             (p.feature && p.feature.toLowerCase().includes(q));\n';
+  html += '    });\n';
+  html += '  }\n';
+  html += '  if (list.length === 0) {\n';
+  html += '    container.innerHTML = \'<div style="text-align:center;padding:50px 20px;color:#94a3b8;font-weight:600;"><span style="font-size:24px;display:block;margin-bottom:8px;">🔍</span>등록된 거래처가 없거나 검색 결과가 없습니다.</div>\';\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  let tHtml = \'<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;">\';\n';
+  html += '  tHtml += \'<thead><tr style="background:#f8fafc;position:sticky;top:0;z-index:2;">\';\n';
+  html += '  tHtml += \'<th style="padding:10px 8px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:center;width:45px;">순서</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 8px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:center;width:65px;">순서이동</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 10px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:left;width:150px;">업체 / 반장명</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 10px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:left;width:100px;">대표 공종</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 8px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:center;width:85px;">우선순위</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 10px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:left;width:160px;">담당자 / 연락처</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 8px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:center;width:75px;">상태</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 10px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:left;">비고 / 주력특징</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 8px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:center;width:105px;">관리</th>\';\n';
+  html += '  tHtml += \'</tr></thead><tbody>\';\n';
+  html += '  list.forEach(function(p, idx) {\n';
+  html += '    const isFirst = (idx === 0);\n';
+  html += '    const isLast = (idx === list.length - 1);\n';
+  html += '    const pStyle = getSettingsPriorityStyle(p.priority);\n';
+  html += '    const sStyle = (p.status === "운영 중" || !p.status) ? "background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;" : "background:#fef2f2;color:#991b1b;border:1px solid #fecaca;";\n';
+  html += '    tHtml += \'<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background=\\\'#f8fafc\\\'" onmouseout="this.style.background=\\\'#ffffff\\\'">\';\n';
+  html += '    tHtml += \'<td style="padding:9px 8px;text-align:center;font-weight:700;color:#64748b;border-bottom:1px solid #f1f5f9;">\' + (idx + 1) + \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 8px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'  <div style="display:inline-flex;gap:3px;">\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="reorderPartner(\' + p.row + \', \\\'up\\\')" \' + (isFirst ? \'disabled style="opacity:0.3;cursor:not-allowed;\' : \'style="cursor:pointer;\') + \'border:1px solid #cbd5e1;background:#ffffff;border-radius:4px;padding:1px 5px;font-size:10px;" title="위로 이동">▲</button>\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="reorderPartner(\' + p.row + \', \\\'down\\\')" \' + (isLast ? \'disabled style="opacity:0.3;cursor:not-allowed;\' : \'style="cursor:pointer;\') + \'border:1px solid #cbd5e1;background:#ffffff;border-radius:4px;padding:1px 5px;font-size:10px;" title="아래로 이동">▼</button>\';\n';
+  html += '    tHtml += \'  </div>\';\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 10px;font-weight:800;color:#0f172a;border-bottom:1px solid #f1f5f9;">\' + escapeSettingsHtml(p.name) + \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:2px 7px;background:#f1f5f9;color:#334155;border-radius:5px;font-size:11.5px;font-weight:700;">\' + escapeSettingsHtml(p.biz || "-") + \'</span></td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 8px;text-align:center;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:2px 6px;border-radius:5px;font-size:11px;font-weight:800;\' + pStyle + \'">\' + escapeSettingsHtml(p.priority || "미지정") + \'</span></td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;color:#334155;">\';\n';
+  html += '    tHtml += \'  <div style="font-weight:700;">\' + escapeSettingsHtml(p.manager || "-") + \'</div>\';\n';
+  html += '    if (p.phone) {\n';
+  html += '      tHtml += \'  <div style="font-size:11px;color:#64748b;"><a href="tel:\' + escapeSettingsHtml(p.phone) + \'" style="color:#2563eb;text-decoration:none;">📞 \' + escapeSettingsHtml(p.phone) + \'</a></div>\';\n';
+  html += '    }\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 8px;text-align:center;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:2px 6px;border-radius:5px;font-size:11px;font-weight:700;\' + sStyle + \'">\' + escapeSettingsHtml(p.status || "운영 중") + \'</span></td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:11.5px;">\';\n';
+  html += '    tHtml += \'  <div>\' + escapeSettingsHtml(p.feature || p.note || "-") + \'</div>\';\n';
+  html += '    if (p.orderMethod) tHtml += \'  <div style="font-size:10.5px;color:#94a3b8;">접수: \' + escapeSettingsHtml(p.orderMethod) + \'</div>\';\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 8px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'  <div style="display:inline-flex;gap:4px;">\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="openEditPartnerModal(\' + p.row + \')" style="border:1px solid #cbd5e1;background:#ffffff;color:#1e293b;border-radius:5px;padding:3px 7px;font-size:11px;font-weight:700;cursor:pointer;">✏️ 수정</button>\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="deletePartner(\' + p.row + \', \\\'\' + escapeSettingsQuotes(p.name) + \'\\\')" style="border:1px solid #fecaca;background:#fff1f2;color:#e11d48;border-radius:5px;padding:3px 7px;font-size:11px;font-weight:700;cursor:pointer;">🗑️</button>\';\n';
+  html += '    tHtml += \'  </div>\';\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'</tr>\';\n';
+  html += '  });\n';
+  html += '  tHtml += \'</tbody></table>\';\n';
+  html += '  container.innerHTML = tHtml;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function renderTasksTable(container) {\n';
+  html += '  let list = currentSettingsData.tasks || [];\n';
+  html += '  if (settingsSearchQuery) {\n';
+  html += '    const q = settingsSearchQuery;\n';
+  html += '    list = list.filter(function(t) {\n';
+  html += '      return (t.taskName && t.taskName.toLowerCase().includes(q)) ||\n';
+  html += '             (t.category && t.category.toLowerCase().includes(q)) ||\n';
+  html += '             (t.note && t.note.toLowerCase().includes(q));\n';
+  html += '    });\n';
+  html += '  }\n';
+  html += '  if (list.length === 0) {\n';
+  html += '    container.innerHTML = \'<div style="text-align:center;padding:50px 20px;color:#94a3b8;font-weight:600;"><span style="font-size:24px;display:block;margin-bottom:8px;">🔍</span>등록된 공종이 없거나 검색 결과가 없습니다.</div>\';\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  let tHtml = \'<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;">\';\n';
+  html += '  tHtml += \'<thead><tr style="background:#f8fafc;position:sticky;top:0;z-index:2;">\';\n';
+  html += '  tHtml += \'<th style="padding:10px 8px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:center;width:50px;">순서</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 8px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:center;width:70px;">순서이동</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 12px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:left;width:180px;">공종명</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 12px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:left;width:140px;">구분</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 12px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:left;">비고 / 작업 설명</th>\';\n';
+  html += '  tHtml += \'<th style="padding:10px 8px;border-bottom:1.5px solid #e2e8f0;color:#475569;font-weight:800;text-align:center;width:110px;">관리</th>\';\n';
+  html += '  tHtml += \'</tr></thead><tbody>\';\n';
+  html += '  list.forEach(function(t, idx) {\n';
+  html += '    const isFirst = (idx === 0);\n';
+  html += '    const isLast = (idx === list.length - 1);\n';
+  html += '    tHtml += \'<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background=\\\'#f8fafc\\\'" onmouseout="this.style.background=\\\'#ffffff\\\'">\';\n';
+  html += '    tHtml += \'<td style="padding:10px 8px;text-align:center;font-weight:700;color:#64748b;border-bottom:1px solid #f1f5f9;">\' + (idx + 1) + \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:10px 8px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'  <div style="display:inline-flex;gap:3px;">\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="reorderTask(\' + t.row + \', \\\'up\\\')" \' + (isFirst ? \'disabled style="opacity:0.3;cursor:not-allowed;\' : \'style="cursor:pointer;\') + \'border:1px solid #cbd5e1;background:#ffffff;border-radius:4px;padding:1px 5px;font-size:10px;" title="위로 이동">▲</button>\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="reorderTask(\' + t.row + \', \\\'down\\\')" \' + (isLast ? \'disabled style="opacity:0.3;cursor:not-allowed;\' : \'style="cursor:pointer;\') + \'border:1px solid #cbd5e1;background:#ffffff;border-radius:4px;padding:1px 5px;font-size:10px;" title="아래로 이동">▼</button>\';\n';
+  html += '    tHtml += \'  </div>\';\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:10px 12px;font-weight:900;color:#0f172a;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:3px 8px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;font-size:12.5px;">\' + escapeSettingsHtml(t.taskName) + \'</span></td>\';\n';
+  html += '    tHtml += \'<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:2px 7px;background:#f1f5f9;color:#475569;border-radius:5px;font-size:11.5px;font-weight:700;">\' + escapeSettingsHtml(t.category || "기타") + \'</span></td>\';\n';
+  html += '    tHtml += \'<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:12px;">\' + escapeSettingsHtml(t.note || "-") + \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:10px 8px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'  <div style="display:inline-flex;gap:4px;">\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="openEditTaskModal(\' + t.row + \')" style="border:1px solid #cbd5e1;background:#ffffff;color:#1e293b;border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">✏️ 수정</button>\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="deleteTask(\' + t.row + \', \\\'\' + escapeSettingsQuotes(t.taskName) + \'\\\')" style="border:1px solid #fecaca;background:#fff1f2;color:#e11d48;border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;">🗑️</button>\';\n';
+  html += '    tHtml += \'  </div>\';\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'</tr>\';\n';
+  html += '  });\n';
+  html += '  tHtml += \'</tbody></table>\';\n';
+  html += '  container.innerHTML = tHtml;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function getSettingsPriorityStyle(priority) {\n';
+  html += '  const p = String(priority || "").trim();\n';
+  html += '  if (p === "1순위" || p === "A팀") return "background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;";\n';
+  html += '  if (p === "2순위" || p === "B팀") return "background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;";\n';
+  html += '  if (p === "3순위" || p === "C팀") return "background:#fefce8;color:#854d0e;border:1px solid #fef08a;";\n';
+  html += '  if (p === "본사/대리점") return "background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;";\n';
+  html += '  return "background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function escapeSettingsHtml(str) {\n';
+  html += '  if (!str) return "";\n';
+  html += '  return String(str)\n';
+  html += '    .replace(/&/g, "&amp;")\n';
+  html += '    .replace(/</g, "&lt;")\n';
+  html += '    .replace(/>/g, "&gt;")\n';
+  html += '    .replace(/"/g, "&quot;")\n';
+  html += '    .replace(/\'/g, "&#039;");\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function escapeSettingsQuotes(str) {\n';
+  html += '  if (!str) return "";\n';
+  html += '  return String(str).replace(/\'/g, "\\\\\'").replace(/"/g, "&quot;");\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function openAddPartnerModal() {\n';
+  html += '  editingPartnerRow = null;\n';
+  html += '  const title = document.getElementById("partnerFormTitle");\n';
+  html += '  if (title) title.innerText = "🤝 신규 거래처 등록";\n';
+  html += '  document.getElementById("partnerInpName").value = "";\n';
+  html += '  document.getElementById("partnerInpBiz").value = "";\n';
+  html += '  document.getElementById("partnerInpCategory").value = "시공";\n';
+  html += '  document.getElementById("partnerInpPriority").value = "1순위";\n';
+  html += '  document.getElementById("partnerInpManager").value = "";\n';
+  html += '  document.getElementById("partnerInpPhone").value = "";\n';
+  html += '  document.getElementById("partnerInpStatus").value = "운영 중";\n';
+  html += '  document.getElementById("partnerInpOrderMethod").value = "";\n';
+  html += '  document.getElementById("partnerInpFeature").value = "";\n';
+  html += '  document.getElementById("partnerInpNote").value = "";\n';
+  html += '  const dl = document.getElementById("partnerBizSuggestions");\n';
+  html += '  if (dl) {\n';
+  html += '    dl.innerHTML = "";\n';
+  html += '    const taskList = currentSettingsData.tasks || [];\n';
+  html += '    taskList.forEach(function(t) {\n';
+  html += '      const opt = document.createElement("option");\n';
+  html += '      opt.value = t.taskName;\n';
+  html += '      dl.appendChild(opt);\n';
+  html += '    });\n';
+  html += '  }\n';
+  html += '  const modal = document.getElementById("partnerFormModal");\n';
+  html += '  if (modal) modal.style.display = "flex";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function openEditPartnerModal(row) {\n';
+  html += '  const p = (currentSettingsData.partners || []).find(function(item) { return item.row === row; });\n';
+  html += '  if (!p) {\n';
+  html += '    showToast("⚠️ 해당 거래처 데이터를 찾을 수 없습니다.");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  editingPartnerRow = row;\n';
+  html += '  const title = document.getElementById("partnerFormTitle");\n';
+  html += '  if (title) title.innerText = "🤝 거래처 정보 수정";\n';
+  html += '  document.getElementById("partnerInpName").value = p.name || "";\n';
+  html += '  document.getElementById("partnerInpBiz").value = p.biz || "";\n';
+  html += '  document.getElementById("partnerInpCategory").value = p.category || "시공";\n';
+  html += '  document.getElementById("partnerInpPriority").value = p.priority || "미지정";\n';
+  html += '  document.getElementById("partnerInpManager").value = p.manager || "";\n';
+  html += '  document.getElementById("partnerInpPhone").value = p.phone || "";\n';
+  html += '  document.getElementById("partnerInpStatus").value = p.status || "운영 중";\n';
+  html += '  document.getElementById("partnerInpOrderMethod").value = p.orderMethod || "";\n';
+  html += '  document.getElementById("partnerInpFeature").value = p.feature || "";\n';
+  html += '  document.getElementById("partnerInpNote").value = p.note || "";\n';
+  html += '  const dl = document.getElementById("partnerBizSuggestions");\n';
+  html += '  if (dl) {\n';
+  html += '    dl.innerHTML = "";\n';
+  html += '    const taskList = currentSettingsData.tasks || [];\n';
+  html += '    taskList.forEach(function(t) {\n';
+  html += '      const opt = document.createElement("option");\n';
+  html += '      opt.value = t.taskName;\n';
+  html += '      dl.appendChild(opt);\n';
+  html += '    });\n';
+  html += '  }\n';
+  html += '  const modal = document.getElementById("partnerFormModal");\n';
+  html += '  if (modal) modal.style.display = "flex";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function closePartnerFormModal() {\n';
+  html += '  const modal = document.getElementById("partnerFormModal");\n';
+  html += '  if (modal) modal.style.display = "none";\n';
+  html += '  editingPartnerRow = null;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function savePartnerForm() {\n';
+  html += '  const name = (document.getElementById("partnerInpName") || {}).value.trim();\n';
+  html += '  const biz = (document.getElementById("partnerInpBiz") || {}).value.trim();\n';
+  html += '  if (!name) {\n';
+  html += '    alert("업체/반장명을 입력해주세요.");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  const payload = {\n';
+  html += '    name: name,\n';
+  html += '    biz: biz,\n';
+  html += '    category: (document.getElementById("partnerInpCategory") || {}).value || "시공",\n';
+  html += '    priority: (document.getElementById("partnerInpPriority") || {}).value || "미지정",\n';
+  html += '    manager: (document.getElementById("partnerInpManager") || {}).value.trim() || "",\n';
+  html += '    phone: (document.getElementById("partnerInpPhone") || {}).value.trim() || "",\n';
+  html += '    status: (document.getElementById("partnerInpStatus") || {}).value || "운영 중",\n';
+  html += '    orderMethod: (document.getElementById("partnerInpOrderMethod") || {}).value.trim() || "",\n';
+  html += '    feature: (document.getElementById("partnerInpFeature") || {}).value.trim() || "",\n';
+  html += '    note: (document.getElementById("partnerInpNote") || {}).value.trim() || ""\n';
+  html += '  };\n';
+  html += '  showToast("💾 거래처 저장 중...");\n';
+  html += '  if (editingPartnerRow) {\n';
+  html += '    callSettingsApi("updatePartner", { row: editingPartnerRow, data: payload }, function(res) {\n';
+  html += '      if (res && res.success) {\n';
+  html += '        closePartnerFormModal();\n';
+  html += '        applySettingsDataResponse(res);\n';
+  html += '        showToast("✅ " + (res.message || "거래처가 수정되었습니다."));\n';
+  html += '      } else {\n';
+  html += '        showToast("❌ 수정 실패: " + ((res && res.error) || ""));\n';
+  html += '      }\n';
+  html += '    });\n';
+  html += '  } else {\n';
+  html += '    callSettingsApi("addPartner", { data: payload }, function(res) {\n';
+  html += '      if (res && res.success) {\n';
+  html += '        closePartnerFormModal();\n';
+  html += '        applySettingsDataResponse(res);\n';
+  html += '        showToast("✅ " + (res.message || "거래처가 추가되었습니다."));\n';
+  html += '      } else {\n';
+  html += '        showToast("❌ 등록 실패: " + ((res && res.error) || ""));\n';
+  html += '      }\n';
+  html += '    });\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function deletePartner(row, name) {\n';
+  html += '  if (!confirm("[" + name + "] 거래처를 정말 삭제하시겠습니까?\\n스프레드시트에서도 해당 행이 삭제됩니다.")) return;\n';
+  html += '  showToast("🗑️ 거래처 삭제 중...");\n';
+  html += '  callSettingsApi("deletePartner", { row: row, name: name }, function(res) {\n';
+  html += '    if (res && res.success) {\n';
+  html += '      applySettingsDataResponse(res);\n';
+  html += '      showToast("✅ " + (res.message || "거래처가 삭제되었습니다."));\n';
+  html += '    } else {\n';
+  html += '      showToast("❌ 삭제 실패: " + ((res && res.error) || ""));\n';
+  html += '    }\n';
+  html += '  });\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function reorderPartner(row, direction) {\n';
+  html += '  callSettingsApi("reorderPartner", { row: row, direction: direction }, function(res) {\n';
+  html += '    if (res && res.success) {\n';
+  html += '      applySettingsDataResponse(res);\n';
+  html += '      showToast("✅ 거래처 순서가 변경되어 현장에 즉시 반영되었습니다.");\n';
+  html += '    } else {\n';
+  html += '      showToast("⚠️ 순서 변경 불가: " + ((res && res.error) || ""));\n';
+  html += '    }\n';
+  html += '  });\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function openAddTaskModal() {\n';
+  html += '  editingTaskRow = null;\n';
+  html += '  const title = document.getElementById("taskFormTitle");\n';
+  html += '  if (title) title.innerText = "🏷️ 신규 공종 등록";\n';
+  html += '  document.getElementById("taskInpName").value = "";\n';
+  html += '  document.getElementById("taskInpCategory").value = "철거/설비";\n';
+  html += '  document.getElementById("taskInpNote").value = "";\n';
+  html += '  const modal = document.getElementById("taskFormModal");\n';
+  html += '  if (modal) modal.style.display = "flex";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function openEditTaskModal(row) {\n';
+  html += '  const t = (currentSettingsData.tasks || []).find(function(item) { return item.row === row; });\n';
+  html += '  if (!t) {\n';
+  html += '    showToast("⚠️ 해당 공종 데이터를 찾을 수 없습니다.");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  editingTaskRow = row;\n';
+  html += '  const title = document.getElementById("taskFormTitle");\n';
+  html += '  if (title) title.innerText = "🏷️ 공종 정보 수정";\n';
+  html += '  document.getElementById("taskInpName").value = t.taskName || "";\n';
+  html += '  document.getElementById("taskInpCategory").value = t.category || "기타";\n';
+  html += '  document.getElementById("taskInpNote").value = t.note || "";\n';
+  html += '  const modal = document.getElementById("taskFormModal");\n';
+  html += '  if (modal) modal.style.display = "flex";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function closeTaskFormModal() {\n';
+  html += '  const modal = document.getElementById("taskFormModal");\n';
+  html += '  if (modal) modal.style.display = "none";\n';
+  html += '  editingTaskRow = null;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function saveTaskForm() {\n';
+  html += '  const name = (document.getElementById("taskInpName") || {}).value.trim();\n';
+  html += '  if (!name) {\n';
+  html += '    alert("공종명을 입력해주세요.");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  const payload = {\n';
+  html += '    taskName: name,\n';
+  html += '    category: (document.getElementById("taskInpCategory") || {}).value || "기타",\n';
+  html += '    note: (document.getElementById("taskInpNote") || {}).value.trim() || ""\n';
+  html += '  };\n';
+  html += '  showToast("💾 공종 저장 중...");\n';
+  html += '  if (editingTaskRow) {\n';
+  html += '    callSettingsApi("updateTask", { row: editingTaskRow, data: payload }, function(res) {\n';
+  html += '      if (res && res.success) {\n';
+  html += '        closeTaskFormModal();\n';
+  html += '        applySettingsDataResponse(res);\n';
+  html += '        showToast("✅ " + (res.message || "공종이 수정되었습니다."));\n';
+  html += '      } else {\n';
+  html += '        showToast("❌ 수정 실패: " + ((res && res.error) || ""));\n';
+  html += '      }\n';
+  html += '    });\n';
+  html += '  } else {\n';
+  html += '    callSettingsApi("addTask", { data: payload }, function(res) {\n';
+  html += '      if (res && res.success) {\n';
+  html += '        closeTaskFormModal();\n';
+  html += '        applySettingsDataResponse(res);\n';
+  html += '        showToast("✅ " + (res.message || "공종이 추가되었습니다."));\n';
+  html += '      } else {\n';
+  html += '        showToast("❌ 등록 실패: " + ((res && res.error) || ""));\n';
+  html += '      }\n';
+  html += '    });\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function deleteTask(row, taskName) {\n';
+  html += '  if (!confirm("[" + taskName + "] 공종을 정말 삭제하시겠습니까?\\n스프레드시트 마스터에서도 삭제됩니다.")) return;\n';
+  html += '  showToast("🗑️ 공종 삭제 중...");\n';
+  html += '  callSettingsApi("deleteTask", { row: row, name: taskName }, function(res) {\n';
+  html += '    if (res && res.success) {\n';
+  html += '      applySettingsDataResponse(res);\n';
+  html += '      showToast("✅ " + (res.message || "공종이 삭제되었습니다."));\n';
+  html += '    } else {\n';
+  html += '      showToast("❌ 삭제 실패: " + ((res && res.error) || ""));\n';
+  html += '    }\n';
+  html += '  });\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function reorderTask(row, direction) {\n';
+  html += '  callSettingsApi("reorderTask", { row: row, direction: direction }, function(res) {\n';
+  html += '    if (res && res.success) {\n';
+  html += '      applySettingsDataResponse(res);\n';
+  html += '      showToast("✅ 공종 순서가 변경되어 현장에 즉시 반영되었습니다.");\n';
+  html += '    } else {\n';
+  html += '      showToast("⚠️ 순서 변경 불가: " + ((res && res.error) || ""));\n';
+  html += '    }\n';
+  html += '  });\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function callSettingsApi(action, params, onSuccess, onError) {\n';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '    var runner = google.script.run\n';
+  html += '      .withSuccessHandler(onSuccess)\n';
+  html += '      .withFailureHandler(onError || function(err) { showToast("❌ 통신 오류: " + err); });\n';
+  html += '    if (action === "getSettingsData") runner.getSettingsManagementData();\n';
+  html += '    else if (action === "addPartner") runner.addPartnerItemFromWeb(params.data);\n';
+  html += '    else if (action === "updatePartner") runner.updatePartnerItemFromWeb(params.row, params.data);\n';
+  html += '    else if (action === "deletePartner") runner.deletePartnerItemFromWeb(params.row, params.name);\n';
+  html += '    else if (action === "reorderPartner") runner.reorderPartnerItemFromWeb(params.row, params.direction);\n';
+  html += '    else if (action === "addTask") runner.addTaskItemFromWeb(params.data);\n';
+  html += '    else if (action === "updateTask") runner.updateTaskItemFromWeb(params.row, params.data);\n';
+  html += '    else if (action === "deleteTask") runner.deleteTaskItemFromWeb(params.row, params.name);\n';
+  html += '    else if (action === "reorderTask") runner.reorderTaskItemFromWeb(params.row, params.direction);\n';
+  html += '  } else {\n';
+  html += '    var apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '    var qs = "?action=" + encodeURIComponent(action);\n';
+  html += '    if (params) {\n';
+  html += '      for (var k in params) {\n';
+  html += '        if (params.hasOwnProperty(k)) {\n';
+  html += '          var val = params[k];\n';
+  html += '          if (typeof val === "object") val = JSON.stringify(val);\n';
+  html += '          qs += "&" + encodeURIComponent(k) + "=" + encodeURIComponent(val);\n';
+  html += '        }\n';
+  html += '      }\n';
+  html += '    }\n';
+  html += '    fetch(apiUrl + qs)\n';
+  html += '      .then(function(r) { return r.json(); })\n';
+  html += '      .then(onSuccess)\n';
+  html += '      .catch(onError || function(err) { showToast("❌ 통신 에러: " + err); });\n';
+  html += '  }\n';
+  html += '}\n';
+  html += '\n';
 
   // ========================================================
   // [To-Do 매트릭스 보드 클라이언트 엔진]
