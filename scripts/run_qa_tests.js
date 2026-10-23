@@ -10012,9 +10012,10 @@ assertTest('Step 147-1: 클라이언트 측 formatTodoDateYmd 및 formatDateYYMM
 );
 
 // 147-2: switchToPcView('todo') 시 상단 타이틀 간결화 검증
-assertTest('Step 147-2: switchToPcView("todo") 시 상단 타이틀 pcTitle.innerText = "To-do" 또는 "To-Do" 간결화 검증',
+assertTest('Step 147-2: switchToPcView("todo") 시 상단 타이틀 pcTitle.innerText = "To-do" 또는 "To-Do" 또는 "To-Do List" 간결화 검증',
   code147.indexOf('if (pcTitle) pcTitle.innerText = "To-do";') !== -1 ||
-  code147.indexOf('if (pcTitle) pcTitle.innerText = "To-Do";') !== -1
+  code147.indexOf('if (pcTitle) pcTitle.innerText = "To-Do";') !== -1 ||
+  code147.indexOf('if (pcTitle) pcTitle.innerText = "To-Do List";') !== -1
 );
 
 // 147-3: PC 헤더 탭 버튼 문구 적용 검증
@@ -10250,9 +10251,42 @@ assertTest('Step 153-4: PC 매트릭스 테이블 담당자 셀 요약 텍스트
   code153.indexOf('todo-matrix-table') !== -1
 );
 
-// 153-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=153)
-assertTest('Step 153-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=153)',
-  indexHtml153.indexOf('exec?v=153') !== -1
+// 153-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 153)
+assertTest('Step 153-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 153)',
+  /exec\?v=(153|15[4-9])/.test(indexHtml153)
+);
+
+// [Step 154]: PC 2차원 매트릭스 테이블 복원, To-Do List 타이틀 통일 및 모바일 헤더 높이 일치 QA
+console.log('\n📋 [Step 154]: PC 2차원 매트릭스 테이블 복원, To-Do List 타이틀 통일 및 모바일 헤더 높이 일치 QA ---');
+
+const code154 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml154 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 154-1: PC 뷰 복원 분기식(window.innerWidth < 768) 검증
+assertTest('Step 154-1: PC 뷰 복원 분기식(window.innerWidth < 768) 검증 (PC에서 모바일 뷰 오작동 차단)',
+  code154.indexOf('const isMobileTodoView = (typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth < 768);') !== -1
+);
+
+// 154-2: To-Do 대시보드 타이틀 To-Do List 문구 변경 검증
+assertTest('Step 154-2: To-Do 대시보드 타이틀 To-Do List 문구 변경 검증',
+  code154.indexOf('<span>To-Do List</span></h2>') !== -1
+);
+
+// 154-3: PC 상단 pcTitle 및 모바일 pageTitle 내 To-Do List 통일 검증
+assertTest('Step 154-3: PC 상단 pcTitle 및 모바일 pageTitle 내 To-Do List 통일 검증',
+  code154.indexOf('if (pcTitle) pcTitle.innerText = "To-Do List";') !== -1 &&
+  code154.indexOf('if (pageTitle) pageTitle.innerText = "✅ To-Do List";') !== -1
+);
+
+// 154-4: updateMobileHeaderVisibility 내 모바일 To-Do 헤더 패딩 및 마진 슬림화 검증
+assertTest('Step 154-4: updateMobileHeaderVisibility 내 모바일 To-Do 헤더 패딩/마진 슬림화(10px 14px) 검증',
+  code154.indexOf('headerEl.style.padding = isTodo ? "10px 14px" : "";') !== -1 &&
+  code154.indexOf('titleRow.style.marginBottom = isTodo ? "0px" : "";') !== -1
+);
+
+// 154-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=154)
+assertTest('Step 154-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=154)',
+  indexHtml154.indexOf('exec?v=154') !== -1
 );
 
 console.log('\n========================================================');

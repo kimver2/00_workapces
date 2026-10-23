@@ -14045,7 +14045,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const contentArea = document.getElementById("contentArea");\n';
   html += '  if (!contentArea) return;\n';
   html += '  let tHtml = "";\n';
-  html += '  tHtml += \'<div class="todo-dashboard-container" style="padding:\' + (isMobileMode ? \'12px 8px 80px 8px;\' : \'16px 20px;\') + \'max-width:1440px;margin:0 auto;">\';\n';
+  html += '  const isNarrowTodo = (typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth < 768);\n';
+  html += '  tHtml += \'<div class="todo-dashboard-container" style="padding:\' + (isNarrowTodo ? "8px 10px 80px 10px;" : "16px 20px;") + \'max-width:1440px;margin:0 auto;">\';\n';
   html += '\n';
 
   // 1. 상단 담당자 필터 칩 바
@@ -14070,7 +14071,7 @@ function buildSidebarDashboardHtml(mode) {
 
   // 2. 타이틀 & 액션 버튼
   html += '  tHtml += \'  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">\';\n';
-  html += '  tHtml += \'    <h2 style="font-size:18px;font-weight:900;color:#0f172a;margin:0;display:flex;align-items:center;gap:8px;"><span>할 일 · 담당자 × 진행상태</span></h2>\';\n';
+  html += '  tHtml += \'    <h2 style="font-size:18px;font-weight:900;color:#0f172a;margin:0;display:flex;align-items:center;gap:8px;"><span>To-Do List</span></h2>\';\n';
   html += '  tHtml += \'    <div style="display:flex;align-items:center;gap:8px;">\';\n';
   html += '  tHtml += \'      <button type="button" onclick="openAddTodoModal()" style="padding:8px 16px;background:#2563eb;color:#ffffff;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:5px;box-shadow:0 1px 3px rgba(37,99,235,0.3);"><span>+</span> 업무 추가</button>\';\n';
   html += '  tHtml += \'    </div>\';\n';
@@ -14117,7 +14118,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }\n';
   html += '\n';
 
-  html += '  const isMobileTodoView = (typeof isMobileMode !== "undefined" && isMobileMode) || (typeof window !== "undefined" && window.innerWidth <= 768);\n';
+  html += '  const isMobileTodoView = (typeof window !== "undefined" && typeof window.innerWidth === "number" && window.innerWidth < 768);\n';
   html += '  if (isMobileTodoView) {\n';
 
   // 4-M1. 상단 모바일 3대 뷰 스위처
@@ -15652,7 +15653,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    });';
   html += '    calViewMode = "todo";';
   html += '    const pcTitle = document.getElementById("pcMonthTitle");';
-  html += '    if (pcTitle) pcTitle.innerText = "To-do";';
+  html += '    if (pcTitle) pcTitle.innerText = "To-Do List";';
   html += '    loadTodoList(true);';
   html += '    return;';
   html += '  }';
@@ -15960,6 +15961,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const el = document.querySelector(sel);';
   html += '    if (el) el.style.display = isTodo ? "none" : "";';
   html += '  });';
+  html += '  const headerEl = document.querySelector(".header");';
+  html += '  const titleRow = document.querySelector(".title-row");';
+  html += '  if (headerEl) { headerEl.style.padding = isTodo ? "10px 14px" : ""; }';
+  html += '  if (titleRow) { titleRow.style.marginBottom = isTodo ? "0px" : ""; }';
   html += '}';
   html += '';
   html += 'function toggleMobileTodoView() {';
@@ -15989,7 +15994,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      addTaskBtn.innerHTML = "➕ 할 일 추가";';
   html += '      addTaskBtn.onclick = function() { openAddTodoModal(); };';
   html += '    }';
-  html += '    if (pageTitle) pageTitle.innerText = "✅ To-do";';
+  html += '    if (pageTitle) pageTitle.innerText = "✅ To-Do List";';
   html += '    loadTodoList(true);';
   html += '  } else {';
   html += '    calViewMode = "month";';
