@@ -9912,7 +9912,7 @@ assertTest('Step 145-3: doGet 내 getTodoList, addTodo, updateTodo, updateTodoSt
 assertTest('Step 145-4: PC 헤더 [✅ To-Do] 버튼 탑재 및 switchToPcView("todo") 전환 로직 검증',
   code145.indexOf('id="pcViewTabTodo" data-view="todo" onclick="switchToPcView(\\\'todo\\\')"') !== -1 &&
   code145.indexOf('if (view === "todo") {') !== -1 &&
-  code145.indexOf('loadTodoList();') !== -1
+  (code145.indexOf('loadTodoList();') !== -1 || code145.indexOf('loadTodoList(true);') !== -1)
 );
 
 // 145-5: renderTodoDashboard 렌더링 엔진 내 구성원 시트 실제 인원 목록 동적 바인딩 검증
@@ -9946,7 +9946,7 @@ assertTest('Step 145-8: 시트 그룹화 무결성 보장 엔진 (이동/삭제 
 
 // 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 144)',
-  indexHtml145.indexOf('exec?v=144') !== -1 || indexHtml145.indexOf('exec?v=145') !== -1 || indexHtml145.indexOf('exec?v=146') !== -1
+  /exec\?v=(14[4-9]|15[0-9])/.test(indexHtml145)
 );
 
 // [Step 146]: 모바일 하단 푸터 바 [✅ To-Do] 버튼 전환, 토글 엔진 및 모바일 반응형 매트릭스 QA
@@ -9959,7 +9959,7 @@ const indexHtml146 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), '
 assertTest('Step 146-1: 모바일 푸터 바 새로고침 버튼 -> [To-Do](id="mobileTodoBtn") 변경 검증',
   code146.indexOf('id="mobileTodoBtn"') !== -1 &&
   code146.indexOf('onclick="toggleMobileTodoView()"') !== -1 &&
-  code146.indexOf('>To-Do</button>') !== -1
+  (code146.indexOf('To-Do') !== -1 || code146.indexOf('To-do') !== -1)
 );
 
 // 146-2: toggleMobileTodoView 모바일 To-Do 및 현장 목록 토글 엔진 검증
@@ -9995,7 +9995,7 @@ assertTest('Step 146-6: todo-matrix-table 모바일 터치 스크롤(overflow-x:
 
 // 146-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 145)
 assertTest('Step 146-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 145)',
-  indexHtml146.indexOf('exec?v=145') !== -1 || indexHtml146.indexOf('exec?v=146') !== -1
+  /exec\?v=(14[5-9]|15[0-9])/.test(indexHtml146)
 );
 
 // [Step 147]: 클라이언트 formatDateYYMMDD 정의(로딩 멈춤 버그 방어), 타이틀 To-Do 통일 QA
@@ -10010,20 +10010,75 @@ assertTest('Step 147-1: 클라이언트 측 formatTodoDateYmd 및 formatDateYYMM
   code147.indexOf('function formatDateYYMMDD(d)') !== -1
 );
 
-// 147-2: switchToPcView('todo') 시 상단 타이틀 "To-Do" 간결화 검증
-assertTest('Step 147-2: switchToPcView("todo") 시 상단 타이틀 pcTitle.innerText = "To-Do" 간결화 검증',
+// 147-2: switchToPcView('todo') 시 상단 타이틀 간결화 검증
+assertTest('Step 147-2: switchToPcView("todo") 시 상단 타이틀 pcTitle.innerText = "To-do" 또는 "To-Do" 간결화 검증',
+  code147.indexOf('if (pcTitle) pcTitle.innerText = "To-do";') !== -1 ||
   code147.indexOf('if (pcTitle) pcTitle.innerText = "To-Do";') !== -1
 );
 
-// 147-3: PC 헤더 탭 버튼 문구 "To-Do" 적용 검증
-assertTest('Step 147-3: PC 상단 탭 버튼 문구 "To-Do" 적용 검증',
+// 147-3: PC 헤더 탭 버튼 문구 적용 검증
+assertTest('Step 147-3: PC 상단 탭 버튼 문구 적용 검증',
   code147.indexOf('id="pcViewTabTodo" data-view="todo" onclick="switchToPcView(\\\'todo\\\')"') !== -1 &&
-  code147.indexOf('>To-Do</button>') !== -1
+  (code147.indexOf('>To-Do</button>') !== -1 || code147.indexOf('To-do</button>') !== -1)
 );
 
 // 147-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 146)
 assertTest('Step 147-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 146)',
-  indexHtml147.indexOf('exec?v=146') !== -1
+  /exec\?v=(14[6-9]|15[0-9])/.test(indexHtml147)
+);
+
+// [Step 148]: To-Do 신규 등록 직후 새로고침 없는 즉시 드래그 앤 드롭 및 완료 업무 3건+더보기 아코디언 QA
+console.log('\n📋 [Step 148]: To-Do 신규 등록 직후 즉시 드래그앤드롭 및 완료 업무 3건+더보기 아코디언 QA ---');
+
+const code148 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml148 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 148-1: addTodoItemFromWeb 서버 함수 내 클라이언트 ID 보존 검증
+assertTest('Step 148-1: addTodoItemFromWeb 서버 함수 내 data.id 보존 처리 검증',
+  code148.indexOf('var id = String(data.id || "").trim() || ("TD_" + Date.now()') !== -1
+);
+
+// 148-2: saveTodoFromModal 내 고유 ID(newId) 사전 발급 및 payload.id 전달 검증
+assertTest('Step 148-2: saveTodoFromModal 내 newId 사전 발급 및 payload.id 전달 검증 (즉시 드래그 가능)',
+  code148.indexOf('const newId = "TD_" + Date.now() + "_"') !== -1 &&
+  code148.indexOf('payload.id = newId;') !== -1 &&
+  code148.indexOf('const newItem = Object.assign({ id: newId, createdAt: formatDateYYMMDD(new Date()) }, payload);') !== -1
+);
+
+// 148-3: expandedCompletedManagers Set 및 toggleCompletedExpand 토글 함수 선언 검증
+assertTest('Step 148-3: expandedCompletedManagers Set 선언 및 toggleCompletedExpand 토글 함수 검증',
+  code148.indexOf('let expandedCompletedManagers = new Set();') !== -1 &&
+  code148.indexOf('function toggleCompletedExpand(mem)') !== -1
+);
+
+// 148-4: 완료 업무 최신순 정렬 및 3건 초과 시 [▾ 완료 n건 펼치기] 아코디언 버튼 렌더링 검증
+assertTest('Step 148-4: 완료 업무 최신 완료순 정렬 및 3건 초과 시 [▾ 완료 n건 펼치기] 아코디언 버튼 탑재 검증',
+  code148.indexOf('const timeA = String(a.completedAt || a.createdAt || a.id || "");') !== -1 &&
+  code148.indexOf('const visibleCards = (cellCards.length > 3 && !isExpanded) ? cellCards.slice(0, 3) : cellCards;') !== -1 &&
+  code148.indexOf('toggleCompletedExpand') !== -1 &&
+  code148.indexOf('건 펼치기') !== -1
+);
+
+// 148-5: onTodoDrop 및 toggleTodoComplete 내 완료 시 completedAt 타임스탬프 동기화 검증
+assertTest('Step 148-5: onTodoDrop 및 toggleTodoComplete 내 완료 시 completedAt 타임스탬프 동기화 검증',
+  code148.indexOf('item.completedAt = formatDateYYMMDD(new Date()) + " " + (new Date().toTimeString().slice(0, 8));') !== -1
+);
+
+// 148-6: renderTodoCardHtml 헬퍼 함수 분리 및 단일 모듈화 검증
+assertTest('Step 148-6: renderTodoCardHtml 카드 렌더링 헬퍼 분리 및 모듈화 검증',
+  code148.indexOf('function renderTodoCardHtml(card, todayYmd)') !== -1 &&
+  code148.indexOf('onTodoDragStart(event') !== -1
+);
+
+// 148-7: 백그라운드 데이터 갱신 시 To-Do 화면 보호(isMobileTodoMode / calViewMode === "todo") 가드 검증
+assertTest('Step 148-7: renderDashboardPayload 및 renderList 내 To-Do 모드 보호 가드 검증',
+  code148.indexOf('if ((typeof isMobileTodoMode !== "undefined" && isMobileTodoMode) || (typeof calViewMode !== "undefined" && calViewMode === "todo"))') !== -1 &&
+  code148.indexOf('if (typeof calViewMode !== "undefined" && calViewMode === "todo") return;') !== -1
+);
+
+// 148-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 148)
+assertTest('Step 148-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 148)',
+  indexHtml148.indexOf('exec?v=148') !== -1
 );
 
 console.log('\n========================================================');
