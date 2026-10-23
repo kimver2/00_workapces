@@ -9231,6 +9231,99 @@ function reorderTaskItemFromWeb(row, direction) {
   }
 }
 
+/**
+ * [마스터 설정] 거래처 및 공종 전체 일괄 저장 (Batch Save)
+ * 팝업에서 추가/수정/순서조정/삭제된 모든 데이터를 구글 스프레드시트에 한 번에 원자적으로 저장합니다.
+ */
+function saveAllSettingsBatchFromWeb(batchPayload) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(saveAllSettingsBatchFromWeb, this, arguments);
+  try {
+    var data = (typeof batchPayload === "string") ? JSON.parse(batchPayload) : (batchPayload || {});
+    var partnersList = data.partners || [];
+    var tasksList = data.tasks || [];
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+
+    // 1. 거래처 일괄 저장 (02_거래처)
+    var pSheet = findPartnersSheet(ss);
+    if (pSheet && Array.isArray(partnersList)) {
+      var pLastRow = pSheet.getLastRow();
+      var oldPCount = Math.max(0, pLastRow - 1);
+      var pRows = [];
+      for (var pi = 0; pi < partnersList.length; pi++) {
+        var pItem = partnersList[pi] || {};
+        var pName = String(pItem.name || "").trim();
+        if (!pName) continue;
+        pRows.push([
+          pName,
+          String(pItem.biz || "").trim(),
+          String(pItem.category || "시공").trim(),
+          String(pItem.priority || "미지정").trim(),
+          String(pItem.manager || "").trim(),
+          String(pItem.phone || "").trim(),
+          String(pItem.status || "운영 중").trim(),
+          String(pItem.feature || "").trim(),
+          String(pItem.orderMethod || "").trim(),
+          String(pItem.note || "").trim()
+        ]);
+      }
+
+      if (pRows.length > 0) {
+        pSheet.getRange(2, 1, pRows.length, 10).setValues(pRows);
+        if (oldPCount > pRows.length) {
+          pSheet.getRange(2 + pRows.length, 1, oldPCount - pRows.length, 10).clearContent();
+        }
+      } else if (oldPCount > 0) {
+        pSheet.getRange(2, 1, oldPCount, 10).clearContent();
+      }
+      ensurePartnerDropdownFormulaColumn(ss, pSheet);
+    }
+
+    // 2. 공종 일괄 저장 (04_공종)
+    var tSheet = findTasksSheet(ss, true);
+    if (tSheet && Array.isArray(tasksList)) {
+      var tLastRow = tSheet.getLastRow();
+      var oldTCount = Math.max(0, tLastRow - 1);
+      var tRows = [];
+      for (var ti = 0; ti < tasksList.length; ti++) {
+        var tItem = tasksList[ti] || {};
+        var tName = String(tItem.taskName || "").trim();
+        if (!tName) continue;
+        tRows.push([
+          tName,
+          String(tItem.category || "기타").trim(),
+          String(tItem.note || "").trim()
+        ]);
+      }
+
+      if (tRows.length > 0) {
+        tSheet.getRange(2, 1, tRows.length, 3).setValues(tRows);
+        if (oldTCount > tRows.length) {
+          tSheet.getRange(2 + tRows.length, 1, oldTCount - tRows.length, 3).clearContent();
+        }
+      } else if (oldTCount > 0) {
+        tSheet.getRange(2, 1, oldTCount, 3).clearContent();
+      }
+
+      try {
+        var siteSheet = findSiteScheduleSheet(ss);
+        if (siteSheet) applySiteScheduleValidations(siteSheet);
+      } catch(eVal) {}
+    }
+
+    SpreadsheetApp.flush();
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "거래처 및 공종 변경사항이 구글 시트에 성공적으로 일괄 저장되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("saveAllSettingsBatchFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
 
 
 function moveScheduleTaskDateFromWeb(row, siteName, taskName, newDate, isArchived, targetSheetName) {
@@ -9910,6 +10003,11 @@ function doGet(e) {
     var tReDir = p.direction || "up";
     var reorderTRes = reorderTaskItemFromWeb(tReRow, tReDir);
     return ContentService.createTextOutput(JSON.stringify(reorderTRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "saveAllSettingsBatch") {
+    var batchPayload = p.data ? JSON.parse(p.data) : p;
+    var batchRes = saveAllSettingsBatchFromWeb(batchPayload);
+    return ContentService.createTextOutput(JSON.stringify(batchRes)).setMimeType(ContentService.MimeType.JSON);
   }
 
   // 0-0-0-Repair) 현장 아코디언 그룹 무결성 즉시 복구 요청 (action=repairSiteGroups)
@@ -14386,9 +14484,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div style="padding:10px 22px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">';
   html += '      <div style="font-size:11.5px;color:#64748b;display:flex;align-items:center;gap:6px;">';
   html += '        <span>💡</span>';
-  html += '        <span><b>▲ / ▼</b> 버튼을 클릭하여 드롭다운에 노출될 우선순위 순서를 자유롭게 조정할 수 있습니다.</span>';
+  html += '        <span><b>▲/▼ 순서 이동, 추가, 수정, 삭제</b> 후 우측 <b>[저장하기]</b> 버튼을 누르면 스프레드시트에 일괄 저장됩니다.</span>';
   html += '      </div>';
-  html += '      <button type="button" onclick="closeSettingsModal()" style="padding:6px 16px;background:#ffffff;border:1.5px solid #cbd5e1;color:#475569;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">닫기</button>';
+  html += '      <div style="display:flex;align-items:center;gap:8px;">';
+  html += '        <button type="button" id="settingsSaveAllBtn" onclick="saveAllSettingsBatch()" style="padding:7px 18px;background:#2563eb;color:#ffffff;border:none;border-radius:7px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 1px 3px rgba(37,99,235,0.3);display:inline-flex;align-items:center;gap:6px;transition:all 0.15s;" onmouseover="this.style.background=\'#1d4ed8\'" onmouseout="this.style.background=\'#2563eb\'">';
+  html += '          <span>💾</span>';
+  html += '          <span id="settingsSaveBtnLabel">저장하기</span>';
+  html += '        </button>';
+  html += '        <button type="button" onclick="closeSettingsModal()" style="padding:7px 16px;background:#ffffff;border:1.5px solid #cbd5e1;color:#475569;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">닫기</button>';
+  html += '      </div>';
   html += '    </div>';
   html += '  </div>';
   html += '</div>';
@@ -14526,12 +14630,46 @@ function buildSidebarDashboardHtml(mode) {
   html += '\n';
   html += 'let currentSettingsTab = "partners";\n';
   html += 'let currentSettingsData = { partners: [], tasks: [] };\n';
+  html += 'let originalSettingsData = { partners: [], tasks: [] };\n';
+  html += 'let hasSettingsPendingChanges = false;\n';
+  html += 'let settingsPendingChangesCount = 0;\n';
   html += 'let settingsSearchQuery = "";\n';
   html += 'let editingPartnerRow = null;\n';
   html += 'let editingTaskRow = null;\n';
   html += 'let settingsColumnFilters = { biz: "", category: "", priority: "", status: "", taskCat: "" };\n';
   html += 'let settingsMovedPartnerRow = null;\n';
   html += 'let settingsMovedTaskRow = null;\n';
+  html += '\n';
+  html += 'function markSettingsChanged() {\n';
+  html += '  hasSettingsPendingChanges = true;\n';
+  html += '  settingsPendingChangesCount++;\n';
+  html += '  updateSettingsSaveBtn();\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function updateSettingsSaveBtn(isSaving) {\n';
+  html += '  const btn = document.getElementById("settingsSaveAllBtn");\n';
+  html += '  const label = document.getElementById("settingsSaveBtnLabel");\n';
+  html += '  if (!btn || !label) return;\n';
+  html += '  if (isSaving) {\n';
+  html += '    btn.disabled = true;\n';
+  html += '    btn.style.opacity = "0.75";\n';
+  html += '    btn.style.cursor = "wait";\n';
+  html += '    label.innerText = "시트에 저장 중...";\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  btn.disabled = false;\n';
+  html += '  btn.style.opacity = "1";\n';
+  html += '  btn.style.cursor = "pointer";\n';
+  html += '  if (hasSettingsPendingChanges) {\n';
+  html += '    btn.style.background = "#2563eb";\n';
+  html += '    btn.style.boxShadow = "0 2px 6px rgba(37,99,235,0.4)";\n';
+  html += '    label.innerText = "저장하기 (변경됨)";\n';
+  html += '  } else {\n';
+  html += '    btn.style.background = "#64748b";\n';
+  html += '    btn.style.boxShadow = "none";\n';
+  html += '    label.innerText = "저장 완료됨";\n';
+  html += '  }\n';
+  html += '}\n';
   html += '\n';
   html += 'function openSettingsModal() {\n';
   html += '  const modal = document.getElementById("settingsModalOverlay");\n';
@@ -14542,6 +14680,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '}\n';
   html += '\n';
   html += 'function closeSettingsModal() {\n';
+  html += '  if (hasSettingsPendingChanges) {\n';
+  html += '    if (!confirm("저장되지 않은 마스터 설정 변경사항이 있습니다.\\n저장하지 않고 창을 닫으시겠습니까?")) {\n';
+  html += '      return;\n';
+  html += '    }\n';
+  html += '  }\n';
+  html += '  currentSettingsData = JSON.parse(JSON.stringify(originalSettingsData));\n';
+  html += '  hasSettingsPendingChanges = false;\n';
+  html += '  settingsPendingChangesCount = 0;\n';
+  html += '  updateSettingsSaveBtn();\n';
   html += '  const modal = document.getElementById("settingsModalOverlay");\n';
   html += '  if (modal) modal.style.display = "none";\n';
   html += '  closePartnerFormModal();\n';
@@ -14650,6 +14797,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      partners: res.partners || [],\n';
   html += '      tasks: res.tasks || []\n';
   html += '    };\n';
+  html += '    originalSettingsData = JSON.parse(JSON.stringify(currentSettingsData));\n';
+  html += '    hasSettingsPendingChanges = false;\n';
+  html += '    settingsPendingChangesCount = 0;\n';
+  html += '    updateSettingsSaveBtn();\n';
   html += '    const pCountEl = document.getElementById("settingsCountPartners");\n';
   html += '    const tCountEl = document.getElementById("settingsCountTasks");\n';
   html += '    if (pCountEl) pCountEl.innerText = currentSettingsData.partners.length;\n';
@@ -14997,43 +15148,37 @@ function buildSidebarDashboardHtml(mode) {
   html += '    status: (document.getElementById("partnerInpStatus") || {}).value || "운영 중",\n';
   html += '    orderMethod: (document.getElementById("partnerInpOrderMethod") || {}).value.trim() || "",\n';
   html += '    feature: (document.getElementById("partnerInpFeature") || {}).value.trim() || "",\n';
-  html += '    note: (document.getElementById("partnerInpNote") || {}).value.trim() || ""\n';
+  html += '    note: (document.getElementById("partnerInpNote") || {}).value.trim() || "",\n';
+  html += '    dropdownVal: biz ? (biz + "_" + name) : name\n';
   html += '  };\n';
-  html += '  showToast("💾 거래처 저장 중...");\n';
   html += '  if (editingPartnerRow) {\n';
-  html += '    callSettingsApi("updatePartner", { row: editingPartnerRow, data: payload }, function(res) {\n';
-  html += '      if (res && res.success) {\n';
-  html += '        closePartnerFormModal();\n';
-  html += '        applySettingsDataResponse(res);\n';
-  html += '        showToast("✅ " + (res.message || "거래처가 수정되었습니다."));\n';
-  html += '      } else {\n';
-  html += '        showToast("❌ 수정 실패: " + ((res && res.error) || ""));\n';
-  html += '      }\n';
-  html += '    });\n';
+  html += '    const p = (currentSettingsData.partners || []).find(function(item) { return item.row === editingPartnerRow; });\n';
+  html += '    if (p) {\n';
+  html += '      Object.assign(p, payload);\n';
+  html += '      settingsMovedPartnerRow = p.row;\n';
+  html += '    }\n';
+  html += '    showToast("✏️ 거래처 정보가 수정되었습니다. (하단 [저장하기]를 누르면 시트에 일괄 반영됩니다)");\n';
   html += '  } else {\n';
-  html += '    callSettingsApi("addPartner", { data: payload }, function(res) {\n';
-  html += '      if (res && res.success) {\n';
-  html += '        closePartnerFormModal();\n';
-  html += '        applySettingsDataResponse(res);\n';
-  html += '        showToast("✅ " + (res.message || "거래처가 추가되었습니다."));\n';
-  html += '      } else {\n';
-  html += '        showToast("❌ 등록 실패: " + ((res && res.error) || ""));\n';
-  html += '      }\n';
-  html += '    });\n';
+  html += '    let maxRow = 1;\n';
+  html += '    (currentSettingsData.partners || []).forEach(function(item) { if (item.row > maxRow) maxRow = item.row; });\n';
+  html += '    payload.row = maxRow + 1;\n';
+  html += '    currentSettingsData.partners.unshift(payload);\n';
+  html += '    settingsMovedPartnerRow = payload.row;\n';
+  html += '    showToast("➕ 신규 거래처가 추가되었습니다. (하단 [저장하기]를 누르면 시트에 일괄 반영됩니다)");\n';
   html += '  }\n';
+  html += '  closePartnerFormModal();\n';
+  html += '  markSettingsChanged();\n';
+  html += '  renderSettingsView();\n';
   html += '}\n';
   html += '\n';
   html += 'function deletePartner(row, name) {\n';
-  html += '  if (!confirm("[" + name + "] 거래처를 정말 삭제하시겠습니까?\\n스프레드시트에서도 해당 행이 삭제됩니다.")) return;\n';
-  html += '  showToast("🗑️ 거래처 삭제 중...");\n';
-  html += '  callSettingsApi("deletePartner", { row: row, name: name }, function(res) {\n';
-  html += '    if (res && res.success) {\n';
-  html += '      applySettingsDataResponse(res);\n';
-  html += '      showToast("✅ " + (res.message || "거래처가 삭제되었습니다."));\n';
-  html += '    } else {\n';
-  html += '      showToast("❌ 삭제 실패: " + ((res && res.error) || ""));\n';
-  html += '    }\n';
+  html += '  if (!confirm("[" + name + "] 거래처를 목록에서 삭제하시겠습니까?\\n(하단 [저장하기]를 누르면 시트에 최종 저장됩니다.)")) return;\n';
+  html += '  currentSettingsData.partners = (currentSettingsData.partners || []).filter(function(item) {\n';
+  html += '    return item.row !== row;\n';
   html += '  });\n';
+  html += '  markSettingsChanged();\n';
+  html += '  renderSettingsView();\n';
+  html += '  showToast("🗑️ 거래처가 목록에서 삭제되었습니다. [저장하기]를 누르면 시트에 반영됩니다.");\n';
   html += '}\n';
   html += '\n';
   html += 'function reorderPartner(row, direction) {\n';
@@ -15042,33 +15187,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (idx < 0) return;\n';
   html += '  const targetIdx = (direction === "up") ? (idx - 1) : (idx + 1);\n';
   html += '  if (targetIdx < 0 || targetIdx >= pList.length) return;\n';
-  html += '  // 1. [Optimistic UI] 즉각 로컬 맞교환 및 0초 즉각 렌더링\n';
   html += '  const movedItem = pList[idx];\n';
   html += '  const targetItem = pList[targetIdx];\n';
   html += '  pList[idx] = targetItem;\n';
   html += '  pList[targetIdx] = movedItem;\n';
   html += '  settingsMovedPartnerRow = row;\n';
+  html += '  markSettingsChanged();\n';
   html += '  renderSettingsView();\n';
-  html += '  // 2. 백그라운드 서버 시트 동기화\n';
-  html += '  callSettingsApi("reorderPartner", { row: row, direction: direction }, function(res) {\n';
-  html += '    if (res && res.success) {\n';
-  html += '      applySettingsDataResponse(res);\n';
-  html += '      showToast("✅ 거래처 순서가 변경되어 현장에 즉시 반영되었습니다.");\n';
-  html += '    } else {\n';
-  html += '      // 롤백\n';
-  html += '      pList[targetIdx] = targetItem;\n';
-  html += '      pList[idx] = movedItem;\n';
-  html += '      settingsMovedPartnerRow = null;\n';
-  html += '      renderSettingsView();\n';
-  html += '      showToast("⚠️ 순서 변경 불가: " + ((res && res.error) || ""));\n';
-  html += '    }\n';
-  html += '  }, function(err) {\n';
-  html += '    pList[targetIdx] = targetItem;\n';
-  html += '    pList[idx] = movedItem;\n';
-  html += '    settingsMovedPartnerRow = null;\n';
-  html += '    renderSettingsView();\n';
-  html += '    showToast("❌ 통신 오류로 순서가 복원되었습니다.");\n';
-  html += '  });\n';
   html += '}\n';
   html += '\n';
   html += 'function openAddTaskModal() {\n';
@@ -15115,41 +15240,34 @@ function buildSidebarDashboardHtml(mode) {
   html += '    category: (document.getElementById("taskInpCategory") || {}).value || "기타",\n';
   html += '    note: (document.getElementById("taskInpNote") || {}).value.trim() || ""\n';
   html += '  };\n';
-  html += '  showToast("💾 공종 저장 중...");\n';
   html += '  if (editingTaskRow) {\n';
-  html += '    callSettingsApi("updateTask", { row: editingTaskRow, data: payload }, function(res) {\n';
-  html += '      if (res && res.success) {\n';
-  html += '        closeTaskFormModal();\n';
-  html += '        applySettingsDataResponse(res);\n';
-  html += '        showToast("✅ " + (res.message || "공종이 수정되었습니다."));\n';
-  html += '      } else {\n';
-  html += '        showToast("❌ 수정 실패: " + ((res && res.error) || ""));\n';
-  html += '      }\n';
-  html += '    });\n';
+  html += '    const t = (currentSettingsData.tasks || []).find(function(item) { return item.row === editingTaskRow; });\n';
+  html += '    if (t) {\n';
+  html += '      Object.assign(t, payload);\n';
+  html += '      settingsMovedTaskRow = t.row;\n';
+  html += '    }\n';
+  html += '    showToast("✏️ 공종 정보가 수정되었습니다. (하단 [저장하기]를 누르면 시트에 일괄 반영됩니다)");\n';
   html += '  } else {\n';
-  html += '    callSettingsApi("addTask", { data: payload }, function(res) {\n';
-  html += '      if (res && res.success) {\n';
-  html += '        closeTaskFormModal();\n';
-  html += '        applySettingsDataResponse(res);\n';
-  html += '        showToast("✅ " + (res.message || "공종이 추가되었습니다."));\n';
-  html += '      } else {\n';
-  html += '        showToast("❌ 등록 실패: " + ((res && res.error) || ""));\n';
-  html += '      }\n';
-  html += '    });\n';
+  html += '    let maxRow = 1;\n';
+  html += '    (currentSettingsData.tasks || []).forEach(function(item) { if (item.row > maxRow) maxRow = item.row; });\n';
+  html += '    payload.row = maxRow + 1;\n';
+  html += '    currentSettingsData.tasks.unshift(payload);\n';
+  html += '    settingsMovedTaskRow = payload.row;\n';
+  html += '    showToast("➕ 신규 공종이 추가되었습니다. (하단 [저장하기]를 누르면 시트에 일괄 반영됩니다)");\n';
   html += '  }\n';
+  html += '  closeTaskFormModal();\n';
+  html += '  markSettingsChanged();\n';
+  html += '  renderSettingsView();\n';
   html += '}\n';
   html += '\n';
   html += 'function deleteTask(row, taskName) {\n';
-  html += '  if (!confirm("[" + taskName + "] 공종을 정말 삭제하시겠습니까?\\n스프레드시트 마스터에서도 삭제됩니다.")) return;\n';
-  html += '  showToast("🗑️ 공종 삭제 중...");\n';
-  html += '  callSettingsApi("deleteTask", { row: row, name: taskName }, function(res) {\n';
-  html += '    if (res && res.success) {\n';
-  html += '      applySettingsDataResponse(res);\n';
-  html += '      showToast("✅ " + (res.message || "공종이 삭제되었습니다."));\n';
-  html += '    } else {\n';
-  html += '      showToast("❌ 삭제 실패: " + ((res && res.error) || ""));\n';
-  html += '    }\n';
+  html += '  if (!confirm("[" + taskName + "] 공종을 목록에서 삭제하시겠습니까?\\n(하단 [저장하기]를 누르면 시트에 최종 저장됩니다.)")) return;\n';
+  html += '  currentSettingsData.tasks = (currentSettingsData.tasks || []).filter(function(item) {\n';
+  html += '    return item.row !== row;\n';
   html += '  });\n';
+  html += '  markSettingsChanged();\n';
+  html += '  renderSettingsView();\n';
+  html += '  showToast("🗑️ 공종이 목록에서 삭제되었습니다. [저장하기]를 누르면 시트에 반영됩니다.");\n';
   html += '}\n';
   html += '\n';
   html += 'function reorderTask(row, direction) {\n';
@@ -15158,32 +15276,33 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (idx < 0) return;\n';
   html += '  const targetIdx = (direction === "up") ? (idx - 1) : (idx + 1);\n';
   html += '  if (targetIdx < 0 || targetIdx >= tList.length) return;\n';
-  html += '  // 1. [Optimistic UI] 즉각 로컬 맞교환 및 0초 즉각 렌더링\n';
   html += '  const movedItem = tList[idx];\n';
   html += '  const targetItem = tList[targetIdx];\n';
   html += '  tList[idx] = targetItem;\n';
   html += '  tList[targetIdx] = movedItem;\n';
   html += '  settingsMovedTaskRow = row;\n';
+  html += '  markSettingsChanged();\n';
   html += '  renderSettingsView();\n';
-  html += '  // 2. 백그라운드 서버 시트 동기화\n';
-  html += '  callSettingsApi("reorderTask", { row: row, direction: direction }, function(res) {\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function saveAllSettingsBatch() {\n';
+  html += '  if (!hasSettingsPendingChanges) {\n';
+  html += '    showToast("ℹ️ 변경된 마스터 설정 내용이 없습니다.");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  updateSettingsSaveBtn(true);\n';
+  html += '  showToast("💾 구글 스프레드시트에 마스터 설정 일괄 저장 중...");\n';
+  html += '  callSettingsApi("saveAllSettingsBatch", { data: currentSettingsData }, function(res) {\n';
+  html += '    updateSettingsSaveBtn(false);\n';
   html += '    if (res && res.success) {\n';
   html += '      applySettingsDataResponse(res);\n';
-  html += '      showToast("✅ 공종 순서가 변경되어 현장에 즉시 반영되었습니다.");\n';
+  html += '      showToast("✅ 거래처 및 공종 변경사항이 구글 시트에 성공적으로 일괄 저장되었습니다!");\n';
   html += '    } else {\n';
-  html += '      // 롤백\n';
-  html += '      tList[targetIdx] = targetItem;\n';
-  html += '      tList[idx] = movedItem;\n';
-  html += '      settingsMovedTaskRow = null;\n';
-  html += '      renderSettingsView();\n';
-  html += '      showToast("⚠️ 순서 변경 불가: " + ((res && res.error) || ""));\n';
+  html += '      showToast("❌ 일괄 저장 실패: " + ((res && res.error) || "알 수 없는 오류"));\n';
   html += '    }\n';
   html += '  }, function(err) {\n';
-  html += '    tList[targetIdx] = targetItem;\n';
-  html += '    tList[idx] = movedItem;\n';
-  html += '    settingsMovedTaskRow = null;\n';
-  html += '    renderSettingsView();\n';
-  html += '    showToast("❌ 통신 오류로 순서가 복원되었습니다.");\n';
+  html += '    updateSettingsSaveBtn(false);\n';
+  html += '    showToast("❌ 서버 통신 오류: " + err);\n';
   html += '  });\n';
   html += '}\n';
   html += '\n';
@@ -15193,6 +15312,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      .withSuccessHandler(onSuccess)\n';
   html += '      .withFailureHandler(onError || function(err) { showToast("❌ 통신 오류: " + err); });\n';
   html += '    if (action === "getSettingsData") runner.getSettingsManagementData();\n';
+  html += '    else if (action === "saveAllSettingsBatch") runner.saveAllSettingsBatchFromWeb(params.data);\n';
   html += '    else if (action === "addPartner") runner.addPartnerItemFromWeb(params.data);\n';
   html += '    else if (action === "updatePartner") runner.updatePartnerItemFromWeb(params.row, params.data);\n';
   html += '    else if (action === "deletePartner") runner.deletePartnerItemFromWeb(params.row, params.name);\n';

@@ -10357,7 +10357,7 @@ const indexHtml156 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), '
 
 // 156-1: Optimistic UI 즉각 반응성 및 행 플래시 애니메이션 검증
 assertTest('Step 156-1: Optimistic UI 즉각 반응성 및 행 플래시 애니메이션 검증',
-  code156.indexOf('// 1. [Optimistic UI] 즉각 로컬 맞교환 및 0초 즉각 렌더링') !== -1 &&
+  code156.indexOf('pList[idx] = targetItem;') !== -1 &&
   code156.indexOf('settingsMovedPartnerRow = row;') !== -1 &&
   code156.indexOf('settingsMovedTaskRow = row;') !== -1 &&
   code156.indexOf('settings-row-moved') !== -1 &&
@@ -10403,7 +10403,53 @@ assertTest('Step 156-5: 헤더 열 제목 필터 드롭다운 및 적용된 필�
 
 // 156-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=156)
 assertTest('Step 156-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=156)',
-  indexHtml156.indexOf('exec?v=156') !== -1
+  indexHtml156.indexOf('exec?v=') !== -1
+);
+
+// ========================================================
+// [Step 157]: 마스터 설정 하단 일괄 [저장하기] 버튼 및 배치 저장(Batch Save) 아키텍처 QA
+// ========================================================
+console.log('\n📋 [Step 157]: 마스터 설정 일괄 [저장하기] 버튼 및 배치 저장(Batch Save) QA ---');
+const code157 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml157 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 157-1: 마스터 설정 하단 [저장하기] 버튼(#settingsSaveAllBtn) UI 배치 검증
+assertTest('Step 157-1: 마스터 설정 하단 [저장하기] 버튼(#settingsSaveAllBtn) UI 배치 검증',
+  code157.indexOf('id="settingsSaveAllBtn"') !== -1 &&
+  code157.indexOf('onclick="saveAllSettingsBatch()"') !== -1 &&
+  code157.indexOf('id="settingsSaveBtnLabel"') !== -1
+);
+
+// 157-2: 서버 측 일괄 저장 함수(saveAllSettingsBatchFromWeb) 구현 및 writeLock 검증
+assertTest('Step 157-2: 서버 측 일괄 저장 함수(saveAllSettingsBatchFromWeb) 구현 및 writeLock 검증',
+  code157.indexOf('function saveAllSettingsBatchFromWeb(batchPayload)') !== -1 &&
+  code157.indexOf('runWithWriteLock_(saveAllSettingsBatchFromWeb') !== -1 &&
+  code157.indexOf('ensurePartnerDropdownFormulaColumn(ss, pSheet);') !== -1
+);
+
+// 157-3: doGet API 라우팅 엔드포인트(action === "saveAllSettingsBatch") 연동 검증
+assertTest('Step 157-3: doGet API 라우팅 엔드포인트(action === "saveAllSettingsBatch") 연동 검증',
+  code157.indexOf('if (action === "saveAllSettingsBatch")') !== -1 &&
+  code157.indexOf('saveAllSettingsBatchFromWeb(batchPayload)') !== -1
+);
+
+// 157-4: 클라이언트 일괄 저장 엔진(saveAllSettingsBatch, markSettingsChanged, updateSettingsSaveBtn) 검증
+assertTest('Step 157-4: 클라이언트 일괄 저장 엔진(saveAllSettingsBatch, markSettingsChanged, updateSettingsSaveBtn) 검증',
+  code157.indexOf('function saveAllSettingsBatch()') !== -1 &&
+  code157.indexOf('function markSettingsChanged()') !== -1 &&
+  code157.indexOf('function updateSettingsSaveBtn(') !== -1 &&
+  code157.indexOf('hasSettingsPendingChanges = true;') !== -1
+);
+
+// 157-5: 닫기 시 미저장 변경사항 방어(confirm dialog) 및 롤백 로직 검증
+assertTest('Step 157-5: 닫기 시 미저장 변경사항 방어(confirm dialog) 및 롤백 로직 검증',
+  code157.indexOf('저장되지 않은 마스터 설정 변경사항이 있습니다.') !== -1 &&
+  code157.indexOf('currentSettingsData = JSON.parse(JSON.stringify(originalSettingsData));') !== -1
+);
+
+// 157-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=157)
+assertTest('Step 157-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=157)',
+  indexHtml157.indexOf('exec?v=157') !== -1
 );
 
 console.log('\n========================================================');
