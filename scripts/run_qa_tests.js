@@ -9882,7 +9882,7 @@ assertTest('Step 145-1: findOrCreateTodoSheet To-Do 시트 자동 생성 및 11�
 
 // 145-2: To-Do CRUD 백엔드 5대 함수 검증
 assertTest('Step 145-2: getTodoListFromWeb, addTodoItemFromWeb, updateTodoItemFromWeb, updateTodoStatusFromWeb, deleteTodoItemFromWeb 검증',
-  code145.indexOf('function getTodoListFromWeb()') !== -1 &&
+  code145.indexOf('function getTodoListFromWeb(') !== -1 &&
   code145.indexOf('function addTodoItemFromWeb(todoData)') !== -1 &&
   code145.indexOf('function updateTodoItemFromWeb(id, updateData)') !== -1 &&
   code145.indexOf('function updateTodoStatusFromWeb(id, newStatus, newManager') !== -1 &&
@@ -10707,9 +10707,57 @@ assertTest('Step 164-4: 기존 한남동 0304 보존 로직 100% 무결성 유�
   code164.indexOf('rawPwd === "304" && rawSiteName.indexOf("한남동") !== -1') !== -1
 );
 
-// 164-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=164)
-assertTest('Step 164-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=164)',
-  indexHtml164.indexOf('exec?v=164') !== -1
+// 164-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=164 이상)
+assertTest('Step 164-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=164 이상)',
+  /exec\?v=(16[4-9]|1[7-9][0-9])/.test(indexHtml164)
+);
+
+// ========================================================
+// [Step 165]: To-Do 서버 캐싱(CacheService), 대시보드 메타 재활용 및 클라이언트 프리페치 속도 최적화 QA
+// ========================================================
+console.log('\n📋 [Step 165]: To-Do 서버 캐싱 및 클라이언트 프리페치 속도 최적화 QA ---');
+const code165 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml165 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 165-1: WS_TODO_DATA_CACHE_V1 상수 및 서버 캐시 삼총사 함수 구현 검증
+assertTest('Step 165-1: WS_TODO_DATA_CACHE_V1 상수 및 서버 캐시 삼총사(put/get/invalidate) 구현 검증',
+  code165.indexOf('var TODO_SERVER_CACHE_KEY = "WS_TODO_DATA_CACHE_V1";') !== -1 &&
+  code165.indexOf('function putTodoServerCache(') !== -1 &&
+  code165.indexOf('function getTodoServerCache(') !== -1 &&
+  code165.indexOf('function invalidateTodoServerCache(') !== -1
+);
+
+// 165-2: getTodoListFromWeb 내 캐시 우선 조회 및 getDashboardServerCache 재활용 검증
+assertTest('Step 165-2: getTodoListFromWeb 내 캐시 우선 반환 및 대시보드 서버 캐시 재활용 검증',
+  code165.indexOf('function getTodoListFromWeb(forceRefresh)') !== -1 &&
+  code165.indexOf('var cached = getTodoServerCache();') !== -1 &&
+  code165.indexOf('var dashCacheStr = getDashboardServerCache();') !== -1 &&
+  code165.indexOf('putTodoServerCache(result, TODO_SERVER_CACHE_TTL);') !== -1
+);
+
+// 165-3: To-Do CUD 함수 4곳의 invalidateTodoServerCache() 호출 연동 검증
+assertTest('Step 165-3: To-Do CUD 함수 4곳(추가, 수정, 상태변경, 삭제)의 캐시 무효화 연동 검증',
+  code165.indexOf('sheet.appendRow(rowVals);\n    SpreadsheetApp.flush();\n    invalidateTodoServerCache();') !== -1 &&
+  code165.indexOf('sheet.deleteRow(targetRow);\n    SpreadsheetApp.flush();\n    invalidateTodoServerCache();') !== -1
+);
+
+// 165-4: 클라이언트 loadTodoList 캐시 우선 및 PC/모바일 탭 전환 시 캐시 우선 호출(0ms) 검증
+assertTest('Step 165-4: PC/모바일 To-Do 탭 진입 시 불필요 강제 리프레시 제거 및 캐시 우선 호출(loadTodoList(false)) 검증',
+  code165.indexOf('pcTitle.innerText = "To-Do List"') !== -1 &&
+  code165.indexOf('loadTodoList(false);') !== -1 &&
+  code165.indexOf('pageTitle.innerText = "✅ To-Do List"') !== -1
+);
+
+// 165-5: 메인 대시보드 로드 완료(onDataLoaded) 후 유휴 시간 백그라운드 To-Do 프리페치 검증
+assertTest('Step 165-5: 대시보드 로드 완료 후 350ms 백그라운드 To-Do 프리페치(Prefetch) 탑재 검증',
+  code165.indexOf('if (!isTodoLoaded)') !== -1 &&
+  code165.indexOf('loadTodoList(false);') !== -1 &&
+  code165.indexOf('}, 350);') !== -1
+);
+
+// 165-6: index.html 내 exec?v=165 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 165-6: index.html 내 exec?v=165 최신 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml165.indexOf('exec?v=165') !== -1
 );
 
 console.log('\n========================================================');

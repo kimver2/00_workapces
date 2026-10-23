@@ -7172,12 +7172,131 @@ function findOrCreateTodoSheet(ss) {
   return sheet;
 }
 
+var TODO_SERVER_CACHE_KEY = "WS_TODO_DATA_CACHE_V1";
+var TODO_SERVER_CACHE_TTL = 300; // 5분 (300초)
+
 /**
- * To-Do 목록 전체 조회 서버 함수
+ * 서버단 To-Do 데이터 캐시 저장
+ */
+function putTodoServerCache(data, ttlSeconds) {
+  try {
+    if (!data) return;
+    if (typeof CacheService === "undefined" || !CacheService || typeof CacheService.getScriptCache !== "function") return;
+    var cache = CacheService.getScriptCache();
+    if (!cache) return;
+
+    var jsonStr = (typeof data === "string") ? data : JSON.stringify(data);
+    ttlSeconds = ttlSeconds || TODO_SERVER_CACHE_TTL || 300;
+    var CHUNK_SIZE = 80000;
+
+    if (jsonStr.length < CHUNK_SIZE) {
+      try {
+        if (typeof cache.remove === "function") cache.remove(TODO_SERVER_CACHE_KEY + "_cnt");
+      } catch(eRmCnt) {}
+      if (typeof cache.put === "function") cache.put(TODO_SERVER_CACHE_KEY, jsonStr, ttlSeconds);
+    } else {
+      var totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
+      var chunkMap = {};
+      chunkMap[TODO_SERVER_CACHE_KEY + "_cnt"] = String(totalChunks);
+      for (var i = 0; i < totalChunks; i++) {
+        chunkMap[TODO_SERVER_CACHE_KEY + "_c_" + i] = jsonStr.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      }
+      try {
+        if (typeof cache.remove === "function") cache.remove(TODO_SERVER_CACHE_KEY);
+      } catch(eRmSingle) {}
+      if (typeof cache.putAll === "function") {
+        cache.putAll(chunkMap, ttlSeconds);
+      } else if (typeof cache.put === "function") {
+        for (var ck in chunkMap) {
+          if (Object.prototype.hasOwnProperty.call(chunkMap, ck)) cache.put(ck, chunkMap[ck], ttlSeconds);
+        }
+      }
+    }
+  } catch(eCachePut) {}
+}
+
+/**
+ * 서버단 To-Do 데이터 캐시 조회
+ */
+function getTodoServerCache() {
+  try {
+    if (typeof CacheService === "undefined" || !CacheService || typeof CacheService.getScriptCache !== "function") return null;
+    var cache = CacheService.getScriptCache();
+    if (!cache) return null;
+
+    if (typeof cache.get === "function") {
+      var singleStr = cache.get(TODO_SERVER_CACHE_KEY);
+      if (singleStr) {
+        try { return JSON.parse(singleStr); } catch(eParse) { return null; }
+      }
+    }
+
+    var cntStr = (typeof cache.get === "function") ? cache.get(TODO_SERVER_CACHE_KEY + "_cnt") : null;
+    if (cntStr) {
+      var totalChunks = parseInt(cntStr, 10);
+      if (totalChunks > 0) {
+        var keys = [];
+        for (var i = 0; i < totalChunks; i++) keys.push(TODO_SERVER_CACHE_KEY + "_c_" + i);
+        var chunkMap = (typeof cache.getAll === "function") ? cache.getAll(keys) : null;
+        if (!chunkMap && typeof cache.get === "function") {
+          chunkMap = {};
+          for (var kIdx = 0; kIdx < keys.length; kIdx++) chunkMap[keys[kIdx]] = cache.get(keys[kIdx]);
+        }
+        if (chunkMap) {
+          var fullStr = "";
+          for (var j = 0; j < totalChunks; j++) {
+            var part = chunkMap[TODO_SERVER_CACHE_KEY + "_c_" + j];
+            if (!part) return null;
+            fullStr += part;
+          }
+          try { return JSON.parse(fullStr); } catch(eParse) { return null; }
+        }
+      }
+    }
+    return null;
+  } catch(eCacheGet) {
+    return null;
+  }
+}
+
+/**
+ * 서버단 To-Do 데이터 캐시 무효화 (추가/수정/삭제/상태변경 시 호출)
+ */
+function invalidateTodoServerCache() {
+  try {
+    if (typeof CacheService !== "undefined" && CacheService && typeof CacheService.getScriptCache === "function") {
+      var cache = CacheService.getScriptCache();
+      if (!cache) return;
+      var keysToRemove = [TODO_SERVER_CACHE_KEY, TODO_SERVER_CACHE_KEY + "_cnt"];
+      var cntStr = (typeof cache.get === "function") ? cache.get(TODO_SERVER_CACHE_KEY + "_cnt") : null;
+      var count = cntStr ? parseInt(cntStr, 10) : 5;
+      for (var k = 0; k < Math.max(count + 5, 8); k++) {
+        keysToRemove.push(TODO_SERVER_CACHE_KEY + "_c_" + k);
+      }
+      if (typeof cache.removeAll === "function") {
+        cache.removeAll(keysToRemove);
+      } else if (typeof cache.remove === "function") {
+        for (var r = 0; r < keysToRemove.length; r++) cache.remove(keysToRemove[r]);
+      }
+    }
+  } catch(eCacheInv) {}
+}
+
+/**
+ * To-Do 목록 전체 조회 서버 함수 (캐싱 및 대시보드 메타 재활용 최적화)
+ * @param {boolean} [forceRefresh=false]
  * @return {object} { success: boolean, list: Array, members: Array, activeSites: Array }
  */
-function getTodoListFromWeb() {
+function getTodoListFromWeb(forceRefresh) {
   try {
+    // 1) 캐시 조회 (강제 갱신이 아닌 경우)
+    if (!forceRefresh) {
+      var cached = getTodoServerCache();
+      if (cached && cached.success && Array.isArray(cached.list)) {
+        return cached;
+      }
+    }
+
     var ss = getAppSpreadsheet();
     if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다.", list: [] };
     var sheet = findOrCreateTodoSheet(ss);
@@ -7210,52 +7329,89 @@ function getTodoListFromWeb() {
       }
     }
 
-    // [구성원 시트 실제 인원 목록 추출]
+    // 2) 구성원 및 현장 목록 최적화:
+    // 이미 존재하는 대시보드 서버 캐시에서 members와 siteNames를 재활용하여 불필요한 시트 I/O 제거
     var members = [];
+    var activeSites = [];
+    var gotMetaFromCache = false;
+
     try {
-      members = getMemberNames(ss) || [];
-    } catch(eMem) {
-      members = [];
+      var dashCacheStr = getDashboardServerCache();
+      if (dashCacheStr) {
+        var dashData = JSON.parse(dashCacheStr);
+        if (dashData) {
+          if (Array.isArray(dashData.teamMembers) && dashData.teamMembers.length > 0) {
+            members = dashData.teamMembers.slice();
+          }
+          if (Array.isArray(dashData.sites) && dashData.sites.length > 0) {
+            var sSet = {};
+            for (var ds = 0; ds < dashData.sites.length; ds++) {
+              var sObj = dashData.sites[ds];
+              var sName = sObj ? (sObj.siteName || "") : "";
+              var sCat = (sObj && sObj.scope === "single") ? "단건" : ((sObj && sObj.scope === "as") ? "AS" : "현장");
+              if (sName && !sSet[sName]) {
+                sSet[sName] = true;
+                activeSites.push({ name: sName, category: sCat });
+              }
+            }
+            gotMetaFromCache = true;
+          }
+        }
+      }
+    } catch(eDashMeta) {}
+
+    // 대시보드 캐시가 없는 경우에만 직접 시트에서 조회
+    if (members.length === 0) {
+      try {
+        members = getMemberNames(ss) || [];
+      } catch(eMem) {
+        members = [];
+      }
     }
 
-    // [진행 중인 현장, 단건, AS 목록 추출]
-    var activeSites = [];
-    try {
-      var sSheet = findSiteScheduleSheet(ss);
-      if (sSheet && sSheet.getLastRow() >= 2) {
-        var sVals = sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 1).getValues();
-        var sSet = {};
-        for (var si = 0; si < sVals.length; si++) {
-          var sn = String(sVals[si][0] || "").trim();
-          if (sn && !sSet[sn]) { sSet[sn] = true; activeSites.push({ name: sn, category: "현장" }); }
+    if (!gotMetaFromCache || activeSites.length === 0) {
+      try {
+        var sSheet = findSiteScheduleSheet(ss);
+        if (sSheet && sSheet.getLastRow() >= 2) {
+          var sVals = sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 1).getValues();
+          var sMap = {};
+          for (var si = 0; si < sVals.length; si++) {
+            var sn = String(sVals[si][0] || "").trim();
+            if (sn && !sMap[sn]) { sMap[sn] = true; activeSites.push({ name: sn, category: "현장" }); }
+          }
         }
-      }
-      var sSingle = findSingleTaskSheet(ss, false);
-      if (sSingle && sSingle.getLastRow() >= 2) {
-        var snVals = sSingle.getRange(2, 1, sSingle.getLastRow() - 1, 1).getValues();
-        var snSet = {};
-        for (var sni = 0; sni < snVals.length; sni++) {
-          var snm = String(snVals[sni][0] || "").trim();
-          if (snm && !snSet[snm]) { snSet[snm] = true; activeSites.push({ name: snm, category: "단건" }); }
+        var sSingle = findSingleTaskSheet(ss, false);
+        if (sSingle && sSingle.getLastRow() >= 2) {
+          var snVals = sSingle.getRange(2, 1, sSingle.getLastRow() - 1, 1).getValues();
+          var snMap = {};
+          for (var sni = 0; sni < snVals.length; sni++) {
+            var snm = String(snVals[sni][0] || "").trim();
+            if (snm && !snMap[snm]) { snMap[snm] = true; activeSites.push({ name: snm, category: "단건" }); }
+          }
         }
-      }
-      var sAs = findAsSheet(ss, false);
-      if (sAs && sAs.getLastRow() >= 2) {
-        var asVals = sAs.getRange(2, 1, sAs.getLastRow() - 1, 1).getValues();
-        var asSet = {};
-        for (var asi = 0; asi < asVals.length; asi++) {
-          var asm = String(asVals[asi][0] || "").trim();
-          if (asm && !asSet[asm]) { asSet[asm] = true; activeSites.push({ name: asm, category: "AS" }); }
+        var sAs = findAsSheet(ss, false);
+        if (sAs && sAs.getLastRow() >= 2) {
+          var asVals = sAs.getRange(2, 1, sAs.getLastRow() - 1, 1).getValues();
+          var asMap = {};
+          for (var asi = 0; asi < asVals.length; asi++) {
+            var asm = String(asVals[asi][0] || "").trim();
+            if (asm && !asMap[asm]) { asMap[asm] = true; activeSites.push({ name: asm, category: "AS" }); }
+          }
         }
-      }
-    } catch(eSites) {}
+      } catch(eSites) {}
+    }
 
-    return {
+    var result = {
       success: true,
       list: list,
       members: members,
       activeSites: activeSites
     };
+
+    // 3) 캐시에 저장
+    putTodoServerCache(result, TODO_SERVER_CACHE_TTL);
+
+    return result;
   } catch(err) {
     Logger.log("getTodoListFromWeb 오류: " + err.toString());
     return { success: false, error: err.toString(), list: [] };
@@ -7306,6 +7462,7 @@ function addTodoItemFromWeb(todoData) {
 
     sheet.appendRow(rowVals);
     SpreadsheetApp.flush();
+    invalidateTodoServerCache();
 
     return {
       success: true,
@@ -7389,6 +7546,7 @@ function updateTodoItemFromWeb(id, updateData) {
       sheet.getRange(targetRow, 11).setValue("");
     }
     SpreadsheetApp.flush();
+    invalidateTodoServerCache();
 
     return {
       success: true,
@@ -7460,6 +7618,7 @@ function updateTodoStatusFromWeb(id, newStatus, newManager, isImportant) {
       sheet.getRange(targetRow, 11).setValue("");
     }
     SpreadsheetApp.flush();
+    invalidateTodoServerCache();
 
     return {
       success: true,
@@ -7503,6 +7662,7 @@ function deleteTodoItemFromWeb(id) {
 
     sheet.deleteRow(targetRow);
     SpreadsheetApp.flush();
+    invalidateTodoServerCache();
 
     return {
       success: true,
@@ -8683,7 +8843,8 @@ function doGet(e) {
 
   // 0-0-0-Todo) To-Do 관련 액션 라우팅
   if (action === "getTodoList") {
-    var todoListRes = getTodoListFromWeb();
+    var forceTodo = (p.force === "true" || p.force === true);
+    var todoListRes = getTodoListFromWeb(forceTodo);
     return ContentService.createTextOutput(JSON.stringify(todoListRes))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -14274,12 +14435,13 @@ function buildSidebarDashboardHtml(mode) {
   html += '\n';
 
   html += 'function loadTodoList(force) {\n';
-  html += '  if (isTodoLoaded && !force) {\n';
+  html += '  if (isTodoLoaded && !force && Array.isArray(todoDataList)) {\n';
   html += '    renderTodoDashboard();\n';
   html += '    return;\n';
   html += '  }\n';
   html += '  const contentArea = document.getElementById("contentArea");\n';
-  html += '  if (contentArea && (!todoDataList || todoDataList.length === 0)) {\n';
+  html += '  const isCurrentTodoActive = (calViewMode === "todo" || (typeof isMobileTodoMode !== "undefined" && isMobileTodoMode));\n';
+  html += '  if (isCurrentTodoActive && contentArea && (!todoDataList || todoDataList.length === 0)) {\n';
   html += '    contentArea.innerHTML = \'<div style="padding:60px 20px;text-align:center;color:#64748b;font-weight:700;"><span style="font-size:28px;">⏳</span><div style="margin-top:10px;font-size:14px;">To-Do 데이터를 불러오는 중...</div></div>\';\n';
   html += '  }\n';
   html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
@@ -14290,18 +14452,20 @@ function buildSidebarDashboardHtml(mode) {
   html += '          if (res.members && res.members.length > 0) todoMembersList = res.members;\n';
   html += '          if (res.activeSites && res.activeSites.length > 0) todoActiveSitesList = res.activeSites;\n';
   html += '          isTodoLoaded = true;\n';
-  html += '          renderTodoDashboard();\n';
+  html += '          if (calViewMode === "todo" || (typeof isMobileTodoMode !== "undefined" && isMobileTodoMode)) {\n';
+  html += '            renderTodoDashboard();\n';
+  html += '          }\n';
   html += '        } else {\n';
-  html += '          showToast("❌ To-Do 불러오기 실패: " + ((res && res.error) || "알 수 없는 오류"));\n';
+  html += '          if (isCurrentTodoActive) showToast("❌ To-Do 불러오기 실패: " + ((res && res.error) || "알 수 없는 오류"));\n';
   html += '        }\n';
   html += '      })\n';
   html += '      .withFailureHandler(err => {\n';
-  html += '        showToast("❌ To-Do 통신 오류: " + ((err && err.message) || err));\n';
+  html += '        if (isCurrentTodoActive) showToast("❌ To-Do 통신 오류: " + ((err && err.message) || err));\n';
   html += '      })\n';
-  html += '      .getTodoListFromWeb();\n';
+  html += '      .getTodoListFromWeb(!!force);\n';
   html += '  } else {\n';
   html += '    const apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
-  html += '    fetch(apiUrl + "?action=getTodoList")\n';
+  html += '    fetch(apiUrl + "?action=getTodoList" + (force ? "&force=true" : ""))\n';
   html += '      .then(r => r.json())\n';
   html += '      .then(res => {\n';
   html += '        if (res && res.success) {\n';
@@ -14309,12 +14473,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '          if (res.members && res.members.length > 0) todoMembersList = res.members;\n';
   html += '          if (res.activeSites && res.activeSites.length > 0) todoActiveSitesList = res.activeSites;\n';
   html += '          isTodoLoaded = true;\n';
-  html += '          renderTodoDashboard();\n';
+  html += '          if (calViewMode === "todo" || (typeof isMobileTodoMode !== "undefined" && isMobileTodoMode)) {\n';
+  html += '            renderTodoDashboard();\n';
+  html += '          }\n';
   html += '        } else {\n';
-  html += '          showToast("❌ To-Do 로드 실패: " + (res && res.error));\n';
+  html += '          if (isCurrentTodoActive) showToast("❌ To-Do 로드 실패: " + (res && res.error));\n';
   html += '        }\n';
   html += '      })\n';
-  html += '      .catch(err => { showToast("❌ To-Do 통신 에러: " + err); });\n';
+  html += '      .catch(err => { if (isCurrentTodoActive) showToast("❌ To-Do 통신 에러: " + err); });\n';
   html += '  }\n';
   html += '}\n';
   html += '\n';
@@ -15938,7 +16104,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    calViewMode = "todo";';
   html += '    const pcTitle = document.getElementById("pcMonthTitle");';
   html += '    if (pcTitle) pcTitle.innerText = "To-Do List";';
-  html += '    loadTodoList(true);';
+  html += '    loadTodoList(false);';
   html += '    return;';
   html += '  }';
   html += '  if (typeof mobileExpandedEstimateSites !== "undefined" && mobileExpandedEstimateSites && typeof mobileExpandedEstimateSites.clear === "function") {';
@@ -16279,7 +16445,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      addTaskBtn.onclick = function() { openAddTodoModal(); };';
   html += '    }';
   html += '    if (pageTitle) pageTitle.innerText = "✅ To-Do List";';
-  html += '    loadTodoList(true);';
+  html += '    loadTodoList(false);';
   html += '  } else {';
   html += '    calViewMode = "month";';
   html += '    updateMobileHeaderVisibility(false);';
@@ -17745,6 +17911,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '      }';
   html += '    } catch(eSaveCache) {}';
   html += '    if (wasManual) showToast("✅ 최신 현장 데이터로 새로고침되었습니다.");';
+  html += '    try {';
+  html += '      if (!isTodoLoaded) {';
+  html += '        setTimeout(function() {';
+  html += '          if (!isTodoLoaded) {';
+  html += '            loadTodoList(false);';
+  html += '          }';
+  html += '        }, 350);';
+  html += '      }';
+  html += '    } catch(ePrefetch) {}';
   html += '  } catch (renderErr) {';
   html += '    document.getElementById("contentArea").innerHTML = \'<div class="empty-state">⚠️ 대시보드 렌더링 오류: \' + escapeHtml(renderErr.message || renderErr) + \'</div>\';';
   html += '  }';
