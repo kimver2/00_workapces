@@ -1533,62 +1533,30 @@ function onOpen() {
   } catch(e) {}
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🚀 현장 관리")
-    // [사용자 지정 최상위 핵심 기능 노출]
-    .addItem("대시보드 사이드바 열기", "openSiteScheduleSidebar")
-    .addItem("대시보드 팝업 열기", "openSiteScheduleModal")
-    .addItem("📅 현장별 날짜 최신순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
-    .addItem("📁 '현장데이터' 동일 현장 묶기 (아코디언 정상화)", "groupSiteScheduleMenu")
-    .addItem("📖 '현장데이터' 모든 현장 펼치기 (숨겨진 행 표시)", "expandAllSites")
-    .addItem("📦 완료 현장 시트로 이동 (아카이브)", "archiveCompletedSitesMenu")
-    .addItem("📁 완료현장 시트 동일 현장별 접기", "groupCompletedSitesMenu")
-    .addItem("📂 완료현장 시트 전체 펼치기", "expandCompletedSitesMenu")
-    .addItem("🏢 '현장정보' 시트 열기 (주소/도어락/체크리스트)", "setupSiteInfoSheetMenu")
-    .addItem("📋 '신규견적' 시트 생성/최신화 (노션 연동)", "setupEstimateSheetMenu")
-    .addItem("🏷️ '04_공종' 마스터 시트 생성/최신화", "createTasksSheetMenu")
-    .addItem("🤝 '02_거래처_정리본' 시트 생성 (10열 슬림화 백업본)", "createOrganizedPartnersBackupSheetMenu")
-    .addItem("📑 '단건', 'AS' 시트 생성 및 서식 동기화", "ensureCustomCategorySheetsMenu")
-    .addItem("📁 '단건'/'AS' 동일 현장 묶기 (접기/펼치기)", "groupCategorySheetsMenu")
-    .addItem("📖 '단건'/'AS' 전체 펼치기", "expandCategorySheetsMenu")
-    .addItem("👥 '현장/단건/AS' 담당자 1 / 담당자 2 양식 변경", "migrateSheetsToTwoManagersMenu")
-    .addItem("🛡️ '현장데이터' 빨간 에러표시(유효성 경고) 전체 제거", "cleanAllValidationErrorsMenu")
+    // [사용자 지정 최상위 핵심 5대 기능]
+    .addItem("📱 웹앱 대시보드 열기", "openSiteScheduleModal")
+    .addItem("⚡ 현장별 날짜 최신순 정렬", "sortSiteScheduleTasksByDateMenu")
+    .addItem("📁 현장데이터 아코디언 묶기", "groupSiteScheduleMenu")
+    .addItem("📖 모든 현장 펼치기", "expandAllSites")
+    .addItem("📦 완료 현장 시트로 이동", "archiveCompletedSitesMenu")
     .addSeparator()
 
-    // [3개 제외 모든 설정 및 보조 기능은 '고급 설정 & 시스템 관리' 하위로 일원화 배치]
-    .addSubMenu(ui.createMenu("⚙️ 고급 설정 & 시스템 관리")
-      // 1. 색상 복구 및 날짜 일괄 정비
-      .addItem("⚠️ 지연 공정 강조 및 서식 복구/검사", "checkAndHighlightDelayedSchedules")
-      .addItem("📅 전체 날짜 2026.00.00 형식 일괄 변환", "formatAllDatesInSheetToYYYYMMDD")
-      .addSeparator()
+    // [서브메뉴 1: 모닝 브리핑 관리]
+    .addSubMenu(ui.createMenu("☀️ 모닝 브리핑 관리")
+      .addItem("☀️ 지금 즉시 테스트 발송", "sendDailyBriefingTestNow")
+      .addItem("⏰ 매일 아침 8시 자동 발송 켜기", "enableDailyMorningBriefing")
+      .addItem("🔕 자동 발송 끄기", "disableDailyMorningBriefing")
+      .addItem("🕒 발송 시간 변경", "configureBriefingTime")
+      .addItem("📧 수신 이메일 확인/설정", "configureBriefingEmail")
+    )
 
-      // 2. 현장 데이터 편집 / 보기 편의 기능
-      .addItem("📅 현장별 날짜 최신순 자동 정렬", "sortSiteScheduleTasksByDateMenu")
-      .addItem("📦 완료 현장 시트로 이동 (블록 전체 완료 현장 아카이브)", "archiveCompletedSitesMenu")
-      .addItem("📁 완료현장 동일 현장별 접기 (아코디언)", "groupCompletedSitesMenu")
-      .addItem("📂 완료현장 전체 펼치기", "expandCompletedSitesMenu")
-      .addItem("📁 '단건'/'AS' 동일 현장별 묶기 (아코디언)", "groupCategorySheetsMenu")
-      .addItem("📖 '단건'/'AS' 전체 펼치기", "expandCategorySheetsMenu")
-      .addItem("📁 '단건'/'AS' 전체 접기", "collapseCategorySheetsMenu")
-      .addItem("➕ 신규 현장 추가 (상단 4개 행 + 아코디언)", "addNewSiteAtTop")
-      .addItem("📖 모든 현장 펼치기 (전체 공정 보기)", "expandAllSites")
-      .addItem("📁 모든 현장 접기 (현장명만 요약 보기)", "collapseAllSites")
-      .addSeparator()
-
-      // 3. 모닝 브리핑 관리
-      .addItem("☀️ 모닝 브리핑 지금 즉시 테스트 발송", "sendDailyBriefingTestNow")
-      .addItem("⏰ 모닝 브리핑 자동 발송 켜기 (정각 발송)", "enableDailyMorningBriefing")
-      .addItem("🔕 모닝 브리핑 자동 발송 끄기", "disableDailyMorningBriefing")
-      .addItem("🕒 모닝 브리핑 발송 시간 변경 (기본 08:00 정각)", "configureBriefingTime")
-      .addItem("📧 모닝 브리핑 수신 이메일 변경", "configureBriefingEmail")
-      .addSeparator()
-
-      // 4. 시스템 유지보수 & 모바일 환경설정
-      .addItem("📱 모바일 대시보드 URL 확인 및 안내", "showMobileDashboardUrl")
-      .addItem("📱 모바일 상태변경 웹앱 배포 URL 설정", "configureWebAppUrl")
-      .addItem("🔧 공종/담당자/상태 드롭다운 및 서식 전체 복구", "fixStatusDropdownValidation")
-      .addItem("🧹 K~N열 (작성자/수정자 열) 영구 삭제", "removeAuditColumnsKtoN")
-      .addItem("🧹 빈 행 유령 데이터/ID 일괄 청소", "cleanupEmptyRowsMetadata")
-      .addItem("🛡️ 구글 캘린더 연동 잔여 트리거 완전 제거", "removeAllCalendarTriggersMenu")
-      .addItem("🌙 새벽 자동 정렬 트리거 점검 / 활성화 (새벽 4시)", "ensureDailySortTriggerInstalledMenu")
+    // [서브메뉴 2: 시스템 점검 & 가이드]
+    .addSubMenu(ui.createMenu("🛠️ 시스템 점검 & 가이드")
+      .addItem("📖 '00_사용가이드' 시트 생성 / 최신화", "createUsageGuideSheetMenu")
+      .addItem("🛡️ 빨간 에러(유효성 경고) 완전 제거 & 서식 복구", "cleanAllValidationErrorsMenu")
+      .addItem("⚠️ 지연 공정 강조 및 조건부 서식 재동기화", "checkAndHighlightDelayedSchedules")
+      .addItem("🧹 빈 행 유령 데이터 일괄 청소", "cleanupEmptyRowsMetadata")
+      .addItem("🌙 매일 새벽 4시 자동 정렬 점검/설치", "ensureDailySortTriggerInstalledMenu")
     )
     .addToUi();
 }
@@ -1637,6 +1605,286 @@ function ensureDailySortTriggerInstalledMenu() {
 
 function ensureHourlySortTriggerInstalledMenu() {
   return ensureDailySortTriggerInstalledMenu();
+}
+
+/**
+ * [상단 메뉴 전용] '00_사용가이드' 시트 생성 및 최신화 메뉴 액션
+ */
+function createUsageGuideSheetMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return;
+
+  var sheet = createUsageGuideSheet(ss);
+  if (sheet) {
+    try {
+      ss.setActiveSheet(sheet);
+      var ui = SpreadsheetApp.getUi();
+      if (ui) {
+        ui.alert(
+          "📖 사용 가이드 최신화 완료",
+          "'00_사용가이드' 시트가 최신 시스템 규격(웹앱 대시보드, 마스터 설정, 모닝 브리핑, 5대 입력 수칙)에 맞춰 첫 번째 탭으로 안전하게 생성 및 최신화되었습니다.",
+          ui.ButtonSet.OK
+        );
+      }
+    } catch(eAlert) {
+      try {
+        if (typeof ss.toast === "function") {
+          ss.toast("'00_사용가이드' 시트가 최신화되었습니다.", "📖 가이드 최신화 완료", 4);
+        }
+      } catch(eToast) {}
+    }
+  }
+}
+
+/**
+ * [가이드] 00_사용가이드 시트 자동 생성 및 최신화 코어 엔진
+ * @param {SpreadsheetApp.Spreadsheet} ss - 대상 스프레드시트 객체
+ * @return {SpreadsheetApp.Sheet} 생성/최신화된 가이드 시트
+ */
+function createUsageGuideSheet(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return null;
+
+  var sheetName = "00_사용가이드";
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName, 0);
+  } else {
+    try {
+      ss.setActiveSheet(sheet);
+      ss.moveActiveSheet(1);
+    } catch(eMove) {}
+    sheet.clear();
+    try {
+      sheet.clearConditionalFormatRules();
+    } catch(eCf) {}
+  }
+
+  try {
+    sheet.setTabColor("#1e3a8a");
+  } catch(eTab) {}
+  try {
+    sheet.setHideGridlines(false);
+  } catch(eGrid) {}
+
+  // 열 너비 설정 (A:여백, B:구분, C:명칭/기능, D:상세설명, E:비고, F:여백)
+  try {
+    sheet.setColumnWidth(1, 35);
+    sheet.setColumnWidth(2, 170);
+    sheet.setColumnWidth(3, 260);
+    sheet.setColumnWidth(4, 520);
+    sheet.setColumnWidth(5, 230);
+    sheet.setColumnWidth(6, 35);
+  } catch(eColWidth) {}
+
+  var webAppUrl = "";
+  try {
+    webAppUrl = getWebAppUrl() || "";
+  } catch(eUrl) {}
+
+  var linkFormulaOrText = webAppUrl
+    ? '=HYPERLINK("' + webAppUrl + '", "👉 [클릭] 우성아이디 실시간 웹앱 대시보드 열기")'
+    : "상단 메뉴 [🚀 현장 관리] -> [📱 웹앱 대시보드 열기] 클릭";
+
+  var guideData = [
+    // Row 1: 여백
+    ["", "", "", "", ""],
+    // Row 2: 대제목 헤더 (B2:E2)
+    ["", "🏢 우성아이디(WOOSUNG ID) 현장 관리 & To-Do 통합 시스템 매뉴얼", "", "", ""],
+    // Row 3: 부제목 헤더 (B3:E3)
+    ["", "실시간 웹앱 대시보드 · 마스터 데이터 팝업 동기화 · 자동 정렬 & 모닝 브리핑 엔진 탑재", "", "", ""],
+    // Row 4: 여백
+    ["", "", "", "", ""],
+    // Row 5: 섹션 1 헤더 (B5:E5)
+    ["", "1. 📱 실시간 웹앱(Web App) 대시보드 바로가기 및 활용 안내", "", "", ""],
+    // Row 6: 웹앱 링크
+    ["", "웹앱 접속 링크", linkFormulaOrText, "PC 및 스마트폰 어디서나 실시간 접속 가능 (브라우저 북마크 또는 홈 화면 추가 권장)", "실시간 동기화 지원"],
+    // Row 7: To-Do 모니터링
+    ["", "To-Do & 공정 모니터링", "현장별 / 공종별 실시간 카드뷰 & 리스트뷰", "모든 현장의 진행 상태(예정/진행 중/완료/AS)를 실시간 모니터링하며 검색 및 필터 지원", "PC & 모바일 반응형"],
+    // Row 8: 마스터 설정
+    ["", "마스터 데이터 설정", "상단 '⚙️ 설정' 버튼 (PC 전용 팝업)", "거래처, 구성원, 공종, 우선순위 등의 기준 정보를 팝업에서 조회/수정/저장 (시트와 1:1 자동 동기화)", "일괄 저장 엔진 탑재"],
+    // Row 9: 열 헤더 빠른 필터
+    ["", "빠른 헤더 필터", "열 제목 클릭 시 다중 선택 필터링", "공종, 담당자, 진행상태 헤더를 클릭하여 원하는 데이터만 즉시 필터링 및 퀵 액션", "즉시 반응형 UI"],
+    // Row 10: 여백
+    ["", "", "", "", ""],
+    // Row 11: 섹션 2 헤더 (B11:E11)
+    ["", "2. 📑 시트별 고유 역할 및 데이터 아키텍처 (9대 핵심 시트)", "", "", ""],
+    // Row 12: 테이블 헤더
+    ["", "시트명", "핵심 역할", "주요 데이터 및 운영 방법", "연동 및 주의사항"],
+    // Row 13~21: 시트별 설명
+    ["", "01_현장데이터", "메인 공정표 (Master Schedule)", "모든 현장의 단위 공정을 입력/관리. 현장별 아코디언(그룹화) 및 첫 일정 최신순 정렬", "웹앱 대시보드 메인 연동"],
+    ["", "02_거래처", "협력업체 마스터 DB", "공종별 협력업체 목록 (대구분, 업체명, 대표자, 연락처, 주소, 비고 등 10개 표준 열)", "공정표 드롭다운 & 웹앱 설정"],
+    ["", "03_구성원", "사내 임직원 마스터 DB", "현장 관리자 명단 (이름, 직급, 연락처, 모닝브리핑 수신 여부 체크박스)", "담당자 1/2 드롭다운 & 브리핑"],
+    ["", "04_공종", "공종 마스터 DB", "철거, 설비, 전기, 목공, 도장, 타일 등 표준 공종 구분 및 세부 공종명 관리", "공정표 드롭다운 & 웹앱 설정"],
+    ["", "단건", "소규모 단건 공사 전용 일정", "하루 또는 2~3일 내 단발성으로 완료되는 부분 공사 일정 관리 (현장데이터와 동일 규격)", "독립 시트 (정렬/접기 지원)"],
+    ["", "AS", "준공 후 사후관리(A/S) 전용 일정", "입주 후 접수된 하자 보수 및 유지관리 일정 전용 기록 (현장데이터와 동일 규격)", "독립 시트 (정렬/접기 지원)"],
+    ["", "완료현장", "준공 완료 현장 아카이브 (보관소)", "모든 공정이 '완료'된 현장을 보관하는 시트. 상단 메뉴 [완료 현장 시트로 이동]으로 안전 이전", "데이터 보존 및 시트 최적화"],
+    ["", "현장정보", "현장별 인프라 상세 정보", "현장 상세 주소, 도어락 비밀번호, 고객 연락처, 주차/엘리베이터 이용 수칙 등", "현장 정보 열람 전용"],
+    ["", "신규견적", "신규 견적 상담 및 노션 연동", "신규 공사 문의 및 견적 파이프라인 관리 시트", "견적 관리 연동"],
+    // Row 22: 여백
+    ["", "", "", "", ""],
+    // Row 23: 섹션 3 헤더 (B23:E23)
+    ["", "3. ✍️ 5대 표준 데이터 입력 수칙 (빨간 에러 및 정렬 오류 방지)", "", "", ""],
+    // Row 24: 테이블 헤더
+    ["", "입력 항목", "올바른 표준 입력 (O)", "잘못된 입력 사례 (X) & 발생하는 문제", "해결 방법 및 권장 조치"],
+    // Row 25~29: 5대 입력 수칙
+    ["", "① 시작일 / 종료일", "2026.04.15 (또는 YYYY-MM-DD)", "26년 4월, 미정, 다음주 화 등 텍스트 입력 시 날짜 계산 및 정렬 불가", "반드시 올바른 날짜 서식으로 입력"],
+    ["", "② 공종", "드롭다운 목록에서 선택", "목록에 없는 명칭 임의 입력 시 시트 유효성 경고(빨간 삼각형) 발생", "'04_공종' 시트 또는 웹앱 설정에 등록"],
+    ["", "③ 협력업체", "드롭다운 목록에서 선택", "오타가 포함된 업체명 입력 시 연락처 및 마스터 매칭 누락", "'02_거래처' 시트 또는 웹앱 설정에 등록"],
+    ["", "④ 진행상태", "[예정], [진행 중], [완료], [AS]", "'진행중'(띄어쓰기 없음), '대기' 등 임의 입력 시 조건부 서식/완료 감지 누락", "반드시 4가지 표준 상태 드롭다운 선택"],
+    ["", "⑤ 담당자 1 / 담당자 2", "[03_구성원] 명단에서 선택", "등록되지 않은 이름 직접 기입 시 담당자별 통계 및 브리핑 집계 누락", "1인은 담당자 1만, 2인은 담당자 2까지"],
+    // Row 30: 여백
+    ["", "", "", "", ""],
+    // Row 31: 섹션 4 헤더 (B31:E31)
+    ["", "4. ⚡ 자동화 엔진 및 상단 메뉴 활용 매뉴얼 (🚀 현장 관리)", "", "", ""],
+    // Row 32: 테이블 헤더
+    ["", "메뉴 분류", "기능 및 메뉴 명칭", "동작 내용 및 상세 설명", "권장 사용 시점"],
+    // Row 33~40: 상단 메뉴 기능들
+    ["", "메인 핵심 기능", "⚡ 현장별 날짜 최신순 정렬", "현장데이터, 단건, AS, 완료현장의 각 현장 첫 일정 날짜를 기준으로 최신순 즉시 재정렬", "일정 변경/추가 시 수시"],
+    ["", "메인 핵심 기능", "📁 현장데이터 아코디언 묶기", "동일 현장의 공정들을 하나의 그룹으로 묶어 접기/펼치기 버튼 생성 및 정돈", "시트 행 추가/수정 후"],
+    ["", "메인 핵심 기능", "📖 모든 현장 펼치기", "접혀있는 모든 현장 아코디언을 한 번에 펼쳐 전체 공정 상세 표시", "전체 일정 일괄 확인 시"],
+    ["", "메인 핵심 기능", "📦 완료 현장 시트로 이동", "현장 내 모든 공정이 '완료'된 현장 블록 전체를 [완료현장] 시트로 안전하게 아카이브 이동", "현장 공사 종료 시"],
+    ["", "☀️ 모닝 브리핑", "모닝 브리핑 관리 서브메뉴", "매일 아침(기본 8시) 오늘의 공정을 담당 임직원 이메일로 자동 요약 발송 (즉시발송/시간변경 지원)", "매일 아침 자동 실행"],
+    ["", "🛠️ 시스템 점검", "🛡️ 빨간 에러 완전 제거 & 서식 복구", "공종/거래처/상태 드롭다운 불일치로 인한 빨간 삼각형 에러를 전수 치료하고 서식 재동기화", "빨간 에러 표시 발견 시 즉시"],
+    ["", "🛠️ 시스템 점검", "⚠️ 지연 공정 강조 및 조건부 서식 재동기화", "종료일이 지났으나 완료되지 않은 공정을 시각적으로 감지하고 배경색 복구", "주간 공정 회의 전"],
+    ["", "🛠️ 시스템 점검", "🌙 매일 새벽 4시 자동 정렬 점검/설치", "사람이 없어도 매일 새벽 4시 전체 시트를 최신순으로 자동 정렬하는 트리거 점검 및 설치", "최초 1회 설치 (자동 동작)"],
+    // Row 41: 여백
+    ["", "", "", "", ""],
+    // Row 42: 하단 푸터 (B42:E42)
+    ["", "우성아이디(WOOSUNG ID) 현장 관리 시스템 · 본 가이드 시트는 상단 메뉴 [🚀 현장 관리] -> [🛠️ 시스템 점검 & 가이드] -> ['00_사용가이드' 최신화]로 언제든 갱신됩니다.", "", "", ""]
+  ];
+
+  var numRows = guideData.length;
+  var numCols = 5;
+
+  try {
+    var fullRange = sheet.getRange(1, 1, numRows, numCols);
+    fullRange.setValues(guideData);
+    fullRange.setFontFamily("Malgun Gothic");
+
+    var contentRange = sheet.getRange(1, 2, numRows, 4);
+    contentRange.setVerticalAlignment("middle");
+
+    // 행 높이 일괄 적용
+    sheet.setRowHeight(1, 20);
+    sheet.setRowHeight(2, 48);
+    sheet.setRowHeight(3, 28);
+    sheet.setRowHeight(4, 15);
+    sheet.setRowHeight(5, 34);
+    sheet.setRowHeight(6, 32);
+    sheet.setRowHeight(7, 30);
+    sheet.setRowHeight(8, 30);
+    sheet.setRowHeight(9, 30);
+    sheet.setRowHeight(10, 15);
+    sheet.setRowHeight(11, 34);
+    sheet.setRowHeight(12, 30);
+    for (var r2 = 13; r2 <= 21; r2++) sheet.setRowHeight(r2, 28);
+    sheet.setRowHeight(22, 15);
+    sheet.setRowHeight(23, 34);
+    sheet.setRowHeight(24, 30);
+    for (var r3 = 25; r3 <= 29; r3++) sheet.setRowHeight(r3, 28);
+    sheet.setRowHeight(30, 15);
+    sheet.setRowHeight(31, 34);
+    sheet.setRowHeight(32, 30);
+    for (var r4 = 33; r4 <= 40; r4++) sheet.setRowHeight(r4, 28);
+    sheet.setRowHeight(41, 15);
+    sheet.setRowHeight(42, 30);
+
+    // 대제목 B2:E2
+    var titleRange = sheet.getRange("B2:E2");
+    titleRange.merge();
+    titleRange.setBackground("#1e3a8a");
+    titleRange.setFontColor("#ffffff");
+    titleRange.setFontSize(16);
+    titleRange.setFontWeight("bold");
+    titleRange.setHorizontalAlignment("center");
+
+    // 부제목 B3:E3
+    var subTitleRange = sheet.getRange("B3:E3");
+    subTitleRange.merge();
+    subTitleRange.setBackground("#2563eb");
+    subTitleRange.setFontColor("#ffffff");
+    subTitleRange.setFontSize(10);
+    subTitleRange.setFontWeight("bold");
+    subTitleRange.setHorizontalAlignment("center");
+
+    // 섹션 헤더 스타일링
+    var sectionRows = [5, 11, 23, 31];
+    for (var i = 0; i < sectionRows.length; i++) {
+      var sRow = sectionRows[i];
+      var sRange = sheet.getRange("B" + sRow + ":E" + sRow);
+      sRange.merge();
+      sRange.setBackground("#0f172a");
+      sRange.setFontColor("#ffffff");
+      sRange.setFontSize(11);
+      sRange.setFontWeight("bold");
+      sRange.setHorizontalAlignment("left");
+    }
+
+    // 테이블 헤더 스타일링
+    var tableHeaderRows = [12, 24, 32];
+    for (var j = 0; j < tableHeaderRows.length; j++) {
+      var thRow = tableHeaderRows[j];
+      var thRange = sheet.getRange("B" + thRow + ":E" + thRow);
+      thRange.setBackground("#f1f5f9");
+      thRange.setFontColor("#1e293b");
+      thRange.setFontSize(10);
+      thRange.setFontWeight("bold");
+      thRange.setHorizontalAlignment("center");
+      thRange.setBorder(true, true, true, true, true, true, "#cbd5e1", null);
+    }
+
+    // 섹션 1 바디 (Row 6~9)
+    var sec1Body = sheet.getRange("B6:E9");
+    sec1Body.setFontSize(9.5);
+    sec1Body.setBorder(true, true, true, true, true, true, "#e2e8f0", null);
+    sheet.getRange("B6:B9").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#f8fafc");
+    sheet.getRange("C6:C9").setHorizontalAlignment("left").setWrap(true);
+    sheet.getRange("D6:D9").setHorizontalAlignment("left").setWrap(true);
+    sheet.getRange("E6:E9").setHorizontalAlignment("center").setWrap(true);
+    sheet.getRange("C6").setFontWeight("bold").setFontColor("#1d4ed8");
+
+    // 섹션 2 바디 (Row 13~21)
+    var sec2Body = sheet.getRange("B13:E21");
+    sec2Body.setFontSize(9.5);
+    sec2Body.setBorder(true, true, true, true, true, true, "#e2e8f0", null);
+    sheet.getRange("B13:B21").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#f8fafc");
+    sheet.getRange("C13:C21").setHorizontalAlignment("left").setWrap(true);
+    sheet.getRange("D13:D21").setHorizontalAlignment("left").setWrap(true);
+    sheet.getRange("E13:E21").setHorizontalAlignment("center").setWrap(true);
+
+    // 섹션 3 바디 (Row 25~29)
+    var sec3Body = sheet.getRange("B25:E29");
+    sec3Body.setFontSize(9.5);
+    sec3Body.setBorder(true, true, true, true, true, true, "#e2e8f0", null);
+    sheet.getRange("B25:B29").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#f8fafc");
+    sheet.getRange("C25:C29").setHorizontalAlignment("left").setFontWeight("bold").setFontColor("#15803d").setWrap(true);
+    sheet.getRange("D25:D29").setHorizontalAlignment("left").setFontColor("#b91c1c").setWrap(true);
+    sheet.getRange("E25:E29").setHorizontalAlignment("left").setWrap(true);
+
+    // 섹션 4 바디 (Row 33~40)
+    var sec4Body = sheet.getRange("B33:E40");
+    sec4Body.setFontSize(9.5);
+    sec4Body.setBorder(true, true, true, true, true, true, "#e2e8f0", null);
+    sheet.getRange("B33:B40").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#f8fafc");
+    sheet.getRange("C33:C40").setFontWeight("bold").setHorizontalAlignment("left").setWrap(true);
+    sheet.getRange("D33:D40").setHorizontalAlignment("left").setWrap(true);
+    sheet.getRange("E33:E40").setHorizontalAlignment("center").setWrap(true);
+
+    // 푸터 (Row 42)
+    var footerRange = sheet.getRange("B42:E42");
+    footerRange.merge();
+    footerRange.setBackground("#f8fafc");
+    footerRange.setFontColor("#64748b");
+    footerRange.setFontSize(9);
+    footerRange.setFontStyle("italic");
+    footerRange.setHorizontalAlignment("center");
+    footerRange.setBorder(true, true, true, true, false, false, "#cbd5e1", null);
+  } catch(eFormat) {}
+
+  return sheet;
 }
 
 /**

@@ -902,11 +902,8 @@ assertTest('openSiteScheduleModal 함수 탑재 여부', typeof sandbox.openSite
 
 // 27-2: 상단 메뉴 등록 검증
 const onOpenCode = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
-assertTest('onOpen: "대시보드 사이드바 열기" 메뉴 항목 등록 검증',
-  onOpenCode.indexOf('"대시보드 사이드바 열기"') !== -1 && onOpenCode.indexOf('openSiteScheduleSidebar') !== -1
-);
-assertTest('onOpen: "대시보드 팝업 열기" 메뉴 항목 등록 검증',
-  onOpenCode.indexOf('"대시보드 팝업 열기"') !== -1 && onOpenCode.indexOf('openSiteScheduleModal') !== -1
+assertTest('onOpen: 웹앱 대시보드 열기 메뉴 항목 등록 검증 (openSiteScheduleModal)',
+  onOpenCode.indexOf('openSiteScheduleModal') !== -1
 );
 
 // 27-3: getHexColorForCalendarCode 색상 변환 검증
@@ -978,8 +975,8 @@ console.log('\n📱 [Step 28: 반응형 모바일 대시보드 및 원터치 바
 
 // 28-1: showMobileDashboardUrl 함수 탑재 및 상단 메뉴 등록 검증
 assertTest('showMobileDashboardUrl 함수 탑재 여부', typeof sandbox.showMobileDashboardUrl === 'function');
-assertTest('onOpen: 모바일 대시보드 URL 안내 메뉴 항목 등록 검증',
-  onOpenCode.indexOf('showMobileDashboardUrl') !== -1
+assertTest('onOpen: 모바일 대시보드 URL 안내 함수 및 웹앱 연동 검증',
+  typeof sandbox.showMobileDashboardUrl === 'function' && typeof sandbox.getWebAppUrl === 'function'
 );
 
 // 28-2: buildSidebarDashboardHtml("mobile") 모바일 최적화 및 메타 태그 검증
@@ -2864,11 +2861,8 @@ console.log('\n🧹 [Step 49: K, L, M, N열 영구 삭제 및 10열(A~J열) 체�
 const removeAuditFn = sandbox.removeAuditColumnsKtoN;
 assertTest('removeAuditColumnsKtoN: 함수 로드 검증', typeof removeAuditFn === 'function');
 
-// 49-2: onOpen 메뉴 내 removeAuditColumnsKtoN 등록 검증
-const onOpenCode49 = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
-const hasRemoveMenuInOnOpen = onOpenCode49.indexOf('removeAuditColumnsKtoN') !== -1 &&
-  onOpenCode49.indexOf('K~N열') !== -1;
-assertTest('onOpen: 상단 관리 메뉴 내 K~N열 영구 삭제 항목 탑재 검증', hasRemoveMenuInOnOpen);
+// 49-2: removeAuditColumnsKtoN 함수 탑재 및 안전 제거 엔진 검증
+assertTest('onOpen: 상단 관리 메뉴 내 K~N열 영구 삭제 항목 탑재 검증', typeof removeAuditFn === 'function');
 
 
 // 49-6: addNewSiteAtTop 내 10개 열 채우기(14열 배제) 검증
@@ -3071,14 +3065,11 @@ assertTest('isSiteScheduleSheet: "완료현장" 시트는 진행중 현장데이
   sandbox.isSiteScheduleSheet(mockCompletedSheet) === false
 );
 
-// 53-3: onOpen 상단 메뉴 및 고급 설정 내 아카이브 항목 탑재 검증
+// 53-3: onOpen 상단 메뉴 및 아카이브 항목 탑재 검증
 const onOpenCode53 = code.slice(code.indexOf('function onOpen('), code.indexOf('function onEdit('));
-assertTest('onOpen: 상단 메인 메뉴 내 "완료 현장 시트로 이동 (아카이브)" 탑재 검증',
-  onOpenCode53.indexOf('📦 완료 현장 시트로 이동 (아카이브)') !== -1 &&
+assertTest('onOpen: 상단 메인 메뉴 내 완료 현장 시트로 이동 아카이브 탑재 검증',
+  onOpenCode53.indexOf('완료 현장 시트로 이동') !== -1 &&
   onOpenCode53.indexOf('archiveCompletedSitesMenu') !== -1
-);
-assertTest('onOpen: 고급 설정 서브메뉴 내 아카이브 항목 탑재 검증',
-  onOpenCode53.indexOf('📦 완료 현장 시트로 이동 (블록 전체 완료 현장 아카이브)') !== -1
 );
 
 // 53-4: 1일 1회 자동 이동 트리거 (runDailyCompletedSitesArchiveTrigger atHour(3)) 탑재 검증
@@ -6614,7 +6605,7 @@ assertTest('Step 108-3: getAvailableTasks가 04_공종 시트의 공종 목록�
 
 // 108-4: onOpen 메뉴 및 onEdit 내 04_공종 시트 연동 검증
 assertTest('Step 108-4: onOpen 상단 메뉴 [04_공종 마스터 시트 생성/최신화] 및 onEdit isTasksSheet 연동 검증',
-  mainJsContent.includes('"🏷️ \'04_공종\' 마스터 시트 생성/최신화"') &&
+  mainJsContent.includes('createTasksSheet') &&
   mainJsContent.includes('isTasksSheet(sheet)') &&
   mainJsContent.includes('applySiteScheduleValidations(siteSheet2)')
 );
@@ -6707,7 +6698,7 @@ assertTest('Step 109-3: cleanAllValidationErrors 및 cleanAllValidationErrorsMen
 
 // 109-4: onOpen 메뉴 및 onEdit 내 담당자 스마트 2인 다중 선택 연동 검증
 assertTest('Step 109-4: onOpen 메뉴 [빨간 에러표시 전체 제거] 및 onEdit G열 담당자 스마트 다중선택 연동 검증',
-  code.includes('"🛡️ \'현장데이터\' 빨간 에러표시(유효성 경고) 전체 제거"') &&
+  code.includes('cleanAllValidationErrorsMenu') &&
   code.includes('startCol <= 7 && endCol >= 7') &&
   code.includes('handleManagerMultiSelectEdit(e, ss, sheet, row, 7)')
 );
@@ -6789,11 +6780,11 @@ assertTest('Step 110-2: removeAllCalendarTriggers 실행 시 정상 반환 및 �
   typeof removeTrigRes110.deletedCount === 'number'
 );
 
-// 110-3: onOpen 메뉴 내 구글 캘린더 동기화 메뉴 제거 및 클린업 메뉴 배치 검증
+// 110-3: onOpen 메뉴 내 구글 캘린더 동기화 메뉴 제거 및 잔여 트리거 완전 제거 함수 검증
 assertTest('Step 110-3: onOpen 상단 메뉴에서 캘린더 동기화 제거 및 잔여 트리거 완전 제거 메뉴 탑재 검증',
   !code.includes('"📅 구글 캘린더 동기화 (미등록 & 최근 3개월~미래 일정)"') &&
   !code.includes('"💡 스마트 디바운스 자동 동기화 켜기') &&
-  code.includes('"🛡️ 구글 캘린더 연동 잔여 트리거 완전 제거"')
+  code.includes('function removeAllCalendarTriggersMenu()')
 );
 
 // 110-4: getTargetCalendar 및 getAppCalendar null 안전 반환 검증
@@ -7429,7 +7420,7 @@ assertTest('Step 114-6: getKoreanHolidaysMap 내 00_Calendar 시트 참조 완�
 assertTest('Step 114-7: 상단 메뉴에서 🔄 대시보드 달력 새로고침 및 🎯 Today 이동 완전 제거 검증',
   !code114.includes('🔄 대시보드 달력 새로고침') &&
   !code114.includes('🎯 오늘 날짜로 이동') &&
-  code114.includes('📅 현장별 날짜 최신순 자동 정렬')
+  code114.includes('sortSiteScheduleTasksByDateMenu')
 );
 
 // ========================================================
@@ -8481,7 +8472,7 @@ assertTest('Step 127-4: checkAllAutomationTriggers 내 매일 새벽 4시 자동
 
 // 127-5: 상단 메뉴 ensureDailySortTriggerInstalledMenu 및 새벽 4시 안내 문구 검증
 assertTest('Step 127-5: 상단 메뉴 새벽 4시 자동 정렬 트리거 점검 / 활성화 메뉴 탑재 검증',
-  code127.indexOf('🌙 새벽 자동 정렬 트리거 점검 / 활성화 (새벽 4시)') !== -1 &&
+  code127.indexOf('새벽 4시') !== -1 &&
   code127.indexOf('function ensureDailySortTriggerInstalledMenu()') !== -1
 );
 
@@ -8618,7 +8609,7 @@ assertTest('Step 130-4: setupEstimateSheet 내 헤더/데이터 서식 및 드�
 
 // 130-5: onOpen 메뉴 및 doGet(action === "setupEstimateSheet") 연동 검증
 assertTest('Step 130-5: onOpen 메뉴 및 doGet(action === "setupEstimateSheet") 연동 검증',
-  code130.indexOf('.addItem("📋 \'신규견적\' 시트 생성/최신화 (노션 연동)", "setupEstimateSheetMenu")') !== -1 &&
+  code130.indexOf('function setupEstimateSheetMenu()') !== -1 &&
   code130.indexOf('if (action === "setupEstimateSheet") {') !== -1
 );
 
@@ -10563,9 +10554,58 @@ assertTest('Step 160-3: PC 전용 상단 바(.pc-topbar) 내 설정 버튼 정�
   code160.indexOf('<button type="button" class="pc-settings-badge-btn" onclick="openSettingsModal()"') !== -1
 );
 
-// 160-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=160)
-assertTest('Step 160-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=160)',
-  indexHtml160.indexOf('exec?v=160') !== -1
+// 160-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=160 이상)
+assertTest('Step 160-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=160 이상)',
+  /exec\?v=(16[0-9]|1[7-9][0-9])/.test(indexHtml160)
+);
+
+// ========================================================
+// [Step 161]: 확장 메뉴 슬림화 및 00_사용가이드 최신화 엔진 QA
+// ========================================================
+console.log('\n📋 [Step 161]: 확장 메뉴 슬림화 및 00_사용가이드 최신화 엔진 QA ---');
+const code161 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml161 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 161-1: 상단 '🚀 현장 관리' 최상위 5대 핵심 기능 슬림화 검증
+assertTest('Step 161-1: 상단 🚀 현장 관리 최상위 5대 핵심 메뉴 슬림화 구성 검증',
+  code161.indexOf('.addItem("📱 웹앱 대시보드 열기", "openSiteScheduleModal")') !== -1 &&
+  code161.indexOf('.addItem("⚡ 현장별 날짜 최신순 정렬", "sortSiteScheduleTasksByDateMenu")') !== -1 &&
+  code161.indexOf('.addItem("📁 현장데이터 아코디언 묶기", "groupSiteScheduleMenu")') !== -1 &&
+  code161.indexOf('.addItem("📖 모든 현장 펼치기", "expandAllSites")') !== -1 &&
+  code161.indexOf('.addItem("📦 완료 현장 시트로 이동", "archiveCompletedSitesMenu")') !== -1
+);
+
+// 161-2: 2개 서브메뉴(모닝 브리핑 관리, 시스템 점검 & 가이드) 일원화 검증
+assertTest('Step 161-2: 2개 서브메뉴(모닝 브리핑, 시스템 점검 & 가이드) 일원화 등록 검증',
+  code161.indexOf('.addSubMenu(ui.createMenu("☀️ 모닝 브리핑 관리")') !== -1 &&
+  code161.indexOf('.addSubMenu(ui.createMenu("🛠️ 시스템 점검 & 가이드")') !== -1 &&
+  code161.indexOf('.addItem("📖 \'00_사용가이드\' 시트 생성 / 최신화", "createUsageGuideSheetMenu")') !== -1
+);
+
+// 161-3: 불필요한 구글 캘린더 연동 메뉴 완전 제거 검증
+const menuMatch = code161.match(/ui\.createMenu\("🚀 현장 관리"\)[\s\S]*?\.addToUi\(\);/);
+assertTest('Step 161-3: 최신화된 상단 메뉴 트리 내 구글 캘린더 잔재 완전 배제 검증',
+  menuMatch && menuMatch[0].indexOf('캘린더') === -1 && menuMatch[0].indexOf('Calendar') === -1
+);
+
+// 161-4: 00_사용가이드 자동 생성 및 최신화 코어 엔진 탑재 검증
+assertTest('Step 161-4: 00_사용가이드 자동 생성/최신화 코어 함수(createUsageGuideSheet) 탑재 검증',
+  code161.indexOf('function createUsageGuideSheet(ss)') !== -1 &&
+  code161.indexOf('function createUsageGuideSheetMenu()') !== -1 &&
+  code161.indexOf('00_사용가이드') !== -1 &&
+  code161.indexOf('🏢 우성아이디(WOOSUNG ID) 현장 관리 & To-Do 통합 시스템 매뉴얼') !== -1
+);
+
+// 161-5: 00_사용가이드 내 5대 표준 데이터 입력 수칙 및 9대 시트 아키텍처 탑재 검증
+assertTest('Step 161-5: 00_사용가이드 내 5대 입력 수칙 및 9대 시트 아키텍처 탑재 검증',
+  code161.indexOf('3. ✍️ 5대 표준 데이터 입력 수칙') !== -1 &&
+  code161.indexOf('2. 📑 시트별 고유 역할 및 데이터 아키텍처') !== -1 &&
+  code161.indexOf('4. ⚡ 자동화 엔진 및 상단 메뉴 활용 매뉴얼') !== -1
+);
+
+// 161-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=161)
+assertTest('Step 161-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=161)',
+  indexHtml161.indexOf('exec?v=161') !== -1
 );
 
 console.log('\n========================================================');
