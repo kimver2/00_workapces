@@ -13706,7 +13706,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '  .pc-settings-badge-btn { display: inline-flex; align-items: center; gap: 4px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 3px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; user-select: none; }';
   html += '  .pc-settings-badge-btn:hover { background: #e2e8f0; color: #0f172a; border-color: #94a3b8; transform: translateY(-1px); }';
-  html += '  .btn-settings-action { background: #f8fafc !important; color: #334155 !important; border: 1.5px solid #cbd5e1 !important; font-weight: 800 !important; }';
+  html += '  .btn-settings-action { display: none !important; }';
+  html += '  @media (max-width: 767px) { .pc-settings-badge-btn, .btn-settings-action { display: none !important; } }';
   html += '  .settings-th-sticky { position: sticky !important; top: 0 !important; z-index: 20 !important; background: #f1f5f9 !important; box-shadow: inset 0 -2px 0 #cbd5e1 !important; }';
   html += '  .settings-filter-select { margin-top: 4px; display: block; width: 100%; font-size: 11px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff; color: #334155; outline: none; font-weight: normal; cursor: pointer; }';
   html += '  .settings-filter-select:focus { border-color: #2563eb; }';
@@ -13770,7 +13771,6 @@ function buildSidebarDashboardHtml(mode) {
   if (!isModal && !isMobile) {
     html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 8px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:3px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #93c5fd;" onclick="openWideModalView()" title="대시보드를 넓은 대형 팝업 창(1020px)으로 엽니다">⛶ 크게 보기</button>';
   }
-  html += '      <button type="button" class="btn btn-secondary btn-settings-action" style="flex:none;padding:4px 8px;font-size:11.5px;font-weight:700;" onclick="openSettingsModal()" title="마스터 설정 (거래처 / 공종 관리)">⚙️ 설정</button>';
   html += '      <button type="button" class="btn btn-secondary btn-refresh-action" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData(true)">🔄 새로고침</button>';
   html += '    </div>';
   html += '  </div>';
