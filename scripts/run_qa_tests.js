@@ -9984,7 +9984,8 @@ assertTest('Step 146-4: toggleCalendarView 및 onLogoClick 내 To-Do 상태 초�
 // 146-5: todoModalInpStatus 팝업 내 상태 드롭다운 탑재 검증
 assertTest('Step 146-5: #todoActionModal 내 진행 상태 선택 드롭다운(id="todoModalInpStatus") 탑재 검증',
   code146.indexOf('id="todoModalInpStatus"') !== -1 &&
-  code146.indexOf('selectedStatus || (isImportant ? "중요" : "미완료")') !== -1
+  (code146.indexOf('selectedStatus || (isImportant ? "중요" : "미완료")') !== -1 ||
+   code146.indexOf('selectedStatus || "미완료"') !== -1)
 );
 
 // 146-6: todo-matrix-table 모바일 가로 스크롤(overflow-x:auto, min-width:680px) 반응형 검증
@@ -10078,7 +10079,43 @@ assertTest('Step 148-7: renderDashboardPayload 및 renderList 내 To-Do 모드 �
 
 // 148-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 148)
 assertTest('Step 148-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 148)',
-  indexHtml148.indexOf('exec?v=148') !== -1
+  /exec\?v=(14[8-9]|15[0-9])/.test(indexHtml148)
+);
+
+// [Step 149]: To-Do 수정 저장 시 ID 보존 및 상태-중요 체크박스 양방향 동기화 QA
+console.log('\n📋 [Step 149]: To-Do 수정 저장 시 ID 보존 및 상태-중요 체크박스 양방향 동기화 QA ---');
+
+const code149 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml149 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 149-1: saveTodoFromModal 내 currentEditingTodoId 사전 보존 검증 (수정 시 중복 생성 버그 방어)
+assertTest('Step 149-1: saveTodoFromModal 내 editId = currentEditingTodoId 사전 보존 및 수정 분기 정상화 검증',
+  code149.indexOf('const editId = currentEditingTodoId;') !== -1 &&
+  code149.indexOf('closeTodoModal();') !== -1 &&
+  code149.indexOf('if (editId) {') !== -1
+);
+
+// 149-2: onTodoModalStatusChange 상태 드롭다운 변경 핸들러 검증
+assertTest('Step 149-2: onTodoModalStatusChange 상태 선택 시 중요 체크박스 동기화 검증',
+  code149.indexOf('function onTodoModalStatusChange(val)') !== -1 &&
+  code149.indexOf('if (val === "중요") chk.checked = true;') !== -1
+);
+
+// 149-3: onTodoModalImportantChange 중요 체크박스 변경 핸들러 검증
+assertTest('Step 149-3: onTodoModalImportantChange 체크박스 토글 시 상태 드롭다운 동기화 검증',
+  code149.indexOf('function onTodoModalImportantChange(isChecked)') !== -1 &&
+  code149.indexOf('if (sel.value !== "완료") sel.value = "중요";') !== -1
+);
+
+// 149-4: 모달 HTML 폼 내 onchange 이벤트 핸들러 바인딩 검증
+assertTest('Step 149-4: 모달 HTML 폼 내 onchange 이벤트 핸들러 바인딩 검증',
+  code149.indexOf('id="todoModalInpStatus" onchange="onTodoModalStatusChange(this.value)"') !== -1 &&
+  code149.indexOf('id="todoModalInpIsImportant" onchange="onTodoModalImportantChange(this.checked)"') !== -1
+);
+
+// 149-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 149)
+assertTest('Step 149-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 149)',
+  indexHtml149.indexOf('exec?v=149') !== -1
 );
 
 console.log('\n========================================================');
