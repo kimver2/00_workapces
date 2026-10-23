@@ -10774,9 +10774,6 @@ function getSidebarDashboardData(forceRefresh) {
         if (cachedJson) {
           var parsedCache = JSON.parse(cachedJson);
           if (parsedCache && Array.isArray(parsedCache.sites)) {
-            if (Array.isArray(parsedCache.members)) {
-              parsedCache.members = parsedCache.members.filter(function(m) { return m !== "김종혁" && m !== "영하"; });
-            }
             if (!parsedCache.tasks || !Array.isArray(parsedCache.tasks)) {
               parsedCache.tasks = getAvailableTasks(null);
             }
@@ -10797,13 +10794,9 @@ function getSidebarDashboardData(forceRefresh) {
     var sheet = findSiteScheduleSheet(ss);
     if (!sheet) return { error: "현장데이터 시트를 찾을 수 없습니다." };
 
-    try {
-      ensureCustomCategorySheets(ss);
-    } catch(eEnsCat) {}
-
-    ensureHourlySortTriggerInstalled();
-
-    // 캘린더 연동 제거 완료: 유령 캘린더 일정 청소 생략으로 대시보드 로딩 속도 극대화
+    // [2단계 성능 최적화] 대시보드 조회 API는 100% 순수 읽기(Read-Only) 전용으로 동작
+    // - 시트 쓰기 락/딜레이 유발 로직(정렬, 분할행 병합, 카테고리 시트 생성, 트리거 설치) 전면 분리
+    // - 정렬/아코디언은 매일 새벽 4시 자동 스케줄러 및 상단 메뉴에서 전담 수행
 
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) {
@@ -10816,14 +10809,6 @@ function getSidebarDashboardData(forceRefresh) {
         scopeCounts: { site: 0, single: 0, as: 0 }
       };
     }
-
-    try {
-      var movedSplitRows = consolidateSplitSiteRows(sheet);
-      if (movedSplitRows > 0) {
-        sortSiteScheduleTasksByDate(ss, sheet, true);
-        lastRow = sheet.getLastRow();
-      }
-    } catch (eAutoHealSplit) {}
 
     var sNumCols = Math.max((typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 11), 11);
     var values = sheet.getRange(2, 1, lastRow - 1, sNumCols).getValues();

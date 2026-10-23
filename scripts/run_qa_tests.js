@@ -10635,9 +10635,45 @@ assertTest('Step 162-3: 구 00_calendar 대시보드 시트 스텁 1줄 초경�
   code162.indexOf('function isDashboardSheet(sheet) {') !== -1
 );
 
-// 162-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=162)
-assertTest('Step 162-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=162)',
-  indexHtml162.indexOf('exec?v=162') !== -1
+// 162-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=162 이상)
+assertTest('Step 162-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=162 이상)',
+  /exec\?v=(16[2-9]|1[7-9][0-9])/.test(indexHtml162)
+);
+
+// ========================================================
+// [Step 163]: 2단계 조회 API(getSidebarDashboardData) 순수 읽기 전용 성능 최적화 QA
+// ========================================================
+console.log('\n📋 [Step 163]: 2단계 조회 API 순수 읽기 전용 성능 최적화 QA ---');
+const code163 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml163 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+const getDashFnCode163 = code163.slice(code163.indexOf('function getSidebarDashboardData('), code163.indexOf('function focusSheetRow('));
+
+// 163-1: getSidebarDashboardData 내 무거운 시트 쓰기(consolidateSplitSiteRows, sortSiteScheduleTasksByDate) 제거 검증
+assertTest('Step 163-1: getSidebarDashboardData 내 시트 쓰기 락 유발 로직(consolidateSplitSiteRows, sortSiteScheduleTasksByDate) 제거 검증',
+  getDashFnCode163.indexOf('consolidateSplitSiteRows(sheet)') === -1 &&
+  getDashFnCode163.indexOf('sortSiteScheduleTasksByDate(ss, sheet, true)') === -1
+);
+
+// 163-2: getSidebarDashboardData 내 불필요한 트리거/시트 생성 검사(ensureCustomCategorySheets, ensureHourlySortTriggerInstalled) 제거 검증
+assertTest('Step 163-2: getSidebarDashboardData 내 매번 반복되던 트리거/시트생성 I/O 제거 검증',
+  getDashFnCode163.indexOf('ensureCustomCategorySheets(ss)') === -1 &&
+  getDashFnCode163.indexOf('ensureHourlySortTriggerInstalled()') === -1
+);
+
+// 163-3: getSidebarDashboardData 내 하드코딩 인원 필터링("김종혁", "영하") 제거 검증
+assertTest('Step 163-3: getSidebarDashboardData 캐시 파싱 내 하드코딩 인원 필터 제거 검증',
+  getDashFnCode163.indexOf('m !== "김종혁" && m !== "영하"') === -1
+);
+
+// 163-4: 2단계 성능 최적화 주석 및 순수 읽기 전용 아키텍처 보존 검증
+assertTest('Step 163-4: 2단계 성능 최적화 순수 읽기(Read-Only) 엔진 아키텍처 명시 검증',
+  getDashFnCode163.indexOf('[2단계 성능 최적화] 대시보드 조회 API는 100% 순수 읽기(Read-Only) 전용으로 동작') !== -1
+);
+
+// 163-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=163)
+assertTest('Step 163-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=163)',
+  indexHtml163.indexOf('exec?v=163') !== -1
 );
 
 console.log('\n========================================================');
