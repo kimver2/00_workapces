@@ -10505,7 +10505,40 @@ assertTest('Step 158-5: getSettingsPriorityStyle 및 상태 뱃지 스타일 매
 
 // 158-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=158)
 assertTest('Step 158-6: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=158)',
-  indexHtml158.indexOf('exec?v=158') !== -1
+  indexHtml158.indexOf('exec?v=') !== -1
+);
+
+// ========================================================
+// [Step 159]: 마스터 설정 헤더 상단 분리/떨어짐 완전 밀착(0px Gap) 및 스티키 고정 QA
+// ========================================================
+console.log('\n📋 [Step 159]: 마스터 설정 헤더 상단 분리/떨어짐 완전 밀착(0px Gap) QA ---');
+const code159 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml159 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 159-1: settingsListContent 상단 패딩 제거 (padding-top: 0으로 헤더와 탭바 완전 밀착) 검증
+assertTest('Step 159-1: settingsListContent padding-top 0px 적용으로 헤더 분리 간격 완전 제거 검증',
+  code159.indexOf('id="settingsListContent" style="flex:1;overflow-y:auto;overflow-x:auto;padding:0 0 16px 0;background:#ffffff;"') !== -1
+);
+
+// 159-2: 거래처/공종 테이블 thead sticky position 및 z-index: 20 탑재 검증
+assertTest('Step 159-2: 거래처/공종 테이블 thead sticky position 및 z-index: 20 탑재 검증',
+  code159.indexOf('<thead style="position:sticky;top:0;z-index:20;"><tr>') !== -1
+);
+
+// 159-3: 테이블 외곽 마진/패딩 제거(margin:0;padding:0;) 및 밀착 검증
+assertTest('Step 159-3: 테이블 외곽 마진/패딩 제거(margin:0;padding:0;) 및 밀착 검증',
+  code159.indexOf('min-width:1250px;margin:0;padding:0;') !== -1 &&
+  code159.indexOf('min-width:750px;margin:0;padding:0;') !== -1
+);
+
+// 159-4: 탭 전환 및 모달 오픈 시 scrollTop = 0 초기화 엔진 검증
+assertTest('Step 159-4: 탭 전환 및 모달 오픈 시 scrollTop = 0 초기화 엔진 검증',
+  code159.indexOf('if (cont) cont.scrollTop = 0;') !== -1
+);
+
+// 159-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=159)
+assertTest('Step 159-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=159)',
+  indexHtml159.indexOf('exec?v=159') !== -1
 );
 
 console.log('\n========================================================');

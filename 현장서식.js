@@ -14480,7 +14480,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </div>';
   html += '    </div>';
   html += '    <div id="settingsActiveFiltersBar" style="display:none;padding:7px 22px;background:#f8fafc;border-bottom:1px solid #e2e8f0;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:11.5px;flex-shrink:0;"></div>';
-  html += '    <div id="settingsListContent" style="flex:1;overflow-y:auto;overflow-x:auto;padding:14px 22px;background:#ffffff;"></div>';
+  html += '    <div id="settingsListContent" style="flex:1;overflow-y:auto;overflow-x:auto;padding:0 0 16px 0;background:#ffffff;"></div>';
   html += '    <div style="padding:10px 22px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">';
   html += '      <div style="font-size:11.5px;color:#64748b;display:flex;align-items:center;gap:6px;">';
   html += '        <span>💡</span>';
@@ -14671,6 +14671,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const modal = document.getElementById("settingsModalOverlay");\n';
   html += '  if (!modal) return;\n';
   html += '  modal.style.display = "flex";\n';
+  html += '  const cont = document.getElementById("settingsListContent");\n';
+  html += '  if (cont) cont.scrollTop = 0;\n';
   html += '  renderSettingsView();\n';
   html += '  loadSettingsData();\n';
   html += '}\n';
@@ -14693,6 +14695,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '\n';
   html += 'function switchSettingsTab(tab) {\n';
   html += '  currentSettingsTab = tab;\n';
+  html += '  const cont = document.getElementById("settingsListContent");\n';
+  html += '  if (cont) cont.scrollTop = 0;\n';
   html += '  const tabP = document.getElementById("settingsTabPartners");\n';
   html += '  const tabT = document.getElementById("settingsTabTasks");\n';
   html += '  if (tab === "partners") {\n';
@@ -14874,9 +14878,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    container.innerHTML = \'<div style="text-align:center;padding:50px 20px;color:#94a3b8;font-weight:600;"><span style="font-size:24px;display:block;margin-bottom:8px;">🔍</span>조건에 일치하는 거래처가 없습니다. <button type="button" onclick="clearAllSettingsFilters()" style="margin-top:10px;padding:5px 12px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;">필터 초기화</button></div>\';\n';
   html += '    return;\n';
   html += '  }\n';
-  html += '  let tHtml = \'<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:1250px;">\';\n';
-  html += '  tHtml += \'<thead><tr>\';\n';
-  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 6px;text-align:center;width:45px;">순서</th>\';\n';
+  html += '  let tHtml = \'<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:1250px;margin:0;padding:0;">\';\n';
+  html += '  tHtml += \'<thead style="position:sticky;top:0;z-index:20;"><tr>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px 10px 22px;text-align:center;width:60px;">순서</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 6px;text-align:center;width:65px;">순서이동</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 10px;text-align:left;width:140px;">업체 / 반장명</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:8px 8px;text-align:left;width:120px;">\';\n';
@@ -14924,7 +14928,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px;text-align:left;width:150px;">주력분야 및 특징</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px;text-align:left;width:110px;">발주/접수방식</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px;text-align:left;min-width:110px;">비고</th>\';\n';
-  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px;text-align:center;width:95px;">관리</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 22px 10px 8px;text-align:center;width:105px;">관리</th>\';\n';
   html += '  tHtml += \'</tr></thead><tbody>\';\n';
   html += '  list.forEach(function(p, idx) {\n';
   html += '    const isFirst = (idx === 0);\n';
@@ -14939,7 +14943,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    })(p.status);\n';
   html += '    const isMoved = (p.row === settingsMovedPartnerRow);\n';
   html += '    tHtml += \'<tr class="\' + (isMoved ? \'settings-row-moved\' : \'\') + \'" style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background=\\\'#f8fafc\\\'" onmouseout="this.style.background=\\\'#ffffff\\\'">\';\n';
-  html += '    tHtml += \'<td style="padding:8px 6px;text-align:center;font-weight:700;color:#64748b;border-bottom:1px solid #f1f5f9;">\' + (idx + 1) + \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 8px 8px 22px;text-align:center;font-weight:700;color:#64748b;border-bottom:1px solid #f1f5f9;">\' + (idx + 1) + \'</td>\';\n';
   html += '    tHtml += \'<td style="padding:8px 6px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
   html += '    tHtml += \'  <div style="display:inline-flex;gap:3px;">\';\n';
   html += '    tHtml += \'    <button type="button" onclick="reorderPartner(\' + p.row + \', \\\'up\\\')" \' + (isFirst ? \'disabled style="opacity:0.3;cursor:not-allowed;\' : \'style="cursor:pointer;\') + \'border:1px solid #cbd5e1;background:#ffffff;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;" title="위로 이동">▲</button>\';\n';
@@ -14962,7 +14966,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    tHtml += \'<td style="padding:8px 8px;border-bottom:1px solid #f1f5f9;color:#475569;font-size:11.5px;">\' + escapeSettingsHtml(p.feature || "-") + \'</td>\';\n';
   html += '    tHtml += \'<td style="padding:8px 8px;border-bottom:1px solid #f1f5f9;color:#475569;font-size:11.5px;">\' + escapeSettingsHtml(p.orderMethod || "-") + \'</td>\';\n';
   html += '    tHtml += \'<td style="padding:8px 8px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:11.5px;">\' + escapeSettingsHtml(p.note || "-") + \'</td>\';\n';
-  html += '    tHtml += \'<td style="padding:8px 6px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'<td style="padding:8px 22px 8px 6px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
   html += '    tHtml += \'  <div style="display:inline-flex;gap:4px;">\';\n';
   html += '    tHtml += \'    <button type="button" onclick="openEditPartnerModal(\' + p.row + \')" style="border:1px solid #cbd5e1;background:#ffffff;color:#1e293b;border-radius:5px;padding:3px 6px;font-size:11px;font-weight:700;cursor:pointer;">✏️</button>\';\n';
   html += '    tHtml += \'    <button type="button" onclick="deletePartner(\' + p.row + \', \\\'\' + escapeSettingsQuotes(p.name) + \'\\\')" style="border:1px solid #fecaca;background:#fff1f2;color:#e11d48;border-radius:5px;padding:3px 6px;font-size:11px;font-weight:700;cursor:pointer;">🗑️</button>\';\n';
@@ -14997,9 +15001,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    container.innerHTML = \'<div style="text-align:center;padding:50px 20px;color:#94a3b8;font-weight:600;"><span style="font-size:24px;display:block;margin-bottom:8px;">🔍</span>조건에 일치하는 공종이 없습니다. <button type="button" onclick="clearAllSettingsFilters()" style="margin-top:10px;padding:5px 12px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;">필터 초기화</button></div>\';\n';
   html += '    return;\n';
   html += '  }\n';
-  html += '  let tHtml = \'<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:750px;">\';\n';
-  html += '  tHtml += \'<thead><tr>\';\n';
-  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px;text-align:center;width:50px;">순서</th>\';\n';
+  html += '  let tHtml = \'<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:750px;margin:0;padding:0;">\';\n';
+  html += '  tHtml += \'<thead style="position:sticky;top:0;z-index:20;"><tr>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px 10px 22px;text-align:center;width:65px;">순서</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px;text-align:center;width:70px;">순서이동</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 12px;text-align:left;width:180px;">공종명</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:8px 10px;text-align:left;width:140px;">\';\n';
@@ -15013,14 +15017,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '  tHtml += \'  </select>\';\n';
   html += '  tHtml += \'</th>\';\n';
   html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 12px;text-align:left;">비고 / 작업 설명</th>\';\n';
-  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px;text-align:center;width:95px;">관리</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 22px 10px 8px;text-align:center;width:105px;">관리</th>\';\n';
   html += '  tHtml += \'</tr></thead><tbody>\';\n';
   html += '  list.forEach(function(t, idx) {\n';
   html += '    const isFirst = (idx === 0);\n';
   html += '    const isLast = (idx === list.length - 1);\n';
   html += '    const isMoved = (t.row === settingsMovedTaskRow);\n';
   html += '    tHtml += \'<tr class="\' + (isMoved ? \'settings-row-moved\' : \'\') + \'" style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background=\\\'#f8fafc\\\'" onmouseout="this.style.background=\\\'#ffffff\\\'">\';\n';
-  html += '    tHtml += \'<td style="padding:9px 8px;text-align:center;font-weight:700;color:#64748b;border-bottom:1px solid #f1f5f9;">\' + (idx + 1) + \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:9px 8px 9px 22px;text-align:center;font-weight:700;color:#64748b;border-bottom:1px solid #f1f5f9;">\' + (idx + 1) + \'</td>\';\n';
   html += '    tHtml += \'<td style="padding:9px 8px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
   html += '    tHtml += \'  <div style="display:inline-flex;gap:3px;">\';\n';
   html += '    tHtml += \'    <button type="button" onclick="reorderTask(\' + t.row + \', \\\'up\\\')" \' + (isFirst ? \'disabled style="opacity:0.3;cursor:not-allowed;\' : \'style="cursor:pointer;\') + \'border:1px solid #cbd5e1;background:#ffffff;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;" title="위로 이동">▲</button>\';\n';
@@ -15030,7 +15034,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    tHtml += \'<td style="padding:9px 12px;font-weight:900;color:#0f172a;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:3px 8px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;font-size:12.5px;">\' + escapeSettingsHtml(t.taskName) + \'</span></td>\';\n';
   html += '    tHtml += \'<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:2px 7px;background:#f1f5f9;color:#475569;border-radius:5px;font-size:11.5px;font-weight:700;">\' + escapeSettingsHtml(t.category || "기타") + \'</span></td>\';\n';
   html += '    tHtml += \'<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:12px;">\' + escapeSettingsHtml(t.note || "-") + \'</td>\';\n';
-  html += '    tHtml += \'<td style="padding:9px 8px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'<td style="padding:9px 22px 9px 8px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
   html += '    tHtml += \'  <div style="display:inline-flex;gap:4px;">\';\n';
   html += '    tHtml += \'    <button type="button" onclick="openEditTaskModal(\' + t.row + \')" style="border:1px solid #cbd5e1;background:#ffffff;color:#1e293b;border-radius:5px;padding:3px 6px;font-size:11px;font-weight:700;cursor:pointer;">✏️</button>\';\n';
   html += '    tHtml += \'    <button type="button" onclick="deleteTask(\' + t.row + \', \\\'\' + escapeSettingsQuotes(t.taskName) + \'\\\')" style="border:1px solid #fecaca;background:#fff1f2;color:#e11d48;border-radius:5px;padding:3px 6px;font-size:11px;font-weight:700;cursor:pointer;">🗑️</button>\';\n';
