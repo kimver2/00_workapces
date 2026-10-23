@@ -179,7 +179,36 @@ renderTodoDashboard();
 if (!domHtml.includes("todo-matrix-table")) {
   throw new Error("PC Matrix table header missing");
 }
-console.log("8. PC 2차원 매트릭스 테이블 보존 및 렌더링 검증 통과 (HTML 길이: " + domHtml.length + ")");
+// Test 6: 중요 / 미완료 / 완료 배타적 통계 카운팅 무결성 검증
+vm.runInContext(`
+mobileTodoViewType = "manager";
+todoMembersList = ["조항만"];
+todoDataList = [
+  // 중요 1건
+  { id: "TD_IMP", title: "중요 업무 1", manager: "조항만", status: "중요", dueDate: "2026-10-26", isImportant: true },
+  // 완료된 중요 업무 1건 (완료에만 1건 집계되어야 함)
+  { id: "TD_DONE_IMP", title: "완료된 중요 업무", manager: "조항만", status: "완료", dueDate: "2026-10-20", isImportant: true, completedAt: "2026-10-21 10:00" },
+  // 일반 미완료 1건
+  { id: "TD_UNCOMP", title: "일반 업무", manager: "조항만", status: "미완료", dueDate: "", isImportant: false }
+];
+currentTodoMemberFilter = "all";
+renderTodoDashboard();
+`, browserSandbox);
+
+if (!domHtml.includes("미완료 <span style=\"margin-left:4px;\">1</span>")) {
+  throw new Error("미완료 카운트 불일치: 중요 업무가 미완료에 중복 포함됨");
+}
+if (!domHtml.includes("중요 <span style=\"margin-left:4px;\">1</span>")) {
+  throw new Error("중요 카운트 불일치: 완료된 중요 업무가 중요에 중복 포함됨");
+}
+if (!domHtml.includes("완료 <span style=\"margin-left:4px;\">1</span>")) {
+  throw new Error("완료 카운트 불일치");
+}
+// 조항만 헤더에 "미완료 1 · 중요 1" 확인 (중요 업무가 미완료에 중복되지 않고 일반 미완료 1 + 중요 1로 정확)
+if (!domHtml.includes('미완료 1 · <span style="color:#d97706;font-weight:700;">중요 1</span>')) {
+  throw new Error("담당자 헤더 카운트 불일치: " + domHtml.slice(0, 1000));
+}
+console.log("9. 중요/미완료/완료 배타적 통계 및 헤더 카운팅(중복 집계 0%) 검증 100% 통과!");
 
 console.log("\n=======================================================");
 console.log("🎉 ALL TESTS PASSED: 모바일 3대 뷰 & PC 매트릭스 테이블 100% 정상 작동!");

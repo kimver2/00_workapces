@@ -10214,9 +10214,45 @@ assertTest('Step 152-4: 클라이언트(changeTodoStatusQuick, onTodoDrop, toggl
   code152.indexOf('.updateTodoStatusFromWeb(id, newSt, item.manager, item.isImportant);') !== -1
 );
 
-// 152-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=152)
-assertTest('Step 152-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=152)',
-  indexHtml152.indexOf('exec?v=152') !== -1
+// 152-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 152)
+assertTest('Step 152-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 152)',
+  /exec\?v=(152|15[3-9])/.test(indexHtml152)
+);
+
+// [Step 153]: To-Do 중요 / 미완료 / 완료 배타적 통계 카운팅 및 중복 집계 완전 제거 QA
+console.log('\n📋 [Step 153]: To-Do 중요 / 미완료 / 완료 배타적 통계 카운팅 및 중복 집계 완전 제거 QA ---');
+
+const code153 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml153 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 153-1: 상단 통계 요약 뱃지 배타적 카운팅 로직 검증
+assertTest('Step 153-1: 상단 통계 요약 뱃지 배타적 카운팅 로직 검증 (중요 업무의 미완료 중복 누수 차단)',
+  code153.indexOf('if (isImp) {') !== -1 &&
+  code153.indexOf('importantCount++;') !== -1 &&
+  code153.indexOf('uncompletedCount++;') !== -1
+);
+
+// 153-2: 완료 상태 업무의 중요 통계 누수 차단 검증
+assertTest('Step 153-2: 완료 상태(st === "완료") 시 completedCount만 증가하고 중요 카운트 누수 완전 방어 검증',
+  code153.indexOf('if (st === "완료") {') !== -1 &&
+  code153.indexOf('completedCount++;') !== -1
+);
+
+// 153-3: 모바일 담당자별 아코디언 헤더 요약(memSummary) 배타적 집계 검증
+assertTest('Step 153-3: 모바일 담당자별 아코디언 헤더 요약 텍스트(memSummary) 배타적 집계 검증',
+  code153.indexOf('memSummary = "미완료 " + memUncomp') !== -1 &&
+  code153.indexOf('toggleManagerCollapse') !== -1
+);
+
+// 153-4: PC 매트릭스 테이블 담당자 셀 요약(memSummary) 배타적 집계 검증
+assertTest('Step 153-4: PC 매트릭스 테이블 담당자 셀 요약 텍스트(memSummary) 배타적 집계 검증',
+  code153.indexOf('지난 " + memOverdue') !== -1 &&
+  code153.indexOf('todo-matrix-table') !== -1
+);
+
+// 153-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=153)
+assertTest('Step 153-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (v=153)',
+  indexHtml153.indexOf('exec?v=153') !== -1
 );
 
 console.log('\n========================================================');
