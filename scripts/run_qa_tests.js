@@ -10755,9 +10755,49 @@ assertTest('Step 165-5: 대시보드 로드 완료 후 350ms 백그라운드 To-
   code165.indexOf('}, 350);') !== -1
 );
 
-// 165-6: index.html 내 exec?v=165 최신 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 165-6: index.html 내 exec?v=165 최신 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml165.indexOf('exec?v=165') !== -1
+// 165-6: index.html 내 exec?v=165 이상 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 165-6: index.html 내 exec?v=165 이상 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(16[5-9]|1[7-9][0-9])/.test(indexHtml165)
+);
+
+// ========================================================
+// [Step 166]: To-Do 화면에서 사이드바 현장 클릭 시 현장 상세페이지 전환 QA
+// ========================================================
+console.log('\n📋 [Step 166]: To-Do 화면에서 사이드바 현장 클릭 시 현장 상세페이지 전환 QA ---');
+const code166 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml166 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 166-1: switchToPcView("list") 내 calViewMode = "list" 명시적 갱신 검증
+assertTest('Step 166-1: switchToPcView("list") 내 calViewMode = "list" 명시적 갱신 검증',
+  code166.indexOf('if (view === "list") {') !== -1 &&
+  code166.indexOf('calViewMode = "list";') !== -1
+);
+
+// 166-2: switchToPcView 내 week / month 모드 calViewMode 동기화 검증
+assertTest('Step 166-2: switchToPcView 내 week / month 모드 calViewMode 동기화 검증',
+  code166.indexOf('calViewMode = "week";') !== -1 &&
+  code166.indexOf('calViewMode = "month";') !== -1
+);
+
+// 166-3: selectPcSite 내 To-Do 모드 탈출 및 현장 상세 전환 안전장치 탑재 검증
+assertTest('Step 166-3: selectPcSite 내 To-Do 모드 탈출 및 switchToPcView("list") 연동 검증',
+  code166.indexOf('function selectPcSite(siteName) {') !== -1 &&
+  code166.indexOf('calViewMode === "todo"') !== -1 &&
+  code166.indexOf('switchToPcView("list");') !== -1
+);
+
+// 166-4: onPcSidebarSiteLabelClick 함수 내 현장 선택 후 switchToPcView("list") 연동 검증
+assertTest('Step 166-4: onPcSidebarSiteLabelClick 함수 내 현장 선택 후 switchToPcView("list") 연동 검증',
+  code166.indexOf('function onPcSidebarSiteLabelClick(e, siteEnc)') !== -1 &&
+  code166.indexOf('selectedPcSiteName = siteName;') !== -1 &&
+  code166.indexOf('switchToPcView("list");') !== -1 &&
+  code166.indexOf('class="site-name-label"') !== -1 &&
+  code166.indexOf('onPcSidebarSiteLabelClick(event') !== -1
+);
+
+// 166-5: index.html 내 exec?v=166 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 166-5: index.html 내 exec?v=166 최신 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml166.indexOf('exec?v=166') !== -1
 );
 
 console.log('\n========================================================');

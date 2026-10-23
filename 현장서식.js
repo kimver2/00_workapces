@@ -16120,6 +16120,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const contentArea = document.getElementById("contentArea");';
   html += '  const calArea = document.getElementById("calendarArea");';
   html += '  if (view === "list") {';
+  html += '    calViewMode = "list";';
   html += '    isCalendarMode = false;';
   html += '    if (calArea) {';
   html += '      if (calArea.classList) calArea.classList.add("hidden");';
@@ -16133,6 +16134,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (pcTitle) pcTitle.innerText = calYear + "년 " + calMonth + "월";';
   html += '    renderList();';
   html += '  } else if (view === "week") {';
+  html += '    calViewMode = "week";';
   html += '    isCalendarMode = true;';
   html += '    if (contentArea) {';
   html += '      if (contentArea.classList) {';
@@ -16147,6 +16149,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '    setCalendarMode("week");';
   html += '  } else {';
+  html += '    calViewMode = "month";';
   html += '    isCalendarMode = true;';
   html += '    if (contentArea) {';
   html += '      if (contentArea.classList) {';
@@ -18124,6 +18127,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  selectedPcSiteName = siteName;';
   html += '  pcSiteDetailFilter = "all";';
   html += '  pcSiteTaskSearchQuery = "";';
+  html += '  if (typeof calViewMode !== "undefined" && calViewMode === "todo") {';
+  html += '    switchToPcView("list");';
+  html += '    return;';
+  html += '  }';
   html += '  isSiteSelecting = true;';
   html += '  renderList();';
   html += '  isSiteSelecting = false;';
