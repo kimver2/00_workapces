@@ -13192,7 +13192,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        <button type="button" class="pc-scope-tab active" data-scope="site" onclick="setDashboardScope(\'site\')"><span>🏗️ 현장</span><span class="pc-scope-badge" id="pcScopeBadgeSite">0</span></button>';
   html += '        <button type="button" class="pc-scope-tab" data-scope="single" onclick="setDashboardScope(\'single\')"><span>⚡ 단건</span><span class="pc-scope-badge" id="pcScopeBadgeSingle">0</span></button>';
   html += '        <button type="button" class="pc-scope-tab" data-scope="as" onclick="setDashboardScope(\'as\')"><span>🔧 AS</span><span class="pc-scope-badge" id="pcScopeBadgeAs">0</span></button>';
-  html += '        <button type="button" class="pc-scope-tab" data-scope="newSite" onclick="setDashboardScope(\'newSite\')"><span>📋 신규현장</span><span class="pc-scope-badge" id="pcScopeBadgeNewSite">0</span></button>';
+  html += '        <button type="button" class="pc-scope-tab" data-scope="newSite" onclick="setDashboardScope(\'newSite\')"><span>📋 신규</span><span class="pc-scope-badge" id="pcScopeBadgeNewSite">0</span></button>';
   html += '      </div>';
   html += '    </div>';
   html += '    <div class="pc-sidebar-section pc-sidebar-section-sites">';
@@ -13936,7 +13936,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '  tHtml += \'  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">\';\n';
   html += '  tHtml += \'    <h2 style="font-size:18px;font-weight:900;color:#0f172a;margin:0;display:flex;align-items:center;gap:8px;"><span>할 일 · 담당자 × 진행상태</span></h2>\';\n';
   html += '  tHtml += \'    <div style="display:flex;align-items:center;gap:8px;">\';\n';
-  html += '  tHtml += \'      <button type="button" onclick="window.print()" style="padding:8px 14px;background:#ffffff;color:#334155;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><span>🖨️</span> 인쇄 / PDF ⏷</button>\';\n';
   html += '  tHtml += \'      <button type="button" onclick="openAddTodoModal()" style="padding:8px 16px;background:#2563eb;color:#ffffff;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:5px;box-shadow:0 1px 3px rgba(37,99,235,0.3);"><span>+</span> 업무 추가</button>\';\n';
   html += '  tHtml += \'    </div>\';\n';
   html += '  tHtml += \'  </div>\';\n';

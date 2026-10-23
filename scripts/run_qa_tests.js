@@ -10115,7 +10115,35 @@ assertTest('Step 149-4: 모달 HTML 폼 내 onchange 이벤트 핸들러 바인�
 
 // 149-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 149)
 assertTest('Step 149-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 149)',
-  indexHtml149.indexOf('exec?v=149') !== -1
+  /exec\?v=(149|15[0-9])/.test(indexHtml149)
+);
+
+// [Step 150]: To-Do 인쇄/PDF 버튼 제거 및 사이드바 분류 탭 "신규" 통일 QA
+console.log('\n📋 [Step 150]: To-Do 인쇄/PDF 버튼 제거 및 사이드바 분류 탭 "신규" 통일 QA ---');
+
+const code150 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml150 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 150-1: To-Do 대시보드 내 인쇄 / PDF 버튼 완전 제거 검증
+assertTest('Step 150-1: To-Do 대시보드 내 인쇄 / PDF 버튼 완전 배제 검증',
+  code150.indexOf('인쇄 / PDF') === -1
+);
+
+// 150-2: PC 사이드바 분류 탭 "신규" 문구 통일 검증
+assertTest('Step 150-2: PC 사이드바 분류 탭 "신규" 문구 통일 검증',
+  code150.indexOf('id="pcScopeBadgeNewSite">0</span></button>') !== -1 &&
+  code150.indexOf('data-scope="newSite" onclick="setDashboardScope(\\\'newSite\\\')"><span>📋 신규</span>') !== -1
+);
+
+// 150-3: 모바일 사이드바 분류 탭 "신규" 유지 검증
+assertTest('Step 150-3: 모바일 사이드바 분류 탭 "신규" 일치 검증',
+  code150.indexOf('mobileScopeBadgeNewSite') !== -1 &&
+  code150.indexOf('<span>📋 신규</span><span class="mobile-scope-badge"') !== -1
+);
+
+// 150-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 150)
+assertTest('Step 150-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 150)',
+  indexHtml150.indexOf('exec?v=150') !== -1
 );
 
 console.log('\n========================================================');
