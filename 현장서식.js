@@ -15313,14 +15313,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '      .withFailureHandler(onError || function(err) { showToast("❌ 통신 오류: " + err); });\n';
   html += '    if (action === "getSettingsData") runner.getSettingsManagementData();\n';
   html += '    else if (action === "saveAllSettingsBatch") runner.saveAllSettingsBatchFromWeb(params.data);\n';
-  html += '    else if (action === "addPartner") runner.addPartnerItemFromWeb(params.data);\n';
-  html += '    else if (action === "updatePartner") runner.updatePartnerItemFromWeb(params.row, params.data);\n';
-  html += '    else if (action === "deletePartner") runner.deletePartnerItemFromWeb(params.row, params.name);\n';
-  html += '    else if (action === "reorderPartner") runner.reorderPartnerItemFromWeb(params.row, params.direction);\n';
-  html += '    else if (action === "addTask") runner.addTaskItemFromWeb(params.data);\n';
-  html += '    else if (action === "updateTask") runner.updateTaskItemFromWeb(params.row, params.data);\n';
-  html += '    else if (action === "deleteTask") runner.deleteTaskItemFromWeb(params.row, params.name);\n';
-  html += '    else if (action === "reorderTask") runner.reorderTaskItemFromWeb(params.row, params.direction);\n';
   html += '  } else {\n';
   html += '    var apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
   html += '    var qs = "?action=" + encodeURIComponent(action);\n';
