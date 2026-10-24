@@ -1,9 +1,9 @@
 # 🚀 우성아이디 현장 관리 시스템 인수인계 및 프로젝트 현황 보고서 (HANDOVER.md)
 
-> **최종 갱신 일시**: 2026-10-22 (KST)  
-> **현재 Git 브랜치**: `main` (GitHub Remote: `origin/main` 동기화 완료: commit `da0fca4`)  
-> **Apps Script 배포 상태**: `Version 117` (Deployment ID: `AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg`)  
-> **QA 검증 현황**: 총 1,019개 항목 전수 통과 (1019 / 1019 PASS, 0 FAIL)  
+> **최종 갱신 일시**: 2026-10-24 (KST)  
+> **현재 Git 브랜치**: `main` (GitHub Remote: `origin/main` 동기화 완료: commit `1baecd4`)  
+> **Apps Script 배포 상태**: `Version 166` (Deployment ID: `AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg`)  
+> **QA 검증 현황**: 총 1,082개 항목 전수 통과 (1082 / 1082 PASS, 0 FAIL)  
 > **핵심 파일**: [`현장서식.js`](file:///Users/kimver2/orca/projects/kimver2/현장서식.js)  
 
 ---
@@ -71,6 +71,15 @@ Google Sheets를 백엔드 DB 및 실시간 공유 문서로 활용하며, PC/�
 - **담당자 5인 정예 선택**: 오입력을 유발하는 임의의 직접 입력 옵션을 배제하고 등록된 정규 담당 소장 5인만 깔끔하게 선택 가능.
 - **미입력 회색 안내문구**: 담당자 및 연락처 미등록 시 협력업체 칸처럼 11.5px 연회색(`#94a3b8`) 가이드 텍스트 자동 노출.
 
+### 3) 최신 고도화 내역 요약 (v150 ~ v166)
+- **마스터 설정 관리 (v150~v159)**: 거래처 및 공종을 웹앱에서 실시간으로 추가, 수정, 삭제하고 드래그앤드롭/화살표로 순서를 제어할 수 있는 관리자 화면 탑재.
+- **상단 메뉴 슬림화 & 00_사용가이드 자동 최신화 (v160~v161)**: 복잡했던 메뉴를 5대 핵심 메뉴로 통합하고, `00_사용가이드` 시트를 원클릭으로 자동 생성/최신화하는 엔진 탑재.
+- **코드 다이어트 & 레거시 정리 (v162)**: 1,322줄의 불필요한 더미 데이터 및 구글 캘린더 연동 잔재 코드를 정리하여 로딩 경량화.
+- **대시보드 순수 읽기 전용 성능 최적화 (v163)**: 조회 시 무거운 시트 쓰기 락 유발 로직을 분리하여 읽기 속도 극대화.
+- **도어락 비밀번호 앞자리 0 보존 범용 규칙 (v164)**: 시트 및 웹앱 전역에서 `0304` 등 앞자리 0이 포함된 비밀번호가 텍스트(`@`)로 온전히 보존되도록 개선.
+- **To-Do 초고속 캐싱 및 0ms 백그라운드 프리페치 (v165)**: To-Do 조회 시 4개 시트 중복 I/O를 제거하고 서버 캐시(`CacheService`) 및 클라이언트 유휴시간 프리페치를 통해 탭 클릭 시 0ms 즉시 전환 구현.
+- **To-Do 화면 사이드바 현장 클릭 연동 (v166)**: To-Do 대시보드 상태에서 왼쪽 사이드바 현장 라벨 클릭 시 `calViewMode` 동기화를 통해 해당 현장의 상세페이지로 즉시 전환.
+
 ---
 
 ## 4. 유지보수 및 배포 방법
@@ -81,7 +90,7 @@ bash scripts/deploy.sh "커밋 및 배포 설명"
 ```
 위 스크립트 실행 시 다음 절차가 100% 자동 실행됩니다:
 1. `node -c 현장서식.js` (정적 문법 검사)
-2. `node scripts/run_qa_tests.js` (1,019개 항목 전수 자동 테스트)
+2. `node scripts/run_qa_tests.js` (1,082개 항목 전수 자동 테스트)
 3. `clasp push` (구글 앱스 스크립트 클라우드 반영)
 4. `clasp version` (새 버전 태깅)
 5. `clasp deploy` (웹앱 실서버 배포)
