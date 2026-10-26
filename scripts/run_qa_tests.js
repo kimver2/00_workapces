@@ -9937,7 +9937,7 @@ assertTest('Step 145-8: 시트 그룹화 무결성 보장 엔진 (이동/삭제 
 
 // 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 145-9: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 144)',
-  /exec\?v=(14[4-9]|15[0-9]|16[0-9])/.test(indexHtml145)
+  /exec\?v=(14[4-9]|15[0-9]|1[6-9][0-9])/.test(indexHtml145)
 );
 
 // [Step 146]: 모바일 하단 푸터 바 [✅ To-Do] 버튼 전환, 토글 엔진 및 모바일 반응형 매트릭스 QA
@@ -9987,7 +9987,7 @@ assertTest('Step 146-6: todo-matrix-table 모바일 터치 스크롤(overflow-x:
 
 // 146-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 145)
 assertTest('Step 146-7: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 145)',
-  /exec\?v=(14[5-9]|15[0-9]|16[0-9])/.test(indexHtml146)
+  /exec\?v=(14[5-9]|15[0-9]|1[6-9][0-9])/.test(indexHtml146)
 );
 
 // [Step 147]: 클라이언트 formatDateYYMMDD 정의(로딩 멈춤 버그 방어), 타이틀 To-Do 통일 QA
@@ -10017,7 +10017,7 @@ assertTest('Step 147-3: PC 상단 탭 버튼 문구 적용 검증',
 
 // 147-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 146)
 assertTest('Step 147-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 146)',
-  /exec\?v=(14[6-9]|15[0-9]|16[0-9])/.test(indexHtml147)
+  /exec\?v=(14[6-9]|15[0-9]|1[6-9][0-9])/.test(indexHtml147)
 );
 
 // [Step 148]: To-Do 신규 등록 직후 새로고침 없는 즉시 드래그 앤 드롭 및 완료 업무 3건+더보기 아코디언 QA
@@ -10071,7 +10071,7 @@ assertTest('Step 148-7: renderDashboardPayload 및 renderList 내 To-Do 모드 �
 
 // 148-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 148)
 assertTest('Step 148-8: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 148)',
-  /exec\?v=(14[8-9]|15[0-9]|16[0-9])/.test(indexHtml148)
+  /exec\?v=(14[8-9]|15[0-9]|1[6-9][0-9])/.test(indexHtml148)
 );
 
 // [Step 149]: To-Do 수정 저장 시 ID 보존 및 상태-중요 체크박스 양방향 동기화 QA
@@ -10107,7 +10107,7 @@ assertTest('Step 149-4: 모달 HTML 폼 내 onchange 이벤트 핸들러 바인�
 
 // 149-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 149)
 assertTest('Step 149-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 149)',
-  /exec\?v=(149|15[0-9]|16[0-9])/.test(indexHtml149)
+  /exec\?v=(149|15[0-9]|1[6-9][0-9])/.test(indexHtml149)
 );
 
 // [Step 150]: To-Do 인쇄/PDF 버튼 제거 및 사이드바 분류 탭 "신규" 통일 QA
@@ -10135,7 +10135,7 @@ assertTest('Step 150-3: 모바일 사이드바 분류 탭 "신규" 일치 검증
 
 // 150-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 150)
 assertTest('Step 150-4: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 150)',
-  /exec\?v=(15[0-9]|16[0-9])/.test(indexHtml150)
+  /exec\?v=(15[0-9]|1[6-9][0-9])/.test(indexHtml150)
 );
 
 // [Step 151]: To-Do 모바일 3대 뷰(담당자별/상태별/우선순위) 전환 스위처 및 원터치 상태변경 QA
@@ -10173,7 +10173,7 @@ assertTest('Step 151-4: 날짜 정규화 포맷터(formatTodoDateYmd) 견고성 
 
 // 151-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 151)
 assertTest('Step 151-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 151)',
-  /exec\?v=(15[1-9]|16[0-9])/.test(indexHtml151)
+  /exec\?v=(15[1-9]|1[6-9][0-9])/.test(indexHtml151)
 );
 
 // [Step 152]: PC 신규현장 히어로 액션 전화 아이콘 삭제 및 To-Do 완료 시 중요 여부(isImportant) 보존 QA
@@ -10208,7 +10208,7 @@ assertTest('Step 152-4: 클라이언트(changeTodoStatusQuick, onTodoDrop, toggl
 
 // 152-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 152)
 assertTest('Step 152-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 152)',
-  /exec\?v=(15[2-9]|16[0-9])/.test(indexHtml152)
+  /exec\?v=(15[2-9]|1[6-9][0-9])/.test(indexHtml152)
 );
 
 // [Step 153]: To-Do 중요 / 미완료 / 완료 배타적 통계 카운팅 및 중복 집계 완전 제거 QA
@@ -10244,7 +10244,7 @@ assertTest('Step 153-4: PC 매트릭스 테이블 담당자 셀 요약 텍스트
 
 // 153-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 153)
 assertTest('Step 153-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 153)',
-  /exec\?v=(15[3-9]|16[0-9])/.test(indexHtml153)
+  /exec\?v=(15[3-9]|1[6-9][0-9])/.test(indexHtml153)
 );
 
 // [Step 154]: PC 2차원 매트릭스 테이블 복원, To-Do List 타이틀 통일 및 모바일 헤더 높이 일치 QA
@@ -10277,7 +10277,7 @@ assertTest('Step 154-4: updateMobileHeaderVisibility 내 모바일 To-Do 헤더 
 
 // 154-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 154)
 assertTest('Step 154-5: index.html 내 exec?v 최신 캐시 버스팅 파라미터 갱신 검증 (>= 154)',
-  /exec\?v=(15[4-9]|16[0-9])/.test(indexHtml154)
+  /exec\?v=(15[4-9]|1[6-9][0-9])/.test(indexHtml154)
 );
 
 // [Step 155]: 마스터 설정 (거래처 & 공종 관리 메뉴/페이지, CRUD, 순서조절, 현장 연동) QA
@@ -10923,16 +10923,47 @@ assertTest('Step 169-1: 마스터 설정 타이틀 내 괄호 설명 문구 제�
 
 // 169-2: 구성원 관리 테이블 이메일 열 내 이메일 아이콘(✉️) 제거 검증
 assertTest('Step 169-2: 구성원 관리 테이블 이메일 열 내 이메일 아이콘(✉️) 제거 및 텍스트 링크 유지 검증',
-  code169.includes('style="color:#0284c7;text-decoration:none;font-size:11.5px;">') &&
+  code169.includes('color:#0284c7;text-decoration:none;font-size:11.5px;') &&
   code169.includes('escapeSettingsHtml(m.email)') &&
   !code169.includes('font-size:11.5px;">✉️') &&
-  !code169.includes('font-size:11.5px;">\\\' + \'✉️') &&
+  !code169.includes('font-size:11.5px;white-space:nowrap;display:inline-block;">✉️') &&
   !code169.includes('✉️ \\\' + escapeSettingsHtml(m.email)')
 );
 
 // 169-3: index.html 내 exec?v=169 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 169-3: index.html 내 exec?v=169 최신 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(16[9]|1[7-9][0-9])/.test(indexHtml169)
+);
+
+// ========================================================
+// [Step 170]: 마스터 설정 구성원/거래처 테이블 열 너비 최적화 및 한 줄(단일행) 표시 QA
+// ========================================================
+console.log('\n📋 [Step 170]: 마스터 설정 구성원/거래처 테이블 열 너비 최적화 및 한 줄 표시 QA ---');
+const code170 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml170 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 170-1: 구성원 관리 테이블 min-width 980px 확장 및 주요 열 너비 최적화 검증
+assertTest('Step 170-1: 구성원 관리 테이블 min-width 980px 확장 및 주요 열 너비 최적화 검증',
+  code170.includes('min-width:980px;margin:0;padding:0;') &&
+  code170.includes('width:155px;white-space:nowrap;">연락처</th>') &&
+  code170.includes('width:220px;white-space:nowrap;">이메일</th>')
+);
+
+// 170-2: 구성원 연락처 및 이메일 링크 줄바꿈 방지(white-space:nowrap) 탑재 검증
+assertTest('Step 170-2: 구성원 연락처 및 이메일 링크 줄바꿈 방지(white-space:nowrap) 탑재 검증',
+  code170.includes('font-weight:700;font-size:11.5px;white-space:nowrap;display:inline-block;">📞') &&
+  code170.includes('font-size:11.5px;white-space:nowrap;display:inline-block;">\\\' + escapeSettingsHtml(m.email)')
+);
+
+// 170-3: 거래처 관리 테이블 연락처 열 너비 확장 및 white-space:nowrap 동시 탑재 검증
+assertTest('Step 170-3: 거래처 관리 테이블 연락처 열 너비 확장 및 white-space:nowrap 동시 탑재 검증',
+  code170.includes('width:140px;white-space:nowrap;">연락처</th>') &&
+  code170.includes('font-weight:600;font-size:11.5px;white-space:nowrap;display:inline-block;">📞')
+);
+
+// 170-4: index.html 내 exec?v=170 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 170-4: index.html 내 exec?v=170 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[0-9]|1[8-9][0-9])/.test(indexHtml170)
 );
 
 console.log('\n========================================================');
