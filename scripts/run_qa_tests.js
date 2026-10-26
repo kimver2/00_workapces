@@ -10795,9 +10795,65 @@ assertTest('Step 166-4: onPcSidebarSiteLabelClick 함수 내 현장 선택 후 s
   code166.indexOf('onPcSidebarSiteLabelClick(event') !== -1
 );
 
-// 166-5: index.html 내 exec?v=166 최신 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 166-5: index.html 내 exec?v=166 최신 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml166.indexOf('exec?v=166') !== -1
+// 166-5: index.html 내 exec?v=166 이상 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 166-5: index.html 내 exec?v=166 이상 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(16[6-9]|1[7-9][0-9])/.test(indexHtml166)
+);
+
+// ========================================================
+// [Step 167]: 카카오 비즈니스 알림톡(알리고 Aligo 연동) 일일 현장 & To-Do 브리핑 엔진 QA
+// ========================================================
+console.log('\n📋 [Step 167]: 카카오 비즈니스 알림톡 일일 현장 & To-Do 브리핑 엔진 QA ---');
+const code167 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml167 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 167-1: 알리고 알림톡 환경설정 관리 함수(getAlimtalkConfig / setAlimtalkConfig) 구현 검증
+assertTest('Step 167-1: 알리고 알림톡 환경설정(API Key, SenderKey, 발신번호 등) 관리 함수 구현 검증',
+  code167.indexOf('function getAlimtalkConfig()') !== -1 &&
+  code167.indexOf('function setAlimtalkConfig(config)') !== -1 &&
+  code167.indexOf('ALIGO_API_KEY') !== -1 &&
+  code167.indexOf('ALIGO_SENDER_KEY') !== -1
+);
+
+// 167-2: extractMemberPhoneList 구성원 전화번호 및 수신체크 추출 엔진 검증
+assertTest('Step 167-2: extractMemberPhoneList 내 담당자 전화번호 및 수신여부 추출 엔진 검증',
+  code167.indexOf('function extractMemberPhoneList(ss)') !== -1 &&
+  code167.indexOf('/^01[0-9]{8,9}$/.test(cleanPhone)') !== -1
+);
+
+// 167-3: collectDailyBriefingDataByManager 오늘 공정 및 To-Do 담당자별 개인화 집계 검증
+assertTest('Step 167-3: collectDailyBriefingDataByManager 내 오늘 공정 및 To-Do 담당자별 집계 엔진 검증',
+  code167.indexOf('function collectDailyBriefingDataByManager(ss, targetDate)') !== -1 &&
+  code167.indexOf('findOrCreateTodoSheet(ss)') !== -1 &&
+  code167.indexOf('tdStatus === "완료"') !== -1
+);
+
+// 167-4: formatKakaoBriefingMessage 카카오 템플릿 치환 포맷팅 검증
+assertTest('Step 167-4: formatKakaoBriefingMessage 카카오 공식 승인 템플릿 규격 포맷팅 검증',
+  code167.indexOf('function formatKakaoBriefingMessage(managerName, todayDateStr, tasks, todos)') !== -1 &&
+  code167.indexOf('■ 오늘 현장 공정') !== -1 &&
+  code167.indexOf('■ 오늘의 To-Do') !== -1
+);
+
+// 167-5: sendAligoAlimtalk 알리고 API 클라이언트 규격(URL, failover, 웹링크 버튼) 검증
+assertTest('Step 167-5: sendAligoAlimtalk 알리고 API 클라이언트 규격(URL, failover, 웹링크 버튼) 검증',
+  code167.indexOf('function sendAligoAlimtalk(config, receiverPhone, title, message)') !== -1 &&
+  code167.indexOf('https://kakaoapi.aligo.in/akv10/alimtalk/send/') !== -1 &&
+  code167.indexOf('failover: "Y"') !== -1 &&
+  code167.indexOf('linkType: "WL"') !== -1
+);
+
+// 167-6: sendDailyKakaoBriefing 및 메뉴/doGet 라우팅 연동 검증
+assertTest('Step 167-6: sendDailyKakaoBriefing 및 메뉴/doGet 라우팅 연동 검증',
+  code167.indexOf('function sendDailyKakaoBriefing(isManualTest)') !== -1 &&
+  code167.indexOf('function configureAlimtalkSettingsMenu()') !== -1 &&
+  code167.indexOf('action === "sendKakaoBriefing"') !== -1 &&
+  code167.indexOf('action === "getAlimtalkConfig"') !== -1
+);
+
+// 167-7: index.html 내 exec?v=167 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 167-7: index.html 내 exec?v=167 최신 캐시 버스팅 파라미터 갱신 검증',
+  indexHtml167.indexOf('exec?v=167') !== -1
 );
 
 console.log('\n========================================================');

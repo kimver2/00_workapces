@@ -1543,11 +1543,13 @@ function onOpen() {
 
     // [서브메뉴 1: 모닝 브리핑 관리]
     .addSubMenu(ui.createMenu("☀️ 모닝 브리핑 관리")
-      .addItem("☀️ 지금 즉시 테스트 발송", "sendDailyBriefingTestNow")
+      .addItem("☀️ 지금 즉시 이메일 발송", "sendDailyBriefingTestNow")
+      .addItem("💬 카카오톡(알림톡) 브리핑 즉시 전송", "sendDailyKakaoBriefingMenu")
       .addItem("⏰ 매일 아침 8시 자동 발송 켜기", "enableDailyMorningBriefing")
       .addItem("🔕 자동 발송 끄기", "disableDailyMorningBriefing")
       .addItem("🕒 발송 시간 변경", "configureBriefingTime")
       .addItem("📧 수신 이메일 확인/설정", "configureBriefingEmail")
+      .addItem("⚙️ 카카오 알림톡(알리고) API 설정", "configureAlimtalkSettingsMenu")
     )
 
     // [서브메뉴 2: 시스템 점검 & 가이드]
@@ -8877,6 +8879,28 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 0-0-0-Kakao) 카카오 비즈니스 알림톡 발송 액션 라우팅
+  if (action === "sendKakaoBriefing") {
+    var isManualK = (p.manual === "true" || p.manual === true);
+    var kakaoRes = sendDailyKakaoBriefing(isManualK);
+    return ContentService.createTextOutput(JSON.stringify(kakaoRes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "getAlimtalkConfig") {
+    var confObj = getAlimtalkConfig();
+    var safeConf = {
+      enabled: confObj.enabled,
+      userId: confObj.userId,
+      tplCode: confObj.tplCode,
+      senderPhone: confObj.senderPhone,
+      hasApiKey: !!confObj.apiKey,
+      hasSenderKey: !!confObj.senderKey,
+      dashboardUrl: confObj.dashboardUrl
+    };
+    return ContentService.createTextOutput(JSON.stringify({ success: true, config: safeConf }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   // 0-0-0-Settings) 마스터 설정 (거래처 & 공종 관리) 액션 라우팅
   if (action === "getSettingsData") {
     var sData = getSettingsManagementData();
@@ -10472,6 +10496,16 @@ function sendDailySiteMorningBriefing(isManualTest) {
     // 당일 발송 완료 날짜 기록 (하루 1회 발송 락)
     docProps.setProperty("LAST_BRIEFING_SENT_DATE", todayStr);
 
+    // 카카오 알림톡 자동 발송 연동 (설정 활성화 시 동시 자동 발송)
+    try {
+      var kakaoConf = getAlimtalkConfig();
+      if (kakaoConf && kakaoConf.enabled && kakaoConf.apiKey && kakaoConf.senderKey && kakaoConf.senderPhone) {
+        sendDailyKakaoBriefing(false);
+      }
+    } catch (eKakaoAuto) {
+      Logger.log("모닝 브리핑 연동 카카오 알림톡 자동 발송 예외: " + eKakaoAuto.toString());
+    }
+
     if (isManual) {
       SpreadsheetApp.getUi().alert(
         "✉️ 모닝 브리핑 테스트 발송 완료",
@@ -10684,6 +10718,585 @@ function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, de
     plainText: plainLines.join('\n'),
     htmlBody: html
   };
+}
+
+// ========================================================
+// 14-2. [카카오 비즈니스 알림톡] 알리고(Aligo) 연동 일일 현장 & To-Do 브리핑 엔진
+// ========================================================
+
+/**
+ * 알리고(Aligo) 알림톡 환경설정 조회
+ * @return {object} { apiKey, userId, senderKey, tplCode, senderPhone, enabled, dashboardUrl }
+ */
+function getAlimtalkConfig() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (!props) return { apiKey: "", userId: "", senderKey: "", tplCode: "우성아이디_일일현장브리핑", senderPhone: "", enabled: false, dashboardUrl: "https://kimver2.github.io/" };
+    return {
+      apiKey: props.getProperty("ALIGO_API_KEY") || "",
+      userId: props.getProperty("ALIGO_USER_ID") || "",
+      senderKey: props.getProperty("ALIGO_SENDER_KEY") || "",
+      tplCode: props.getProperty("ALIGO_TPL_CODE") || "우성아이디_일일현장브리핑",
+      senderPhone: props.getProperty("ALIGO_SENDER_PHONE") || "",
+      enabled: (props.getProperty("ALIGO_ENABLED") === "true"),
+      dashboardUrl: props.getProperty("ALIGO_DASHBOARD_URL") || "https://kimver2.github.io/"
+    };
+  } catch (e) {
+    return { apiKey: "", userId: "", senderKey: "", tplCode: "우성아이디_일일현장브리핑", senderPhone: "", enabled: false, dashboardUrl: "https://kimver2.github.io/" };
+  }
+}
+
+/**
+ * 알리고(Aligo) 알림톡 환경설정 저장
+ * @param {object} config { apiKey, userId, senderKey, tplCode, senderPhone, enabled, dashboardUrl }
+ */
+function setAlimtalkConfig(config) {
+  if (!config) return;
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (!props) return;
+    if (config.apiKey !== undefined) props.setProperty("ALIGO_API_KEY", String(config.apiKey).trim());
+    if (config.userId !== undefined) props.setProperty("ALIGO_USER_ID", String(config.userId).trim());
+    if (config.senderKey !== undefined) props.setProperty("ALIGO_SENDER_KEY", String(config.senderKey).trim());
+    if (config.tplCode !== undefined) props.setProperty("ALIGO_TPL_CODE", String(config.tplCode).trim());
+    if (config.senderPhone !== undefined) props.setProperty("ALIGO_SENDER_PHONE", String(config.senderPhone).replace(/[^0-9]/g, ""));
+    if (config.enabled !== undefined) props.setProperty("ALIGO_ENABLED", String(config.enabled));
+    if (config.dashboardUrl !== undefined) props.setProperty("ALIGO_DASHBOARD_URL", String(config.dashboardUrl).trim());
+  } catch (e) {
+    Logger.log("setAlimtalkConfig 예외: " + e.toString());
+  }
+}
+
+/**
+ * [구성원] 시트에서 담당자별 전화번호 및 수신여부 목록 추출
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {Array<object>} [ { name: "조항만", phone: "01012345678", isChecked: true }, ... ]
+ */
+function extractMemberPhoneList(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return [];
+
+  var sheet = findMembersSheet(ss);
+  if (!sheet) return [];
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+
+  // 헤더 행 탐색 (1~3행)
+  var headerRows = Math.min(lastRow, 3);
+  var headerVals = sheet.getRange(1, 1, headerRows, lastCol).getValues();
+  var nameColIdx = -1;
+  var phoneColIdx = -1;
+  var receiveColIdx = -1;
+  var startDataRow = 2;
+
+  for (var r = 0; r < headerRows; r++) {
+    for (var c = 0; c < lastCol; c++) {
+      var hStr = String(headerVals[r][c] || "").trim().toLowerCase();
+      if (nameColIdx === -1 && (hStr === "이름" || hStr === "담당자" || hStr === "성명" || hStr === "직원명" || hStr === "소장" || hStr === "name")) {
+        nameColIdx = c;
+        startDataRow = Math.max(startDataRow, r + 2);
+      }
+      if (phoneColIdx === -1 && (hStr.indexOf("연락처") !== -1 || hStr.indexOf("전화번호") !== -1 || hStr.indexOf("휴대폰") !== -1 || hStr.indexOf("핸드폰") !== -1 || hStr.indexOf("phone") !== -1 || hStr.indexOf("tel") !== -1)) {
+        phoneColIdx = c;
+        startDataRow = Math.max(startDataRow, r + 2);
+      }
+      if (receiveColIdx === -1 && (hStr.indexOf("알림톡") !== -1 || hStr.indexOf("카톡") !== -1 || hStr.indexOf("카카오") !== -1 || hStr.indexOf("수신") !== -1 || hStr.indexOf("브리핑") !== -1)) {
+        receiveColIdx = c;
+        startDataRow = Math.max(startDataRow, r + 2);
+      }
+    }
+  }
+
+  // 기본값 폴백: 이름 열이 없으면 1열, 전화번호 열이 없으면 2열(또는 연락처 패턴 감지)
+  if (nameColIdx === -1) nameColIdx = 0;
+
+  var data = sheet.getRange(startDataRow, 1, lastRow - startDataRow + 1, lastCol).getValues();
+  var result = [];
+  var seenNames = {};
+
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var rawName = String(row[nameColIdx] || "").trim();
+    if (!rawName || rawName === "영하" || rawName.indexOf("영하") !== -1) continue;
+
+    // 수신 여부 체크박스 확인
+    var isChecked = true;
+    if (receiveColIdx !== -1) {
+      var recvVal = row[receiveColIdx];
+      isChecked = (recvVal === true || String(recvVal).trim().toUpperCase() === "TRUE" || String(recvVal).trim() === "1" || String(recvVal).trim() === "V" || String(recvVal).trim() === "O");
+    }
+
+    // 전화번호 탐색
+    var cleanPhone = "";
+    if (phoneColIdx !== -1) {
+      cleanPhone = String(row[phoneColIdx] || "").replace(/[^0-9]/g, "");
+    }
+    // 연락처 열에서 못 찾은 경우 전체 행에서 휴대폰 번호 패턴(010, 011 등 10~11자리) 자동 스캔
+    if (!cleanPhone || !/^01[0-9]{8,9}$/.test(cleanPhone)) {
+      for (var colIdx = 0; colIdx < row.length; colIdx++) {
+        var candidate = String(row[colIdx] || "").replace(/[^0-9]/g, "");
+        if (/^01[0-9]{8,9}$/.test(candidate)) {
+          cleanPhone = candidate;
+          break;
+        }
+      }
+    }
+
+    if (!seenNames[rawName]) {
+      seenNames[rawName] = true;
+      result.push({
+        name: rawName,
+        phone: cleanPhone,
+        isChecked: isChecked
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 특정 일자의 담당자별 현장 공정 및 To-Do 할 일 집계
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @param {Date} [targetDate]
+ * @return {object} { "조항만": { name, phone, isChecked, tasks: [], todos: [] }, ... }
+ */
+function collectDailyBriefingDataByManager(ss, targetDate) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return {};
+
+  targetDate = targetDate || new Date();
+  var targetYMD = formatDateYYMMDD(targetDate); // "2026.10.26"
+  var targetClean = targetYMD.replace(/\./g, "-").trim(); // "2026-10-26"
+
+  // 1. 구성원 정보 로드
+  var members = extractMemberPhoneList(ss);
+  var map = {};
+
+  members.forEach(function(m) {
+    map[m.name] = {
+      name: m.name,
+      phone: m.phone,
+      isChecked: m.isChecked,
+      tasks: [],
+      todos: []
+    };
+  });
+
+  // 대표(조항만) 기본 키 보장
+  if (!map["조항만"]) {
+    map["조항만"] = { name: "조항만", phone: "", isChecked: true, tasks: [], todos: [] };
+  }
+
+  // 2. 현장 공정 수집 ('현장데이터', '단건', 'AS')
+  var sheetsToScan = [];
+  var sSite = findSiteScheduleSheet(ss);
+  if (sSite) sheetsToScan.push({ sheet: sSite, type: "현장" });
+  var sSingle = findSingleTaskSheet(ss, false);
+  if (sSingle) sheetsToScan.push({ sheet: sSingle, type: "단건" });
+  var sAs = findAsSheet(ss, false);
+  if (sAs) sheetsToScan.push({ sheet: sAs, type: "AS" });
+
+  sheetsToScan.forEach(function(item) {
+    var sh = item.sheet;
+    var lRow = sh.getLastRow();
+    if (lRow < 2) return;
+    var vals = sh.getRange(2, 1, lRow - 1, Math.min(sh.getLastColumn(), 11)).getValues();
+
+    for (var i = 0; i < vals.length; i++) {
+      var r = vals[i];
+      var siteName = String(r[0] || "").trim();
+      var dateRaw = r[1];
+      var taskName = String(r[2] || "").trim();
+      var partner = String(r[3] || "").trim();
+      var mgr1 = String(r[6] || "").trim();
+      var mgr2 = String(r[7] || "").trim();
+      var status = String(r[8] || "예정").trim();
+      var memo = String(r[5] || "").trim();
+
+      if (!siteName && !taskName) continue;
+
+      // 날짜 일치 판별 (단일 일정이거나 오늘이 포함된 기간 일정)
+      var parsedDate = parseScheduleDateTime(dateRaw);
+      var isTodayActive = false;
+      if (parsedDate) {
+        if (!parsedDate.isRange) {
+          var singleD = formatDateYYMMDD(parsedDate.date);
+          isTodayActive = (singleD === targetYMD || singleD.replace(/\./g, "-") === targetClean);
+        } else {
+          var startD = parsedDate.startDate ? formatDateYYMMDD(parsedDate.startDate).replace(/\./g, "-") : "";
+          var endD = parsedDate.endDate ? formatDateYYMMDD(parsedDate.endDate).replace(/\./g, "-") : startD;
+          if (startD && endD) {
+            isTodayActive = (startD <= targetClean && targetClean <= endD);
+          }
+        }
+      }
+
+      if (isTodayActive) {
+        var taskObj = {
+          siteName: siteName,
+          taskName: taskName,
+          partner: partner,
+          status: status,
+          memo: memo,
+          type: item.type
+        };
+
+        var assigned = false;
+        [mgr1, mgr2].forEach(function(mgr) {
+          if (mgr && map[mgr]) {
+            map[mgr].tasks.push(taskObj);
+            assigned = true;
+          }
+        });
+        // 담당 미지정이면 대표(조항만) 목록에 추가
+        if (!assigned) {
+          map["조항만"].tasks.push(taskObj);
+        }
+      }
+    }
+  });
+
+  // 3. To-Do 할 일 수집
+  var todoSheet = findOrCreateTodoSheet(ss);
+  if (todoSheet && todoSheet.getLastRow() >= 2) {
+    var todoVals = todoSheet.getRange(2, 1, todoSheet.getLastRow() - 1, Math.min(todoSheet.getLastColumn(), 11)).getValues();
+    for (var tdIdx = 0; tdIdx < todoVals.length; tdIdx++) {
+      var tdRow = todoVals[tdIdx];
+      var tdId = String(tdRow[0] || "").trim();
+      var tdDueRaw = tdRow[1];
+      var tdStatus = String(tdRow[2] || "미완료").trim();
+      var tdMgr = String(tdRow[3] || "").trim();
+      var tdTitle = String(tdRow[4] || "").trim();
+      var tdSite = String(tdRow[7] || "").trim();
+      var tdImp = (tdRow[8] === true || String(tdRow[8]).toUpperCase() === "TRUE" || tdStatus === "중요");
+
+      if (!tdId && !tdTitle) continue;
+      if (tdStatus === "완료") continue; // 완료된 할 일은 제외
+
+      var tdDueStr = tdDueRaw ? formatDateYYMMDD(tdDueRaw).replace(/\./g, "-") : "";
+      // 오늘 마감일이거나, 마감일이 지났거나, 마감일 미지정인 중요 업무
+      var isRelevantTodo = (!tdDueStr || tdDueStr <= targetClean || tdImp);
+
+      if (isRelevantTodo) {
+        var todoObj = {
+          id: tdId,
+          title: tdTitle,
+          dueDate: tdDueRaw ? formatDateYYMMDD(tdDueRaw) : "마감일 미지정",
+          siteName: tdSite,
+          isImportant: tdImp,
+          status: tdStatus
+        };
+
+        if (tdMgr && map[tdMgr]) {
+          map[tdMgr].todos.push(todoObj);
+        } else {
+          // 담당 미지정이거나 대표에게 배정
+          map["조항만"].todos.push(todoObj);
+        }
+      }
+    }
+  }
+
+  return map;
+}
+
+/**
+ * 카카오 알림톡 사전 승인 규격 템플릿 메시지 포맷팅
+ * @param {string} managerName 담당자명 (소장님)
+ * @param {string} todayDateStr 오늘 날짜 (예: "2026.10.26")
+ * @param {Array<object>} tasks 오늘 담당 공정 목록
+ * @param {Array<object>} todos 오늘 담당 할 일 목록
+ * @return {string} 치환 완료된 본문 텍스트
+ */
+function formatKakaoBriefingMessage(managerName, todayDateStr, tasks, todos) {
+  tasks = tasks || [];
+  todos = todos || [];
+
+  var taskCount = tasks.length;
+  var todoCount = todos.length;
+
+  // 공정 목록 텍스트 생성
+  var taskLines = [];
+  if (taskCount > 0) {
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      var line = (i + 1) + ". [" + t.siteName + "] " + t.taskName;
+      if (t.partner) line += " (" + t.partner + ")";
+      line += " - " + t.status;
+      taskLines.push(line);
+    }
+  } else {
+    taskLines.push("• 예정된 오늘 공정이 없습니다.");
+  }
+
+  // To-Do 목록 텍스트 생성
+  var todoLines = [];
+  if (todoCount > 0) {
+    for (var j = 0; j < todos.length; j++) {
+      var td = todos[j];
+      var tdLine = (j + 1) + ". " + (td.isImportant ? "[중요] " : "") + td.title;
+      if (td.siteName) tdLine += " (" + td.siteName + ")";
+      todoLines.push(tdLine);
+    }
+  } else {
+    todoLines.push("• 예정된 오늘 할 일이 없습니다.");
+  }
+
+  var msg = "";
+  msg += "[우성아이디] " + managerName + " 소장님 오늘 일정 안내\n\n";
+  msg += "안녕하세요, 우성아이디입니다.\n";
+  msg += "오늘(" + todayDateStr + ") 담당 현장의 공정 및 할 일(To-Do) 안내드립니다.\n\n";
+  msg += "■ 오늘 현장 공정 (" + taskCount + "건)\n";
+  msg += taskLines.join("\n") + "\n\n";
+  msg += "■ 오늘의 To-Do (" + todoCount + "건)\n";
+  msg += todoLines.join("\n") + "\n\n";
+  msg += "오늘도 안전에 유의하시고 활기찬 하루 되세요!\n\n";
+  msg += "※ 자세한 현장 일정 및 상세 내용은 대시보드 웹앱에서 확인하실 수 있습니다.";
+
+  return msg;
+}
+
+/**
+ * 알리고(Aligo) 알림톡 API 단건 발송 클라이언트
+ * @param {object} config { apiKey, userId, senderKey, tplCode, senderPhone, dashboardUrl }
+ * @param {string} receiverPhone 수신자 휴대폰 번호 (하이픈 제외 숫자)
+ * @param {string} title 알림톡 제목
+ * @param {string} message 알림톡 전체 본문 (템플릿 일치)
+ * @return {object} { success: boolean, code: number, message: string }
+ */
+function sendAligoAlimtalk(config, receiverPhone, title, message) {
+  if (!config || !config.apiKey || !config.userId || !config.senderKey || !config.senderPhone) {
+    return { success: false, code: -99, message: "알리고 API 필수 설정(API Key, User ID, Sender Key, 발신번호)이 누락되었습니다." };
+  }
+  if (!receiverPhone || receiverPhone.length < 10) {
+    return { success: false, code: -98, message: "수신자 휴대폰 번호가 올바르지 않습니다: " + receiverPhone };
+  }
+
+  var cleanReceiver = String(receiverPhone).replace(/[^0-9]/g, "");
+  var cleanSender = String(config.senderPhone).replace(/[^0-9]/g, "");
+
+  var payload = {
+    apikey: config.apiKey,
+    userid: config.userId,
+    senderkey: config.senderKey,
+    tpl_code: config.tplCode || "우성아이디_일일현장브리핑",
+    sender: cleanSender,
+    receiver_1: cleanReceiver,
+    subject_1: title || "[우성아이디] 오늘 일정 안내",
+    message_1: message,
+    failover: "Y",
+    fsubject_1: title || "[우성아이디] 오늘 일정 안내",
+    fmessage_1: message
+  };
+
+  if (config.dashboardUrl) {
+    var buttonObj = {
+      button: [
+        {
+          name: "현장 대시보드 바로가기",
+          linkType: "WL",
+          linkTypeName: "웹링크",
+          linkMo: config.dashboardUrl,
+          linkPc: config.dashboardUrl
+        }
+      ]
+    };
+    payload.button_1 = JSON.stringify(buttonObj);
+  }
+
+  try {
+    var options = {
+      method: "post",
+      payload: payload,
+      muteHttpExceptions: true
+    };
+    var response = UrlFetchApp.fetch("https://kakaoapi.aligo.in/akv10/alimtalk/send/", options);
+    var respText = response.getContentText();
+    var json = JSON.parse(respText);
+
+    if (json && json.code === 0) {
+      return { success: true, code: 0, message: "전송 성공 (발송 ID: " + json.info.mid + ")" };
+    } else {
+      var errMsg = (json && json.message) || respText || "알 수 없는 오류";
+      Logger.log("알리고 알림톡 발송 실패: code=" + (json && json.code) + ", msg=" + errMsg);
+      return { success: false, code: (json && json.code) || -1, message: errMsg };
+    }
+  } catch (err) {
+    Logger.log("sendAligoAlimtalk 예외: " + err.toString());
+    return { success: false, code: -1, message: err.toString() };
+  }
+}
+
+/**
+ * 카카오톡 알림톡 일일 현장 & To-Do 브리핑 전체 발송 코어 엔진
+ * @param {boolean} [isManualTest=false] 수동 메뉴 클릭 여부
+ * @return {object} { success: boolean, total: number, sent: number, failed: number, details: Array }
+ */
+function sendDailyKakaoBriefing(isManualTest) {
+  var isManual = (isManualTest === true);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss) return { success: false, message: "스프레드시트를 찾을 수 없습니다." };
+
+  var config = getAlimtalkConfig();
+  if (!config.apiKey || !config.userId || !config.senderKey || !config.senderPhone) {
+    var notConfigMsg = "⚠️ 카카오 알림톡(알리고) 설정 필요\n\n알리고 API Key, 사용자 ID, 발송프로필키(SenderKey) 또는 발신번호가 설정되지 않았습니다.\n\n시트 상단 메뉴 [🚀 현장 관리] ➔ [☀️ 모닝 브리핑 관리] ➔ [⚙️ 카카오 알림톡(알리고) API 설정] 메뉴에서 API 키를 등록해 주세요.";
+    if (isManual) {
+      SpreadsheetApp.getUi().alert("⚙️ 알림톡 API 설정 안내", notConfigMsg, SpreadsheetApp.getUi().ButtonSet.OK);
+    }
+    Logger.log(notConfigMsg);
+    return { success: false, reason: "NOT_CONFIGURED", message: notConfigMsg };
+  }
+
+  var today = new Date();
+  var todayStr = formatDateYYMMDD(today); // "2026.10.26"
+  var docProps = PropertiesService.getDocumentProperties();
+
+  // 자동 실행 시 하루 1회 멱등성 보장
+  if (!isManual) {
+    var lastSent = docProps ? docProps.getProperty("LAST_KAKAO_BRIEFING_SENT_DATE") : null;
+    if (lastSent === todayStr) {
+      Logger.log("✅ 오늘(" + todayStr + ") 이미 카카오톡 브리핑이 성공적으로 발송되었습니다. 중복 발송을 건너뜁니다.");
+      return { success: true, skipped: true, message: "오늘 이미 발송됨" };
+    }
+  }
+
+  // 담당자별 데이터 집계
+  var briefingData = collectDailyBriefingDataByManager(ss, today);
+  var managerNames = Object.keys(briefingData);
+
+  if (managerNames.length === 0) {
+    if (isManual) SpreadsheetApp.getUi().alert("수신 대상 담당자가 없습니다.");
+    return { success: false, message: "수신 대상 없음" };
+  }
+
+  var totalCount = 0;
+  var successCount = 0;
+  var failCount = 0;
+  var details = [];
+
+  for (var i = 0; i < managerNames.length; i++) {
+    var mName = managerNames[i];
+    var mData = briefingData[mName];
+
+    // 수신 거부되었거나 전화번호가 없으면 건너뜀
+    if (!mData.isChecked || !mData.phone) {
+      details.push({ name: mName, phone: mData.phone || "미등록", status: "SKIPPED", reason: !mData.phone ? "전화번호 미등록" : "수신 체크 해제" });
+      continue;
+    }
+
+    totalCount++;
+    var title = "[우성아이디] " + mName + " 소장님 오늘 일정 안내";
+    var msg = formatKakaoBriefingMessage(mName, todayStr, mData.tasks, mData.todos);
+    var sendRes = sendAligoAlimtalk(config, mData.phone, title, msg);
+
+    if (sendRes && sendRes.success) {
+      successCount++;
+      details.push({ name: mName, phone: mData.phone, status: "SUCCESS", message: sendRes.message });
+    } else {
+      failCount++;
+      details.push({ name: mName, phone: mData.phone, status: "FAILED", message: (sendRes && sendRes.message) || "전송 실패" });
+    }
+  }
+
+  if (successCount > 0 && docProps) {
+    docProps.setProperty("LAST_KAKAO_BRIEFING_SENT_DATE", todayStr);
+  }
+
+  var summaryMsg = "총 " + totalCount + "명 중 " + successCount + "명 성공 (" + failCount + "명 실패)";
+  if (isManual) {
+    var alertDetail = "📲 [카카오톡 일일 브리핑 발송 결과]\n\n" + summaryMsg + "\n\n";
+    details.forEach(function(d) {
+      alertDetail += "• " + d.name + "(" + d.phone + "): " + (d.status === "SUCCESS" ? "✅ 성공" : ("❌ " + d.message)) + "\n";
+    });
+    SpreadsheetApp.getUi().alert("카카오톡 브리핑 전송 완료", alertDetail, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+
+  Logger.log("카카오 알림톡 브리핑 발송 완료: " + summaryMsg);
+  return {
+    success: (successCount > 0),
+    total: totalCount,
+    sent: successCount,
+    failed: failCount,
+    details: details
+  };
+}
+
+/**
+ * [상단 메뉴용] 카카오톡 브리핑 즉시 전송
+ */
+function sendDailyKakaoBriefingMenu() {
+  sendDailyKakaoBriefing(true);
+}
+
+/**
+ * [상단 메뉴용] 알리고 알림톡 API 설정 대화상자
+ */
+function configureAlimtalkSettingsMenu() {
+  var ui = SpreadsheetApp.getUi();
+  var curConf = getAlimtalkConfig();
+
+  // 1. API Key 입력
+  var resKey = ui.prompt(
+    "🔑 1/4. 알리고 API Key 설정",
+    "알리고(aligo.in) 관리자 페이지에서 발급받은 API Key를 입력하세요.\n(현재 설정: " + (curConf.apiKey ? curConf.apiKey.substring(0, 6) + "******" : "미등록") + ")",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resKey.getSelectedButton() !== ui.Button.OK) return;
+  var newKey = resKey.getResponseText().trim() || curConf.apiKey;
+
+  // 2. User ID 입력
+  var resUser = ui.prompt(
+    "👤 2/4. 알리고 User ID (계정 아이디)",
+    "알리고 로그인 아이디를 입력하세요.\n(현재 설정: " + (curConf.userId || "미등록") + ")",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resUser.getSelectedButton() !== ui.Button.OK) return;
+  var newUser = resUser.getResponseText().trim() || curConf.userId;
+
+  // 3. 카카오 비즈니스 채널 SenderKey 입력
+  var resSenderKey = ui.prompt(
+    "💬 3/4. 카카오톡 채널 발송프로필키 (SenderKey)",
+    "알리고에 등록된 카카오 채널의 40자리 발송프로필키를 입력하세요.\n(현재 설정: " + (curConf.senderKey ? curConf.senderKey.substring(0, 8) + "******" : "미등록") + ")",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resSenderKey.getSelectedButton() !== ui.Button.OK) return;
+  var newSenderKey = resSenderKey.getResponseText().trim() || curConf.senderKey;
+
+  // 4. 발신번호 입력 (알리고에 사전 등록된 대표번호)
+  var resPhone = ui.prompt(
+    "📞 4/4. 대표 발신번호 설정",
+    "알리고에 등록된 발신번호(휴대폰 또는 대표번호)를 입력하세요.\n(현재 설정: " + (curConf.senderPhone || "미등록") + ")",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resPhone.getSelectedButton() !== ui.Button.OK) return;
+  var newPhone = resPhone.getResponseText().trim() || curConf.senderPhone;
+
+  setAlimtalkConfig({
+    apiKey: newKey,
+    userId: newUser,
+    senderKey: newSenderKey,
+    senderPhone: newPhone,
+    enabled: true,
+    tplCode: "우성아이디_일일현장브리핑",
+    dashboardUrl: "https://kimver2.github.io/"
+  });
+
+  ui.alert(
+    "✅ 알림톡 API 설정 완료",
+    "카카오톡 알림톡(알리고) API 환경설정이 안전하게 저장되었습니다!\n\n" +
+    "• 알리고 ID: " + newUser + "\n" +
+    "• 발신번호: " + newPhone + "\n" +
+    "• 템플릿 코드: 우성아이디_일일현장브리핑\n" +
+    "• 자동 발송 상태: 활성화 (ON)\n\n" +
+    "상단 메뉴 [☀️ 지금 카카오톡 브리핑 즉시 전송]을 눌러 테스트 발송을 진행하실 수 있습니다.",
+    ui.ButtonSet.OK
+  );
 }
 
 // ========================================================
