@@ -14349,7 +14349,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '        <span style="font-size:20px;">⚙️</span>';
   html += '        <div>';
   html += '          <h3 style="margin:0;font-size:16px;font-weight:900;color:#0f172a;letter-spacing:-0.3px;">마스터 설정</h3>';
-  html += '          <p style="margin:2px 0 0 0;font-size:11.5px;color:#64748b;font-weight:500;">거래처, 공종, 구성원(현장 소장/임직원) 정보를 조회, 추가, 수정, 삭제하고 노출 순서를 관리합니다.</p>';
+  html += '          <p style="margin:2px 0 0 0;font-size:11.5px;color:#64748b;font-weight:500;">거래처, 공종, 구성원 정보를 조회, 추가, 수정, 삭제하고 노출 순서를 관리합니다.</p>';
   html += '        </div>';
   html += '      </div>';
   html += '      <button type="button" onclick="closeSettingsModal()" style="border:none;background:#f1f5f9;color:#64748b;font-size:16px;font-weight:700;width:32px;height:32px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background=\'#e2e8f0\'" onmouseout="this.style.background=\'#f1f5f9\'">✕</button>';

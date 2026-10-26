@@ -10966,6 +10966,24 @@ assertTest('Step 170-4: index.html 내 exec?v=170 최신 캐시 버스팅 파라
   /exec\?v=(17[0-9]|1[8-9][0-9])/.test(indexHtml170)
 );
 
+// ========================================================
+// [Step 171]: 마스터 설정 모달 설명 문구 내 괄호 (현장 소장/임직원) 문구 제거 QA
+// ========================================================
+console.log('\n📋 [Step 171]: 마스터 설정 모달 설명 문구 내 괄호 문구 제거 QA ---');
+const code171 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml171 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 171-1: 마스터 설정 모달 설명 문구 내 괄호 문구 제거 및 간결한 구성원 표기 검증
+assertTest('Step 171-1: 마스터 설정 모달 설명 문구 내 (현장 소장/임직원) 괄호 제거 검증',
+  code171.includes('거래처, 공종, 구성원 정보를 조회, 추가, 수정, 삭제하고 노출 순서를 관리합니다.') &&
+  !code171.includes('거래처, 공종, 구성원(현장 소장/임직원) 정보를 조회')
+);
+
+// 171-2: index.html 내 exec?v=171 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 171-2: index.html 내 exec?v=171 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[1-9]|1[8-9][0-9])/.test(indexHtml171)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
