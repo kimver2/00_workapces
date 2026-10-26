@@ -10851,9 +10851,61 @@ assertTest('Step 167-6: sendDailyKakaoBriefing 및 메뉴/doGet 라우팅 연동
   code167.indexOf('action === "getAlimtalkConfig"') !== -1
 );
 
-// 167-7: index.html 내 exec?v=167 최신 캐시 버스팅 파라미터 갱신 검증
-assertTest('Step 167-7: index.html 내 exec?v=167 최신 캐시 버스팅 파라미터 갱신 검증',
-  indexHtml167.indexOf('exec?v=167') !== -1
+// 167-7: index.html 내 exec?v=167 이상 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 167-7: index.html 내 exec?v=167 이상 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(16[7-9]|1[7-9][0-9])/.test(indexHtml167)
+);
+
+// ========================================================
+// [Step 168]: 마스터 설정 팝업 내 구성원 등록/수정/삭제/순서제어/일괄저장 엔진 QA
+// ========================================================
+console.log('\n📋 [Step 168]: 마스터 설정 팝업 내 구성원 관리(등록/수정/삭제/순서/일괄저장) 엔진 QA ---');
+const code168 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml168 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 168-1: getMemberSheetColumnIndices 및 getSettingsManagementData 내 구성원(members) 반환 검증
+assertTest('Step 168-1: getMemberSheetColumnIndices 및 getSettingsManagementData 내 구성원 목록 반환 검증',
+  code168.indexOf('function getMemberSheetColumnIndices(mSheet)') !== -1 &&
+  code168.indexOf('var mSheet = findMembersSheet(ss);') !== -1 &&
+  code168.indexOf('members: members') !== -1
+);
+
+// 168-2: 서버단 구성원 CRUD 4대 함수(add/update/delete/reorder) 구현 검증
+assertTest('Step 168-2: 서버단 구성원 CRUD 4대 함수(add/update/delete/reorder) 구현 검증',
+  code168.indexOf('function addMemberItemFromWeb(memberData)') !== -1 &&
+  code168.indexOf('function updateMemberItemFromWeb(row, memberData)') !== -1 &&
+  code168.indexOf('function deleteMemberItemFromWeb(row, memberName)') !== -1 &&
+  code168.indexOf('function reorderMemberItemFromWeb(row, direction)') !== -1
+);
+
+// 168-3: saveAllSettingsBatchFromWeb 내 03_구성원 시트 원자적 일괄 저장 검증
+assertTest('Step 168-3: saveAllSettingsBatchFromWeb 내 03_구성원 시트 일괄 저장 연동 검증',
+  code168.indexOf('var membersList = data.members || [];') !== -1 &&
+  code168.indexOf('// 3. 구성원 일괄 저장 (03_구성원)') !== -1 &&
+  code168.indexOf('거래처, 공종 및 구성원 변경사항이 구글 시트에 성공적으로 일괄 저장되었습니다.') !== -1
+);
+
+// 168-4: doGet 내 구성원 액션 라우팅(addMember, updateMember, deleteMember, reorderMember) 연동 검증
+assertTest('Step 168-4: doGet 내 구성원 4대 액션 라우팅 연동 검증',
+  code168.indexOf('if (action === "addMember")') !== -1 &&
+  code168.indexOf('if (action === "updateMember")') !== -1 &&
+  code168.indexOf('if (action === "deleteMember")') !== -1 &&
+  code168.indexOf('if (action === "reorderMember")') !== -1
+);
+
+// 168-5: 클라이언트 설정 모달 내 구성원 탭, 폼 모달 및 렌더링 엔진 검증
+assertTest('Step 168-5: 클라이언트 설정 모달 내 구성원 탭, 폼 모달 및 렌더링 엔진 탑재 검증',
+  code168.indexOf('id="settingsTabMembers"') !== -1 &&
+  code168.indexOf('id="memberFormModal"') !== -1 &&
+  code168.indexOf('function renderMembersTable(container)') !== -1 &&
+  code168.indexOf('function openAddMemberModal()') !== -1 &&
+  code168.indexOf('function openEditMemberModal(row)') !== -1 &&
+  code168.indexOf('function toggleMemberReceive(row)') !== -1
+);
+
+// 168-6: index.html 내 exec?v=168 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 168-6: index.html 내 exec?v=168 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(16[8-9]|1[7-9][0-9])/.test(indexHtml168)
 );
 
 console.log('\n========================================================');

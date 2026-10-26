@@ -7679,12 +7679,54 @@ function deleteTodoItemFromWeb(id) {
 
 /**
  * ========================================================
- * [마스터 설정 관리] 거래처 및 공종 실시간 CRUD & 순서 제어 엔진
+ * [마스터 설정 관리] 거래처, 공종 및 구성원 실시간 CRUD & 순서 제어 엔진
  * ========================================================
  */
 
 /**
- * [마스터 설정] 거래처 및 공종 데이터 전체 조회
+ * [구성원] 시트 컬럼 인덱스 동적 판별 헬퍼
+ * 헤더 행을 자동 분석하여 이름, 직급, 연락처, 이메일, 수신여부, 비고 열을 유연하게 매핑합니다.
+ */
+function getMemberSheetColumnIndices(mSheet) {
+  var lastCol = (mSheet && typeof mSheet.getLastColumn === "function") ? mSheet.getLastColumn() : 6;
+  lastCol = Math.max(lastCol, 6);
+  var headerVals = [];
+  if (mSheet && typeof mSheet.getRange === "function" && mSheet.getLastRow() >= 1) {
+    try {
+      headerVals = mSheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+    } catch(eH) {
+      headerVals = [];
+    }
+  }
+  var nameCol = -1, roleCol = -1, phoneCol = -1, emailCol = -1, recvCol = -1, noteCol = -1;
+  for (var c = 0; c < headerVals.length; c++) {
+    var h = String(headerVals[c] || "").trim().toLowerCase();
+    if (nameCol === -1 && (h.indexOf("이름") !== -1 || h.indexOf("성명") !== -1 || h.indexOf("담당자") !== -1 || h.indexOf("직원") !== -1 || h === "name")) nameCol = c;
+    else if (roleCol === -1 && (h.indexOf("직급") !== -1 || h.indexOf("역할") !== -1 || h.indexOf("직책") !== -1 || h.indexOf("직위") !== -1 || h === "role" || h === "position")) roleCol = c;
+    else if (phoneCol === -1 && (h.indexOf("연락처") !== -1 || h.indexOf("전화") !== -1 || h.indexOf("휴대폰") !== -1 || h.indexOf("핸드폰") !== -1 || h.indexOf("phone") !== -1 || h.indexOf("tel") !== -1)) phoneCol = c;
+    else if (emailCol === -1 && (h.indexOf("이메일") !== -1 || h.indexOf("email") !== -1 || h.indexOf("메일") !== -1)) emailCol = c;
+    else if (recvCol === -1 && (h.indexOf("수신") !== -1 || h.indexOf("브리핑") !== -1 || h.indexOf("알림톡") !== -1 || h.indexOf("카톡") !== -1 || h.indexOf("receive") !== -1)) recvCol = c;
+    else if (noteCol === -1 && (h.indexOf("비고") !== -1 || h.indexOf("note") !== -1 || h.indexOf("메모") !== -1 || h.indexOf("상태") !== -1)) noteCol = c;
+  }
+  if (nameCol === -1) nameCol = 0;
+  if (roleCol === -1) roleCol = 1;
+  if (phoneCol === -1) phoneCol = 2;
+  if (emailCol === -1) emailCol = 3;
+  if (recvCol === -1) recvCol = 4;
+  if (noteCol === -1) noteCol = 5;
+  return {
+    nameCol: nameCol,
+    roleCol: roleCol,
+    phoneCol: phoneCol,
+    emailCol: emailCol,
+    recvCol: recvCol,
+    noteCol: noteCol,
+    maxCol: Math.max(lastCol, Math.max(nameCol, Math.max(roleCol, Math.max(phoneCol, Math.max(emailCol, Math.max(recvCol, noteCol))))) + 1)
+  };
+}
+
+/**
+ * [마스터 설정] 거래처, 공종 및 구성원 데이터 전체 조회
  */
 function getSettingsManagementData() {
   try {
@@ -7750,17 +7792,51 @@ function getSettingsManagementData() {
       }
     }
 
+    // 3. 구성원 데이터 수집 (03_구성원)
+    var mSheet = findMembersSheet(ss);
+    var members = [];
+    if (mSheet && mSheet.getLastRow() >= 2) {
+      var colIdxs = getMemberSheetColumnIndices(mSheet);
+      var numCols = Math.max(colIdxs.maxCol, 6);
+      var mLastR = mSheet.getLastRow();
+      var mData = mSheet.getRange(2, 1, mLastR - 1, numCols).getValues();
+      for (var mi = 0; mi < mData.length; mi++) {
+        var mRowVals = mData[mi];
+        var mName = String(mRowVals[colIdxs.nameCol] || "").trim();
+        if (!mName) continue;
+        var mRole = (colIdxs.roleCol < mRowVals.length) ? String(mRowVals[colIdxs.roleCol] || "").trim() : "";
+        var mPhone = (colIdxs.phoneCol < mRowVals.length) ? String(mRowVals[colIdxs.phoneCol] || "").trim() : "";
+        var mEmail = (colIdxs.emailCol < mRowVals.length) ? String(mRowVals[colIdxs.emailCol] || "").trim() : "";
+        var mRecvVal = (colIdxs.recvCol < mRowVals.length) ? mRowVals[colIdxs.recvCol] : true;
+        var isChecked = (mRecvVal === true || String(mRecvVal).trim().toUpperCase() === "TRUE" || String(mRecvVal).trim() === "1" || String(mRecvVal).trim() === "V" || String(mRecvVal).trim() === "O" || mRecvVal === "" || mRecvVal === undefined);
+        var mNote = (colIdxs.noteCol < mRowVals.length) ? String(mRowVals[colIdxs.noteCol] || "").trim() : "";
+
+        members.push({
+          row: mi + 2,
+          name: mName,
+          role: mRole,
+          phone: mPhone,
+          email: mEmail,
+          receive: isChecked,
+          note: mNote
+        });
+      }
+    }
+
     return {
       success: true,
       partners: partners,
       tasks: tasks,
+      members: members,
       availablePartners: getAvailablePartners(ss),
       availableTasks: getAvailableTasks(null),
-      partnerPhoneMap: getPartnerPhoneMap(ss)
+      availableManagers: getAvailableManagers(ss),
+      partnerPhoneMap: getPartnerPhoneMap(ss),
+      memberPhoneMap: getMemberPhoneMap(ss)
     };
   } catch(err) {
     Logger.log("getSettingsManagementData 오류: " + err.toString());
-    return { success: false, error: err.toString(), partners: [], tasks: [] };
+    return { success: false, error: err.toString(), partners: [], tasks: [], members: [] };
   }
 }
 
@@ -8157,7 +8233,232 @@ function reorderTaskItemFromWeb(row, direction) {
 }
 
 /**
- * [마스터 설정] 거래처 및 공종 전체 일괄 저장 (Batch Save)
+ * [마스터 설정] 신규 구성원 추가
+ */
+function addMemberItemFromWeb(memberData) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(addMemberItemFromWeb, this, arguments);
+  try {
+    var data = (typeof memberData === "string") ? JSON.parse(memberData) : (memberData || {});
+    var name = String(data.name || "").trim();
+    if (!name) return { success: false, error: "구성원 이름을 입력해주세요." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var mSheet = findMembersSheet(ss);
+    if (!mSheet) {
+      mSheet = ss.insertSheet("03_구성원");
+      var headers = [["이름", "직급/역할", "연락처", "이메일", "알림톡/브리핑 수신", "비고"]];
+      mSheet.getRange(1, 1, 1, 6).setValues(headers).setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
+    }
+
+    var colIdxs = getMemberSheetColumnIndices(mSheet);
+    var numCols = Math.max(colIdxs.maxCol, 6);
+
+    var cleanPhone = String(data.phone || "").trim().replace(/\s+/g, "");
+    if (/^010\d{8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(010)(\d{4})(\d{4})$/, "$1-$2-$3");
+    } else if (/^02\d{7,8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(02)(\d{3,4})(\d{4})$/, "$1-$2-$3");
+    }
+
+    var newRow = new Array(numCols);
+    for (var k = 0; k < numCols; k++) newRow[k] = "";
+    newRow[colIdxs.nameCol] = name;
+    newRow[colIdxs.roleCol] = String(data.role || "").trim();
+    newRow[colIdxs.phoneCol] = cleanPhone;
+    newRow[colIdxs.emailCol] = String(data.email || "").trim();
+    newRow[colIdxs.recvCol] = (data.receive !== false && String(data.receive) !== "false");
+    if (colIdxs.noteCol < numCols) newRow[colIdxs.noteCol] = String(data.note || "").trim();
+
+    mSheet.appendRow(newRow);
+    SpreadsheetApp.flush();
+
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+    } catch(eVal) {}
+
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "구성원 [" + name + "]이(가) 성공적으로 추가되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("addMemberItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 기존 구성원 정보 수정
+ */
+function updateMemberItemFromWeb(row, memberData) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(updateMemberItemFromWeb, this, arguments);
+  try {
+    var targetRow = parseInt(row, 10);
+    var data = (typeof memberData === "string") ? JSON.parse(memberData) : (memberData || {});
+    var name = String(data.name || "").trim();
+    if (!name) return { success: false, error: "구성원 이름을 입력해주세요." };
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var mSheet = findMembersSheet(ss);
+    if (!mSheet) return { success: false, error: "03_구성원 시트를 찾을 수 없습니다." };
+
+    var lastRow = mSheet.getLastRow();
+    if (targetRow < 2 || targetRow > lastRow) {
+      return { success: false, error: "유효하지 않은 행 번호입니다. (" + targetRow + ")" };
+    }
+
+    var colIdxs = getMemberSheetColumnIndices(mSheet);
+    var numCols = Math.max(colIdxs.maxCol, 6);
+
+    var cleanPhone = String(data.phone || "").trim().replace(/\s+/g, "");
+    if (/^010\d{8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(010)(\d{4})(\d{4})$/, "$1-$2-$3");
+    } else if (/^02\d{7,8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.replace(/^(02)(\d{3,4})(\d{4})$/, "$1-$2-$3");
+    }
+
+    var existingVals = mSheet.getRange(targetRow, 1, 1, numCols).getValues()[0];
+    existingVals[colIdxs.nameCol] = name;
+    existingVals[colIdxs.roleCol] = String(data.role || "").trim();
+    existingVals[colIdxs.phoneCol] = cleanPhone;
+    existingVals[colIdxs.emailCol] = String(data.email || "").trim();
+    existingVals[colIdxs.recvCol] = (data.receive !== false && String(data.receive) !== "false");
+    if (colIdxs.noteCol < numCols) existingVals[colIdxs.noteCol] = String(data.note || "").trim();
+
+    mSheet.getRange(targetRow, 1, 1, numCols).setValues([existingVals]);
+    SpreadsheetApp.flush();
+
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+    } catch(eVal) {}
+
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "구성원 [" + name + "]이(가) 수정되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("updateMemberItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 구성원 삭제
+ */
+function deleteMemberItemFromWeb(row, memberName) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(deleteMemberItemFromWeb, this, arguments);
+  try {
+    var targetRow = parseInt(row, 10);
+    var targetName = String(memberName || "").trim();
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var mSheet = findMembersSheet(ss);
+    if (!mSheet) return { success: false, error: "03_구성원 시트를 찾을 수 없습니다." };
+
+    var lastRow = mSheet.getLastRow();
+    if (lastRow < 2) return { success: false, error: "데이터가 없습니다." };
+
+    var colIdxs = getMemberSheetColumnIndices(mSheet);
+
+    var actualName = "";
+    if (targetRow >= 2 && targetRow <= lastRow) {
+      actualName = String(mSheet.getRange(targetRow, colIdxs.nameCol + 1).getValue() || "").trim();
+    }
+    if (actualName !== targetName && targetName) {
+      var allNames = mSheet.getRange(2, colIdxs.nameCol + 1, lastRow - 1, 1).getValues();
+      targetRow = -1;
+      for (var i = 0; i < allNames.length; i++) {
+        if (String(allNames[i][0] || "").trim() === targetName) {
+          targetRow = i + 2;
+          break;
+        }
+      }
+    }
+
+    if (targetRow < 2 || targetRow > lastRow) {
+      return { success: false, error: "삭제할 구성원 행을 찾을 수 없습니다." };
+    }
+
+    mSheet.deleteRow(targetRow);
+    SpreadsheetApp.flush();
+
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+    } catch(eVal) {}
+
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "구성원 [" + (targetName || targetRow + "행") + "]이(가) 삭제되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("deleteMemberItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 구성원 노출 순서 변경 (위/아래 행 교환)
+ */
+function reorderMemberItemFromWeb(row, direction) {
+  if (!__woosungWriteLockHeld_) return runWithWriteLock_(reorderMemberItemFromWeb, this, arguments);
+  try {
+    var curRow = parseInt(row, 10);
+    var dir = String(direction || "up").toLowerCase();
+    var otherRow = (dir === "up") ? (curRow - 1) : (curRow + 1);
+
+    var ss = getAppSpreadsheet();
+    if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
+    var mSheet = findMembersSheet(ss);
+    if (!mSheet) return { success: false, error: "03_구성원 시트를 찾을 수 없습니다." };
+
+    var lastRow = mSheet.getLastRow();
+    if (curRow < 2 || curRow > lastRow || otherRow < 2 || otherRow > lastRow) {
+      return { success: false, error: "더 이상 순서를 변경할 수 없습니다." };
+    }
+
+    var colIdxs = getMemberSheetColumnIndices(mSheet);
+    var numCols = Math.max(colIdxs.maxCol, 6);
+
+    var r1Range = mSheet.getRange(curRow, 1, 1, numCols);
+    var r2Range = mSheet.getRange(otherRow, 1, 1, numCols);
+    var v1 = r1Range.getValues();
+    var v2 = r2Range.getValues();
+    var b1 = r1Range.getBackgrounds();
+    var b2 = r2Range.getBackgrounds();
+
+    r1Range.setValues(v2);
+    r2Range.setValues(v1);
+    r1Range.setBackgrounds(b2);
+    r2Range.setBackgrounds(b1);
+
+    SpreadsheetApp.flush();
+
+    try {
+      var siteSheet = findSiteScheduleSheet(ss);
+      if (siteSheet) applySiteScheduleValidations(siteSheet);
+    } catch(eVal) {}
+
+    invalidateDashboardServerCache();
+
+    var freshData = getSettingsManagementData();
+    freshData.message = "구성원 순서가 변경되었습니다.";
+    return freshData;
+  } catch(err) {
+    Logger.log("reorderMemberItemFromWeb 오류: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [마스터 설정] 거래처, 공종 및 구성원 전체 일괄 저장 (Batch Save)
  * 팝업에서 추가/수정/순서조정/삭제된 모든 데이터를 구글 스프레드시트에 한 번에 원자적으로 저장합니다.
  */
 function saveAllSettingsBatchFromWeb(batchPayload) {
@@ -8166,6 +8467,7 @@ function saveAllSettingsBatchFromWeb(batchPayload) {
     var data = (typeof batchPayload === "string") ? JSON.parse(batchPayload) : (batchPayload || {});
     var partnersList = data.partners || [];
     var tasksList = data.tasks || [];
+    var membersList = data.members || [];
 
     var ss = getAppSpreadsheet();
     if (!ss) return { success: false, error: "스프레드시트를 찾을 수 없습니다." };
@@ -8237,11 +8539,57 @@ function saveAllSettingsBatchFromWeb(batchPayload) {
       } catch(eVal) {}
     }
 
+    // 3. 구성원 일괄 저장 (03_구성원)
+    var mSheet = findMembersSheet(ss);
+    if (!mSheet && Array.isArray(membersList) && membersList.length > 0) {
+      mSheet = ss.insertSheet("03_구성원");
+      var mHeaders = [["이름", "직급/역할", "연락처", "이메일", "알림톡/브리핑 수신", "비고"]];
+      mSheet.getRange(1, 1, 1, 6).setValues(mHeaders).setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
+    }
+    if (mSheet && Array.isArray(membersList)) {
+      var colIdxs = getMemberSheetColumnIndices(mSheet);
+      var numCols = Math.max(colIdxs.maxCol, 6);
+      var mLastRow = mSheet.getLastRow();
+      var oldMCount = Math.max(0, mLastRow - 1);
+      var mRows = [];
+      for (var mi = 0; mi < membersList.length; mi++) {
+        var mItem = membersList[mi] || {};
+        var mName = String(mItem.name || "").trim();
+        if (!mName) continue;
+        var rowArr = new Array(numCols);
+        for (var k = 0; k < numCols; k++) rowArr[k] = "";
+        rowArr[colIdxs.nameCol] = mName;
+        rowArr[colIdxs.roleCol] = String(mItem.role || "").trim();
+        var cleanMPhone = String(mItem.phone || "").trim().replace(/\s+/g, "");
+        if (/^010\d{8}$/.test(cleanMPhone)) cleanMPhone = cleanMPhone.replace(/^(010)(\d{4})(\d{4})$/, "$1-$2-$3");
+        else if (/^02\d{7,8}$/.test(cleanMPhone)) cleanMPhone = cleanMPhone.replace(/^(02)(\d{3,4})(\d{4})$/, "$1-$2-$3");
+        rowArr[colIdxs.phoneCol] = cleanMPhone;
+        rowArr[colIdxs.emailCol] = String(mItem.email || "").trim();
+        rowArr[colIdxs.recvCol] = (mItem.receive !== false && String(mItem.receive) !== "false");
+        if (colIdxs.noteCol < numCols) rowArr[colIdxs.noteCol] = String(mItem.note || "").trim();
+        mRows.push(rowArr);
+      }
+
+      if (mRows.length > 0) {
+        mSheet.getRange(2, 1, mRows.length, numCols).setValues(mRows);
+        if (oldMCount > mRows.length) {
+          mSheet.getRange(2 + mRows.length, 1, oldMCount - mRows.length, numCols).clearContent();
+        }
+      } else if (oldMCount > 0) {
+        mSheet.getRange(2, 1, oldMCount, numCols).clearContent();
+      }
+
+      try {
+        var siteSheet = findSiteScheduleSheet(ss);
+        if (siteSheet) applySiteScheduleValidations(siteSheet);
+      } catch(eVal) {}
+    }
+
     SpreadsheetApp.flush();
     invalidateDashboardServerCache();
 
     var freshData = getSettingsManagementData();
-    freshData.message = "거래처 및 공종 변경사항이 구글 시트에 성공적으로 일괄 저장되었습니다.";
+    freshData.message = "거래처, 공종 및 구성원 변경사항이 구글 시트에 성공적으로 일괄 저장되었습니다.";
     return freshData;
   } catch(err) {
     Logger.log("saveAllSettingsBatchFromWeb 오류: " + err.toString());
@@ -8901,7 +9249,7 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 0-0-0-Settings) 마스터 설정 (거래처 & 공종 관리) 액션 라우팅
+  // 0-0-0-Settings) 마스터 설정 (거래처 · 공종 · 구성원 관리) 액션 라우팅
   if (action === "getSettingsData") {
     var sData = getSettingsManagementData();
     return ContentService.createTextOutput(JSON.stringify(sData)).setMimeType(ContentService.MimeType.JSON);
@@ -8951,6 +9299,29 @@ function doGet(e) {
     var tReDir = p.direction || "up";
     var reorderTRes = reorderTaskItemFromWeb(tReRow, tReDir);
     return ContentService.createTextOutput(JSON.stringify(reorderTRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "addMember") {
+    var mAddData = p.data ? JSON.parse(p.data) : p;
+    var addMRes = addMemberItemFromWeb(mAddData);
+    return ContentService.createTextOutput(JSON.stringify(addMRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "updateMember") {
+    var mUpdateRow = parseInt(p.row, 10);
+    var mUpdateData = p.data ? JSON.parse(p.data) : p;
+    var updateMRes = updateMemberItemFromWeb(mUpdateRow, mUpdateData);
+    return ContentService.createTextOutput(JSON.stringify(updateMRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "deleteMember") {
+    var mDelRow = parseInt(p.row, 10);
+    var mDelName = p.name || "";
+    var delMRes = deleteMemberItemFromWeb(mDelRow, mDelName);
+    return ContentService.createTextOutput(JSON.stringify(delMRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "reorderMember") {
+    var mReRow = parseInt(p.row, 10);
+    var mReDir = p.direction || "up";
+    var reorderMRes = reorderMemberItemFromWeb(mReRow, mReDir);
+    return ContentService.createTextOutput(JSON.stringify(reorderMRes)).setMimeType(ContentService.MimeType.JSON);
   }
   if (action === "saveAllSettingsBatch") {
     var batchPayload = p.data ? JSON.parse(p.data) : p;
@@ -9970,9 +10341,10 @@ function checkAndHighlightDelayedSchedules() {
  */
 function findMembersSheet(ss) {
   if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss && typeof getAppSpreadsheet === "function") ss = getAppSpreadsheet();
   if (!ss) return null;
   var sheets = ss.getSheets();
-  var candidateNames = ["구성원", "팀원", "직원", "조직도", "members", "team", "member"];
+  var candidateNames = ["03_구성원", "구성원", "팀원", "직원", "조직도", "members", "team", "member"];
   for (var i = 0; i < sheets.length; i++) {
     var sName = sheets[i].getName().trim().toLowerCase();
     for (var c = 0; c < candidateNames.length; c++) {
@@ -9990,7 +10362,7 @@ function findMembersSheet(ss) {
 function isMembersSheet(sheet) {
   if (!sheet) return false;
   var sName = sheet.getName().trim().toLowerCase();
-  var candidateNames = ["구성원", "팀원", "직원", "조직도", "members", "team", "member"];
+  var candidateNames = ["03_구성원", "구성원", "팀원", "직원", "조직도", "members", "team", "member"];
   for (var c = 0; c < candidateNames.length; c++) {
     if (sName === candidateNames[c] || sName.indexOf(candidateNames[c]) !== -1) {
       return true;
@@ -13976,8 +14348,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div style="display:flex;align-items:center;gap:10px;">';
   html += '        <span style="font-size:20px;">⚙️</span>';
   html += '        <div>';
-  html += '          <h3 style="margin:0;font-size:16px;font-weight:900;color:#0f172a;letter-spacing:-0.3px;">마스터 설정 (거래처 · 공종 관리)</h3>';
-  html += '          <p style="margin:2px 0 0 0;font-size:11.5px;color:#64748b;font-weight:500;">추가, 수정, 삭제 및 노출 순서 변경 시 현장 추가/수정 드롭다운에 즉시 실시간 연동됩니다.</p>';
+  html += '          <h3 style="margin:0;font-size:16px;font-weight:900;color:#0f172a;letter-spacing:-0.3px;">마스터 설정 (거래처 · 공종 · 구성원 관리)</h3>';
+  html += '          <p style="margin:2px 0 0 0;font-size:11.5px;color:#64748b;font-weight:500;">거래처, 공종, 구성원(현장 소장/임직원) 정보를 조회, 추가, 수정, 삭제하고 노출 순서를 관리합니다.</p>';
   html += '        </div>';
   html += '      </div>';
   html += '      <button type="button" onclick="closeSettingsModal()" style="border:none;background:#f1f5f9;color:#64748b;font-size:16px;font-weight:700;width:32px;height:32px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background=\'#e2e8f0\'" onmouseout="this.style.background=\'#f1f5f9\'">✕</button>';
@@ -13992,11 +14364,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '          <span>🏷️ 공종 관리</span>';
   html += '          <span id="settingsCountTasks" style="background:#e2e8f0;color:#475569;padding:1px 6px;border-radius:10px;font-size:11px;">0</span>';
   html += '        </button>';
+  html += '        <button type="button" id="settingsTabMembers" onclick="switchSettingsTab(\'members\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:13px;font-weight:800;border:none;cursor:pointer;background:#f1f5f9;color:#475569;transition:all 0.15s;">';
+  html += '          <span>👥 구성원 관리</span>';
+  html += '          <span id="settingsCountMembers" style="background:#e2e8f0;color:#475569;padding:1px 6px;border-radius:10px;font-size:11px;">0</span>';
+  html += '        </button>';
   html += '      </div>';
   html += '      <div style="display:flex;align-items:center;gap:10px;">';
   html += '        <div style="position:relative;display:flex;align-items:center;">';
   html += '          <span style="position:absolute;left:10px;font-size:12px;color:#94a3b8;pointer-events:none;">🔍</span>';
-  html += '          <input type="text" id="settingsSearchInput" placeholder="검색 (업체명, 공종, 구분...)" oninput="onSettingsSearchInput(this.value)" style="padding:6px 10px 6px 30px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:180px;background:#ffffff;">';
+  html += '          <input type="text" id="settingsSearchInput" placeholder="검색 (업체명, 공종, 구성원, 연락처...)" oninput="onSettingsSearchInput(this.value)" style="padding:6px 10px 6px 30px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:200px;background:#ffffff;">';
   html += '        </div>';
   html += '        <button type="button" id="settingsAddBtn" onclick="openAddPartnerModal()" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;background:#10b981;color:#ffffff;border:none;border-radius:8px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 1px 2px rgba(16,185,129,0.2);transition:background 0.15s;" onmouseover="this.style.background=\'#059669\'" onmouseout="this.style.background=\'#10b981\'">+ 신규 거래처 추가</button>';
   html += '      </div>';
@@ -14138,25 +14514,78 @@ function buildSidebarDashboardHtml(mode) {
   html += '    </div>';
   html += '  </div>';
   html += '</div>';
+  html += '<div id="memberFormModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.5);z-index:99999;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeMemberFormModal()">';
+  html += '  <div style="background:#ffffff;border-radius:14px;width:100%;max-width:500px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.2);overflow:hidden;display:flex;flex-direction:column;">';
+  html += '    <div style="padding:16px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;">';
+  html += '      <h4 id="memberFormTitle" style="margin:0;font-size:15px;font-weight:900;color:#0f172a;">👥 신규 구성원 등록</h4>';
+  html += '      <button type="button" onclick="closeMemberFormModal()" style="border:none;background:none;color:#64748b;font-size:16px;cursor:pointer;">✕</button>';
+  html += '    </div>';
+  html += '    <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;max-height:calc(85vh - 120px);overflow-y:auto;">';
+  html += '      <div style="display:flex;gap:10px;">';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">이름 (성명) <span style="color:#ef4444;">*</span></label>';
+  html += '          <input type="text" id="memberInpName" placeholder="예: 홍길동" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:13px;font-weight:700;outline:none;">';
+  html += '        </div>';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">직급 / 역할</label>';
+  html += '          <input type="text" id="memberInpRole" list="memberRoleSuggestions" placeholder="예: 현장소장, 디자이너" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:13px;font-weight:700;outline:none;">';
+  html += '          <datalist id="memberRoleSuggestions">';
+  html += '            <option value="현장소장"></option>';
+  html += '            <option value="총괄소장"></option>';
+  html += '            <option value="디자이너"></option>';
+  html += '            <option value="실장"></option>';
+  html += '            <option value="부장"></option>';
+  html += '            <option value="대표"></option>';
+  html += '            <option value="매니저"></option>';
+  html += '          </datalist>';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div style="display:flex;gap:10px;">';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">연락처 (휴대폰)</label>';
+  html += '          <input type="text" id="memberInpPhone" placeholder="예: 010-1234-5678" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;">';
+  html += '        </div>';
+  html += '        <div style="flex:1;">';
+  html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">이메일</label>';
+  html += '          <input type="email" id="memberInpEmail" placeholder="예: user@woosung.com" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;">';
+  html += '        </div>';
+  html += '      </div>';
+  html += '      <div style="padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;display:flex;align-items:center;gap:10px;">';
+  html += '        <input type="checkbox" id="memberInpReceive" checked style="width:18px;height:18px;cursor:pointer;">';
+  html += '        <label for="memberInpReceive" style="font-size:12.5px;font-weight:700;color:#334155;cursor:pointer;margin:0;">모닝 브리핑 / 카카오 알림톡 수신 대상</label>';
+  html += '      </div>';
+  html += '      <div>';
+  html += '        <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">비고 / 메모</label>';
+  html += '        <input type="text" id="memberInpNote" placeholder="추가 메모 사항" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;outline:none;">';
+  html += '      </div>';
+  html += '    </div>';
+  html += '    <div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;justify-content:flex-end;gap:8px;">';
+  html += '      <button type="button" onclick="closeMemberFormModal()" style="padding:7px 14px;border:1.5px solid #cbd5e1;background:#ffffff;color:#475569;border-radius:7px;font-size:12.5px;font-weight:700;cursor:pointer;">취소</button>';
+  html += '      <button type="button" onclick="saveMemberForm()" style="padding:7px 18px;border:none;background:#2563eb;color:#ffffff;border-radius:7px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 1px 2px rgba(37,99,235,0.3);">저장하기</button>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '</div>';
 
   // Script
   html += '<script>';
 
   // ========================================================
-  // [마스터 설정 관리: 거래처 & 공종 실시간 클라이언트 엔진]
+  // [마스터 설정 관리: 거래처, 공종 및 구성원 실시간 클라이언트 엔진]
   // ========================================================
   html += '\n';
   html += 'let currentSettingsTab = "partners";\n';
-  html += 'let currentSettingsData = { partners: [], tasks: [] };\n';
-  html += 'let originalSettingsData = { partners: [], tasks: [] };\n';
+  html += 'let currentSettingsData = { partners: [], tasks: [], members: [] };\n';
+  html += 'let originalSettingsData = { partners: [], tasks: [], members: [] };\n';
   html += 'let hasSettingsPendingChanges = false;\n';
   html += 'let settingsPendingChangesCount = 0;\n';
   html += 'let settingsSearchQuery = "";\n';
   html += 'let editingPartnerRow = null;\n';
   html += 'let editingTaskRow = null;\n';
-  html += 'let settingsColumnFilters = { biz: "", category: "", priority: "", status: "", taskCat: "" };\n';
+  html += 'let editingMemberRow = null;\n';
+  html += 'let settingsColumnFilters = { biz: "", category: "", priority: "", status: "", taskCat: "", memberRole: "", memberReceive: "" };\n';
   html += 'let settingsMovedPartnerRow = null;\n';
   html += 'let settingsMovedTaskRow = null;\n';
+  html += 'let settingsMovedMemberRow = null;\n';
   html += '\n';
   html += 'function markSettingsChanged() {\n';
   html += '  hasSettingsPendingChanges = true;\n';
@@ -14213,6 +14642,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (modal) modal.style.display = "none";\n';
   html += '  closePartnerFormModal();\n';
   html += '  closeTaskFormModal();\n';
+  html += '  closeMemberFormModal();\n';
   html += '}\n';
   html += '\n';
   html += 'function switchSettingsTab(tab) {\n';
@@ -14221,17 +14651,22 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (cont) cont.scrollTop = 0;\n';
   html += '  const tabP = document.getElementById("settingsTabPartners");\n';
   html += '  const tabT = document.getElementById("settingsTabTasks");\n';
-  html += '  if (tab === "partners") {\n';
-  html += '    if (tabP) { tabP.style.background = "#2563eb"; tabP.style.color = "#ffffff"; tabP.style.boxShadow = "0 1px 2px rgba(37,99,235,0.2)"; }\n';
-  html += '    if (tabT) { tabT.style.background = "#f1f5f9"; tabT.style.color = "#475569"; tabT.style.boxShadow = "none"; }\n';
-  html += '  } else {\n';
-  html += '    if (tabP) { tabP.style.background = "#f1f5f9"; tabP.style.color = "#475569"; tabP.style.boxShadow = "none"; }\n';
-  html += '    if (tabT) { tabT.style.background = "#2563eb"; tabT.style.color = "#ffffff"; tabT.style.boxShadow = "0 1px 2px rgba(37,99,235,0.2)"; }\n';
-  html += '  }\n';
+  html += '  const tabM = document.getElementById("settingsTabMembers");\n';
+  html += '  if (tabP) { tabP.style.background = (tab === "partners") ? "#2563eb" : "#f1f5f9"; tabP.style.color = (tab === "partners") ? "#ffffff" : "#475569"; tabP.style.boxShadow = (tab === "partners") ? "0 1px 2px rgba(37,99,235,0.2)" : "none"; }\n';
+  html += '  if (tabT) { tabT.style.background = (tab === "tasks") ? "#2563eb" : "#f1f5f9"; tabT.style.color = (tab === "tasks") ? "#ffffff" : "#475569"; tabT.style.boxShadow = (tab === "tasks") ? "0 1px 2px rgba(37,99,235,0.2)" : "none"; }\n';
+  html += '  if (tabM) { tabM.style.background = (tab === "members") ? "#2563eb" : "#f1f5f9"; tabM.style.color = (tab === "members") ? "#ffffff" : "#475569"; tabM.style.boxShadow = (tab === "members") ? "0 1px 2px rgba(37,99,235,0.2)" : "none"; }\n';
   html += '  const addBtn = document.getElementById("settingsAddBtn");\n';
   html += '  if (addBtn) {\n';
-  html += '    addBtn.innerText = (tab === "partners") ? "+ 신규 거래처 추가" : "+ 신규 공종 추가";\n';
-  html += '    addBtn.onclick = (tab === "partners") ? openAddPartnerModal : openAddTaskModal;\n';
+  html += '    if (tab === "partners") {\n';
+  html += '      addBtn.innerText = "+ 신규 거래처 추가";\n';
+  html += '      addBtn.onclick = openAddPartnerModal;\n';
+  html += '    } else if (tab === "tasks") {\n';
+  html += '      addBtn.innerText = "+ 신규 공종 추가";\n';
+  html += '      addBtn.onclick = openAddTaskModal;\n';
+  html += '    } else {\n';
+  html += '      addBtn.innerText = "+ 신규 구성원 추가";\n';
+  html += '      addBtn.onclick = openAddMemberModal;\n';
+  html += '    }\n';
   html += '  }\n';
   html += '  renderSettingsView();\n';
   html += '}\n';
@@ -14259,7 +14694,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}\n';
   html += '\n';
   html += 'function clearAllSettingsFilters() {\n';
-  html += '  settingsColumnFilters = { biz: "", category: "", priority: "", status: "", taskCat: "" };\n';
+  html += '  settingsColumnFilters = { biz: "", category: "", priority: "", status: "", taskCat: "", memberRole: "", memberReceive: "" };\n';
   html += '  settingsSearchQuery = "";\n';
   html += '  const sInp = document.getElementById("settingsSearchInput");\n';
   html += '  if (sInp) sInp.value = "";\n';
@@ -14275,8 +14710,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (settingsColumnFilters.category) badges.push({ field: "category", label: "대구분: " + settingsColumnFilters.category });\n';
   html += '    if (settingsColumnFilters.priority) badges.push({ field: "priority", label: "우선순위: " + settingsColumnFilters.priority });\n';
   html += '    if (settingsColumnFilters.status) badges.push({ field: "status", label: "관리상태: " + settingsColumnFilters.status });\n';
-  html += '  } else {\n';
+  html += '  } else if (currentSettingsTab === "tasks") {\n';
   html += '    if (settingsColumnFilters.taskCat) badges.push({ field: "taskCat", label: "구분: " + settingsColumnFilters.taskCat });\n';
+  html += '  } else {\n';
+  html += '    if (settingsColumnFilters.memberRole) badges.push({ field: "memberRole", label: "직급/역할: " + settingsColumnFilters.memberRole });\n';
+  html += '    if (settingsColumnFilters.memberReceive) badges.push({ field: "memberReceive", label: "수신여부: " + (settingsColumnFilters.memberReceive === "Y" ? "수신함" : "미수신") });\n';
   html += '  }\n';
   html += '  if (settingsSearchQuery) {\n';
   html += '    badges.push({ field: "search", label: "검색: \\\"" + settingsSearchQuery + "\\\"" });\n';
@@ -14304,7 +14742,7 @@ function buildSidebarDashboardHtml(mode) {
   html += 'function loadSettingsData(silent) {\n';
   html += '  if (!silent) {\n';
   html += '    const listArea = document.getElementById("settingsListContent");\n';
-  html += '    if (listArea && (!currentSettingsData.partners.length && !currentSettingsData.tasks.length)) {\n';
+  html += '    if (listArea && (!currentSettingsData.partners.length && !currentSettingsData.tasks.length && !currentSettingsData.members.length)) {\n';
   html += '      listArea.innerHTML = \'<div style="text-align:center;padding:50px 20px;color:#64748b;font-weight:600;"><div class="spinner" style="width:26px;height:26px;border-width:3px;margin:0 auto 12px;"></div>설정 데이터를 불러오는 중입니다...</div>\';\n';
   html += '    }\n';
   html += '  }\n';
@@ -14317,7 +14755,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (res && res.success) {\n';
   html += '    currentSettingsData = {\n';
   html += '      partners: res.partners || [],\n';
-  html += '      tasks: res.tasks || []\n';
+  html += '      tasks: res.tasks || [],\n';
+  html += '      members: res.members || []\n';
   html += '    };\n';
   html += '    originalSettingsData = JSON.parse(JSON.stringify(currentSettingsData));\n';
   html += '    hasSettingsPendingChanges = false;\n';
@@ -14325,8 +14764,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    updateSettingsSaveBtn();\n';
   html += '    const pCountEl = document.getElementById("settingsCountPartners");\n';
   html += '    const tCountEl = document.getElementById("settingsCountTasks");\n';
+  html += '    const mCountEl = document.getElementById("settingsCountMembers");\n';
   html += '    if (pCountEl) pCountEl.innerText = currentSettingsData.partners.length;\n';
   html += '    if (tCountEl) tCountEl.innerText = currentSettingsData.tasks.length;\n';
+  html += '    if (mCountEl) mCountEl.innerText = currentSettingsData.members.length;\n';
   html += '\n';
   html += '    // 현장 추가/수정에 실시간 연동 (rawData 갱신 및 드롭다운 즉시 동기화)\n';
   html += '    if (typeof rawData !== "undefined" && rawData) {\n';
@@ -14334,7 +14775,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      else if (res.partners) rawData.partners = res.partners.map(function(p) { return p.dropdownVal || p.name; });\n';
   html += '      if (res.availableTasks) rawData.tasks = res.availableTasks;\n';
   html += '      else if (res.tasks) rawData.tasks = res.tasks.map(function(t) { return t.taskName; });\n';
+  html += '      if (res.availableManagers) rawData.availableManagers = res.availableManagers;\n';
   html += '      if (res.partnerPhoneMap) rawData.partnerPhoneMap = res.partnerPhoneMap;\n';
+  html += '      if (res.memberPhoneMap) rawData.memberPhoneMap = res.memberPhoneMap;\n';
   html += '      if (typeof populateTaskSelectOptions === "function") {\n';
   html += '        populateTaskSelectOptions(rawData.tasks);\n';
   html += '      }\n';
@@ -14353,8 +14796,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (!container) return;\n';
   html += '  if (currentSettingsTab === "partners") {\n';
   html += '    renderPartnersTable(container);\n';
-  html += '  } else {\n';
+  html += '  } else if (currentSettingsTab === "tasks") {\n';
   html += '    renderTasksTable(container);\n';
+  html += '  } else {\n';
+  html += '    renderMembersTable(container);\n';
   html += '  }\n';
   html += '}\n';
   html += '\n';
@@ -14560,6 +15005,114 @@ function buildSidebarDashboardHtml(mode) {
   html += '    tHtml += \'  <div style="display:inline-flex;gap:4px;">\';\n';
   html += '    tHtml += \'    <button type="button" onclick="openEditTaskModal(\' + t.row + \')" style="border:1px solid #cbd5e1;background:#ffffff;color:#1e293b;border-radius:5px;padding:3px 6px;font-size:11px;font-weight:700;cursor:pointer;">✏️</button>\';\n';
   html += '    tHtml += \'    <button type="button" onclick="deleteTask(\' + t.row + \', \\\'\' + escapeSettingsQuotes(t.taskName) + \'\\\')" style="border:1px solid #fecaca;background:#fff1f2;color:#e11d48;border-radius:5px;padding:3px 6px;font-size:11px;font-weight:700;cursor:pointer;">🗑️</button>\';\n';
+  html += '    tHtml += \'  </div>\';\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'</tr>\';\n';
+  html += '  });\n';
+  html += '  tHtml += \'</tbody></table>\';\n';
+  html += '  container.innerHTML = tHtml;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function renderMembersTable(container) {\n';
+  html += '  updateSettingsActiveFiltersBar();\n';
+  html += '  const rawList = currentSettingsData.members || [];\n';
+  html += '  const roleCounts = {};\n';
+  html += '  let recvYesCount = 0, recvNoCount = 0;\n';
+  html += '  rawList.forEach(function(m) {\n';
+  html += '    const r = m.role || "미지정";\n';
+  html += '    roleCounts[r] = (roleCounts[r] || 0) + 1;\n';
+  html += '    if (m.receive !== false && String(m.receive) !== "false") recvYesCount++;\n';
+  html += '    else recvNoCount++;\n';
+  html += '  });\n';
+  html += '  let list = rawList.filter(function(m) {\n';
+  html += '    if (settingsSearchQuery) {\n';
+  html += '      const q = settingsSearchQuery;\n';
+  html += '      const match = (m.name && m.name.toLowerCase().includes(q)) ||\n';
+  html += '                    (m.role && m.role.toLowerCase().includes(q)) ||\n';
+  html += '                    (m.phone && m.phone.includes(q)) ||\n';
+  html += '                    (m.email && m.email.toLowerCase().includes(q)) ||\n';
+  html += '                    (m.note && m.note.toLowerCase().includes(q));\n';
+  html += '      if (!match) return false;\n';
+  html += '    }\n';
+  html += '    if (settingsColumnFilters.memberRole && (m.role || "미지정") !== settingsColumnFilters.memberRole) return false;\n';
+  html += '    if (settingsColumnFilters.memberReceive) {\n';
+  html += '      const isRecv = (m.receive !== false && String(m.receive) !== "false");\n';
+  html += '      if (settingsColumnFilters.memberReceive === "Y" && !isRecv) return false;\n';
+  html += '      if (settingsColumnFilters.memberReceive === "N" && isRecv) return false;\n';
+  html += '    }\n';
+  html += '    return true;\n';
+  html += '  });\n';
+  html += '  if (list.length === 0) {\n';
+  html += '    container.innerHTML = \'<div style="text-align:center;padding:50px 20px;color:#94a3b8;font-weight:600;"><span style="font-size:24px;display:block;margin-bottom:8px;">🔍</span>조건에 일치하는 구성원이 없습니다. <button type="button" onclick="clearAllSettingsFilters()" style="margin-top:10px;padding:5px 12px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;">필터 초기화</button></div>\';\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  let tHtml = \'<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:850px;margin:0;padding:0;">\';\n';
+  html += '  tHtml += \'<thead style="position:sticky;top:0;z-index:20;"><tr>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 8px 10px 22px;text-align:center;width:60px;">순서</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 6px;text-align:center;width:65px;">순서이동</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 12px;text-align:left;width:120px;">이름 (성명)</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:8px 10px;text-align:left;width:130px;">\';\n';
+  html += '  tHtml += \'  <div style="font-weight:800;color:#334155;">직급 / 역할</div>\';\n';
+  html += '  tHtml += \'  <select class="settings-filter-select\' + (settingsColumnFilters.memberRole ? \' settings-filter-active\' : \'\') + \'" onchange="onSettingsColumnFilterChange(\\\'memberRole\\\', this.value)">\';\n';
+  html += '  tHtml += \'    <option value="">전체 (\' + rawList.length + \')</option>\';\n';
+  html += '  Object.keys(roleCounts).sort().forEach(function(rKey) {\n';
+  html += '    const sel = (settingsColumnFilters.memberRole === rKey) ? \' selected\' : \'\';\n';
+  html += '    tHtml += \'  <option value="\' + escapeSettingsHtml(rKey) + \'"\' + sel + \'>\' + escapeSettingsHtml(rKey) + \' (\' + roleCounts[rKey] + \')</option>\';\n';
+  html += '  });\n';
+  html += '  tHtml += \'  </select>\';\n';
+  html += '  tHtml += \'</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 10px;text-align:left;width:130px;">연락처</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 10px;text-align:left;width:180px;">이메일</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:8px 8px;text-align:center;width:130px;">\';\n';
+  html += '  tHtml += \'  <div style="font-weight:800;color:#334155;">알림톡/브리핑</div>\';\n';
+  html += '  tHtml += \'  <select class="settings-filter-select\' + (settingsColumnFilters.memberReceive ? \' settings-filter-active\' : \'\') + \'" onchange="onSettingsColumnFilterChange(\\\'memberReceive\\\', this.value)">\';\n';
+  html += '  tHtml += \'    <option value="">전체</option>\';\n';
+  html += '  tHtml += \'    <option value="Y"\' + (settingsColumnFilters.memberReceive === "Y" ? \' selected\' : \'\') + \'>수신함 (\' + recvYesCount + \')</option>\';\n';
+  html += '  tHtml += \'    <option value="N"\' + (settingsColumnFilters.memberReceive === "N" ? \' selected\' : \'\') + \'>미수신 (\' + recvNoCount + \')</option>\';\n';
+  html += '  tHtml += \'  </select>\';\n';
+  html += '  tHtml += \'</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 10px;text-align:left;min-width:120px;">비고 / 메모</th>\';\n';
+  html += '  tHtml += \'<th class="settings-th-sticky" style="padding:10px 22px 10px 8px;text-align:center;width:105px;">관리</th>\';\n';
+  html += '  tHtml += \'</tr></thead><tbody>\';\n';
+  html += '  list.forEach(function(m, idx) {\n';
+  html += '    const isFirst = (idx === 0);\n';
+  html += '    const isLast = (idx === list.length - 1);\n';
+  html += '    const isMoved = (m.row === settingsMovedMemberRow);\n';
+  html += '    const isRecv = (m.receive !== false && String(m.receive) !== "false");\n';
+  html += '    tHtml += \'<tr class="\' + (isMoved ? \'settings-row-moved\' : \'\') + \'" style="border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseover="this.style.background=\\\'#f8fafc\\\'" onmouseout="this.style.background=\\\'#ffffff\\\'">\';\n';
+  html += '    tHtml += \'<td style="padding:8px 8px 8px 22px;text-align:center;font-weight:700;color:#64748b;border-bottom:1px solid #f1f5f9;">\' + (idx + 1) + \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 6px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'  <div style="display:inline-flex;gap:3px;">\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="reorderMember(\' + m.row + \', \\\'up\\\')" \' + (isFirst ? \'disabled style="opacity:0.3;cursor:not-allowed;\' : \'style="cursor:pointer;\') + \'border:1px solid #cbd5e1;background:#ffffff;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;" title="위로 이동">▲</button>\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="reorderMember(\' + m.row + \', \\\'down\\\')" \' + (isLast ? \'disabled style="opacity:0.3;cursor:not-allowed;\' : \'style="cursor:pointer;\') + \'border:1px solid #cbd5e1;background:#ffffff;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;" title="아래로 이동">▼</button>\';\n';
+  html += '    tHtml += \'  </div>\';\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 12px;font-weight:900;color:#0f172a;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:2px 8px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:6px;font-size:12.5px;">\' + escapeSettingsHtml(m.name) + \'</span></td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;padding:2px 7px;background:#f1f5f9;color:#334155;border-radius:5px;font-size:11.5px;font-weight:700;">\' + escapeSettingsHtml(m.role || "미지정") + \'</span></td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    if (m.phone) {\n';
+  html += '      tHtml += \'  <a href="tel:\' + escapeSettingsHtml(m.phone) + \'" style="color:#2563eb;text-decoration:none;font-weight:700;font-size:11.5px;">📞 \' + escapeSettingsHtml(m.phone) + \'</a>\';\n';
+  html += '    } else {\n';
+  html += '      tHtml += \'  <span style="color:#94a3b8;">-</span>\';\n';
+  html += '    }\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    if (m.email) {\n';
+  html += '      tHtml += \'  <a href="mailto:\' + escapeSettingsHtml(m.email) + \'" style="color:#0284c7;text-decoration:none;font-size:11.5px;">✉️ \' + escapeSettingsHtml(m.email) + \'</a>\';\n';
+  html += '    } else {\n';
+  html += '      tHtml += \'  <span style="color:#94a3b8;">-</span>\';\n';
+  html += '    }\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 8px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'  <button type="button" onclick="toggleMemberReceive(\' + m.row + \')" style="border:none;cursor:pointer;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:800;transition:all 0.15s;\' + (isRecv ? \'background:#dcfce7;color:#15803d;border:1px solid #86efac;\' : \'background:#f1f5f9;color:#94a3b8;border:1px solid #cbd5e1;\') + \'" title="클릭 시 수신 상태 즉시 전환">\';\n';
+  html += '    tHtml += (isRecv ? \'🔔 수신 대상\' : \'🔕 미수신\');\n';
+  html += '    tHtml += \'  </button>\';\n';
+  html += '    tHtml += \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:11.5px;">\' + escapeSettingsHtml(m.note || "-") + \'</td>\';\n';
+  html += '    tHtml += \'<td style="padding:8px 22px 8px 6px;text-align:center;border-bottom:1px solid #f1f5f9;">\';\n';
+  html += '    tHtml += \'  <div style="display:inline-flex;gap:4px;">\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="openEditMemberModal(\' + m.row + \')" style="border:1px solid #cbd5e1;background:#ffffff;color:#1e293b;border-radius:5px;padding:3px 6px;font-size:11px;font-weight:700;cursor:pointer;">✏️</button>\';\n';
+  html += '    tHtml += \'    <button type="button" onclick="deleteMember(\' + m.row + \', \\\'\' + escapeSettingsQuotes(m.name) + \'\\\')" style="border:1px solid #fecaca;background:#fff1f2;color:#e11d48;border-radius:5px;padding:3px 6px;font-size:11px;font-weight:700;cursor:pointer;">🗑️</button>\';\n';
   html += '    tHtml += \'  </div>\';\n';
   html += '    tHtml += \'</td>\';\n';
   html += '    tHtml += \'</tr>\';\n';
@@ -14814,6 +15367,125 @@ function buildSidebarDashboardHtml(mode) {
   html += '  renderSettingsView();\n';
   html += '}\n';
   html += '\n';
+  html += 'function openAddMemberModal() {\n';
+  html += '  editingMemberRow = null;\n';
+  html += '  const title = document.getElementById("memberFormTitle");\n';
+  html += '  if (title) title.innerText = "👥 신규 구성원 등록";\n';
+  html += '  const inpN = document.getElementById("memberInpName");\n';
+  html += '  if (inpN) inpN.value = "";\n';
+  html += '  const inpR = document.getElementById("memberInpRole");\n';
+  html += '  if (inpR) inpR.value = "현장소장";\n';
+  html += '  const inpP = document.getElementById("memberInpPhone");\n';
+  html += '  if (inpP) inpP.value = "";\n';
+  html += '  const inpE = document.getElementById("memberInpEmail");\n';
+  html += '  if (inpE) inpE.value = "";\n';
+  html += '  const chk = document.getElementById("memberInpReceive");\n';
+  html += '  if (chk) chk.checked = true;\n';
+  html += '  const inpNt = document.getElementById("memberInpNote");\n';
+  html += '  if (inpNt) inpNt.value = "";\n';
+  html += '  const modal = document.getElementById("memberFormModal");\n';
+  html += '  if (modal) modal.style.display = "flex";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function openEditMemberModal(row) {\n';
+  html += '  const m = (currentSettingsData.members || []).find(function(item) { return item.row === row; });\n';
+  html += '  if (!m) {\n';
+  html += '    showToast("⚠️ 해당 구성원 데이터를 찾을 수 없습니다.");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  editingMemberRow = row;\n';
+  html += '  const title = document.getElementById("memberFormTitle");\n';
+  html += '  if (title) title.innerText = "👥 구성원 정보 수정";\n';
+  html += '  const inpN = document.getElementById("memberInpName");\n';
+  html += '  if (inpN) inpN.value = m.name || "";\n';
+  html += '  const inpR = document.getElementById("memberInpRole");\n';
+  html += '  if (inpR) inpR.value = m.role || "현장소장";\n';
+  html += '  const inpP = document.getElementById("memberInpPhone");\n';
+  html += '  if (inpP) inpP.value = m.phone || "";\n';
+  html += '  const inpE = document.getElementById("memberInpEmail");\n';
+  html += '  if (inpE) inpE.value = m.email || "";\n';
+  html += '  const chk = document.getElementById("memberInpReceive");\n';
+  html += '  if (chk) chk.checked = (m.receive !== false && String(m.receive) !== "false");\n';
+  html += '  const inpNt = document.getElementById("memberInpNote");\n';
+  html += '  if (inpNt) inpNt.value = m.note || "";\n';
+  html += '  const modal = document.getElementById("memberFormModal");\n';
+  html += '  if (modal) modal.style.display = "flex";\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function closeMemberFormModal() {\n';
+  html += '  const modal = document.getElementById("memberFormModal");\n';
+  html += '  if (modal) modal.style.display = "none";\n';
+  html += '  editingMemberRow = null;\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function saveMemberForm() {\n';
+  html += '  const name = (document.getElementById("memberInpName") || {}).value.trim();\n';
+  html += '  if (!name) {\n';
+  html += '    alert("구성원 이름을 입력해주세요.");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  const payload = {\n';
+  html += '    name: name,\n';
+  html += '    role: (document.getElementById("memberInpRole") || {}).value.trim() || "현장소장",\n';
+  html += '    phone: (document.getElementById("memberInpPhone") || {}).value.trim() || "",\n';
+  html += '    email: (document.getElementById("memberInpEmail") || {}).value.trim() || "",\n';
+  html += '    receive: (document.getElementById("memberInpReceive") || {}).checked,\n';
+  html += '    note: (document.getElementById("memberInpNote") || {}).value.trim() || ""\n';
+  html += '  };\n';
+  html += '  if (editingMemberRow) {\n';
+  html += '    const m = (currentSettingsData.members || []).find(function(item) { return item.row === editingMemberRow; });\n';
+  html += '    if (m) {\n';
+  html += '      Object.assign(m, payload);\n';
+  html += '      settingsMovedMemberRow = m.row;\n';
+  html += '    }\n';
+  html += '    showToast("✏️ 구성원 정보가 수정되었습니다. (하단 [저장하기]를 누르면 시트에 일괄 반영됩니다)");\n';
+  html += '  } else {\n';
+  html += '    let maxRow = 1;\n';
+  html += '    (currentSettingsData.members || []).forEach(function(item) { if (item.row > maxRow) maxRow = item.row; });\n';
+  html += '    payload.row = maxRow + 1;\n';
+  html += '    currentSettingsData.members.unshift(payload);\n';
+  html += '    settingsMovedMemberRow = payload.row;\n';
+  html += '    showToast("➕ 신규 구성원이 추가되었습니다. (하단 [저장하기]를 누르면 시트에 일괄 반영됩니다)");\n';
+  html += '  }\n';
+  html += '  closeMemberFormModal();\n';
+  html += '  markSettingsChanged();\n';
+  html += '  renderSettingsView();\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function deleteMember(row, name) {\n';
+  html += '  if (!confirm("[" + name + "] 구성원을 목록에서 삭제하시겠습니까?\\n(하단 [저장하기]를 누르면 시트에 최종 저장됩니다.)")) return;\n';
+  html += '  currentSettingsData.members = (currentSettingsData.members || []).filter(function(item) {\n';
+  html += '    return item.row !== row;\n';
+  html += '  });\n';
+  html += '  markSettingsChanged();\n';
+  html += '  renderSettingsView();\n';
+  html += '  showToast("🗑️ 구성원이 목록에서 삭제되었습니다. [저장하기]를 누르면 시트에 반영됩니다.");\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function reorderMember(row, direction) {\n';
+  html += '  const mList = currentSettingsData.members || [];\n';
+  html += '  const idx = mList.findIndex(function(item) { return item.row === row; });\n';
+  html += '  if (idx < 0) return;\n';
+  html += '  const targetIdx = (direction === "up") ? (idx - 1) : (idx + 1);\n';
+  html += '  if (targetIdx < 0 || targetIdx >= mList.length) return;\n';
+  html += '  const movedItem = mList[idx];\n';
+  html += '  const targetItem = mList[targetIdx];\n';
+  html += '  mList[idx] = targetItem;\n';
+  html += '  mList[targetIdx] = movedItem;\n';
+  html += '  settingsMovedMemberRow = row;\n';
+  html += '  markSettingsChanged();\n';
+  html += '  renderSettingsView();\n';
+  html += '}\n';
+  html += '\n';
+  html += 'function toggleMemberReceive(row) {\n';
+  html += '  const m = (currentSettingsData.members || []).find(function(item) { return item.row === row; });\n';
+  html += '  if (!m) return;\n';
+  html += '  m.receive = !(m.receive !== false && String(m.receive) !== "false");\n';
+  html += '  markSettingsChanged();\n';
+  html += '  renderSettingsView();\n';
+  html += '  showToast((m.receive ? "🔔 [" + m.name + "] 수신 대상 설정" : "🔕 [" + m.name + "] 미수신 설정") + " ([저장하기]를 누르면 시트에 저장됩니다)");\n';
+  html += '}\n';
+  html += '\n';
   html += 'function saveAllSettingsBatch() {\n';
   html += '  if (!hasSettingsPendingChanges) {\n';
   html += '    showToast("ℹ️ 변경된 마스터 설정 내용이 없습니다.");\n';
@@ -14825,7 +15497,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    updateSettingsSaveBtn(false);\n';
   html += '    if (res && res.success) {\n';
   html += '      applySettingsDataResponse(res);\n';
-  html += '      showToast("✅ 거래처 및 공종 변경사항이 구글 시트에 성공적으로 일괄 저장되었습니다!");\n';
+  html += '      showToast("✅ 거래처, 공종 및 구성원 변경사항이 구글 시트에 성공적으로 일괄 저장되었습니다!");\n';
   html += '    } else {\n';
   html += '      showToast("❌ 일괄 저장 실패: " + ((res && res.error) || "알 수 없는 오류"));\n';
   html += '    }\n';
@@ -14842,6 +15514,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      .withFailureHandler(onError || function(err) { showToast("❌ 통신 오류: " + err); });\n';
   html += '    if (action === "getSettingsData") runner.getSettingsManagementData();\n';
   html += '    else if (action === "saveAllSettingsBatch") runner.saveAllSettingsBatchFromWeb(params.data);\n';
+  html += '    else if (action === "addMember") runner.addMemberItemFromWeb(params.data);\n';
+  html += '    else if (action === "updateMember") runner.updateMemberItemFromWeb(params.row, params.data);\n';
+  html += '    else if (action === "deleteMember") runner.deleteMemberItemFromWeb(params.row, params.name);\n';
+  html += '    else if (action === "reorderMember") runner.reorderMemberItemFromWeb(params.row, params.direction);\n';
   html += '  } else {\n';
   html += '    var apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
   html += '    var qs = "?action=" + encodeURIComponent(action);\n';
