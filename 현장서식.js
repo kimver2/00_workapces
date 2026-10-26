@@ -13629,7 +13629,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    <div class="pc-logo-badge">';
   html += '      <span class="pc-logo-title-link" onclick="onLogoClick()" title="우성아이디 대시보드 새로고침 및 메인 이동">🏢 우성아이디</span>';
   html += '      <a href="https://docs.google.com/spreadsheets/d/1V6Nb5ZB8gOfwDFsN8svMDZQYWXIJjGa9tuUYrVu0JhY/edit?gid=244837509#gid=244837509" target="_blank" rel="noopener noreferrer" class="pc-sheet-badge-btn" onclick="event.stopPropagation();" title="구글 스프레드시트 현장데이터 시트 열기 (새 창)">현장데이터 시트 ↗</a>';
-  html += '      <button type="button" class="pc-settings-badge-btn" onclick="openSettingsModal()" title="마스터 설정 (거래처 / 공종 관리)">⚙️ 설정</button>';
+  html += '      <button type="button" class="pc-settings-badge-btn" onclick="openSettingsModal()" title="마스터 설정">⚙️ 설정</button>';
   html += '    </div>';
   html += '  </div>';
   html += '  <div class="pc-top-nav-wrap">';
@@ -14348,7 +14348,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div style="display:flex;align-items:center;gap:10px;">';
   html += '        <span style="font-size:20px;">⚙️</span>';
   html += '        <div>';
-  html += '          <h3 style="margin:0;font-size:16px;font-weight:900;color:#0f172a;letter-spacing:-0.3px;">마스터 설정 (거래처 · 공종 · 구성원 관리)</h3>';
+  html += '          <h3 style="margin:0;font-size:16px;font-weight:900;color:#0f172a;letter-spacing:-0.3px;">마스터 설정</h3>';
   html += '          <p style="margin:2px 0 0 0;font-size:11.5px;color:#64748b;font-weight:500;">거래처, 공종, 구성원(현장 소장/임직원) 정보를 조회, 추가, 수정, 삭제하고 노출 순서를 관리합니다.</p>';
   html += '        </div>';
   html += '      </div>';
@@ -15098,7 +15098,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    tHtml += \'</td>\';\n';
   html += '    tHtml += \'<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;">\';\n';
   html += '    if (m.email) {\n';
-  html += '      tHtml += \'  <a href="mailto:\' + escapeSettingsHtml(m.email) + \'" style="color:#0284c7;text-decoration:none;font-size:11.5px;">✉️ \' + escapeSettingsHtml(m.email) + \'</a>\';\n';
+  html += '      tHtml += \'  <a href="mailto:\' + escapeSettingsHtml(m.email) + \'" style="color:#0284c7;text-decoration:none;font-size:11.5px;">\' + escapeSettingsHtml(m.email) + \'</a>\';\n';
   html += '    } else {\n';
   html += '      tHtml += \'  <span style="color:#94a3b8;">-</span>\';\n';
   html += '    }\n';

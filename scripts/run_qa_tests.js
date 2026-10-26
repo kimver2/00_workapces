@@ -10908,6 +10908,33 @@ assertTest('Step 168-6: index.html 내 exec?v=168 최신 캐시 버스팅 파라
   /exec\?v=(16[8-9]|1[7-9][0-9])/.test(indexHtml168)
 );
 
+// ========================================================
+// [Step 169]: 마스터 설정 타이틀 괄호 문구 제거 및 구성원 이메일 아이콘 정돈 QA
+// ========================================================
+console.log('\n📋 [Step 169]: 마스터 설정 타이틀 괄호 문구 제거 및 구성원 이메일 아이콘 정돈 QA ---');
+const code169 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml169 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 169-1: 마스터 설정 타이틀 내 괄호 설명 문구 제거 검증
+assertTest('Step 169-1: 마스터 설정 타이틀 내 괄호 설명 문구 제거 및 순수 타이틀 정돈 검증',
+  code169.indexOf('>마스터 설정</h3>') !== -1 &&
+  code169.indexOf('>마스터 설정 (거래처 · 공종 · 구성원 관리)</h3>') === -1
+);
+
+// 169-2: 구성원 관리 테이블 이메일 열 내 이메일 아이콘(✉️) 제거 검증
+assertTest('Step 169-2: 구성원 관리 테이블 이메일 열 내 이메일 아이콘(✉️) 제거 및 텍스트 링크 유지 검증',
+  code169.includes('style="color:#0284c7;text-decoration:none;font-size:11.5px;">') &&
+  code169.includes('escapeSettingsHtml(m.email)') &&
+  !code169.includes('font-size:11.5px;">✉️') &&
+  !code169.includes('font-size:11.5px;">\\\' + \'✉️') &&
+  !code169.includes('✉️ \\\' + escapeSettingsHtml(m.email)')
+);
+
+// 169-3: index.html 내 exec?v=169 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 169-3: index.html 내 exec?v=169 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(16[9]|1[7-9][0-9])/.test(indexHtml169)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
