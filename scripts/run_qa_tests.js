@@ -11435,6 +11435,49 @@ assertTest('Step 183-5: index.html 내 exec?v=183 최신 캐시 버스팅 파라
   /exec\?v=(18[3-9]|19[0-9])/.test(indexHtml183)
 );
 
+// ========================================================
+// [Step 184]: SSR 인라인 캐시 0초 즉시 렌더링, 6시간 캐시 TTL 연장, 시트 중복 I/O 제거 및 중복 함수 통합 QA
+// ========================================================
+console.log('\n📋 [Step 184]: SSR 인라인 캐시 0초 즉시 렌더링, 6시간 캐시 TTL 연장, 시트 중복 I/O 제거 및 중복 함수 통합 QA ---');
+const code184 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml184 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 184-1: SSR 인라인 캐시(hasServerInjectedData, ssrTodoPayload) 0.00초 즉시 렌더링 및 중복 왕복 생략 검증
+assertTest('Step 184-1: SSR 인라인 캐시 0.00초 즉시 렌더링 및 중복 네트워크 호출 생략 검증',
+  code184.includes('var serializedTodoData = "null";') &&
+  code184.includes('const hasServerInjectedData = !!(rawData && Array.isArray(rawData.sites) && rawData.sites.length > 0);') &&
+  code184.includes('if (hasServerInjectedData && rawData && Array.isArray(rawData.sites) && rawData.sites.length > 0) {') &&
+  code184.includes('renderedFromSsr = true;') &&
+  code184.includes('if (!renderedFromSsr) {')
+);
+
+// 184-2: 서버 캐시 TTL 6시간(21,600초) 연장 검증
+assertTest('Step 184-2: 대시보드 및 To-Do 서버 캐시 TTL 6시간(21,600초) 연장 검증',
+  code184.includes('var DASHBOARD_SERVER_CACHE_TTL = 21600;') &&
+  code184.includes('var TODO_SERVER_CACHE_TTL = 21600;')
+);
+
+// 184-3: getSidebarDashboardData 조회 경로의 순수 읽기 전용(skipEnsure) 및 메모리 색상 맵 사전 구축 검증
+assertTest('Step 184-3: getSidebarDashboardData 내 skipEnsure 적용 및 _siteColorMapCache 메모리 사전 구축 검증',
+  code184.includes('function getAvailablePartners(ss, skipEnsure)') &&
+  code184.includes('function getSiteInfoMap(ss, skipEnsure)') &&
+  code184.includes('partners: getAvailablePartners(ss, true),') &&
+  code184.includes('siteInfoMap: getSiteInfoMap(ss, true)') &&
+  code184.includes('_siteColorMapCache = prebuiltColorMap;')
+);
+
+// 184-4: 클라이언트 중복 함수(onSheetSiteChange) 단일 통합 및 현장 기본 담당자 매핑 복원 검증
+const onSheetSiteChangeMatches184 = code184.match(/function onSheetSiteChange\(siteVal\)/g) || [];
+assertTest('Step 184-4: 클라이언트 onSheetSiteChange 중복 선언 제거(단 1회 정의) 및 findSiteDefaultManager 복원 검증',
+  onSheetSiteChangeMatches184.length === 1 &&
+  code184.includes('const siteMgr = findSiteDefaultManager(siteVal);')
+);
+
+// 184-5: index.html 내 exec?v=184 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 184-5: index.html 내 exec?v=184 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(18[4-9]|19[0-9])/.test(indexHtml184)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

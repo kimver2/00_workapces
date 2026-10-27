@@ -589,12 +589,14 @@ function ensurePartnerDropdownFormulaColumn(ss, partnerSheet) {
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
  * @return {string[]}
  */
-function getAvailablePartners(ss) {
+function getAvailablePartners(ss, skipEnsure) {
   var partners = [];
   try {
     var pSheet = findPartnersSheet(ss);
     if (pSheet && pSheet.getLastRow() >= 2) {
-      ensurePartnerDropdownFormulaColumn(ss, pSheet);
+      if (!skipEnsure) {
+        ensurePartnerDropdownFormulaColumn(ss, pSheet);
+      }
       var lastR = pSheet.getLastRow();
       // K열(11열) 계산된 값 읽기
       if (pSheet.getLastColumn() >= 11) {
@@ -4664,17 +4666,19 @@ function cleanSiteInfoSheetBlankRows(sheet) {
 /**
  * '현장정보' 시트의 모든 데이터를 { siteName: { ... } } 맵으로 일괄 로드 (빈 행 자동 정돈 & 9열 드라이브 링크 연동)
  */
-function getSiteInfoMap(ss) {
+function getSiteInfoMap(ss, skipEnsure) {
   var map = {};
   try {
     var sheet = findSiteInfoSheet(ss, false);
-    if (!sheet) sheet = findSiteInfoSheet(ss, true);
+    if (!sheet && !skipEnsure) sheet = findSiteInfoSheet(ss, true);
     if (!sheet) return map;
 
-    // 0) 헤더 점검 및 9열 '드라이브 링크' 자동 보장
-    try {
-      ensureSiteInfoSheetHeaders(sheet);
-    } catch(eEnsH) {}
+    // 0) 헤더 점검 및 9열 '드라이브 링크' 자동 보장 (조회 전용 호출 시 생략하여 속도 가속)
+    if (!skipEnsure) {
+      try {
+        ensureSiteInfoSheetHeaders(sheet);
+      } catch(eEnsH) {}
+    }
 
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
@@ -7292,7 +7296,7 @@ function findOrCreateTodoSheet(ss) {
 }
 
 var TODO_SERVER_CACHE_KEY = "WS_TODO_DATA_CACHE_V1";
-var TODO_SERVER_CACHE_TTL = 300; // 5분 (300초)
+var TODO_SERVER_CACHE_TTL = 21600; // 6시간 (21,600초 - CUD 발생 시 즉시 무효화)
 
 /**
  * 서버단 To-Do 데이터 캐시 저장
@@ -11871,7 +11875,7 @@ function getKoreanHolidaysMap(ss) {
 }
 
 var DASHBOARD_SERVER_CACHE_KEY = "WS_DASHBOARD_DATA_CACHE_V1";
-var DASHBOARD_SERVER_CACHE_TTL = 180;
+var DASHBOARD_SERVER_CACHE_TTL = 21600; // 6시간 (21,600초 - 시트/웹 수정 시 즉시 무효화)
 
 /**
  * 서버단 대시보드 데이터 청크 캐시 저장 (>80KB 분할 지원)
@@ -12099,6 +12103,17 @@ function getSidebarDashboardData(forceRefresh) {
     var totalTasks = 0;
     var todayCount = 0;
     var delayedCount = 0;
+
+    // [메모리 캐시 가속] 이미 읽은 values 배열로 현장 색상 순서 맵을 0ms 만에 사전 구축 (중복 시트 getRange 호출 차단)
+    var prebuiltColorMap = {};
+    var colorOrderIdx = 0;
+    for (var ci = 0; ci < values.length; ci++) {
+      var cSite = String(values[ci][0] || "").trim();
+      if (cSite && prebuiltColorMap[cSite] === undefined) {
+        prebuiltColorMap[cSite] = colorOrderIdx++;
+      }
+    }
+    _siteColorMapCache = prebuiltColorMap;
 
     for (var i = 0; i < values.length; i++) {
       var row = i + 2;
@@ -12829,12 +12844,12 @@ function getSidebarDashboardData(forceRefresh) {
       todayStr: todayYYMMDD,
       members: getMemberNames(ss),
       tasks: getAvailableTasks(sheet),
-      partners: getAvailablePartners(ss),
+      partners: getAvailablePartners(ss, true),
       partnerPhoneMap: getPartnerPhoneMap(ss),
       memberPhoneMap: getMemberPhoneMap(ss),
       holidays: getKoreanHolidaysMap(ss),
       sites: sitesList,
-      siteInfoMap: getSiteInfoMap(ss)
+      siteInfoMap: getSiteInfoMap(ss, true)
     };
 
     try {
@@ -12929,14 +12944,20 @@ function buildSidebarDashboardHtml(mode) {
   var isMobile = (mode === "mobile");
   var webAppUrl = getWebAppUrl();
   var serializedRawData = "null";
+  var serializedTodoData = "null";
   try {
     // 서버 캐시가 이미 존재하면 즉시 주입하여 10ms 내 응답, 캐시 미스 시에도 doGet을 블로킹하지 않고 초고속 반환
     var cachedJsonStr = getDashboardServerCache();
     if (cachedJsonStr) {
       serializedRawData = cachedJsonStr.replace(/<\/script/gi, '<\\/script');
     }
+    var cachedTodoObj = getTodoServerCache();
+    if (cachedTodoObj && cachedTodoObj.success) {
+      serializedTodoData = JSON.stringify(cachedTodoObj).replace(/<\/script/gi, '<\\/script');
+    }
   } catch (eInit) {
     serializedRawData = "null";
+    serializedTodoData = "null";
   }
   var html = "";
   html += '<!DOCTYPE html><html><head><meta charset="utf-8">';
@@ -16663,6 +16684,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  "한송이": "010-2775-2667"';
   html += '};';
   html += 'let rawData = ' + serializedRawData + ';';
+  html += 'const ssrTodoPayload = ' + serializedTodoData + ';';
+  html += 'const hasServerInjectedData = !!(rawData && Array.isArray(rawData.sites) && rawData.sites.length > 0);';
   html += 'function getSiteInfoFromMap(siteName) {';
   html += '  if (!rawData || !rawData.siteInfoMap || !siteName) return {};';
   html += '  const s = String(siteName).trim();';
@@ -20969,6 +20992,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    mHeadBarHtml += \'</div>\';';
   html += '  }';
   html += '';
+  html += '  const mobNow = new Date();';
+  html += '  const mobTodayStr = mobNow.getFullYear() + "-" + ((mobNow.getMonth() + 1) < 10 ? "0" + (mobNow.getMonth() + 1) : (mobNow.getMonth() + 1)) + "-" + (mobNow.getDate() < 10 ? "0" + mobNow.getDate() : mobNow.getDate());';
+  html += '  const todayObj = new Date(mobTodayStr);';
   html += '  matchedSites.forEach(item => {';
   html += '    visibleSitesCount++;';
   html += '    const site = item.site;';
@@ -20976,8 +21002,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '    const isExpanded = (query !== "") || (currentFilter !== "all" && currentFilter !== "done");';
   html += '    const siteEnc = encodeURIComponent(site.siteName);';
   html += '    const isChecked = checkedSites.has(site.siteName);';
-  html += '    const mobNow = new Date();';
-  html += '    const mobTodayStr = mobNow.getFullYear() + "-" + ((mobNow.getMonth() + 1) < 10 ? "0" + (mobNow.getMonth() + 1) : (mobNow.getMonth() + 1)) + "-" + (mobNow.getDate() < 10 ? "0" + mobNow.getDate() : mobNow.getDate());';
   html += '    const mobStatusInfo = getSiteStatusInfo(site, mobTodayStr);';
   html += '    let earliestDateStr = "";';
   html += '    let latestDateStr = "";';
@@ -20995,7 +21019,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (latestDateStr) {';
   html += '      const cleanLatest = String(latestDateStr).replace(/\\./g, "-").trim();';
   html += '      const endObj = new Date(cleanLatest);';
-  html += '      const todayObj = new Date(mobTodayStr);';
   html += '      const diffDays = Math.ceil((endObj - todayObj) / (1000 * 60 * 60 * 24));';
   html += '      if (!isNaN(diffDays)) {';
   html += '        if (diffDays > 0) remainingStr = "잔여 " + diffDays + "일";';
@@ -22084,32 +22107,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '}';
   html += '';
-  html += 'function onSheetSiteChange(siteVal) {';
-  html += '  const cleanVal = String(siteVal || "").trim();';
-  html += '  const taskNameEl = document.getElementById("sheetTaskName");';
-  html += '  if (taskNameEl && isCreateMode) {';
-  html += '    taskNameEl.innerText = cleanVal ? ("현장: " + cleanVal) : "현장·공종·날짜를 입력해 등록하세요";';
-  html += '  }';
-  html += '  updateSheetModalSiteInfo(cleanVal);';
-  html += '  const siteMgr = findSiteDefaultManager(cleanVal);';
-  html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
-  html += '  const mgrCustom = document.getElementById("sheetManagerCustomInput");';
-  html += '  if (siteMgr && mgrSelect) {';
-  html += '    populateManagerSelectOptions(rawData ? rawData.members : []);';
-  html += '    let found = false;';
-  html += '    for (let i = 0; i < mgrSelect.options.length; i++) {';
-  html += '      if (mgrSelect.options[i].value === siteMgr) {';
-  html += '        found = true;';
-  html += '        break;';
-  html += '      }';
-  html += '    }';
-  html += '    if (found) {';
-  html += '      mgrSelect.value = siteMgr;';
-  html += '      if (mgrCustom) { mgrCustom.value = ""; mgrCustom.style.display = "none"; }';
-  html += '    }';
-  html += '  }';
-  html += '}';
-  html += '';
   html += 'function populateSiteSelectOptions(prefillSite, filterScope) {';
   html += '  const sel = document.getElementById("sheetSiteSelect");';
   html += '  if (!sel) return;';
@@ -22225,6 +22222,24 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (autoBadge) autoBadge.style.display = "none";';
   html += '  }';
   html += '  updateSheetModalSiteInfo(siteVal);';
+  html += '  const taskNameEl = document.getElementById("sheetTaskName");';
+  html += '  if (taskNameEl && isCreateMode) {';
+  html += '    taskNameEl.innerText = siteVal ? ("현장: " + siteVal) : "현장·공종·날짜를 입력해 등록하세요";';
+  html += '  }';
+  html += '  const siteMgr = findSiteDefaultManager(siteVal);';
+  html += '  const mgrSelect = document.getElementById("sheetManagerSelect");';
+  html += '  const mgrCustom = document.getElementById("sheetManagerCustomInput");';
+  html += '  if (siteMgr && mgrSelect) {';
+  html += '    populateManagerSelectOptions(rawData ? rawData.members : []);';
+  html += '    let found = false;';
+  html += '    for (let i = 0; i < mgrSelect.options.length; i++) {';
+  html += '      if (mgrSelect.options[i].value === siteMgr) { found = true; break; }';
+  html += '    }';
+  html += '    if (found) {';
+  html += '      mgrSelect.value = siteMgr;';
+  html += '      if (mgrCustom) { mgrCustom.value = ""; mgrCustom.style.display = "none"; }';
+  html += '    }';
+  html += '  }';
   html += '}';
   html += '';
   html += 'function onSheetSiteCustomInput(customVal) {';
@@ -23434,7 +23449,22 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (calArea) calArea.style.display = "block";';
   html += '  }';
   html += '  try {';
-  html += '    if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") {';
+  html += '    if (ssrTodoPayload && ssrTodoPayload.success) {';
+  html += '      todoDataList = (ssrTodoPayload.list || []).map(it => (it ? Object.assign({}, it, { dueDate: formatTodoDateYmd(it.dueDate) }) : it));';
+  html += '      if (ssrTodoPayload.members && ssrTodoPayload.members.length > 0) todoMembersList = ssrTodoPayload.members;';
+  html += '      if (ssrTodoPayload.activeSites && ssrTodoPayload.activeSites.length > 0) todoActiveSitesList = ssrTodoPayload.activeSites;';
+  html += '      isTodoLoaded = true;';
+  html += '    }';
+  html += '  } catch(eSsrTodo) {}';
+  html += '  let renderedFromSsr = false;';
+  html += '  try {';
+  html += '    if (hasServerInjectedData && rawData && Array.isArray(rawData.sites) && rawData.sites.length > 0) {';
+  html += '      renderDashboardPayload(rawData);';
+  html += '      renderedFromSsr = true;';
+  html += '      if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.setItem === "function") {';
+  html += '        localStorage.setItem("ws_dashboard_cache_v2", JSON.stringify(rawData));';
+  html += '      }';
+  html += '    } else if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") {';
   html += '      const cachedStr = localStorage.getItem("ws_dashboard_cache_v2");';
   html += '      if (cachedStr) {';
   html += '        const cachedObj = JSON.parse(cachedStr);';
@@ -23449,7 +23479,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '      window.parent.postMessage({ type: "DASHBOARD_READY" }, "*");';
   html += '    }';
   html += '  } catch(eReadyPost) {}';
-  html += '  loadData();';
+  html += '  if (!renderedFromSsr) {';
+  html += '    loadData();';
+  html += '  } else if (!isTodoLoaded) {';
+  html += '    setTimeout(function() { if (!isTodoLoaded) loadTodoList(false); }, 350);';
+  html += '  }';
   html += '  if (typeof window !== "undefined") {';
   html += '    window.addEventListener("keydown", function(e) {';
   html += '      if (e.key === "Escape" || e.key === "Esc" || e.keyCode === 27) {';
