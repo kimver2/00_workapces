@@ -11628,6 +11628,44 @@ assertTest('Step 188-5: index.html 내 exec?v=188 최신 캐시 버스팅 파라
   /exec\?v=(18[8-9]|19[0-9])/.test(indexHtml188)
 );
 
+console.log('\n📋 [Step 189]: 진행 상태 변경 0ms 즉시 반영 및 일정/현장 삭제 시 화면 즉시 소멸(부활 방지) 엔진 QA ---');
+const code189 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml189 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 189-1: 진행 상태 버튼(#sheetStatusStateBadge, 체크마크 ✓) 및 selectSheetStatus -> scheduleQuickTaskSync 즉시 반영 검증
+assertTest('Step 189-1: 진행 상태 버튼(#sheetStatusStateBadge, 체크마크 ✓) 및 selectSheetStatus 즉시 동기화 검증',
+  code189.includes('id="sheetStatusStateBadge"') &&
+  code189.includes('function scheduleQuickTaskSync()') &&
+  code189.includes('b.innerText = isAct ? (baseTxt + " ✓") : baseTxt;') &&
+  code189.includes('function selectSheetStatus(s) {') &&
+  code189.includes('scheduleQuickTaskSync();')
+);
+
+// 189-2: removeTaskFromClientState 통합 삭제 헬퍼 및 recentlyDeletedTasks 툼스톤(부활 방지) 검증
+assertTest('Step 189-2: removeTaskFromClientState 통합 삭제 헬퍼 및 recentlyDeletedTasks 툼스톤(부활 방지) 검증',
+  code189.includes('const recentlyDeletedTasks = new Map();') &&
+  code189.includes('function removeTaskFromClientState(siteName, taskRef, targetRow, taskName, isArchived, sheetName)') &&
+  code189.includes('if (tid && recentlyDeletedTasks.has("ID::" + tid)) return false;')
+);
+
+// 189-3: 신규 등록 직후(_tempId 보존 및 row/taskId 갱신 시 즉시 리렌더링) 바로 삭제해도 0ms 즉시 제거 검증
+assertTest('Step 189-3: 신규 등록 직후(_tempId 보존 및 row/taskId 갱신 시 즉시 리렌더링) 바로 삭제해도 0ms 즉시 제거 검증',
+  code189.includes('_tempId: tempTaskId') &&
+  code189.includes('if (refTempId && (t.taskId === refTempId || t._tempId === refTempId)) return t;') &&
+  code189.includes('removeTaskFromClientState(site, liveTask, targetRow, task, isArchived, targetSheetNameForDel);')
+);
+
+// 189-4: 개별 공정 삭제(confirmDeleteSingleTask) 및 현장 전체 삭제(confirmDeleteSite) 0ms 즉시 제거 및 KPI 재계산 검증
+assertTest('Step 189-4: 개별 공정 삭제(confirmDeleteSingleTask) 및 현장 전체 삭제(confirmDeleteSite) 0ms 즉시 제거 검증',
+  code189.includes('function recalcAllSitesAndKpi(dataObj)') &&
+  code189.includes('removeTaskFromClientState(siteName, null, targetRow, taskName, false, sheetName);')
+);
+
+// 189-5: index.html 내 exec?v=189 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 189-5: index.html 내 exec?v=189 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(189|19[0-9])/.test(indexHtml189)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
