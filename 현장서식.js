@@ -1569,11 +1569,12 @@ function onOpen() {
  */
 function authorizeGoogleDriveUploadMenu() {
   var root = DriveApp.getRootFolder();
-  var rootName = root.getName();
+  var testFile = root.createFile("auth_test_" + new Date().getTime() + ".txt", "Google Drive Upload Auth OK");
+  testFile.setTrashed(true);
   SpreadsheetApp.getUi().alert(
-    "☁️ 구글 드라이브 권한 승인 완료",
-    "구글 드라이브 파일 생성 및 업로드 권한(DriveApp)이 정상 승인되었습니다!\n\n" +
-    "• 연결 계정 루트: " + rootName + "\n" +
+    "☁️ 구글 드라이브 쓰기/업로드 권한 승인 완료",
+    "구글 드라이브 파일 생성 및 업로드 권한(DriveApp.Folder.createFile)이 완벽하게 승인되었습니다!\n\n" +
+    "• 연결 계정 루트: " + root.getName() + "\n" +
     "• 이제 모바일 대시보드에서 현장 사진 및 도면 업로드가 실시간으로 정상 작동합니다.",
     SpreadsheetApp.getUi().ButtonSet.OK
   );

@@ -11288,6 +11288,25 @@ assertTest('Step 179-3: index.html 내 exec?v=179 최신 캐시 버스팅 파라
   /exec\?v=(179|1[8-9][0-9])/.test(indexHtml179)
 );
 
+// ========================================================
+// [Step 180]: authorizeGoogleDriveUploadMenu 쓰기 권한(createFile) 강제 트리거 탑재 QA
+// ========================================================
+console.log('\n📋 [Step 180]: authorizeGoogleDriveUploadMenu 쓰기 권한(createFile) 강제 트리거 탑재 QA ---');
+const code180 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml180 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 180-1: authorizeGoogleDriveUploadMenu 내 createFile 쓰기 권한 호출 및 테스트 파일 즉시 삭제 검증
+assertTest('Step 180-1: authorizeGoogleDriveUploadMenu 내 createFile 쓰기 권한 및 삭제 탑재 검증',
+  code180.includes('root.createFile("auth_test_"') &&
+  code180.includes('testFile.setTrashed(true);') &&
+  code180.includes('DriveApp.Folder.createFile')
+);
+
+// 180-2: index.html 내 exec?v=180 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 180-2: index.html 내 exec?v=180 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(18[0-9]|19[0-9])/.test(indexHtml180)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
