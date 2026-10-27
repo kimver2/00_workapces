@@ -11557,6 +11557,41 @@ assertTest('Step 186-5: index.html 내 exec?v=186 최신 캐시 버스팅 파라
   /exec\?v=(18[6-9]|19[0-9])/.test(indexHtml186)
 );
 
+console.log('\n📋 [Step 187]: 달력에서 현장 1개 선택 시 + 버튼 및 새 일정 등록 모달 현장 자동 선택 연동 QA ---');
+const code187 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml187 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 187-1: 단일 선택 현장 추출 헬퍼(getSingleCheckedSiteName) 및 __NONE__ 방어 검증
+assertTest('Step 187-1: 단일 선택 현장 추출 헬퍼(getSingleCheckedSiteName) 및 __NONE__ 방어 검증',
+  code187.includes('function getSingleCheckedSiteName()') &&
+  code187.includes('const validChecked = Array.from(checkedSites).filter(s => s && s !== "__NONE__");') &&
+  code187.includes('return validChecked.length === 1 ? validChecked[0] : "";')
+);
+
+// 187-2: openNewTaskModal 내 현장 미지정 시 단일 선택 현장 자동 주입 및 카테고리/배지 자동 연동 검증
+assertTest('Step 187-2: openNewTaskModal 내 단일 선택 현장 자동 주입 및 [📍 선택 현장 자동 적용] 배지 연동 검증',
+  code187.includes('const singleChecked = (typeof getSingleCheckedSiteName === "function") ? getSingleCheckedSiteName() : "";') &&
+  code187.includes('autoBadge.innerText = isAutoFromCheckedSite ? "📍 선택 현장 자동 적용" : "📍 현장 자동 선택됨";')
+);
+
+// 187-3: 월간/주간 달력 + 버튼 툴팁 및 빈 날짜 클릭 시 선택 현장 자동 반영 검증
+assertTest('Step 187-3: 월간/주간 달력 + 버튼 툴팁 및 빈 날짜 클릭(onCalDayClick) 시 선택 현장 자동 반영 검증',
+  code187.includes('const addBtnTitle = (typeof getSingleCheckedSiteName === "function" && getSingleCheckedSiteName())') &&
+  code187.includes('const wAddTitle = (typeof getSingleCheckedSiteName === "function" && getSingleCheckedSiteName())') &&
+  code187.includes('openNewTaskModal(singleSiteName || "", dStr);')
+);
+
+// 187-4: populateSiteSelectOptions 및 onSheetCategoryChange 내 prefillSite 유지 보호 검증
+assertTest('Step 187-4: populateSiteSelectOptions 및 onSheetCategoryChange 내 prefillSite 유지 보호 검증',
+  code187.includes('const isPrefilledTarget = Boolean(prefillSite && s.siteName === prefillSite);') &&
+  code187.includes('const effectiveSite = (curVal === "__CUSTOM__") ? (customVal || "__CUSTOM__") : (curVal || curSiteName || "");')
+);
+
+// 187-5: index.html 내 exec?v=187 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 187-5: index.html 내 exec?v=187 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(18[7-9]|19[0-9])/.test(indexHtml187)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
