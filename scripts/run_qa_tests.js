@@ -11232,6 +11232,37 @@ assertTest('Step 177-6: index.html 내 exec?v=177 최신 캐시 버스팅 파라
   /exec\?v=(17[7-9]|1[8-9][0-9])/.test(indexHtml177)
 );
 
+// ========================================================
+// [Step 178]: 구글 드라이브 DriveApp 1회 권한 승인 메뉴(authorizeGoogleDriveUploadMenu) 및 친절 안내 QA
+// ========================================================
+console.log('\n📋 [Step 178]: 구글 드라이브 DriveApp 1회 권한 승인 메뉴 및 친절 안내 QA ---');
+const code178 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml178 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 178-1: 상단 [🚀 현장 관리] 메뉴 내 ☁️ 구글 드라이브 업로드 권한 1회 승인 및 핸들러 검증
+assertTest('Step 178-1: 스프레드시트 상단 메뉴 내 드라이브 권한 1회 승인 메뉴 등록 검증',
+  code178.includes('.addItem("☁️ 구글 드라이브 업로드 권한 1회 승인", "authorizeGoogleDriveUploadMenu")') &&
+  code178.includes('function authorizeGoogleDriveUploadMenu()') &&
+  code178.includes('DriveApp.getRootFolder()')
+);
+
+// 178-2: 서버측 uploadSiteFilesToDriveFromWeb 권한 에러 가로채기(isAuthRequired) 탑재 검증
+assertTest('Step 178-2: 서버측 권한 부족 감지 및 isAuthRequired 가이드 반환 검증',
+  code178.includes('isAuthRequired: true') &&
+  code178.includes('구글 드라이브 최초 1회 권한 승인이 필요합니다. 구글 시트 상단 메뉴 [🚀 현장 관리 > ☁️ 구글 드라이브 업로드 권한 1회 승인]')
+);
+
+// 178-3: 클라이언트측 executeSiteFileUpload 권한 에러 토스트 7초 표시 검증
+assertTest('Step 178-3: 클라이언트측 권한 에러 가이드 토스트 7초 표시 검증',
+  code178.includes('(res && res.isAuthRequired) ? 7000 : 4500') &&
+  code178.includes('구글 드라이브 권한 필요: 시트 상단 [🚀 현장 관리 > ☁️ 구글 드라이브 업로드 권한 1회 승인]을 눌러주세요.')
+);
+
+// 178-4: index.html 내 exec?v=178 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 178-4: index.html 내 exec?v=178 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[8-9]|1[8-9][0-9])/.test(indexHtml178)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

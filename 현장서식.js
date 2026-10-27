@@ -1533,8 +1533,9 @@ function onOpen() {
   } catch(e) {}
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("🚀 현장 관리")
-    // [사용자 지정 최상위 핵심 5대 기능]
+    // [사용자 지정 최상위 핵심 기능]
     .addItem("📱 웹앱 대시보드 열기", "openSiteScheduleModal")
+    .addItem("☁️ 구글 드라이브 업로드 권한 1회 승인", "authorizeGoogleDriveUploadMenu")
     .addItem("⚡ 현장별 날짜 최신순 정렬", "sortSiteScheduleTasksByDateMenu")
     .addItem("📁 현장데이터 아코디언 묶기", "groupSiteScheduleMenu")
     .addItem("📖 모든 현장 펼치기", "expandAllSites")
@@ -1561,6 +1562,30 @@ function onOpen() {
       .addItem("🌙 매일 새벽 4시 자동 정렬 점검/설치", "ensureDailySortTriggerInstalledMenu")
     )
     .addToUi();
+}
+
+/**
+ * [상단 메뉴] 구글 드라이브 파일 업로드 권한(DriveApp) 최초 1회 승인 팝업 유도 및 점검
+ */
+function authorizeGoogleDriveUploadMenu() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var root = DriveApp.getRootFolder();
+    var rootName = root.getName();
+    ui.alert(
+      "☁️ 구글 드라이브 권한 승인 완료",
+      "구글 드라이브 파일 생성 및 업로드 권한(DriveApp)이 정상 승인되었습니다!\n\n" +
+      "• 연결 계정 루트: " + rootName + "\n" +
+      "• 이제 모바일 대시보드에서 현장 사진 및 도면 업로드가 실시간으로 정상 작동합니다.",
+      ui.ButtonSet.OK
+    );
+  } catch(e) {
+    ui.alert(
+      "⚠️ 구글 드라이브 권한 승인 안내",
+      "구글 드라이브 접근 권한 승인이 필요합니다.\n다시 한번 메뉴를 클릭하거나 화면에 나타나는 [권한 검토] 팝업에서 [계속/허용]을 눌러주세요.\n\n오류: " + (e.message || e.toString()),
+      ui.ButtonSet.OK
+    );
+  }
 }
 
 /**
@@ -4916,7 +4941,15 @@ function uploadSiteFilesToDriveFromWeb(siteName, filesPayload, clientDriveUrl) {
     try {
       folder = DriveApp.getFolderById(folderId);
     } catch (eFolder) {
-      return { success: false, error: "구글 드라이브 폴더에 접근할 수 없습니다 (권한 또는 링크 확인 필요): " + (eFolder.message || eFolder.toString()) };
+      var errMsg = String(eFolder.message || eFolder.toString());
+      if (errMsg.indexOf("auth/drive") !== -1 || errMsg.indexOf("호출할 수 있는 권한이 없습니다") !== -1 || errMsg.indexOf("DriveApp") !== -1) {
+        return {
+          success: false,
+          isAuthRequired: true,
+          error: "구글 드라이브 최초 1회 권한 승인이 필요합니다. 구글 시트 상단 메뉴 [🚀 현장 관리 > ☁️ 구글 드라이브 업로드 권한 1회 승인]을 클릭하여 [허용]을 눌러주세요."
+        };
+      }
+      return { success: false, error: "구글 드라이브 폴더에 접근할 수 없습니다 (권한 또는 링크 확인 필요): " + errMsg };
     }
 
     var uploadedList = [];
@@ -17577,13 +17610,18 @@ function buildSidebarDashboardHtml(mode) {
   html += '              if (modal) modal.classList.remove("active");';
   html += '              showToast("✅ [" + currentUploadSiteName + "] " + (res.uploadedCount || payloads.length) + "개 파일이 드라이브에 안전하게 업로드되었습니다!", 4000);';
   html += '            } else {';
-  html += '              showToast("⚠️ 업로드 실패: " + ((res && res.error) || "알 수 없는 오류"), 4500);';
+  html += '              showToast("⚠️ 업로드 실패: " + ((res && res.error) || "알 수 없는 오류"), (res && res.isAuthRequired) ? 7000 : 4500);';
   html += '            }';
   html += '          })';
   html += '          .withFailureHandler(function(err) {';
   html += '            resetUploadButtonState();';
   html += '            console.error("uploadSiteFilesToDriveFromWeb error:", err);';
-  html += '            showToast("❌ 드라이브 업로드 통신 에러: " + (err.message || err.toString()), 4500);';
+  html += '            var errStr = (err && (err.message || err.toString())) || "";';
+  html += '            if (errStr.indexOf("DriveApp") !== -1 || errStr.indexOf("권한이 없습니다") !== -1 || errStr.indexOf("auth/drive") !== -1) {';
+  html += '              showToast("⚠️ 구글 드라이브 권한 필요: 시트 상단 [🚀 현장 관리 > ☁️ 구글 드라이브 업로드 권한 1회 승인]을 눌러주세요.", 7000);';
+  html += '            } else {';
+  html += '              showToast("❌ 드라이브 업로드 통신 에러: " + errStr, 5000);';
+  html += '            }';
   html += '          })';
   html += '          .uploadSiteFilesToDriveFromWeb(currentUploadSiteName, payloads, driveUrl);';
   html += '      } else {';
