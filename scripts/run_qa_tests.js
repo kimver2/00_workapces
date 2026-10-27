@@ -11083,6 +11083,48 @@ assertTest('Step 174-3: index.html 내 exec?v=174 최신 캐시 버스팅 파라
   /exec\?v=(17[4-9]|1[8-9][0-9])/.test(indexHtml174)
 );
 
+// ========================================================
+// [Step 175]: 파일 업로드 모달 내 명시적 [📷 사진 촬영] 및 [📁 파일 선택] 2대 버튼 탑재 QA
+// ========================================================
+console.log('\n📋 [Step 175]: 파일 업로드 모달 내 명시적 [📷 사진 촬영] 및 [📁 파일 선택] 2대 버튼 탑재 QA ---');
+const code175 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml175 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 175-1: 모바일 카메라 즉시 실행 전용 [📷 사진 촬영] 버튼 및 네이티브 capture="environment" 인풋 탑재 검증
+assertTest('Step 175-1: 모바일 카메라 전용 [📷 사진 촬영] 버튼 및 capture="environment" 인풋 탑재 검증',
+  code175.includes('id="siteUploadCameraInput"') &&
+  code175.includes('capture="environment"') &&
+  code175.includes('class="btn-site-upload-camera-trigger"') &&
+  code175.includes('사진 촬영')
+);
+
+// 175-2: 앨범/도면/문서 복수 선택 전용 [📁 파일 선택] 버튼 및 네이티브 multiple 인풋 탑재 검증
+assertTest('Step 175-2: 앨범/도면/문서 복수 선택 전용 [📁 파일 선택] 버튼 및 multiple 인풋 탑재 검증',
+  code175.includes('id="siteUploadFileInput"') &&
+  code175.includes('class="btn-site-upload-file-trigger"') &&
+  code175.includes('파일 선택') &&
+  code175.includes('앨범 · 도면 · 문서')
+);
+
+// 175-3: 사진 촬영 및 파일 선택 2대 버튼 CSS 인터랙션(hover, active, box-shadow) 탑재 검증
+assertTest('Step 175-3: 사진 촬영 및 파일 선택 2대 버튼 CSS 인터랙션 탑재 검증',
+  code175.includes('.btn-site-upload-camera-trigger:hover') &&
+  code175.includes('.btn-site-upload-camera-trigger:active') &&
+  code175.includes('.btn-site-upload-file-trigger:hover') &&
+  code175.includes('.btn-site-upload-file-trigger:active')
+);
+
+// 175-4: 파일 선택 및 카메라 촬영 후 연속 촬영을 위한 인풋값 초기화(camInp.value, fileInp.value) 검증
+assertTest('Step 175-4: 연속 촬영/선택 지원을 위한 인풋값 초기화 동기화 검증',
+  code175.includes('const camInp = document.getElementById("siteUploadCameraInput");') &&
+  code175.includes('if (camInp) camInp.value = "";')
+);
+
+// 175-5: index.html 내 exec?v=175 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 175-5: index.html 내 exec?v=175 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[5-9]|1[8-9][0-9])/.test(indexHtml175)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
