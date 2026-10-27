@@ -4861,6 +4861,98 @@ function saveFullSiteInfoFromWeb(siteName, infoObj) {
 }
 
 /**
+ * 구글 드라이브 URL 또는 공유 링크에서 폴더 ID 추출
+ */
+function extractDriveFolderIdFromUrl(urlOrId) {
+  if (!urlOrId) return "";
+  var str = String(urlOrId).trim();
+  if (!str) return "";
+
+  // 1) /folders/([a-zA-Z0-9_-]+)
+  var matchFolder = str.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (matchFolder && matchFolder[1]) return matchFolder[1];
+
+  // 2) ?id=([a-zA-Z0-9_-]+) 또는 &id=([a-zA-Z0-9_-]+)
+  var matchId = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1]) return matchId[1];
+
+  // 3) /d/([a-zA-Z0-9_-]+)
+  var matchD = str.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchD && matchD[1]) return matchD[1];
+
+  // 4) 폴더 ID 자체만 입력된 경우 (영숫자, -, _, 15자 이상, 슬래시 없음)
+  if (/^[a-zA-Z0-9_-]{15,}$/.test(str)) {
+    return str;
+  }
+
+  return "";
+}
+
+/**
+ * [모바일 웹앱] 현장 파일(사진, 도면, 문서 등) 구글 드라이브 폴더에 실제 업로드
+ */
+function uploadSiteFilesToDriveFromWeb(siteName, filesPayload, clientDriveUrl) {
+  try {
+    var cleanSite = String(siteName || "").trim();
+    if (!cleanSite) return { success: false, error: "현장명이 유효하지 않습니다." };
+    if (!filesPayload || !filesPayload.length) return { success: false, error: "업로드할 파일 데이터가 없습니다." };
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) ss = getAppSpreadsheet();
+    var infoMap = getSiteInfoMap(ss);
+    var info = infoMap[cleanSite] || infoMap[cleanSite.replace(/\s+/g, " ")] || infoMap[cleanSite.replace(/\s+/g, "")];
+    var driveUrl = String(clientDriveUrl || (info ? (info.driveUrl || info.driveLink || "") : "")).trim();
+
+    if (!driveUrl) {
+      return { success: false, error: "[" + cleanSite + "] 등록된 드라이브 폴더 링크가 없습니다. 먼저 현장 정보에서 링크를 등록해주세요." };
+    }
+
+    var folderId = extractDriveFolderIdFromUrl(driveUrl);
+    if (!folderId) {
+      return { success: false, error: "등록된 드라이브 링크에서 폴더 ID를 인식할 수 없습니다: " + driveUrl };
+    }
+
+    var folder;
+    try {
+      folder = DriveApp.getFolderById(folderId);
+    } catch (eFolder) {
+      return { success: false, error: "구글 드라이브 폴더에 접근할 수 없습니다 (권한 또는 링크 확인 필요): " + (eFolder.message || eFolder.toString()) };
+    }
+
+    var uploadedList = [];
+    for (var i = 0; i < filesPayload.length; i++) {
+      var item = filesPayload[i];
+      if (!item || !item.name) continue;
+      var rawData = String(item.data || item.base64 || "");
+      if (rawData.indexOf(",") !== -1) {
+        rawData = rawData.split(",")[1];
+      }
+      var decodedBytes = Utilities.base64Decode(rawData);
+      var blob = Utilities.newBlob(decodedBytes, item.mimeType || "application/octet-stream", item.name);
+      var createdFile = folder.createFile(blob);
+      uploadedList.push({
+        name: createdFile.getName(),
+        id: createdFile.getId(),
+        url: createdFile.getUrl()
+      });
+    }
+
+    return {
+      success: true,
+      siteName: cleanSite,
+      folderName: folder.getName(),
+      uploadedCount: uploadedList.length,
+      files: uploadedList
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message || err.toString()
+    };
+  }
+}
+
+/**
  * [상단 메뉴] '현장정보' 시트 점검 및 신규 생성
  */
 function setupSiteInfoSheetMenu() {
@@ -13025,7 +13117,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '.btn-secondary { background: #ffffff; border-color: #cbd5e1; color: #334155; }';
   html += '.btn-secondary:hover { background: #f8fafc; }';
   html += '.btn:disabled { opacity: 0.65; cursor: not-allowed; }';
-  html += '.toast { position: fixed; bottom: 75px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #ffffff; padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 2000; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.18); }';
+  html += '.toast { position: fixed; bottom: 75px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #ffffff; padding: 10px 18px; border-radius: 20px; font-size: 12.5px; font-weight: 600; line-height: 1.45; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 3000; width: max-content; max-width: calc(100vw - 32px) !important; box-sizing: border-box !important; white-space: normal !important; word-break: keep-all; overflow-wrap: break-word; text-align: center; box-shadow: 0 6px 20px rgba(0,0,0,0.28); }';
   html += '.toast.show { opacity: 1; }';
 
   // 모바일 바텀시트 모달 스타일
@@ -17350,7 +17442,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (modal) modal.classList.add("active");';
   html += '}';
   html += '';
+  html += 'let isUploadingSiteFiles = false;';
   html += 'function closeSiteFileUploadModal(e) {';
+  html += '  if (isUploadingSiteFiles) return;';
   html += '  if (e && e.target && e.target !== document.getElementById("siteFileUploadModalOverlay") && !e.target.classList.contains("sheet-close") && !e.target.classList.contains("btn-site-info-cancel")) return;';
   html += '  const modal = document.getElementById("siteFileUploadModalOverlay");';
   html += '  if (modal) modal.classList.remove("active");';
@@ -17414,6 +17508,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function executeSiteFileUpload() {';
+  html += '  if (isUploadingSiteFiles) return;';
   html += '  if (!selectedUploadFiles || !selectedUploadFiles.length) {';
   html += '    showToast("⚠️ 업로드할 파일을 먼저 선택해주세요.");';
   html += '    return;';
@@ -17421,10 +17516,100 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const info = getSiteInfoFromMap(currentUploadSiteName);';
   html += '  const driveUrl = String(info.driveUrl || info.driveLink || "").trim();';
   html += '  if (!driveUrl) {';
-  html += '    showToast("⚠️ [" + currentUploadSiteName + "] 등록된 드라이브 폴더 링크가 없습니다. 먼저 링크를 등록해주세요.");';
+  html += '    showToast("⚠️ [" + currentUploadSiteName + "] 등록된 드라이브 폴더 링크가 없습니다. 먼저 링크를 등록해주세요.", 3500);';
+  html += '    closeSiteFileUploadModal();';
+  html += '    openSiteInfoEditModal(currentUploadSiteName);';
   html += '    return;';
   html += '  }';
-  html += '  showToast("💡 [화면 검토] " + currentUploadSiteName + " 폴더로 " + selectedUploadFiles.length + "개 파일 전송 UI 화면입니다. 검토 후 업로드 엔진이 연결됩니다.");';
+  html += '  const btn = document.getElementById("btnExecuteSiteUpload");';
+  html += '  const btnLabel = document.getElementById("btnExecuteSiteUploadLabel");';
+  html += '  const cancelBtn = document.querySelector("#siteFileUploadModalOverlay .btn-site-info-cancel");';
+  html += '  const closeBtn = document.querySelector("#siteFileUploadModalOverlay .sheet-close");';
+  html += '  isUploadingSiteFiles = true;';
+  html += '  if (btn) {';
+  html += '    btn.disabled = true;';
+  html += '    btn.style.opacity = "0.7";';
+  html += '    btn.style.cursor = "wait";';
+  html += '  }';
+  html += '  if (btnLabel) btnLabel.innerText = "파일 준비 중...";';
+  html += '  if (cancelBtn) cancelBtn.disabled = true;';
+  html += '  if (closeBtn) closeBtn.disabled = true;';
+  html += '  showToast("⏳ 업로드할 파일을 준비하고 있습니다...", 3000);';
+  html += '  const readers = selectedUploadFiles.map(function(file) {';
+  html += '    return new Promise(function(resolve, reject) {';
+  html += '      const reader = new FileReader();';
+  html += '      reader.onload = function(e) {';
+  html += '        resolve({';
+  html += '          name: file.name,';
+  html += '          mimeType: file.type || "application/octet-stream",';
+  html += '          data: e.target.result';
+  html += '        });';
+  html += '      };';
+  html += '      reader.onerror = function(err) {';
+  html += '        reject(err);';
+  html += '      };';
+  html += '      reader.readAsDataURL(file);';
+  html += '    });';
+  html += '  });';
+  html += '  Promise.all(readers)';
+  html += '    .then(function(payloads) {';
+  html += '      if (btnLabel) btnLabel.innerText = "드라이브로 업로드 중 (" + payloads.length + "개)...";';
+  html += '      showToast("☁️ [" + currentUploadSiteName + "] 구글 드라이브로 " + payloads.length + "개 파일 전송 중...", 6000);';
+  html += '      function resetUploadButtonState() {';
+  html += '        isUploadingSiteFiles = false;';
+  html += '        if (btn) {';
+  html += '          btn.disabled = false;';
+  html += '          btn.style.opacity = "1";';
+  html += '          btn.style.cursor = "pointer";';
+  html += '        }';
+  html += '        if (btnLabel) btnLabel.innerText = "드라이브로 업로드";';
+  html += '        if (cancelBtn) cancelBtn.disabled = false;';
+  html += '        if (closeBtn) closeBtn.disabled = false;';
+  html += '      }';
+  html += '      if (typeof google !== "undefined" && google.script && google.script.run) {';
+  html += '        google.script.run';
+  html += '          .withSuccessHandler(function(res) {';
+  html += '            resetUploadButtonState();';
+  html += '            if (res && res.success) {';
+  html += '              selectedUploadFiles = [];';
+  html += '              renderSelectedUploadFilesList();';
+  html += '              const modal = document.getElementById("siteFileUploadModalOverlay");';
+  html += '              if (modal) modal.classList.remove("active");';
+  html += '              showToast("✅ [" + currentUploadSiteName + "] " + (res.uploadedCount || payloads.length) + "개 파일이 드라이브에 안전하게 업로드되었습니다!", 4000);';
+  html += '            } else {';
+  html += '              showToast("⚠️ 업로드 실패: " + ((res && res.error) || "알 수 없는 오류"), 4500);';
+  html += '            }';
+  html += '          })';
+  html += '          .withFailureHandler(function(err) {';
+  html += '            resetUploadButtonState();';
+  html += '            console.error("uploadSiteFilesToDriveFromWeb error:", err);';
+  html += '            showToast("❌ 드라이브 업로드 통신 에러: " + (err.message || err.toString()), 4500);';
+  html += '          })';
+  html += '          .uploadSiteFilesToDriveFromWeb(currentUploadSiteName, payloads, driveUrl);';
+  html += '      } else {';
+  html += '        setTimeout(function() {';
+  html += '          resetUploadButtonState();';
+  html += '          selectedUploadFiles = [];';
+  html += '          renderSelectedUploadFilesList();';
+  html += '          const modal = document.getElementById("siteFileUploadModalOverlay");';
+  html += '          if (modal) modal.classList.remove("active");';
+  html += '          showToast("✅ [가상 테스트] " + payloads.length + "개 파일 업로드 완료", 3000);';
+  html += '        }, 1200);';
+  html += '      }';
+  html += '    })';
+  html += '    .catch(function(readErr) {';
+  html += '      isUploadingSiteFiles = false;';
+  html += '      if (btn) {';
+  html += '        btn.disabled = false;';
+  html += '        btn.style.opacity = "1";';
+  html += '        btn.style.cursor = "pointer";';
+  html += '      }';
+  html += '      if (btnLabel) btnLabel.innerText = "드라이브로 업로드";';
+  html += '      if (cancelBtn) cancelBtn.disabled = false;';
+  html += '      if (closeBtn) closeBtn.disabled = false;';
+  html += '      console.error("FileReader error:", readErr);';
+  html += '      showToast("⚠️ 파일 읽기 오류: 파일을 읽을 수 없습니다.", 3500);';
+  html += '    });';
   html += '}';
   html += '';
   html += '';
@@ -17480,12 +17665,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '  return "";';
   html += '}';
 
-  html += 'function showToast(msg) {';
+  html += 'let toastTimer = null;';
+  html += 'function showToast(msg, duration) {';
   html += '  const t = document.getElementById("toast");';
   html += '  if (!t) return;';
   html += '  t.innerText = msg;';
   html += '  t.classList.add("show");';
-  html += '  setTimeout(() => t.classList.remove("show"), 2200);';
+  html += '  if (toastTimer) clearTimeout(toastTimer);';
+  html += '  toastTimer = setTimeout(() => t.classList.remove("show"), duration || 2500);';
   html += '}';
 
   html += 'function onSiteCheckboxClick(e, cb) {';

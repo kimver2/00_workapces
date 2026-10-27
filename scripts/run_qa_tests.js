@@ -11163,6 +11163,75 @@ assertTest('Step 176-5: index.html 내 exec?v=176 최신 캐시 버스팅 파라
   /exec\?v=(17[6-9]|1[8-9][0-9])/.test(indexHtml176)
 );
 
+// ========================================================
+// [Step 177]: 구글 드라이브 실업로드 엔진(uploadSiteFilesToDriveFromWeb) 및 토스트 메시지 좌우 잘림 방지 QA
+// ========================================================
+console.log('\n📋 [Step 177]: 구글 드라이브 실업로드 엔진 및 토스트 메시지 좌우 잘림 방지 QA ---');
+const code177 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml177 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 177-1: 구글 드라이브 폴더 ID 추출 함수(extractDriveFolderIdFromUrl) 검증
+let testExtractFn;
+try {
+  const sandbox177 = {
+    Logger: { log: () => {} },
+    SpreadsheetApp: {},
+    DriveApp: {},
+    Utilities: {}
+  };
+  vm.createContext(sandbox177);
+  vm.runInContext(code177, sandbox177);
+  testExtractFn = sandbox177.extractDriveFolderIdFromUrl;
+} catch (e177) {
+  // sandbox syntax
+}
+
+const idTest1 = testExtractFn ? testExtractFn('https://drive.google.com/drive/folders/1aBcDeFgHiJkLmNoPqRsTuVwXyZ') : '';
+const idTest2 = testExtractFn ? testExtractFn('https://drive.google.com/open?id=1aBcDeFgHiJkLmNoPqRsTuVwXyZ&usp=sharing') : '';
+const idTest3 = testExtractFn ? testExtractFn('1aBcDeFgHiJkLmNoPqRsTuVwXyZ') : '';
+
+assertTest('Step 177-1: 구글 드라이브 URL/ID 파서(extractDriveFolderIdFromUrl) 정확도 검증',
+  code177.includes('function extractDriveFolderIdFromUrl(urlOrId)') &&
+  idTest1 === '1aBcDeFgHiJkLmNoPqRsTuVwXyZ' &&
+  idTest2 === '1aBcDeFgHiJkLmNoPqRsTuVwXyZ' &&
+  idTest3 === '1aBcDeFgHiJkLmNoPqRsTuVwXyZ'
+);
+
+// 177-2: 서버측 구글 드라이브 실업로드 엔진(uploadSiteFilesToDriveFromWeb) 탑재 및 폴더/파일 생성 로직 검증
+assertTest('Step 177-2: 서버측 구글 드라이브 실업로드 엔진(uploadSiteFilesToDriveFromWeb) 탑재 검증',
+  code177.includes('function uploadSiteFilesToDriveFromWeb(siteName, filesPayload, clientDriveUrl)') &&
+  code177.includes('DriveApp.getFolderById(folderId)') &&
+  code177.includes('Utilities.base64Decode(rawData)') &&
+  code177.includes('folder.createFile(blob)')
+);
+
+// 177-3: 클라이언트측 executeSiteFileUpload 비동기 파일 리딩(FileReader) 및 RPC 호출 연동 검증
+assertTest('Step 177-3: 클라이언트측 executeSiteFileUpload 비동기 FileReader 및 RPC 호출 연동 검증',
+  code177.includes('function executeSiteFileUpload()') &&
+  code177.includes('new FileReader()') &&
+  code177.includes('reader.readAsDataURL(file)') &&
+  code177.includes('uploadSiteFilesToDriveFromWeb(currentUploadSiteName, payloads, driveUrl)') &&
+  code177.includes('isUploadingSiteFiles')
+);
+
+// 177-4: 토스트 메시지 좌우 잘림 방지 (max-width, white-space: normal, word-break, z-index) CSS 검증
+assertTest('Step 177-4: 토스트 메시지 좌우 잘림 방지(max-width, white-space: normal, word-break) CSS 검증',
+  code177.includes('.toast { position: fixed; bottom: 75px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #ffffff; padding: 10px 18px; border-radius: 20px; font-size: 12.5px; font-weight: 600; line-height: 1.45; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 3000; width: max-content; max-width: calc(100vw - 32px) !important; box-sizing: border-box !important; white-space: normal !important; word-break: keep-all; overflow-wrap: break-word; text-align: center; box-shadow: 0 6px 20px rgba(0,0,0,0.28); }')
+);
+
+// 177-5: showToast 타이머 초기화(toastTimer) 및 duration 파라미터 지원 검증
+assertTest('Step 177-5: showToast 타이머 초기화(toastTimer) 및 duration 파라미터 지원 검증',
+  code177.includes('let toastTimer = null;') &&
+  code177.includes('function showToast(msg, duration)') &&
+  code177.includes('if (toastTimer) clearTimeout(toastTimer);') &&
+  code177.includes('toastTimer = setTimeout(() => t.classList.remove("show"), duration || 2500);')
+);
+
+// 177-6: index.html 내 exec?v=177 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 177-6: index.html 내 exec?v=177 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[7-9]|1[8-9][0-9])/.test(indexHtml177)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
