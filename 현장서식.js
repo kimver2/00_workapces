@@ -589,9 +589,24 @@ function ensurePartnerDropdownFormulaColumn(ss, partnerSheet) {
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
  * @return {string[]}
  */
-function getAvailablePartners(ss, skipEnsure) {
+function getAvailablePartners(ss, skipEnsure, preloadedRows) {
   var partners = [];
   try {
+    if (Array.isArray(preloadedRows) && preloadedRows.length > 0) {
+      for (var pi = 0; pi < preloadedRows.length; pi++) {
+        var rRow = preloadedRows[pi];
+        var kv = (rRow.length >= 11) ? String(rRow[10] || "").trim() : "";
+        if (!kv) {
+          var aN = String(rRow[0] || "").trim();
+          var bB = String(rRow[1] || "").trim();
+          if (aN) kv = bB ? (bB + "_" + aN) : aN;
+        }
+        if (kv && partners.indexOf(kv) === -1) {
+          partners.push(kv);
+        }
+      }
+      if (partners.length > 0) return partners;
+    }
     var pSheet = findPartnersSheet(ss);
     if (pSheet && pSheet.getLastRow() >= 2) {
       if (!skipEnsure) {
@@ -634,14 +649,21 @@ function getAvailablePartners(ss, skipEnsure) {
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
  * @return {object} { "도배_이충호 반장 (개인)": "010-3744-3901", ... }
  */
-function getPartnerPhoneMap(ss) {
+function getPartnerPhoneMap(ss, preloadedRows) {
   var phoneMap = {};
   try {
-    var pSheet = findPartnersSheet(ss);
-    if (pSheet && pSheet.getLastRow() >= 2) {
-      var lastR = pSheet.getLastRow();
-      var maxCols = Math.max((typeof pSheet.getLastColumn === "function" ? pSheet.getLastColumn() : 11), 11);
-      var pData = pSheet.getRange(2, 1, lastR - 1, maxCols).getValues();
+    var pData = null;
+    if (Array.isArray(preloadedRows) && preloadedRows.length > 0) {
+      pData = preloadedRows;
+    } else {
+      var pSheet = findPartnersSheet(ss);
+      if (pSheet && pSheet.getLastRow() >= 2) {
+        var lastR = pSheet.getLastRow();
+        var maxCols = Math.max((typeof pSheet.getLastColumn === "function" ? pSheet.getLastColumn() : 11), 11);
+        pData = pSheet.getRange(2, 1, lastR - 1, maxCols).getValues();
+      }
+    }
+    if (pData && pData.length > 0) {
 
       for (var i = 0; i < pData.length; i++) {
         var aName = String(pData[i][0] || "").trim();
@@ -12085,17 +12107,11 @@ function getSidebarDashboardData(forceRefresh) {
     }
 
     var sNumCols = Math.max((typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 11), 11);
-    var values = sheet.getRange(2, 1, lastRow - 1, sNumCols).getValues();
+    var rawAllRows = sheet.getRange(1, 1, lastRow, sNumCols).getValues();
+    var sheetHeaders = (rawAllRows.length >= lastRow && rawAllRows.length > 0) ? rawAllRows[0] : null;
+    var values = (rawAllRows.length >= lastRow && rawAllRows.length > 1) ? rawAllRows.slice(1) : rawAllRows;
     var today = new Date();
     var todayYYMMDD = formatDateYYMMDD(today);
-
-    var sheetHeaders = null;
-    try {
-      if (sheet && typeof sheet.getLastRow === "function" && sheet.getLastRow() >= 1) {
-        var colLimit = Math.min((typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 11), 12);
-        sheetHeaders = sheet.getRange(1, 1, 1, colLimit).getValues()[0];
-      }
-    } catch(eH) {}
 
     var sitesMap = {};
     var siteOrder = [];
@@ -12229,10 +12245,11 @@ function getSidebarDashboardData(forceRefresh) {
     try {
       var singleSheet = findSingleTaskSheet(ss, false);
       if (singleSheet && singleSheet.getLastRow() >= 2) {
+        var sLastR = singleSheet.getLastRow();
         var sNumCols = Math.max((typeof singleSheet.getLastColumn === "function" ? singleSheet.getLastColumn() : 11), 11);
-        var singleData = singleSheet.getRange(2, 1, singleSheet.getLastRow() - 1, sNumCols).getValues();
-        var sSheetHeaders = null;
-        try { if (singleSheet.getLastRow() >= 1) sSheetHeaders = singleSheet.getRange(1, 1, 1, sNumCols).getValues()[0]; } catch(eSh) {}
+        var sRawAll = singleSheet.getRange(1, 1, sLastR, sNumCols).getValues();
+        var sSheetHeaders = (sRawAll.length >= sLastR && sRawAll.length > 0) ? sRawAll[0] : null;
+        var singleData = (sRawAll.length >= sLastR && sRawAll.length > 1) ? sRawAll.slice(1) : sRawAll;
         var sLastKnownSite = "";
         for (var si = 0; si < singleData.length; si++) {
           var sRowVals = singleData[si];
@@ -12326,10 +12343,11 @@ function getSidebarDashboardData(forceRefresh) {
     try {
       var asSheet = findAsSheet(ss, false);
       if (asSheet && asSheet.getLastRow() >= 2) {
+        var asLastR = asSheet.getLastRow();
         var asNumCols = Math.max((typeof asSheet.getLastColumn === "function" ? asSheet.getLastColumn() : 11), 11);
-        var asData = asSheet.getRange(2, 1, asSheet.getLastRow() - 1, asNumCols).getValues();
-        var asSheetHeaders = null;
-        try { if (asSheet.getLastRow() >= 1) asSheetHeaders = asSheet.getRange(1, 1, 1, asNumCols).getValues()[0]; } catch(eAh) {}
+        var asRawAll = asSheet.getRange(1, 1, asLastR, asNumCols).getValues();
+        var asSheetHeaders = (asRawAll.length >= asLastR && asRawAll.length > 0) ? asRawAll[0] : null;
+        var asData = (asRawAll.length >= asLastR && asRawAll.length > 1) ? asRawAll.slice(1) : asRawAll;
         var asLastKnownSite = "";
         for (var ai = 0; ai < asData.length; ai++) {
           var asRowVals = asData[ai];
@@ -12423,10 +12441,11 @@ function getSidebarDashboardData(forceRefresh) {
     try {
       var compSheet = findCompletedSitesSheet(ss, false);
       if (compSheet && compSheet.getLastRow() >= 2) {
+        var compLastR = compSheet.getLastRow();
         var compNumCols = Math.max((typeof compSheet.getLastColumn === "function" ? compSheet.getLastColumn() : 11), 11);
-        var compData = compSheet.getRange(2, 1, compSheet.getLastRow() - 1, compNumCols).getValues();
-        var compSheetHeaders = null;
-        try { if (compSheet.getLastRow() >= 1) compSheetHeaders = compSheet.getRange(1, 1, 1, compNumCols).getValues()[0]; } catch(eCh) {}
+        var compRawAll = compSheet.getRange(1, 1, compLastR, compNumCols).getValues();
+        var compSheetHeaders = (compRawAll.length >= compLastR && compRawAll.length > 0) ? compRawAll[0] : null;
+        var compData = (compRawAll.length >= compLastR && compRawAll.length > 1) ? compRawAll.slice(1) : compRawAll;
         var compLastKnownSite = "";
         for (var ci = 0; ci < compData.length; ci++) {
           var cRowVals = compData[ci];
@@ -12823,6 +12842,17 @@ function getSidebarDashboardData(forceRefresh) {
       }
     }
 
+    // 02_거래처 시트 데이터 1회 단일 조회 후 공유 (중복 시트 I/O 제거)
+    var sharedPartnerRows = null;
+    try {
+      var pSheetOnce = findPartnersSheet(ss);
+      if (pSheetOnce && pSheetOnce.getLastRow() >= 2) {
+        var pLastR = pSheetOnce.getLastRow();
+        var pMaxCols = Math.max((typeof pSheetOnce.getLastColumn === "function" ? pSheetOnce.getLastColumn() : 11), 11);
+        sharedPartnerRows = pSheetOnce.getRange(2, 1, pLastR - 1, pMaxCols).getValues();
+      }
+    } catch(ePOnce) {}
+
     var resultPayload = {
       kpi: {
         totalSites: siteOrder.length,
@@ -12844,8 +12874,8 @@ function getSidebarDashboardData(forceRefresh) {
       todayStr: todayYYMMDD,
       members: getMemberNames(ss),
       tasks: getAvailableTasks(sheet),
-      partners: getAvailablePartners(ss, true),
-      partnerPhoneMap: getPartnerPhoneMap(ss),
+      partners: getAvailablePartners(ss, true, sharedPartnerRows),
+      partnerPhoneMap: getPartnerPhoneMap(ss, sharedPartnerRows),
       memberPhoneMap: getMemberPhoneMap(ss),
       holidays: getKoreanHolidaysMap(ss),
       sites: sitesList,
@@ -13583,67 +13613,35 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .pc-checklist-chip.done:hover { background: #dcfce7; border-color: #4ade80; }';
   html += '  .pc-checklist-chip .chip-box { font-size: 11px; }';
   html += '  .pc-site-info-actions { display: flex; align-items: center; gap: 6px; }';
-  html += '  .btn-site-drive-link { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #f0fdf4; color: #166534; border: 1.5px solid #86efac; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; }';
-  html += '  .btn-site-drive-link:hover { background: #dcfce7; border-color: #4ade80; transform: translateY(-0.5px); box-shadow: 0 2px 5px rgba(22,101,52,0.18); }';
-  html += '  .btn-site-drive-link:active { transform: translateY(0); }';
-  html += '  .btn-partner-guide { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #93c5fd; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; }';
-  html += '  .btn-partner-guide:hover { background: #dbeafe; border-color: #60a5fa; transform: translateY(-0.5px); box-shadow: 0 2px 5px rgba(37,99,235,0.18); }';
-  html += '  .btn-partner-guide:active { transform: translateY(0); }';
-  html += '  .btn-site-info-edit { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 7px; background: #ffffff; color: #475569; border: 1.5px solid #cbd5e1; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; }';
-  html += '  .btn-site-info-edit:hover { background: #f1f5f9; border-color: #94a3b8; }';
   html += '  .pc-site-info-details { display: grid; grid-template-columns: 1.2fr 0.8fr 0.8fr 1.5fr 1fr; gap: 10px; font-size: 12px; }';
   html += '  .pc-info-item { display: flex; flex-direction: column; gap: 2px; background: #f8fafc; border-radius: 8px; padding: 6px 10px; border: 1px solid #f1f5f9; min-width: 0; }';
   html += '  .pc-info-item-label { font-size: 10.5px; font-weight: 800; color: #64748b; }';
   html += '  .pc-info-item-val { font-size: 12px; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }';
   html += '  .pc-info-item-val.empty { color: #94a3b8 !important; font-weight: 500 !important; font-size: 11.5px !important; font-style: normal !important; }';
-  html += '  /* 현장 정보 수정 모달 */';
-  html += '  .site-info-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(2px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 16px; }';
-  html += '  .site-info-modal-overlay.active { display: flex; }';
-  html += '  .site-info-modal-box { background: #ffffff; border-radius: 14px; width: 100%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.18); display: flex; flex-direction: column; overflow: hidden; animation: pcModalFadeIn 0.2s cubic-bezier(0.16,1,0.3,1); }';
-  html += '  .site-info-modal-header { padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; }';
-  html += '  .site-info-modal-title { font-size: 15px; font-weight: 900; color: #0f172a; display: flex; align-items: center; gap: 6px; }';
-  html += '  .site-info-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; max-height: 75vh; overflow-y: auto; }';
-  html += '  .site-info-modal-footer { padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px; box-sizing: border-box; }';
-  html += '  .site-info-input-group { display: flex; flex-direction: column; gap: 4px; }';
-  html += '  .site-info-input-group label { font-size: 11.5px; font-weight: 800; color: #334155; }';
-  html += '  .site-info-input { width: 100%; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #0f172a; outline: none; box-sizing: border-box; }';
-  html += '  .site-info-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }';
-  html += '  .site-info-textarea { width: 100%; min-height: 70px; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: #0f172a; outline: none; resize: vertical; box-sizing: border-box; font-family: inherit; }';
-  html += '  .site-info-textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }';
-  html += '  .site-info-input::placeholder, .site-info-textarea::placeholder { font-size: 11.5px !important; font-weight: 500 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; line-height: normal !important; }';
-  html += '  .site-info-input::-webkit-input-placeholder, .site-info-textarea::-webkit-input-placeholder { font-size: 11.5px !important; font-weight: 500 !important; color: #94a3b8 !important; opacity: 1 !important; letter-spacing: -0.2px !important; line-height: normal !important; }';
-  html += '';
-  html += '  /* 반장님 작업 안내문 확인 및 수정 모달 */';
-  html += '  .partner-guide-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(2px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 16px; }';
-  html += '  .partner-guide-modal-overlay.active { display: flex; }';
-  html += '  .partner-guide-modal-box { background: #ffffff; border-radius: 14px; width: 100%; max-width: 560px; box-shadow: 0 10px 30px rgba(0,0,0,0.18); display: flex; flex-direction: column; overflow: hidden; animation: pcModalFadeIn 0.2s cubic-bezier(0.16,1,0.3,1); }';
-  html += '  .partner-guide-modal-header { padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; }';
-  html += '  .partner-guide-modal-title { font-size: 15px; font-weight: 900; color: #0f172a; display: flex; align-items: center; gap: 6px; }';
-  html += '  .partner-guide-modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; max-height: 75vh; overflow-y: auto; }';
-  html += '  .partner-guide-modal-hint-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }';
-  html += '  .partner-guide-modal-hint { font-size: 12px; font-weight: 600; color: #64748b; line-height: 1.4; display: flex; align-items: center; gap: 4px; }';
-  html += '  .partner-guide-counter-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px; background: #eff6ff; color: #2563eb; font-size: 11.5px; font-weight: 800; border: 1px solid #bfdbfe; }';
-  html += '  .partner-guide-editor-row { display: flex; align-items: stretch; gap: 8px; width: 100%; position: relative; }';
-  html += '  .partner-guide-textarea-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }';
+  html += '  /* 현장 정보 수정 모달 & 반장님 작업 안내문 모달 PC 반응형 보정 */';
+  html += '  .site-info-modal-header, .partner-guide-modal-header { padding: 16px 20px; }';
+  html += '  .site-info-modal-body { padding: 20px; gap: 14px; }';
+  html += '  .site-info-modal-footer { padding: 14px 20px; }';
+  html += '  .partner-guide-modal-box { max-width: 560px; }';
+  html += '  .partner-guide-modal-title { font-size: 15px; }';
+  html += '  .partner-guide-modal-body { padding: 18px 20px; gap: 10px; max-height: 75vh; }';
+  html += '  .partner-guide-modal-hint { font-size: 12px; }';
+  html += '  .partner-guide-counter-badge { padding: 2px 8px; border-radius: 12px; font-size: 11.5px; }';
+  html += '  .partner-guide-editor-row { gap: 8px; }';
   html += '  .btn-partner-guide-nav { width: 34px; border-radius: 8px; border: 1.5px solid #cbd5e1; background: #f8fafc; display: none; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; color: #334155; cursor: pointer; transition: all 0.15s ease; flex-shrink: 0; padding: 0; user-select: none; outline: none !important; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }';
   html += '  .btn-partner-guide-nav:hover:not(:disabled) { background: #eff6ff; color: #2563eb; border-color: #93c5fd; box-shadow: 0 2px 8px rgba(37,99,235,0.18); transform: scale(1.04); }';
   html += '  .btn-partner-guide-nav:active:not(:disabled) { background: #dbeafe; transform: scale(0.97); }';
   html += '  .btn-partner-guide-nav:disabled, .btn-partner-guide-nav.disabled { opacity: 0.25 !important; cursor: not-allowed !important; pointer-events: none !important; box-shadow: none !important; border-color: #e2e8f0 !important; background: #f1f5f9 !important; color: #94a3b8 !important; }';
-  html += '  .partner-guide-textarea { width: 100%; min-height: 280px; padding: 12px 14px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 500; color: #0f172a; outline: none; resize: vertical; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; line-height: 1.6; background: #f8fafc; }';
-  html += '  .partner-guide-textarea:focus { border-color: #2563eb; background: #ffffff; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }';
+  html += '  .partner-guide-textarea { font-size: 13px; }';
   html += '  .partner-guide-modal-footer { padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: space-between !important; gap: 8px; }';
-  html += '  .partner-guide-footer-nav { display: none; align-items: center; gap: 6px; background: #ffffff; padding: 3px 6px; border-radius: 8px; border: 1px solid #e2e8f0; width: auto !important; }';
+  html += '  .partner-guide-footer-nav { gap: 6px; padding: 3px 6px; width: auto !important; }';
   html += '  .partner-guide-footer-actions { display: flex !important; align-items: center !important; gap: 6px !important; width: auto !important; }';
-  html += '  .btn-guide-footer-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; font-size: 11.5px; font-weight: 700; color: #334155; cursor: pointer; transition: all 0.15s ease; }';
-  html += '  .btn-guide-footer-btn:hover:not(:disabled) { background: #eff6ff; color: #2563eb; border-color: #93c5fd; }';
-  html += '  .btn-guide-footer-btn:disabled { opacity: 0.35 !important; cursor: not-allowed !important; pointer-events: none !important; }';
-  html += '  .partner-guide-footer-counter { font-size: 12px; font-weight: 800; color: #0f172a; padding: 0 4px; min-width: 36px; text-align: center; }';
-  html += '  .btn-partner-guide-copy { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 8px; background: #2563eb; color: #ffffff; font-size: 13px; font-weight: 800; border: none; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 6px rgba(37,99,235,0.25); }';
-  html += '  .btn-partner-guide-copy:hover { background: #1d4ed8; transform: translateY(-1px); }';
+  html += '  .btn-guide-footer-btn { padding: 4px 10px; background: #ffffff; font-size: 11.5px; }';
+  html += '  .partner-guide-footer-counter { font-size: 12px; padding: 0 4px; min-width: 36px; }';
+  html += '  .btn-partner-guide-copy { gap: 6px; padding: 9px 18px; font-size: 13px; }';
+  html += '  .btn-partner-guide-copy:hover { transform: translateY(-1px); }';
   html += '  .btn-partner-guide-copy:active { transform: translateY(0); }';
-  html += '  .btn-partner-guide-copy.copied { background: #059669; }';
-  html += '  .btn-partner-guide-copy-all { display: none; align-items: center; gap: 4px; padding: 9px 13px; border-radius: 8px; background: #f1f5f9; color: #334155; font-size: 12px; font-weight: 800; border: 1.5px solid #cbd5e1; cursor: pointer; transition: all 0.15s ease; }';
-  html += '  .btn-partner-guide-copy-all:hover { background: #e2e8f0; color: #0f172a; }';
+  html += '  .btn-partner-guide-copy-all { padding: 9px 13px; font-size: 12px; font-weight: 800; }';
   html += '  .pc-site-task-cb, #pcSiteTaskSelectAll { cursor: pointer; width: 16px; height: 16px; accent-color: #2563eb; vertical-align: middle; }';
   html += '  .pc-tasks-table tr.row-selected td { background-color: #f0f7ff !important; }';
   html += '';
@@ -13812,6 +13810,7 @@ function buildSidebarDashboardHtml(mode) {
   if (!isModal && !isMobile) {
     html += '      <button type="button" class="btn btn-secondary" style="flex:none;padding:4px 8px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:3px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #93c5fd;" onclick="openWideModalView()" title="대시보드를 넓은 대형 팝업 창(1020px)으로 엽니다">⛶ 크게 보기</button>';
   }
+  html += '      <button type="button" id="mobileFilterResetBtn" class="btn btn-secondary" style="display:none;flex:none;padding:4px 8px;font-size:11px;font-weight:800;background:#fef2f2;color:#dc2626;border:1.5px solid #fca5a5;" onclick="resetAllCalendarFilters()" title="활성화된 검색어·담당자·상태 필터를 한 번에 모두 해제합니다">✕ 필터해제</button>';
   html += '      <button type="button" class="btn btn-secondary btn-refresh-action" style="flex:none;padding:4px 9px;font-size:11.5px;" onclick="loadData(true)">🔄 새로고침</button>';
   html += '    </div>';
   html += '  </div>';
@@ -17426,8 +17425,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '}';
   html += '';
   html += 'function openCurrentTaskSiteDriveLink() {';
-  html += '  if (!currentTaskObj || !currentTaskObj.siteName) return;';
-  html += '  openSiteDriveLink(currentTaskObj.siteName);';
+  html += '  const s = curSiteName || (curTaskObj && curTaskObj.siteName) || "";';
+  html += '  if (!s) return;';
+  html += '  openSiteDriveLink(s);';
   html += '}';
   html += '';
   html += 'function openSiteInfoEditModal(siteName, e) {';
@@ -18756,6 +18756,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '      checkedBadge.style.display = "none";';
   html += '      if (allSitesBtn) { allSitesBtn.style.textDecoration = "none"; allSitesBtn.style.fontWeight = "700"; }';
   html += '    }';
+  html += '  }';
+  html += '  const mobResetBtn = document.getElementById("mobileFilterResetBtn");';
+  html += '  if (mobResetBtn) {';
+  html += '    const hasAnyMobFilter = (sVal.length > 0) || hasMember || (typeof currentFilter !== "undefined" && currentFilter !== "all") || (typeof checkedSites !== "undefined" && checkedSites.size > 0);';
+  html += '    mobResetBtn.style.display = hasAnyMobFilter ? "inline-flex" : "none";';
   html += '  }';
   html += '}';
   html += '';
@@ -20515,18 +20520,19 @@ function buildSidebarDashboardHtml(mode) {
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'        <div class="pc-site-info-actions">\';';
   html += '  dHtml += \'          <button type="button" class="btn-site-drive-link" onclick="openSiteDriveLink(decodeURIComponent(\\\'\' + curSiteEnc + \'\\\'))" title="현장 구글 드라이브 도면 / 사진 / 계약서 자료실 열기"><span>📁</span> 현장 자료</button>\';';
+  html += '  dHtml += \'          <button type="button" class="btn-partner-guide" style="background:#eff6ff;color:#1d4ed8;border-color:#93c5fd;" onclick="openSiteFileUploadModal(decodeURIComponent(\\\'\' + curSiteEnc + \'\\\'))" title="이 현장의 구글 드라이브 폴더로 사진/도면/파일 즉시 업로드"><span>📤</span> 파일 업로드</button>\';';
   html += '  dHtml += \'          <button type="button" class="btn-partner-guide" onclick="openPartnerWorkGuideModal(decodeURIComponent(\\\'\' + curSiteEnc + \'\\\'))" title="시공 반장님/협력업체 전용 카카오톡 작업 안내문 확인 및 편집"><span>📋</span> 안내문 확인</button>\';';
   html += '  dHtml += \'          <button type="button" class="btn-site-info-edit" onclick="openSiteInfoEditModal(decodeURIComponent(\\\'\' + curSiteEnc + \'\\\'), event)" title="현장 주소, 도어락 비밀번호, 관리실 연락처, 특이사항 편집"><span>✏️</span> 현장정보 수정</button>\';';
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'      </div>\';';
   html += '  dHtml += \'      <div class="pc-site-info-details">\';';
   html += '  dHtml += \'        <div class="pc-info-item">\';';
-  html += '  dHtml += \'          <span class="pc-info-item-label">📍 현장 주소</span>\';';
+  html += '  dHtml += \'          <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;"><span class="pc-info-item-label">📍 현장 주소</span>\' + (curSiteInfo.address ? \'<span style="display:inline-flex;gap:3px;"><button type="button" style="border:1px solid #cbd5e1;background:#ffffff;color:#1e293b;border-radius:4px;padding:1px 5px;font-size:9.5px;font-weight:700;cursor:pointer;" data-addr="\' + encodeURIComponent(curSiteInfo.address) + \'" onclick="event.stopPropagation();copyTextToClipboard(decodeURIComponent(this.dataset.addr), \\\'현장 주소가 복사되었습니다!\\\')">복사</button><button type="button" style="border:1px solid #fde047;background:#fef9c3;color:#854d0e;border-radius:4px;padding:1px 5px;font-size:9.5px;font-weight:800;cursor:pointer;" data-addr="\' + encodeURIComponent(curSiteInfo.address) + \'" onclick="event.stopPropagation();openMobileMapNavigation(decodeURIComponent(this.dataset.addr))">🚗길안내</button></span>\' : \'\') + \'</div>\';';
   html += '  dHtml += \'          <span class="pc-info-item-val\' + (!curSiteInfo.address ? " empty" : "") + \'" title="\' + escapeHtml(curSiteInfo.address || "미등록") + \'">\' + escapeHtml(curSiteInfo.address || "주소 미등록") + \'</span>\';';
   html += '  dHtml += \'        </div>\';';
-  html += '  dHtml += \'        <div class="pc-info-item">\';';
-  html += '  dHtml += \'          <span class="pc-info-item-label">🔑 도어락 비밀번호</span>\';';
-  html += '  dHtml += \'          <span class="pc-info-item-val\' + (!curSiteInfo.doorPassword ? " empty" : "") + \'" title="\' + escapeHtml(curSiteInfo.doorPassword || "미등록") + \'">\' + escapeHtml(curSiteInfo.doorPassword || "비번 미등록") + \'</span>\';';
+  html += '  dHtml += \'        <div class="pc-info-item"\' + (curSiteInfo.doorPassword ? \' style="cursor:pointer;background:#eff6ff;border-color:#bfdbfe;" data-pwd="\' + encodeURIComponent(curSiteInfo.doorPassword) + \'" onclick="event.stopPropagation();copyTextToClipboard(decodeURIComponent(this.dataset.pwd), \\\'도어락 비밀번호가 복사되었습니다!\\\')" title="클릭하여 도어락 비밀번호 복사"\' : \'\') + \'>\';';
+  html += '  dHtml += \'          <div style="display:flex;align-items:center;justify-content:space-between;"><span class="pc-info-item-label">🔑 도어락 비밀번호</span>\' + (curSiteInfo.doorPassword ? \'<span style="font-size:9.5px;font-weight:700;color:#2563eb;background:#dbeafe;padding:1px 4px;border-radius:3px;">복사</span>\' : \'\') + \'</div>\';';
+  html += '  dHtml += \'          <span class="pc-info-item-val\' + (!curSiteInfo.doorPassword ? " empty" : "") + \'" style="\' + (curSiteInfo.doorPassword ? "color:#2563eb;font-weight:900;" : "") + \'" title="\' + escapeHtml(curSiteInfo.doorPassword || "미등록") + \'">\' + escapeHtml(curSiteInfo.doorPassword || "비번 미등록") + \'</span>\';';
   html += '  dHtml += \'        </div>\';';
   html += '  dHtml += \'        <div class="pc-info-item">\';';
   html += '  dHtml += \'          <span class="pc-info-item-label">📞 관리사무소</span>\';';
@@ -21187,7 +21193,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      else if (task.status.indexOf("진행") !== -1) statusClass = "status-진행";';
   html += '      else if (task.status.indexOf("AS") !== -1) statusClass = "status-AS";';
 
-  html += '      const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1");';
+  html += '      const isSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1" || String(task.isShared) === "Y" || String(task.isShared) === "공유");';
   html += '      const shareTagClass = isSh ? "share-tag share-on" : "share-tag share-off";';
   html += '      const shareTagText = isSh ? "🟦 공유" : "🟥 미공유";';
   html += '';
@@ -21196,8 +21202,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      html += \'<div class="task-item\' + (isTaskChecked ? " row-selected" : "") + \'" onclick="onTaskClick(\\\'\' + siteEnc + \'\\\', \\\'\' + taskJson + \'\\\')">\';';
   html += '      html += \'  <div class="task-top" style="display:flex;align-items:center;gap:6px;">\';';
   html += '      html += \'    <input type="checkbox" class="mob-task-cb" data-site="\' + siteEnc + \'" data-row="\' + task.row + \'" \' + (isTaskChecked ? "checked" : "") + \' onclick="onMobileTaskCheckboxClick(event, this)" style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;flex-shrink:0;">\';';
-  html += '      const mIsSh = (task.isShared === true || String(task.isShared).toLowerCase() === "true" || String(task.isShared) === "1" || String(task.isShared) === "Y" || String(task.isShared) === "공유");';
-  html += '      const mShareIconHtml = mIsSh ? \'<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#2563eb;margin-right:5px;vertical-align:middle;box-shadow:0 1px 2px rgba(37,99,235,0.25);flex-shrink:0;" title="공정 공유 (ON)" aria-label="공유"></span>\' : \'<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#ef4444;margin-right:5px;vertical-align:middle;box-shadow:0 1px 2px rgba(239,68,68,0.25);flex-shrink:0;" title="미공유 (OFF)" aria-label="미공유"></span>\';';
+  html += '      const mShareIconHtml = isSh ? \'<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#2563eb;margin-right:5px;vertical-align:middle;box-shadow:0 1px 2px rgba(37,99,235,0.25);flex-shrink:0;" title="공정 공유 (ON)" aria-label="공유"></span>\' : \'<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#ef4444;margin-right:5px;vertical-align:middle;box-shadow:0 1px 2px rgba(239,68,68,0.25);flex-shrink:0;" title="미공유 (OFF)" aria-label="미공유"></span>\';';
   html += '      html += \'    <span class="task-name" style="flex:1;min-width:0;display:inline-flex;align-items:center;">\' + mShareIconHtml + \'[\' + escapeHtml(task.taskName) + \']</span>\';';
   html += '      html += \'    <span class="task-date \' + dateClass + \'">\' + (task.isToday ? "🔥 오늘 " : (task.isDelayed ? "⚠️ 지연 " : "")) + escapeHtml(task.dateDisplay) + \'</span>\';';
   html += '      html += \'  </div>\';';
@@ -22090,9 +22095,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (sInfo && (sInfo.address || sInfo.doorPassword || sInfo.officePhone || sInfo.memo)) {';
   html += '    let bHtml = \'<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">\';';
   html += '    bHtml += \'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;">\';';
-  html += '    if (sInfo.address) bHtml += \'<span>📍 <strong>\' + escapeHtml(sInfo.address) + \'</strong></span>\';';
-  html += '    if (sInfo.doorPassword) bHtml += \'<span>🔑 비번: <strong style="color:#2563eb;">\' + escapeHtml(sInfo.doorPassword) + \'</strong></span>\';';
-  html += '    if (sInfo.officePhone) bHtml += \'<span>📞 <a href="tel:\' + escapeHtml(sInfo.officePhone) + \'" style="color:#0f172a;text-decoration:none;" onclick="event.stopPropagation()">\' + escapeHtml(sInfo.officePhone) + \'</a></span>\';';
+  html += '    if (sInfo.address) bHtml += \'<span style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;" data-addr="\' + encodeURIComponent(sInfo.address) + \'" onclick="event.stopPropagation();copyTextToClipboard(decodeURIComponent(this.dataset.addr), \\\'현장 주소가 복사되었습니다!\\\')" title="터치하여 현장 주소 복사">📍 <strong>\' + escapeHtml(sInfo.address) + \'</strong> <span style="font-size:9.5px;color:#2563eb;background:#eff6ff;padding:0.5px 4px;border-radius:3px;border:1px solid #bfdbfe;">복사</span></span><button type="button" style="border:1px solid #fde047;background:#fef9c3;color:#854d0e;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:800;cursor:pointer;" data-addr="\' + encodeURIComponent(sInfo.address) + \'" onclick="event.stopPropagation();openMobileMapNavigation(decodeURIComponent(this.dataset.addr))" title="길안내 실행">🚗길안내</button>\';';
+  html += '    if (sInfo.doorPassword) bHtml += \'<span style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;background:#eff6ff;padding:1px 6px;border-radius:4px;border:1px solid #bfdbfe;" data-pwd="\' + encodeURIComponent(sInfo.doorPassword) + \'" onclick="event.stopPropagation();copyTextToClipboard(decodeURIComponent(this.dataset.pwd), \\\'도어락 비밀번호가 복사되었습니다!\\\')" title="터치하여 도어락 비밀번호 복사">🔑 비번: <strong style="color:#2563eb;">\' + escapeHtml(sInfo.doorPassword) + \'</strong> <span style="font-size:9.5px;color:#2563eb;font-weight:700;">복사</span></span>\';';
+  html += '    if (sInfo.officePhone) bHtml += \'<span>📞 <a href="tel:\' + escapeHtml(sInfo.officePhone) + \'" style="color:#0f172a;text-decoration:none;font-weight:700;" onclick="event.stopPropagation()">\' + escapeHtml(sInfo.officePhone) + \'</a></span>\';';
   html += '    bHtml += \'</div>\';';
   html += '    bHtml += \'<button type="button" class="btn-site-info-edit" style="padding:2px 7px;font-size:10.5px;" data-site="\' + encodeURIComponent(cleanVal) + \'" onclick="openSiteInfoEditModal(decodeURIComponent(this.dataset.site), event)">✏️ 수정</button>\';';
   html += '    bHtml += \'</div>\';';

@@ -11459,9 +11459,9 @@ assertTest('Step 184-2: 대시보드 및 To-Do 서버 캐시 TTL 6시간(21,600�
 
 // 184-3: getSidebarDashboardData 조회 경로의 순수 읽기 전용(skipEnsure) 및 메모리 색상 맵 사전 구축 검증
 assertTest('Step 184-3: getSidebarDashboardData 내 skipEnsure 적용 및 _siteColorMapCache 메모리 사전 구축 검증',
-  code184.includes('function getAvailablePartners(ss, skipEnsure)') &&
+  code184.includes('function getAvailablePartners(ss, skipEnsure') &&
   code184.includes('function getSiteInfoMap(ss, skipEnsure)') &&
-  code184.includes('partners: getAvailablePartners(ss, true),') &&
+  code184.includes('partners: getAvailablePartners(ss, true') &&
   code184.includes('siteInfoMap: getSiteInfoMap(ss, true)') &&
   code184.includes('_siteColorMapCache = prebuiltColorMap;')
 );
@@ -11476,6 +11476,46 @@ assertTest('Step 184-4: 클라이언트 onSheetSiteChange 중복 선언 제거(�
 // 184-5: index.html 내 exec?v=184 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 184-5: index.html 내 exec?v=184 최신 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(18[4-9]|19[0-9])/.test(indexHtml184)
+);
+
+// ========================================================
+// [Step 185]: 시트 I/O 단일 호출 리팩토링, 중복 CSS 다이어트 및 PC/모바일/바텀시트 버튼 동선 최적화 QA
+// ========================================================
+console.log('\n📋 [Step 185]: 시트 I/O 단일 호출 리팩토링, 중복 CSS 다이어트 및 PC/모바일/바텀시트 버튼 동선 최적화 QA ---');
+const code185 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml185 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 185-1: getSidebarDashboardData 내 4대 시트 헤더+데이터 단일 getValues() 호출 및 02_거래처 시트 1회 공유 조회 검증
+assertTest('Step 185-1: 4대 시트 단일 getValues() 호출 및 02_거래처 시트 1회 공유 조회(sharedPartnerRows) 검증',
+  code185.includes('var rawAllRows = sheet.getRange(1, 1, lastRow, sNumCols).getValues();') &&
+  code185.includes('var sRawAll = singleSheet.getRange(1, 1, sLastR, sNumCols).getValues();') &&
+  code185.includes('var asRawAll = asSheet.getRange(1, 1, asLastR, asNumCols).getValues();') &&
+  code185.includes('var compRawAll = compSheet.getRange(1, 1, compLastR, compNumCols).getValues();') &&
+  code185.includes('partners: getAvailablePartners(ss, true, sharedPartnerRows),') &&
+  code185.includes('partnerPhoneMap: getPartnerPhoneMap(ss, sharedPartnerRows),')
+);
+
+// 185-2: PC 현장 상세 화면 내 [📤 파일 업로드] 버튼 및 주소(복사/길안내)·도어락 비번 원터치 복사 동선 탑재 검증
+assertTest('Step 185-2: PC 현장 상세 화면 내 [📤 파일 업로드] 버튼 및 주소/도어락 비번 원터치 복사 탑재 검증',
+  code185.includes('title="이 현장의 구글 드라이브 폴더로 사진/도면/파일 즉시 업로드"><span>📤</span> 파일 업로드</button>') &&
+  code185.includes('title="클릭하여 도어락 비밀번호 복사"')
+);
+
+// 185-3: 공정 상세 바텀시트(#sheetSiteInfoBanner) 내 주소/비번 원터치 복사 및 [🚗길안내] 동선 단축 검증
+assertTest('Step 185-3: 공정 상세 바텀시트(#sheetSiteInfoBanner) 내 주소/비번 원터치 복사 및 길안내 탑재 검증',
+  code185.includes('title="터치하여 현장 주소 복사">📍 <strong>') &&
+  code185.includes('title="터치하여 도어락 비밀번호 복사">🔑 비번: <strong style="color:#2563eb;">')
+);
+
+// 185-4: 모바일 다중 필터 활성화 시 상단 헤더 [✕ 필터해제] 원터치 초기화 버튼(#mobileFilterResetBtn) 탑재 검증
+assertTest('Step 185-4: 모바일 상단 헤더 [✕ 필터해제] 원터치 초기화 버튼(#mobileFilterResetBtn) 연동 검증',
+  code185.includes('id="mobileFilterResetBtn"') &&
+  code185.includes('const hasAnyMobFilter = (sVal.length > 0) || hasMember || (typeof currentFilter !== "undefined" && currentFilter !== "all")')
+);
+
+// 185-5: index.html 내 exec?v=185 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 185-5: index.html 내 exec?v=185 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(18[5-9]|19[0-9])/.test(indexHtml185)
 );
 
 console.log('\n========================================================');
