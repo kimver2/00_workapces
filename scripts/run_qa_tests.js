@@ -11398,6 +11398,43 @@ assertTest('Step 182-5: index.html 내 네이티브 앱 스켈레톤 UI 및 캐�
   /exec\?v=(18[2-9]|19[0-9])/.test(indexHtml182)
 );
 
+// ========================================================
+// [Step 183]: 모바일 화면 착공 예정일 안내 배너 및 현장 기간/D-day 연동 QA
+// ========================================================
+console.log('\n📋 [Step 183]: 모바일 화면 착공 예정일 안내 배너 및 현장 기간/D-day 연동 QA ---');
+const code183 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml183 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 183-1: 모바일 renderList 내 getSiteStatusInfo 연동 및 mobStatusInfo 계산 검증
+assertTest('Step 183-1: 모바일 renderList 내 getSiteStatusInfo 연동 및 mobStatusInfo 계산 검증',
+  code183.includes('const mobStatusInfo = getSiteStatusInfo(site, mobTodayStr);') &&
+  code183.includes('const mobPeriodStr = (earliestDateStr && latestDateStr)')
+);
+
+// 183-2: 모바일 현장 카드 상단 알림 배너(mob-site-alert-banner) 렌더링 검증
+assertTest('Step 183-2: 모바일 현장 카드 상단 알림 배너(mob-site-alert-banner) 렌더링 검증',
+  code183.includes('class="mob-site-alert-banner') &&
+  code183.includes('escapeHtml(mobStatusInfo.alertMsg)')
+);
+
+// 183-3: 모바일 현장 카드 헤더 내 상태 뱃지([공사예정], [일정확인필요] 등) 탑재 검증
+assertTest('Step 183-3: 모바일 현장 카드 헤더 내 상태 뱃지([공사예정] 등) 탑재 검증',
+  code183.includes('mobStatusInfo.status === "plan"') &&
+  code183.includes('escapeHtml(mobStatusInfo.text)')
+);
+
+// 183-4: 모바일 현장 카드 요약 박스 내 공사 기간 및 잔여 D-day 렌더링 검증
+assertTest('Step 183-4: 모바일 현장 카드 요약 박스 내 공사 기간 및 잔여 D-day 렌더링 검증',
+  code183.includes('공사 기간: <strong style="color:#0f172a;">') &&
+  code183.includes('escapeHtml(mobPeriodStr)') &&
+  code183.includes('escapeHtml(remainingStr)')
+);
+
+// 183-5: index.html 내 exec?v=183 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 183-5: index.html 내 exec?v=183 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(18[3-9]|19[0-9])/.test(indexHtml183)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
