@@ -10984,6 +10984,45 @@ assertTest('Step 171-2: index.html 내 exec?v=171 최신 캐시 버스팅 파라
   /exec\?v=(17[1-9]|1[8-9][0-9])/.test(indexHtml171)
 );
 
+// ========================================================
+// [Step 172]: 모바일 현장정보 드라이브 링크 및 파일 업로드 5:5 버튼 & 업로드 모달 화면 QA
+// ========================================================
+console.log('\n📋 [Step 172]: 모바일 현장정보 드라이브 링크 및 파일 업로드 5:5 버튼 & 업로드 모달 화면 QA ---');
+const code172 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml172 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 172-1: 모바일 현장정보 특이사항 하단 5:5 그리드 버튼 (드라이브 링크 + 파일 업로드) 탑재 검증
+assertTest('Step 172-1: 모바일 현장정보 특이사항 하단 5:5 그리드 버튼 (드라이브 링크 + 파일 업로드) 탑재 검증',
+  code172.includes('grid-template-columns:1fr 1fr;gap:6px;margin-top:2px;') &&
+  code172.includes('class="mob-site-drive-action-btn"') &&
+  code172.includes('class="mob-site-upload-action-btn"') &&
+  code172.includes('openSiteFileUploadModal(decodeURIComponent(')
+);
+
+// 172-2: 파일 업로드 팝업 모달 UI 마크업(siteFileUploadModalOverlay) 및 파일 선택/드롭존 탑재 검증
+assertTest('Step 172-2: 파일 업로드 팝업 모달 UI 마크업(siteFileUploadModalOverlay) 및 파일 선택/드롭존 탑재 검증',
+  code172.includes('id="siteFileUploadModalOverlay"') &&
+  code172.includes('id="siteUploadTargetFolderInfo"') &&
+  code172.includes('id="siteUploadFileInput"') &&
+  code172.includes('id="siteUploadSelectedFilesList"') &&
+  code172.includes('id="btnExecuteSiteUpload"')
+);
+
+// 172-3: 파일 업로드 클라이언트 제어 함수군 (모달 오픈, 파일 선택/제거/미리보기, 업로드 트리거) 탑재 검증
+assertTest('Step 172-3: 파일 업로드 클라이언트 제어 함수군 (openSiteFileUploadModal, onSiteUploadFilesSelected 등) 탑재 검증',
+  code172.includes('function openSiteFileUploadModal(siteName)') &&
+  code172.includes('function closeSiteFileUploadModal(e)') &&
+  code172.includes('function onSiteUploadFilesSelected(files)') &&
+  code172.includes('function removeSelectedUploadFile(index)') &&
+  code172.includes('function renderSelectedUploadFilesList()') &&
+  code172.includes('function executeSiteFileUpload()')
+);
+
+// 172-4: index.html 내 exec?v=172 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 172-4: index.html 내 exec?v=172 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[2-9]|1[8-9][0-9])/.test(indexHtml172)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
