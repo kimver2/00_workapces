@@ -11023,6 +11023,37 @@ assertTest('Step 172-4: index.html 내 exec?v=172 최신 캐시 버스팅 파라
   /exec\?v=(17[2-9]|1[8-9][0-9])/.test(indexHtml172)
 );
 
+// ========================================================
+// [Step 173]: 반장님 안내문 모달 전체 복사 아이콘 정돈 (📑 -> 📋) 및 CSS 갭 보완 QA
+// ========================================================
+console.log('\n📋 [Step 173]: 반장님 안내문 모달 전체 복사 아이콘 정돈 (📑 -> 📋) 및 CSS 갭 보완 QA ---');
+const code173 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml173 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 173-1: 안내문 모달 푸터 전체 복사 버튼 마크업 내 깨짐 방지 📋 전체 복사 적용 및 📑 제거 검증
+assertTest('Step 173-1: 안내문 모달 푸터 전체 복사 버튼 마크업 내 📋 전체 복사 적용 및 📑 제거 검증',
+  code173.includes('id="btnDoPartnerGuideCopyAll"') &&
+  code173.includes('>📋 전체 복사</button>') &&
+  !code173.includes('>📑 전체 복사</button>')
+);
+
+// 173-2: 안내문 모달 클라이언트 렌더링 및 복사 타이머 복구 내 📋 전체 복사 일관 적용 검증
+assertTest('Step 173-2: 안내문 모달 클라이언트 렌더링 및 복사 타이머 복구 내 📋 전체 복사 일관 적용 검증',
+  code173.includes('copyAllBtn.innerText = "📋 전체 복사";') &&
+  !code173.includes('copyAllBtn.innerText = "📑 전체 복사";')
+);
+
+// 173-3: 모바일 안내문 푸터 전체 복사 버튼 CSS 내 아이콘-텍스트 간격(gap: 4px) 보완 검증
+assertTest('Step 173-3: 모바일 안내문 푸터 전체 복사 버튼 CSS 내 아이콘-텍스트 간격(gap: 4px) 보완 검증',
+  code173.includes('.partner-guide-footer-actions .btn-partner-guide-copy-all') &&
+  code173.includes('display: none; align-items: center; justify-content: center; gap: 4px;')
+);
+
+// 173-4: index.html 내 exec?v=173 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 173-4: index.html 내 exec?v=173 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[3-9]|1[8-9][0-9])/.test(indexHtml173)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

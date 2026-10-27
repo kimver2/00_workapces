@@ -13212,7 +13212,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .partner-guide-footer-counter { font-size: 12.5px; font-weight: 800; color: #0f172a; text-align: center; flex: 1; }';
   html += '  .partner-guide-footer-actions { display: flex; align-items: center; gap: 6px; width: 100%; box-sizing: border-box; }';
   html += '  .partner-guide-footer-actions .btn-delete-cancel { height: 38px; padding: 0 12px; font-size: 12px; font-weight: 700; border-radius: 8px; white-space: nowrap !important; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; margin: 0; }';
-  html += '  .partner-guide-footer-actions .btn-partner-guide-copy-all { height: 38px; padding: 0 8px; font-size: 11.5px; font-weight: 700; border-radius: 8px; background: #f1f5f9; color: #334155; border: 1.5px solid #cbd5e1; cursor: pointer; white-space: nowrap !important; flex: 1; min-width: 0; display: none; align-items: center; justify-content: center; }';
+  html += '  .partner-guide-footer-actions .btn-partner-guide-copy-all { height: 38px; padding: 0 8px; font-size: 11.5px; font-weight: 700; border-radius: 8px; background: #f1f5f9; color: #334155; border: 1.5px solid #cbd5e1; cursor: pointer; white-space: nowrap !important; flex: 1; min-width: 0; display: none; align-items: center; justify-content: center; gap: 4px; }';
   html += '  .partner-guide-footer-actions .btn-partner-guide-copy-all:hover { background: #e2e8f0; color: #0f172a; }';
   html += '  .partner-guide-footer-actions .btn-partner-guide-copy { height: 38px; padding: 0 10px; font-size: 12px; font-weight: 800; border-radius: 8px; background: #2563eb; color: #ffffff; border: none; cursor: pointer; white-space: nowrap !important; flex: 1.3; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 2px 6px rgba(37,99,235,0.25); }';
   html += '  .partner-guide-footer-actions .btn-partner-guide-copy:hover { background: #1d4ed8; }';
@@ -14309,7 +14309,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </div>';
   html += '      <div class="partner-guide-footer-actions">';
   html += '        <button type="button" class="btn-delete-cancel" onclick="closePartnerGuideModal()">닫기</button>';
-  html += '        <button type="button" class="btn-partner-guide-copy-all" id="btnDoPartnerGuideCopyAll" onclick="copyAllPartnerGuidesFromModal()" style="display:none;" title="체크된 모든 공정 안내문 한번에 복사">📑 전체 복사</button>';
+  html += '        <button type="button" class="btn-partner-guide-copy-all" id="btnDoPartnerGuideCopyAll" onclick="copyAllPartnerGuidesFromModal()" style="display:none;" title="체크된 모든 공정 안내문 한번에 복사">📋 전체 복사</button>';
   html += '        <button type="button" class="btn-partner-guide-copy" id="btnDoPartnerGuideCopy" onclick="copyPartnerGuideFromModal()">📋 복사</button>';
   html += '      </div>';
   html += '    </div>';
@@ -16929,7 +16929,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const copyAllBtn = document.getElementById("btnDoPartnerGuideCopyAll");';
   html += '  if (copyAllBtn) {';
   html += '    copyAllBtn.style.display = (total > 1) ? "inline-flex" : "none";';
-  html += '    copyAllBtn.innerText = "📑 전체 복사";';
+  html += '    copyAllBtn.innerText = "📋 전체 복사";';
   html += '  }';
   html += '  const prevSideBtn = document.getElementById("btnPartnerGuidePrev");';
   html += '  const nextSideBtn = document.getElementById("btnPartnerGuideNext");';
@@ -17022,7 +17022,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (copyAllBtn) {';
   html += '    copyAllBtn.innerText = "✅ 전체 복사 완료!";';
   html += '    setTimeout(function() {';
-  html += '      if (copyAllBtn) copyAllBtn.innerText = "📑 전체 복사";';
+  html += '      if (copyAllBtn) copyAllBtn.innerText = "📋 전체 복사";';
   html += '    }, 2000);';
   html += '  }';
   html += '}';
