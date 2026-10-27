@@ -11307,6 +11307,59 @@ assertTest('Step 180-2: index.html 내 exec?v=180 최신 캐시 버스팅 파라
   /exec\?v=(18[0-9]|19[0-9])/.test(indexHtml180)
 );
 
+// ========================================================
+// [Step 181]: 화면/버튼 인체공학 최적화 및 0.05초 SWR 초고속 로딩 엔진 QA
+// ========================================================
+console.log('\n📋 [Step 181]: 화면/버튼 인체공학 최적화 및 0.05초 SWR 초고속 로딩 엔진 QA ---');
+const code181 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml181 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 181-1: 모바일 현장 길안내(openMobileMapNavigation) 엔진 및 [🚗 길안내] 버튼 탑재 검증
+assertTest('Step 181-1: 모바일 현장 길안내(openMobileMapNavigation) 및 [🚗 길안내] 버튼 탑재 검증',
+  code181.includes('function openMobileMapNavigation(addr)') &&
+  code181.includes('https://m.map.kakao.com/actions/searchView?q=') &&
+  code181.includes('class="btn-site-navi"') &&
+  code181.includes('openMobileMapNavigation(decodeURIComponent(this.dataset.addr))')
+);
+
+// 181-2: 도어락 비밀번호 원터치 복사 및 [복사] 뱃지 인터랙션 탑재 검증
+assertTest('Step 181-2: 도어락 비밀번호 원터치 복사 및 [복사] 뱃지 인터랙션 탑재 검증',
+  code181.includes('title="터치하여 도어락 비밀번호 복사"') &&
+  code181.includes('encodeURIComponent(mobPwd)') &&
+  code181.includes('copyTextToClipboard(decodeURIComponent(this.dataset.pwd)') &&
+  code181.includes('font-size:9.5px;font-weight:700;color:#2563eb;background:#dbeafe;padding:1px 4px;border-radius:3px;">복사</span>')
+);
+
+// 181-3: 파일 업로드 모달 컴팩트 세로 공간 최적화 (한눈에 버튼 노출) 검증
+assertTest('Step 181-3: 파일 업로드 모달 컴팩트 세로 공간 최적화 검증',
+  code181.includes('btn-site-upload-camera-trigger" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 6px;') &&
+  code181.includes('btn-site-upload-file-trigger" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 6px;') &&
+  code181.includes('id="siteUploadSelectedFilesList" style="max-height:130px;overflow-y:auto;padding-right:2px;"')
+);
+
+// 181-4: 0.05초 체감 SWR 초고속 캐시 즉시 렌더링 엔진 탑재 검증
+assertTest('Step 181-4: 0.05초 체감 SWR 초고속 캐시 즉시 렌더링 엔진 탑재 검증',
+  code181.includes('triggerInitialLoadOnce()') &&
+  code181.includes('localStorage.getItem("ws_dashboard_cache_v2")') &&
+  code181.includes('renderDashboardPayload(cachedObj)')
+);
+
+// 181-5: 모바일 네이티브 쫀득한 스프링 터치 피드백 CSS (:active) 탑재 검증
+assertTest('Step 181-5: 모바일 네이티브 스프링 터치 피드백 CSS (:active) 탑재 검증',
+  code181.includes(':active { transform: scale(0.975);') &&
+  code181.includes('.mob-site-drive-action-btn:active') &&
+  code181.includes('.mob-site-upload-action-btn:active')
+);
+
+// 181-6: index.html 내 구글 서버 사전 연결(preconnect/dns-prefetch) 및 exec?v=181 검증
+assertTest('Step 181-6: index.html 내 구글 서버 사전 연결(preconnect) 및 exec?v=181 검증',
+  indexHtml181.includes('<link rel="preconnect" href="https://script.google.com"') &&
+  indexHtml181.includes('<link rel="preconnect" href="https://script.googleusercontent.com"') &&
+  indexHtml181.includes('<link rel="dns-prefetch" href="https://script.google.com">') &&
+  indexHtml181.includes('<link rel="dns-prefetch" href="https://script.googleusercontent.com">') &&
+  /exec\?v=(18[1-9]|19[0-9])/.test(indexHtml181)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
