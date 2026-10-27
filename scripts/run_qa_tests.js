@@ -11592,6 +11592,42 @@ assertTest('Step 187-5: index.html 내 exec?v=187 최신 캐시 버스팅 파라
   /exec\?v=(18[7-9]|19[0-9])/.test(indexHtml187)
 );
 
+console.log('\n📋 [Step 188]: 공유 설정(ON/OFF) 왕복 전환 무지연 반응성 강화, 백그라운드 즉시 동기화 및 레이스 컨디션 방어 QA ---');
+const code188 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml188 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 188-1: 공유 설정 버튼(#sheetShareOn, #sheetShareOff) 선택 체크마크(✓) 및 상태 배지(#sheetShareStateBadge) 즉시 표시 검증
+assertTest('Step 188-1: 공유 설정 버튼 선택 체크마크(✓) 및 상태 배지(#sheetShareStateBadge) 즉시 표시 검증',
+  code188.includes('id="sheetShareStateBadge"') &&
+  code188.includes('btnOn.innerText = selectedShare ? "🟦 공유 (ON) ✓" : "🟦 공유 (ON)";') &&
+  code188.includes('btnOff.innerText = !selectedShare ? "🟥 미공유 (OFF) ✓" : "🟥 미공유 (OFF)";')
+);
+
+// 188-2: selectSheetShare 내 0ms 낙관적 UI 반영 및 디바운스 백그라운드 자동 동기화(flushQuickShareSync) 검증
+assertTest('Step 188-2: selectSheetShare 내 0ms 낙관적 UI 반영 및 디바운스 백그라운드 자동 동기화(flushQuickShareSync) 검증',
+  code188.includes('function flushQuickShareSync()') &&
+  code188.includes('if (liveTask) liveTask.isShared = selectedShare;') &&
+  code188.includes('curTaskObj.isShared = selectedShare;')
+);
+
+// 188-3: 다중 시트 동행 번호 충돌 방지를 위한 findLiveTaskInRawData 정밀 매칭 검증
+assertTest('Step 188-3: 다중 시트 동행 번호 충돌 방지를 위한 findLiveTaskInRawData 정밀 매칭 검증',
+  code188.includes('function findLiveTaskInRawData(siteName, taskRef)') &&
+  code188.includes('if (pass === 0 && siteName && s.siteName !== siteName) continue;')
+);
+
+// 188-4: clientMutationSeq 기반 구버전 loadDataSilently 덮어쓰기 차단 및 불필요한 전체 리로드 생략 검증
+assertTest('Step 188-4: clientMutationSeq 기반 구버전 loadDataSilently 덮어쓰기 차단 및 불필요한 전체 리로드 생략 검증',
+  code188.includes('let clientMutationSeq = 0;') &&
+  code188.includes('if (reqSeq !== clientMutationSeq) return;') &&
+  code188.includes('} else if (res.movedToCompleted) {')
+);
+
+// 188-5: index.html 내 exec?v=188 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 188-5: index.html 내 exec?v=188 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(18[8-9]|19[0-9])/.test(indexHtml188)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
