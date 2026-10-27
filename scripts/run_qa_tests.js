@@ -11263,6 +11263,31 @@ assertTest('Step 178-4: index.html 내 exec?v=178 최신 캐시 버스팅 파라
   /exec\?v=(17[8-9]|1[8-9][0-9])/.test(indexHtml178)
 );
 
+// ========================================================
+// [Step 179]: appsscript.json 매니페스트 oauthScopes 명시적 등록 및 승인 연동 QA
+// ========================================================
+console.log('\n📋 [Step 179]: appsscript.json 매니페스트 oauthScopes 명시적 등록 및 승인 연동 QA ---');
+const code179 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml179 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const appsscriptJson179 = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'appsscript.json'), 'utf8'));
+
+// 179-1: appsscript.json 내 oauthScopes 선언 및 drive 스코프 포함 검증
+assertTest('Step 179-1: appsscript.json 내 oauthScopes 및 drive 스코프 선언 검증',
+  Array.isArray(appsscriptJson179.oauthScopes) &&
+  appsscriptJson179.oauthScopes.includes('https://www.googleapis.com/auth/drive') &&
+  appsscriptJson179.oauthScopes.includes('https://www.googleapis.com/auth/spreadsheets')
+);
+
+// 179-2: authorizeGoogleDriveUploadMenu try-catch 제거 및 네이티브 인증 트리거 보장 검증
+assertTest('Step 179-2: authorizeGoogleDriveUploadMenu 네이티브 인증 트리거 보장 검증',
+  code179.includes('function authorizeGoogleDriveUploadMenu() {\n  var root = DriveApp.getRootFolder();')
+);
+
+// 179-3: index.html 내 exec?v=179 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 179-3: index.html 내 exec?v=179 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(179|1[8-9][0-9])/.test(indexHtml179)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
