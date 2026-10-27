@@ -11054,6 +11054,35 @@ assertTest('Step 173-4: index.html 내 exec?v=173 최신 캐시 버스팅 파라
   /exec\?v=(17[3-9]|1[8-9][0-9])/.test(indexHtml173)
 );
 
+// ========================================================
+// [Step 174]: 드라이브 링크 미등록 현장에서 파일 업로드 클릭 시 안내 토스트 및 등록창 연결 QA
+// ========================================================
+console.log('\n📋 [Step 174]: 드라이브 링크 미등록 현장에서 파일 업로드 클릭 시 안내 토스트 및 등록창 연결 QA ---');
+const code174 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml174 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 174-1: openSiteFileUploadModal 내 driveUrl 부재 시 안내 토스트 및 현장정보 수정창 연결 검증
+assertTest('Step 174-1: openSiteFileUploadModal 내 driveUrl 부재 시 안내 토스트 및 현장정보 수정창 연결 검증',
+  code174.includes('function openSiteFileUploadModal(siteName)') &&
+  code174.includes('if (!driveUrl) {') &&
+  code174.includes('showToast("💡 [" + sName + "] 등록된 드라이브 링크가 없습니다.");') &&
+  code174.includes('openSiteInfoEditModal(sName);') &&
+  code174.includes('document.getElementById("editSiteInfoDriveUrl")')
+);
+
+// 174-2: openSiteFileUploadModal 내 driveUrl 부재 시 조기 return 및 업로드 모달 비활성화 검증
+assertTest('Step 174-2: openSiteFileUploadModal 내 driveUrl 부재 시 조기 return 검증',
+  code174.includes('setTimeout(() => {') &&
+  code174.includes('if (uInp) uInp.focus();') &&
+  code174.includes('return;\n  }') || code174.includes('return;\r\n  }') ||
+  code174.includes('return;')
+);
+
+// 174-3: index.html 내 exec?v=174 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 174-3: index.html 내 exec?v=174 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[4-9]|1[8-9][0-9])/.test(indexHtml174)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
