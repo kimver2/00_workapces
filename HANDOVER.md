@@ -2,8 +2,8 @@
 
 > **최종 갱신 일시**: 2026-10-27 (KST)  
 > **현재 Git 브랜치**: `main` (GitHub Remote: `origin/main` 동기화)  
-> **Apps Script 배포 상태**: `Version 175` (Deployment ID: `AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg`)  
-> **QA 검증 현황**: 총 1,120개 항목 전수 통과 (1120 / 1120 PASS, 0 FAIL)  
+> **Apps Script 배포 상태**: `Version 176` (Deployment ID: `AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg`)  
+> **QA 검증 현황**: 총 1,125개 항목 전수 통과 (1125 / 1125 PASS, 0 FAIL)  
 > **핵심 파일**: [`현장서식.js`](file:///Users/kimver2/orca/projects/kimver2/현장서식.js)  
 
 ---
@@ -93,6 +93,7 @@ Google Sheets를 백엔드 DB 및 실시간 공유 문서로 활용하며, PC/�
 - **반장님 작업 안내문 모달 전체 복사 아이콘 정돈 (v173)**: 기기별(macOS/Windows)로 깨지거나 왜곡되어 보이던 `📑` 이모지를 표준 클립보드 아이콘 `📋`로 전면 교체(`[📋 전체 복사]`)하고, 모바일 푸터 버튼 내 아이콘과 텍스트 간격(`gap: 4px;`)을 완벽 보정.
 - **드라이브 미등록 현장 파일 업로드 클릭 시 안내 토스트 & 등록창 연동 (v174)**: 구글 드라이브 폴더 링크가 등록되지 않은 현장에서 `[📤 파일 업로드]` 버튼을 클릭했을 때, 드라이브 링크 버튼과 동일하게 `💡 [현장명] 등록된 드라이브 링크가 없습니다.` 안내 토스트를 띄우고 즉시 `현장 정보 관리` 팝업을 열어 드라이브 링크 입력 필드로 포커스를 자동 이동하도록 동기화.
 - **파일 업로드 팝업 내 [📷 사진 촬영] 및 [📁 파일 선택] 2대 명시적 버튼 탑재 (v175)**: 모바일/iframe 보안 제약으로 발생하던 파일 선택 무반응 문제를 해결하기 위해, 네이티브 `<label>` 기반의 **`[📷 사진 촬영]` (카메라 `capture="environment"` 즉시 실행)** 및 **`[📁 파일 선택]` (갤러리/도면/문서 복수 선택)** 2대 대형 버튼을 신설하고 인터랙션 CSS 및 연속 촬영 초기화 로직 구현.
+- **안내문/특이사항 안내/안내문 확인 버튼 텍스트 잘림 방지 전면 고도화 (v176)**: 반장님 작업 안내문 모달 내 텍스트 높이 자동 확장 엔진(`autoResizePartnerGuideTextarea`)을 도입하여 하단 문구가 잘리지 않고 한눈에 온전히 보이도록 개선하고, 모바일 카드의 `[📋 안내문 확인]` 버튼 `white-space: nowrap !important;` 및 특이사항 메모의 `white-space: pre-wrap;`를 적용하여 모든 안내 영역의 텍스트 잘림을 완벽 차단.
 
 ---
 

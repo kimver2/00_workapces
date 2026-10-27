@@ -11125,6 +11125,44 @@ assertTest('Step 175-5: index.html 내 exec?v=175 최신 캐시 버스팅 파라
   /exec\?v=(17[5-9]|1[8-9][0-9])/.test(indexHtml175)
 );
 
+// ========================================================
+// [Step 176]: 작업 안내문/특이사항 안내/안내문 확인 버튼 텍스트 잘림 방지 전면 고도화 QA
+// ========================================================
+console.log('\n📋 [Step 176]: 작업 안내문/특이사항 안내/안내문 확인 버튼 텍스트 잘림 방지 전면 고도화 QA ---');
+const code176 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml176 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 176-1: 작업 안내문 텍스트 높이 자동 확장 엔진(autoResizePartnerGuideTextarea) 및 이벤트 바인딩 검증
+assertTest('Step 176-1: 작업 안내문 텍스트 높이 자동 확장 엔진(autoResizePartnerGuideTextarea) 탑재 검증',
+  code176.includes('function autoResizePartnerGuideTextarea()') &&
+  code176.includes('oninput="autoResizePartnerGuideTextarea()"') &&
+  code176.includes('setTimeout(autoResizePartnerGuideTextarea, 20);') &&
+  code176.includes('Math.max(280, contentH + 16)')
+);
+
+// 176-2: 모바일 현장 카드 상단 버튼군(안내문 확인, 현장 자료, 정보 수정) 줄바꿈/잘림 방지(white-space: nowrap) 검증
+assertTest('Step 176-2: 모바일 현장 카드 상단 버튼군 줄바꿈/잘림 방지(white-space: nowrap) 탑재 검증',
+  code176.includes('.btn-partner-guide { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #93c5fd; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; box-sizing: border-box; white-space: nowrap !important; flex-shrink: 0 !important; }') &&
+  code176.includes('white-space:nowrap;flex-shrink:0;" onclick="event.stopPropagation();openPartnerWorkGuideModal')
+);
+
+// 176-3: 모바일 현장 특이사항 / 주차 안내 박스 줄바꿈(pre-wrap) 및 명칭 통일 검증
+assertTest('Step 176-3: 모바일 현장 특이사항 / 주차 안내 박스 줄바꿈(pre-wrap) 및 명칭 통일 검증',
+  code176.includes('⚠️ 현장 특이사항 / 주차 안내') &&
+  code176.includes('white-space:pre-wrap;display:block;margin-top:2px;')
+);
+
+// 176-4: 안내문 모달 본문 max-height 및 힌트 텍스트(word-break: keep-all) 잘림 방지 검증
+assertTest('Step 176-4: 안내문 모달 본문 max-height 및 힌트 텍스트(word-break: keep-all) 잘림 방지 검증',
+  code176.includes('.partner-guide-modal-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; max-height: calc(85vh - 110px);') &&
+  code176.includes('.partner-guide-modal-hint { font-size: 11.5px; font-weight: 600; color: #64748b; line-height: 1.4; display: flex; align-items: center; gap: 4px; word-break: keep-all; flex: 1; }')
+);
+
+// 176-5: index.html 내 exec?v=176 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 176-5: index.html 내 exec?v=176 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(17[6-9]|1[8-9][0-9])/.test(indexHtml176)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

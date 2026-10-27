@@ -13156,13 +13156,13 @@ function buildSidebarDashboardHtml(mode) {
 
   /* [공용 모달 오버레이 & 팝업 박스] (모바일 & PC 공용) */
   html += '  @keyframes pcModalFadeIn { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }';
-  html += '  .btn-site-drive-link { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #f0fdf4; color: #166534; border: 1.5px solid #86efac; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; box-sizing: border-box; }';
+  html += '  .btn-site-drive-link { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #f0fdf4; color: #166534; border: 1.5px solid #86efac; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; box-sizing: border-box; white-space: nowrap !important; flex-shrink: 0 !important; }';
   html += '  .btn-site-drive-link:hover { background: #dcfce7; border-color: #4ade80; transform: translateY(-0.5px); box-shadow: 0 2px 5px rgba(22,101,52,0.18); }';
   html += '  .btn-site-drive-link:active { transform: translateY(0); }';
-  html += '  .btn-partner-guide { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #93c5fd; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; box-sizing: border-box; }';
+  html += '  .btn-partner-guide { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 7px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #93c5fd; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; box-sizing: border-box; white-space: nowrap !important; flex-shrink: 0 !important; }';
   html += '  .btn-partner-guide:hover { background: #dbeafe; border-color: #60a5fa; transform: translateY(-0.5px); box-shadow: 0 2px 5px rgba(37,99,235,0.18); }';
   html += '  .btn-partner-guide:active { transform: translateY(0); }';
-  html += '  .btn-site-info-edit { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 7px; background: #ffffff; color: #475569; border: 1.5px solid #cbd5e1; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; box-sizing: border-box; }';
+  html += '  .btn-site-info-edit { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 7px; background: #ffffff; color: #475569; border: 1.5px solid #cbd5e1; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; box-sizing: border-box; white-space: nowrap !important; flex-shrink: 0 !important; }';
   html += '  .btn-site-info-edit:hover { background: #f1f5f9; border-color: #94a3b8; }';
   html += '  .mob-site-drive-action-btn:hover { background: #dcfce7 !important; border-color: #4ade80 !important; transform: translateY(-0.5px); box-shadow: 0 2px 5px rgba(22,101,52,0.18) !important; }';
   html += '  .mob-site-drive-action-btn:active { transform: translateY(0); }';
@@ -13199,14 +13199,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '  .partner-guide-modal-box { background: #ffffff; border-radius: 14px; width: 100%; max-width: 520px; box-shadow: 0 10px 30px rgba(0,0,0,0.22); display: flex; flex-direction: column; overflow: hidden; animation: pcModalFadeIn 0.2s cubic-bezier(0.16,1,0.3,1); box-sizing: border-box; }';
   html += '  .partner-guide-modal-header { padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; }';
   html += '  .partner-guide-modal-title { font-size: 14px; font-weight: 900; color: #0f172a; display: flex; align-items: center; gap: 6px; }';
-  html += '  .partner-guide-modal-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; max-height: 75vh; overflow-y: auto; box-sizing: border-box; }';
+  html += '  .partner-guide-modal-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; max-height: calc(85vh - 110px); overflow-y: auto; box-sizing: border-box; }';
   html += '  .partner-guide-modal-hint-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }';
-  html += '  .partner-guide-modal-hint { font-size: 11.5px; font-weight: 600; color: #64748b; line-height: 1.4; display: flex; align-items: center; gap: 4px; }';
-  html += '  .partner-guide-counter-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 10px; background: #eff6ff; color: #2563eb; font-size: 11px; font-weight: 800; border: 1px solid #bfdbfe; }';
+  html += '  .partner-guide-modal-hint { font-size: 11.5px; font-weight: 600; color: #64748b; line-height: 1.4; display: flex; align-items: center; gap: 4px; word-break: keep-all; flex: 1; }';
+  html += '  .partner-guide-counter-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 10px; background: #eff6ff; color: #2563eb; font-size: 11px; font-weight: 800; border: 1px solid #bfdbfe; white-space: nowrap !important; flex-shrink: 0; }';
   html += '  .partner-guide-editor-row { display: flex; align-items: stretch; width: 100%; position: relative; }';
   html += '  .partner-guide-textarea-wrap { flex: 1; width: 100%; min-width: 0; display: flex; flex-direction: column; }';
   html += '  .btn-partner-guide-nav { display: none !important; }';
-  html += '  .partner-guide-textarea { width: 100%; min-height: 250px; padding: 10px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: #0f172a; outline: none; resize: vertical; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; line-height: 1.55; background: #f8fafc; }';
+  html += '  .partner-guide-textarea { width: 100%; min-height: 280px; padding: 12px 14px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: #0f172a; outline: none; resize: vertical; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; line-height: 1.6; background: #f8fafc; }';
   html += '  .partner-guide-textarea:focus { border-color: #2563eb; background: #ffffff; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }';
   html += '  .partner-guide-modal-footer { padding: 10px 14px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; }';
   html += '  .partner-guide-footer-nav { display: none; align-items: center; justify-content: space-between; width: 100%; background: #ffffff; padding: 4px 8px; border-radius: 8px; border: 1px solid #e2e8f0; box-sizing: border-box; }';
@@ -14274,8 +14274,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '        </label>';
   html += '      </div>';
   html += '      <label for="siteUploadFileInput" style="display:block;border:1.5px dashed #cbd5e1;background:#f8fafc;border-radius:8px;padding:9px 12px;text-align:center;cursor:pointer;user-select:none;transition:all 0.15s ease;">';
-  html += '        <div style="font-size:11.5px;font-weight:700;color:#475569;">여기를 터치하거나 파일을 끌어다 놓아도 추가됩니다</div>';
-  html += '        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">사진(JPG/PNG), 도면(PDF/CAD), 견적서, 시공확인서 등 (복수 선택 가능)</div>';
+  html += '        <div style="font-size:11.5px;font-weight:700;color:#475569;word-break:keep-all;line-height:1.45;">여기를 터치하거나 파일을 끌어다 놓아도 추가됩니다</div>';
+  html += '        <div style="font-size:10px;color:#94a3b8;margin-top:2px;word-break:keep-all;line-height:1.35;">사진(JPG/PNG), 도면(PDF/CAD), 견적서, 시공확인서 등 (복수 선택 가능)</div>';
   html += '      </label>';
   html += '      <div>';
   html += '        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">';
@@ -14312,7 +14312,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      <div class="partner-guide-editor-row">';
   html += '        <button type="button" class="btn-partner-guide-nav prev" id="btnPartnerGuidePrev" onclick="navigatePartnerGuide(-1)" title="이전 공정 안내문" aria-label="이전 공정 안내문">‹</button>';
   html += '        <div class="partner-guide-textarea-wrap">';
-  html += '          <textarea id="partnerGuideModalText" class="partner-guide-textarea" placeholder="작업 안내문 내용을 불러오는 중..."></textarea>';
+  html += '          <textarea id="partnerGuideModalText" class="partner-guide-textarea" placeholder="작업 안내문 내용을 불러오는 중..." oninput="autoResizePartnerGuideTextarea()"></textarea>';
   html += '        </div>';
   html += '        <button type="button" class="btn-partner-guide-nav next" id="btnPartnerGuideNext" onclick="navigatePartnerGuide(1)" title="다음 공정 안내문" aria-label="다음 공정 안내문">›</button>';
   html += '      </div>';
@@ -16908,6 +16908,15 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }';
   html += '  partnerGuideCurrentIndex = 0;';
   html += '  renderPartnerGuideModalView();';
+  html += '  setTimeout(autoResizePartnerGuideTextarea, 100);';
+  html += '}';
+  html += '';
+  html += 'function autoResizePartnerGuideTextarea() {';
+  html += '  const textEl = document.getElementById("partnerGuideModalText");';
+  html += '  if (!textEl) return;';
+  html += '  textEl.style.height = "auto";';
+  html += '  const contentH = textEl.scrollHeight;';
+  html += '  textEl.style.height = Math.max(280, contentH + 16) + "px";';
   html += '}';
   html += '';
   html += 'function renderPartnerGuideModalView() {';
@@ -16935,6 +16944,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const textEl = document.getElementById("partnerGuideModalText");';
   html += '  if (textEl) {';
   html += '    textEl.value = partnerGuideTexts[idx] || "";';
+  html += '    setTimeout(autoResizePartnerGuideTextarea, 20);';
   html += '  }';
   html += '  const copyBtn = document.getElementById("btnDoPartnerGuideCopy");';
   html += '  if (copyBtn) {';
@@ -20793,10 +20803,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    html += \'    <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:9px 11px;margin-bottom:10px;display:flex;flex-direction:column;gap:7px;">\';';
   html += '    html += \'      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">\';';
   html += '    html += \'        <div style="font-size:11.5px;font-weight:800;color:#1e3a8a;display:flex;align-items:center;gap:3px;"><span>🛡️</span> 착공 필수 체크:</div>\';';
-  html += '    html += \'        <div style="display:flex;align-items:center;gap:4px;">\';';
-  html += '    html += \'          <button type="button" class="btn-site-drive-link" style="padding:3px 8px;font-size:11px;" onclick="event.stopPropagation();openSiteDriveLink(decodeURIComponent(\\\'\' + siteEnc + \'\\\'))" title="현장 구글 드라이브 자료실 열기"><span>📁</span> 현장 자료</button>\';';
-  html += '    html += \'          <button type="button" class="btn-partner-guide" style="padding:3px 8px;font-size:11px;" onclick="event.stopPropagation();openPartnerWorkGuideModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'))"><span>📋</span> 안내문 확인</button>\';';
-  html += '    html += \'          <button type="button" class="btn-site-info-edit" style="padding:3px 8px;font-size:11px;" onclick="openSiteInfoEditModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'), event)" title="현장 주소/비번/연락처 편집"><span>✏️</span> 정보 수정</button>\';';
+  html += '    html += \'        <div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap;">\';';
+  html += '    html += \'          <button type="button" class="btn-site-drive-link" style="padding:3px 8px;font-size:11px;white-space:nowrap;flex-shrink:0;" onclick="event.stopPropagation();openSiteDriveLink(decodeURIComponent(\\\'\' + siteEnc + \'\\\'))" title="현장 구글 드라이브 자료실 열기"><span>📁</span> 현장 자료</button>\';';
+  html += '    html += \'          <button type="button" class="btn-partner-guide" style="padding:3px 8px;font-size:11px;white-space:nowrap;flex-shrink:0;" onclick="event.stopPropagation();openPartnerWorkGuideModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'))"><span>📋</span> 안내문 확인</button>\';';
+  html += '    html += \'          <button type="button" class="btn-site-info-edit" style="padding:3px 8px;font-size:11px;white-space:nowrap;flex-shrink:0;" onclick="openSiteInfoEditModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'), event)" title="현장 주소/비번/연락처 편집"><span>✏️</span> 정보 수정</button>\';';
   html += '    html += \'        </div>\';';
   html += '    html += \'      </div>\';';
   html += '    html += \'      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">\';';
@@ -20829,9 +20839,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '    html += \'          </div>\';';
   html += '    html += \'        </div>\';';
   html += '    if (mobMemo) {';
-  html += '      html += \'        <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:7px;padding:6px 9px;"><span style="font-size:10px;font-weight:800;color:#e11d48;display:block;">⚠️ 현장 특이사항 / 주차 안내</span><span style="font-size:11.5px;font-weight:700;color:#9f1239;line-height:1.4;word-break:break-all;">\' + escapeHtml(mobMemo) + \'</span></div>\';';
+  html += '      html += \'        <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:7px;padding:6px 9px;"><span style="font-size:10px;font-weight:800;color:#e11d48;display:block;">⚠️ 현장 특이사항 / 주차 안내</span><span style="font-size:11.5px;font-weight:700;color:#9f1239;line-height:1.45;word-break:break-all;white-space:pre-wrap;display:block;margin-top:2px;">\' + escapeHtml(mobMemo) + \'</span></div>\';';
   html += '    } else {';
-  html += '      html += \'        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:7px;padding:5px 9px;"><span style="font-size:10px;font-weight:800;color:#94a3b8;display:block;">⚠️ 현장 특이사항 / 주차</span><span style="font-size:11.5px;font-weight:500;color:#94a3b8;display:block;margin-top:2px;">특이사항 없음</span></div>\';';
+  html += '      html += \'        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:7px;padding:5px 9px;"><span style="font-size:10px;font-weight:800;color:#94a3b8;display:block;">⚠️ 현장 특이사항 / 주차 안내</span><span style="font-size:11.5px;font-weight:500;color:#94a3b8;display:block;margin-top:2px;">특이사항 없음</span></div>\';';
   html += '    }';
   html += '    html += \'        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px;">\';';
   html += '    html += \'          <button type="button" class="mob-site-drive-action-btn" onclick="event.stopPropagation();openSiteDriveLink(decodeURIComponent(\\\'\' + siteEnc + \'\\\'))" title="현장 구글 드라이브 자료실 열기" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 8px;background:#f0fdf4;color:#166534;border:1.5px solid #86efac;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;transition:all 0.15s ease;box-shadow:0 1px 2px rgba(16,185,129,0.12);">\';';
