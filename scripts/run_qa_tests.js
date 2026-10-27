@@ -11518,6 +11518,45 @@ assertTest('Step 185-5: index.html 내 exec?v=185 최신 캐시 버스팅 파라
   /exec\?v=(18[5-9]|19[0-9])/.test(indexHtml185)
 );
 
+console.log('\n📋 [Step 186]: 더블부킹 실시간 감지, 후속 공정 연쇄 일정 밀기(Cascade Shift), 월간 협력업체 투입 리포트 QA ---');
+const code186 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml186 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 186-1: 협력업체(반장님)·담당자 더블부킹 실시간 감지 (checkSheetScheduleConflicts, #sheetConflictBanner) 검증
+assertTest('Step 186-1: 협력업체·담당자 더블부킹 실시간 감지 엔진(checkSheetScheduleConflicts) 및 배너 검증',
+  code186.includes('id="sheetConflictBanner"') &&
+  code186.includes('function checkSheetScheduleConflicts()') &&
+  code186.includes('[협력업체 더블부킹 주의]')
+);
+
+// 186-2: 후속 공정 연쇄 일정 밀기/당기기 UI 및 계산 엔진 (getCascadeShiftContext, updateCascadeShiftUI) 검증
+assertTest('Step 186-2: 후속 공정 연쇄 일정 밀기/당기기(Cascade Shift) UI 및 컨텍스트 계산 검증',
+  code186.includes('id="sheetCascadeShiftBox"') &&
+  code186.includes('id="sheetCascadeShiftChk"') &&
+  code186.includes('function getCascadeShiftContext()') &&
+  code186.includes('function updateCascadeShiftUI()')
+);
+
+// 186-3: 백엔드 후속 공정 일괄 이동 API (cascadeShiftSiteTasksFromWeb) 및 saveSheetTask 연동 검증
+assertTest('Step 186-3: 백엔드 cascadeShiftSiteTasksFromWeb 및 saveSheetTask 연쇄 저장 연동 검증',
+  code186.includes('function cascadeShiftSiteTasksFromWeb(siteName, targetSheetName, shiftsPayload)') &&
+  code186.includes('.cascadeShiftSiteTasksFromWeb(siteNameForSave, targetSheetNameForSave, cascadeShiftsPayload)')
+);
+
+// 186-4: 월간 협력업체 투입 일수 및 현장 가동 리포트 (openMonthlyReportModal, collectMonthlyReportData) 검증
+assertTest('Step 186-4: 월간 협력업체 투입 일수 및 현장 가동 리포트 모달(openMonthlyReportModal) 탑재 검증',
+  code186.includes('id="pcMonthlyReportBtn"') &&
+  code186.includes('id="mobileMonthlyReportBtn"') &&
+  code186.includes('id="monthlyReportModalOverlay"') &&
+  code186.includes('function collectMonthlyReportData()') &&
+  code186.includes('function copySinglePartnerReport(partnerName)')
+);
+
+// 186-5: index.html 내 exec?v=186 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 186-5: index.html 내 exec?v=186 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(18[6-9]|19[0-9])/.test(indexHtml186)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
