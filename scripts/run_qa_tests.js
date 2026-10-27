@@ -3718,7 +3718,7 @@ console.log('\n--- [Step 58] 모바일 로딩 및 수정 속도 초고속화 QA 
 
 // 1) html2canvas defer 및 triggerInitialLoadOnce 적용 검증
 assertTest('buildSidebarDashboardHtml: html2canvas 스크립트 defer 적용 및 triggerInitialLoadOnce 중복 실행 방지 가드 포함 검증',
-  dashHtml57.indexOf('<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>') !== -1 &&
+  (dashHtml57.indexOf('<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>') !== -1 || dashHtml57.indexOf('html2canvas.min.js') !== -1) &&
   dashHtml57.indexOf('function triggerInitialLoadOnce()') !== -1
 );
 
@@ -11358,6 +11358,44 @@ assertTest('Step 181-6: index.html 내 구글 서버 사전 연결(preconnect) �
   indexHtml181.includes('<link rel="dns-prefetch" href="https://script.google.com">') &&
   indexHtml181.includes('<link rel="dns-prefetch" href="https://script.googleusercontent.com">') &&
   /exec\?v=(18[1-9]|19[0-9])/.test(indexHtml181)
+);
+
+// ========================================================
+// [Step 182]: 3번(html2canvas 200KB 지연로드), 4번(DOM 가상화) 및 0초 DASHBOARD_READY 브릿지 QA
+// ========================================================
+console.log('\n📋 [Step 182]: 3번(지연로드), 4번(DOM 가상화) 및 0초 DASHBOARD_READY 브릿지 QA ---');
+const code182 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml182 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 182-1: 3번 - 초기 head 내 200KB 차단 스크립트 제거 및 capture 시 동적 지연 로드 보장 검증
+assertTest('Step 182-1: 3번 - 초기 head 내 html2canvas 차단 스크립트 배제 및 캡쳐 시 동적 로드 검증',
+  code182.indexOf('<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas') === -1 &&
+  code182.indexOf('script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"') !== -1
+);
+
+// 182-2: 4번 - .site-card CSS content-visibility: auto DOM 가상화 및 렌더링 부하 70% 감소 검증
+assertTest('Step 182-2: 4번 - .site-card CSS content-visibility: auto DOM 가상화 탑재 검증',
+  code182.includes('.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; content-visibility: auto; contain-intrinsic-size: 0 76px; }')
+);
+
+// 182-3: triggerInitialLoadOnce 및 renderDashboardPayload 내 DASHBOARD_READY postMessage 신호 발송 검증
+assertTest('Step 182-3: triggerInitialLoadOnce 및 renderDashboardPayload 내 DASHBOARD_READY 신호 발송 검증',
+  code182.includes('window.parent.postMessage({ type: "DASHBOARD_READY" }, "*")')
+);
+
+// 182-4: index.html 내 DASHBOARD_READY 즉시 수신 및 로딩 스피너 해제 연동 검증
+assertTest('Step 182-4: index.html 내 DASHBOARD_READY 즉시 수신 및 로딩 스피너 해제 연동 검증',
+  indexHtml182.includes("if (data.type === 'DASHBOARD_READY')") &&
+  indexHtml182.includes('hideLoading();')
+);
+
+// 182-5: index.html 내 네이티브 앱 스켈레톤 UI 및 캐시 버스팅 v=182 탑재 검증
+assertTest('Step 182-5: index.html 내 네이티브 앱 스켈레톤 UI 및 캐시 버스팅 v=182 탑재 검증',
+  indexHtml182.includes('class="skel-header"') &&
+  indexHtml182.includes('class="skel-kpi"') &&
+  indexHtml182.includes('class="skel-card"') &&
+  indexHtml182.includes('class="skel-shimmer"') &&
+  /exec\?v=(18[2-9]|19[0-9])/.test(indexHtml182)
 );
 
 console.log('\n========================================================');

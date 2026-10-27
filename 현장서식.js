@@ -12940,7 +12940,7 @@ function buildSidebarDashboardHtml(mode) {
   }
   var html = "";
   html += '<!DOCTYPE html><html><head><meta charset="utf-8">';
-  html += '<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>';
+  // [속도 최적화] html2canvas(200KB)는 초기 로딩 병목 방지를 위해 캡쳐 버튼 클릭 시 동적 지연 로드(Lazy Load)됨
   if (isMobile) {
     html += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">';
     html += '<meta name="apple-mobile-web-app-capable" content="yes">';
@@ -13072,7 +13072,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '.cal-sh-box.red { background-color: #ef4444; }';
   html += '.cal-pill-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; font-weight: 800; -webkit-font-smoothing: antialiased; }';
   html += '.content { padding: 12px; ' + (isMobile ? 'max-width: 600px; margin: 0 auto;' : '') + ' }';
-  html += '.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; }';
+  html += '.site-card { background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.03); transition: box-shadow 0.15s; content-visibility: auto; contain-intrinsic-size: 0 76px; }';
   html += '.site-card:hover { box-shadow: 0 2px 5px rgba(0,0,0,0.06); }';
   html += '.site-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 10px 12px; cursor: pointer; user-select: none; background: #ffffff; border-left: 4px solid #2563eb; gap: 8px; }';
   html += '.site-header:hover { background: #f8fafc; }';
@@ -19525,6 +19525,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '    renderList();';
   html += '  }';
+  html += '  try {';
+  html += '    if (typeof window !== "undefined" && window.parent && window.parent !== window) {';
+  html += '      window.parent.postMessage({ type: "DASHBOARD_READY" }, "*");';
+  html += '    }';
+  html += '  } catch(eReadyPost) {}';
   html += '  loadWeatherData();';
   html += '}';
   html += '';
@@ -23381,6 +23386,11 @@ function buildSidebarDashboardHtml(mode) {
   html += '      }';
   html += '    }';
   html += '  } catch(eInstant) {}';
+  html += '  try {';
+  html += '    if (typeof window !== "undefined" && window.parent && window.parent !== window) {';
+  html += '      window.parent.postMessage({ type: "DASHBOARD_READY" }, "*");';
+  html += '    }';
+  html += '  } catch(eReadyPost) {}';
   html += '  loadData();';
   html += '  if (typeof window !== "undefined") {';
   html += '    window.addEventListener("keydown", function(e) {';
