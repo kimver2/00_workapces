@@ -11727,6 +11727,34 @@ assertTest('Step 190-5: index.html 내 exec?v=190 최신 캐시 버스팅 파라
   /exec\?v=(19[0-9])/.test(indexHtml190)
 );
 
+console.log('\n📋 [Step 191]: 완료 현장에서 새 공정 추가 시 진행중 현장 자동 복원 및 통합 전환 QA ---');
+const code191 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml191 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 191-1: 서버 restoreSiteFromCompletedSheetIfNeeded 함수 탑재 및 addScheduleTaskFromWeb 연동 검증
+assertTest('Step 191-1: 완료현장 시트 보관 현장 자동 복원 함수(restoreSiteFromCompletedSheetIfNeeded) 탑재 검증',
+  typeof sandbox.restoreSiteFromCompletedSheetIfNeeded === 'function' &&
+  code191.includes('restoreSiteFromCompletedSheetIfNeeded(ss, sheet, cleanSite);')
+);
+
+// 191-2: 클라이언트 saveSheetTask 내 완료 현장(isArchived/isAllCompleted) 새 공정 추가 시 진행중 현장 즉시 전환 검증
+assertTest('Step 191-2: 클라이언트 saveSheetTask 내 완료 현장 새 공정 추가 시 진행중 현장 즉시 전환 검증',
+  code191.includes('if (!isNewStatusDone && (targetSiteObj.isArchived || targetSiteObj.isAllCompleted)) {') &&
+  code191.includes('targetSiteObj.isArchived = false;') &&
+  code191.includes('targetSiteObj.isAllCompleted = false;') &&
+  code191.includes('if (currentFilter === "done") currentFilter = "all";')
+);
+
+// 191-3: 모바일 완료 현장 카드에서도 [+ 공정] 버튼 노출 검증
+assertTest('Step 191-3: 모바일 완료 현장 카드에서도 [+ 공정] 추가 버튼 노출 검증',
+  code191.includes('if ((site.scope || "site") !== "newSite") {')
+);
+
+// 191-4: index.html 내 exec?v=191 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 191-4: index.html 내 exec?v=191 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(19[1-9])/.test(indexHtml191)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

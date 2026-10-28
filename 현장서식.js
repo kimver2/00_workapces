@@ -4454,6 +4454,91 @@ function moveCompletedCategorySiteToCompletedSheet(ss, srcSheet, siteName) {
 }
 
 /**
+ * [신규] 완료현장 시트에 보관된 현장에 새 공정(미완료)이 추가되거나 상태가 진행중/예정으로 변경될 때
+ * 완료현장 시트에 있던 해당 현장의 기존 공정들을 활성 시트(현장데이터 / 단건 / AS)로 자동 복원
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} targetSheet 복원 대상 시트 (현장데이터, 단건, AS)
+ * @param {string} siteName 현장명
+ * @return {object} { restored: boolean, count: number }
+ */
+function restoreSiteFromCompletedSheetIfNeeded(ss, targetSheet, siteName) {
+  if (!ss) ss = getAppSpreadsheet();
+  if (!ss || !targetSheet || !siteName) return { restored: false, count: 0 };
+  try {
+    var compSheet = findCompletedSitesSheet(ss, false);
+    if (!compSheet || compSheet === targetSheet) return { restored: false, count: 0 };
+    var compLastRow = compSheet.getLastRow();
+    if (compLastRow < 2) return { restored: false, count: 0 };
+
+    var compCols = Math.max((typeof compSheet.getLastColumn === "function" ? compSheet.getLastColumn() : 11), 10);
+    var compVals = compSheet.getRange(2, 1, compLastRow - 1, compCols).getValues();
+    var matchedRows = [];
+    var lastKnown = "";
+    for (var i = 0; i < compVals.length; i++) {
+      var rVals = compVals[i];
+      var rawSite = String(rVals[0] || "").trim();
+      if (rawSite) lastKnown = rawSite;
+      var effSite = rawSite || lastKnown;
+      var taskName = String(rVals[2] || "").trim();
+      var dateVal = rVals[1];
+      if (effSite === siteName && (taskName || dateVal)) {
+        matchedRows.push({ rowNum: i + 2, vals: rVals });
+      }
+    }
+    if (matchedRows.length === 0) return { restored: false, count: 0 };
+
+    var isTarget11 = (typeof targetSheet.getLastColumn === "function" && targetSheet.getLastColumn() >= 11);
+    var targetColCnt = isTarget11 ? 11 : 10;
+    var rowsToRestore = [];
+    var nowMs = Date.now();
+    for (var m = 0; m < matchedRows.length; m++) {
+      var pCols = parseScheduleRowCols(matchedRows[m].vals);
+      var rMemo = String(pCols.memo || "").replace(/^\[(단건|AS)\]\s*/g, "");
+      var rStatus = pCols.status || "완료";
+      var rCalId = pCols.calId || "";
+      var restoredRow = isTarget11
+        ? [siteName, pCols.date, pCols.task, pCols.partner, pCols.isShared, rMemo, pCols.manager1, pCols.manager2, rStatus, rCalId, nowMs]
+        : [siteName, pCols.date, pCols.task, pCols.partner, pCols.isShared, rMemo, pCols.manager, rStatus, rCalId, nowMs];
+      rowsToRestore.push(restoredRow);
+    }
+
+    var props = PropertiesService.getScriptProperties();
+    if (props) props.setProperty("IS_ARCHIVING_ACTIVE", "true");
+    try {
+      var destStartRow = Math.max(2, targetSheet.getLastRow() + 1);
+      targetSheet.getRange(destStartRow, 1, rowsToRestore.length, targetColCnt).setValues(rowsToRestore);
+      try {
+        for (var f = 0; f < rowsToRestore.length; f++) {
+          formatInsertedScheduleRow(targetSheet, destStartRow + f, rowsToRestore[f][4]);
+        }
+      } catch (eFmtRes) {}
+
+      matchedRows.sort(function(a, b) { return b.rowNum - a.rowNum; });
+      for (var d = 0; d < matchedRows.length; d++) {
+        var dRow = matchedRows[d].rowNum;
+        var curCompLast = compSheet.getLastRow();
+        if (dRow < curCompLast) {
+          var nextR = compSheet.getRange(dRow + 1, 1, 1, 3).getValues()[0];
+          var nextSite = String(nextR[0] || "").trim();
+          var nextHasData = Boolean(String(nextR[1] || "").trim() || String(nextR[2] || "").trim());
+          if (!nextSite && nextHasData) {
+            compSheet.getRange(dRow + 1, 1).setValue(siteName);
+          }
+        }
+        compSheet.deleteRow(dRow);
+      }
+      SpreadsheetApp.flush();
+    } finally {
+      if (props) props.deleteProperty("IS_ARCHIVING_ACTIVE");
+    }
+    return { restored: true, count: rowsToRestore.length };
+  } catch (eRestore) {
+    Logger.log("restoreSiteFromCompletedSheetIfNeeded 오류: " + eRestore.toString());
+    return { restored: false, count: 0 };
+  }
+}
+
+/**
  * [신규] '현장정보' 시트 여부 판정 함수
  * - 시트명(현장정보, 07_현장정보, 08_현장정보, 현장_정보, 현장마스터 등) 또는 헤더 구성(현장명 + 도어락/주소)으로 식별
  * @param {GoogleAppsScript.Spreadsheet.Sheet|string} sheet
@@ -9015,6 +9100,12 @@ function addScheduleTaskFromWeb(siteName, taskName, dateStr, manager, status, is
     var taskId = "task_" + nowMs + "_" + Math.random().toString(36).substring(2, 7);
 
     ensureHourlySortTriggerInstalled();
+
+    if (cleanStatus.indexOf("완료") === -1 && cleanStatus.indexOf("취소") === -1) {
+      try {
+        restoreSiteFromCompletedSheetIfNeeded(ss, sheet, cleanSite);
+      } catch (eRestPre) {}
+    }
 
     try {
       consolidateSplitSiteRows(sheet);
@@ -21482,7 +21573,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    }';
   html += '    html += \'      </div>\';';
   html += '    html += \'    </div>\';';
-  html += '    if (!site.isAllCompleted && !site.isArchived) {';
+  html += '    if ((site.scope || "site") !== "newSite") {';
   html += '      html += \'    <button type="button" class="btn-site-add-mini" onclick="event.stopPropagation();openNewTaskModal(decodeURIComponent(\\\'\' + siteEnc + \'\\\'), \\\'\\\')" title="이 현장에 새 공정 추가">+ 공정</button>\';';
   html += '    }';
   html += '    html += \'    <span class="site-toggle" style="margin-top:3px;">▼</span>\';';
@@ -24156,7 +24247,22 @@ function buildSidebarDashboardHtml(mode) {
   html += '    let isBrandNewSite = false;';
   html += '    if (rawData && Array.isArray(rawData.sites)) {';
   html += '      targetSiteObj = rawData.sites.find(s => s.siteName === siteVal && (s.scope || "site") === catVal && !s.isArchived && !s.isAllCompleted);';
+  html += '      if (!targetSiteObj) {';
+  html += '        targetSiteObj = rawData.sites.find(s => s.siteName === siteVal && (s.scope || "site") === catVal);';
+  html += '      }';
   html += '      if (targetSiteObj && Array.isArray(targetSiteObj.tasks)) {';
+  html += '        const isNewStatusDone = (String(selectedStatus || "").indexOf("완료") !== -1 || String(selectedStatus || "").indexOf("취소") !== -1);';
+  html += '        if (!isNewStatusDone && (targetSiteObj.isArchived || targetSiteObj.isAllCompleted)) {';
+  html += '          targetSiteObj.isArchived = false;';
+  html += '          targetSiteObj.isAllCompleted = false;';
+  html += '          targetSiteObj.tasks.forEach(t => {';
+  html += '            if (t) {';
+  html += '              t.isArchived = false;';
+  html += '              if (t.sheetName === "완료현장") t.sheetName = tempSheetName;';
+  html += '            }';
+  html += '          });';
+  html += '          if (currentFilter === "done") currentFilter = "all";';
+  html += '        }';
   html += '        targetSiteObj.tasks.push(tempTask);';
   html += '      } else if (!targetSiteObj) {';
   html += '        isBrandNewSite = true;';
