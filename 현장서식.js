@@ -490,6 +490,86 @@ function getMemberPhoneMap(ss) {
 }
 
 /**
+ * 03_구성원 시트에서 직급/역할이 '소장'(예: 소장, 현장소장, 현장 소장 등)인 구성원 목록 추출
+ * - 반장님 작업 안내문 '■ 현장 소장 : 이름 | 연락처' 동적 표시에 사용
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} [ss]
+ * @return {Array<{name: string, role: string, phone: string}>}
+ */
+function getSiteSuperintendents(ss) {
+  var list = [];
+  var EXCLUDED_MEMBERS = ["김종혁", "영하"];
+  try {
+    if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss && typeof getAppSpreadsheet === "function") ss = getAppSpreadsheet();
+    var mSheet = findMembersSheet(ss);
+    if (mSheet && mSheet.getLastRow() >= 2) {
+      var colIdxs = getMemberSheetColumnIndices(mSheet);
+      var lastR = mSheet.getLastRow();
+      var lastC = Math.max((typeof mSheet.getLastColumn === "function" ? mSheet.getLastColumn() : 6), colIdxs.maxCol || 6);
+      var mData = mSheet.getRange(2, 1, lastR - 1, lastC).getValues();
+      var phoneMap = getMemberPhoneMap(ss);
+
+      for (var i = 0; i < mData.length; i++) {
+        var rowVals = mData[i];
+        var mName = String(rowVals[colIdxs.nameCol] || "").trim();
+        if (!mName || EXCLUDED_MEMBERS.indexOf(mName) !== -1) continue;
+
+        var mRole = (colIdxs.roleCol >= 0 && colIdxs.roleCol < rowVals.length) ? String(rowVals[colIdxs.roleCol] || "").trim() : "";
+        var cleanRole = mRole.replace(/\s+/g, "");
+        var isSupt = (cleanRole.indexOf("소장") !== -1);
+
+        if (!isSupt) {
+          for (var oc = 0; oc < rowVals.length; oc++) {
+            if (oc === colIdxs.nameCol || oc === colIdxs.phoneCol || oc === colIdxs.emailCol) continue;
+            var cellStr = String(rowVals[oc] || "").trim().replace(/\s+/g, "");
+            if (cellStr === "소장" || cellStr === "현장소장" || cellStr === "총괄소장" || cellStr === "시공소장" || cellStr === "공사소장" || cellStr === "부소장") {
+              isSupt = true;
+              if (!mRole) mRole = String(rowVals[oc] || "").trim();
+              break;
+            }
+          }
+        }
+
+        if (!isSupt) continue;
+
+        var rawPhone = (colIdxs.phoneCol >= 0 && colIdxs.phoneCol < rowVals.length) ? String(rowVals[colIdxs.phoneCol] || "").trim() : "";
+        if (!rawPhone || rawPhone.indexOf("@") !== -1) {
+          rawPhone = "";
+          for (var pc = 0; pc < rowVals.length; pc++) {
+            if (pc === colIdxs.nameCol) continue;
+            var cVal = String(rowVals[pc] || "").trim();
+            if (/01[0-9]-?[0-9]{3,4}-?[0-9]{4}|0\d{1,2}-?\d{3,4}-?\d{4}/.test(cVal)) {
+              rawPhone = cVal;
+              break;
+            }
+          }
+        }
+        var finalPhone = "";
+        if (rawPhone) {
+          var matched = rawPhone.match(/(0\d{1,2}-?\d{3,4}-?\d{4}|\d{9,11})/);
+          finalPhone = matched ? matched[0] : rawPhone;
+          if (/^01[0-9]\d{7,8}$/.test(finalPhone)) {
+            finalPhone = finalPhone.replace(/^(01[0-9])(\d{3,4})(\d{4})$/, "$1-$2-$3");
+          }
+        }
+        if (!finalPhone && phoneMap && phoneMap[mName]) {
+          finalPhone = phoneMap[mName];
+        }
+
+        list.push({
+          name: mName,
+          role: mRole || "소장",
+          phone: finalPhone
+        });
+      }
+    }
+  } catch (e) {
+    Logger.log("getSiteSuperintendents 예외: " + e.toString());
+  }
+  return list;
+}
+
+/**
  * 담당자 드롭다운 목록 반환 (구성원 시트 연동 + 모든 2인 조합 + 시트 실제 작성값 자동 포함)
  * - 개별 인원 명단 (김종혁·영하 제외, 오직 구성원 시트에 등록된 순수 이름만 노출)
  * - 드롭다운을 열었을 때 조합(쉼표/슬래시) 없이 구성원 이름만 깔끔하게 노출
@@ -7845,7 +7925,7 @@ function getMemberSheetColumnIndices(mSheet) {
   for (var c = 0; c < headerVals.length; c++) {
     var h = String(headerVals[c] || "").trim().toLowerCase();
     if (nameCol === -1 && (h.indexOf("이름") !== -1 || h.indexOf("성명") !== -1 || h.indexOf("담당자") !== -1 || h.indexOf("직원") !== -1 || h === "name")) nameCol = c;
-    else if (roleCol === -1 && (h.indexOf("직급") !== -1 || h.indexOf("역할") !== -1 || h.indexOf("직책") !== -1 || h.indexOf("직위") !== -1 || h === "role" || h === "position")) roleCol = c;
+    else if (roleCol === -1 && (h.indexOf("직급") !== -1 || h.indexOf("역할") !== -1 || h.indexOf("직책") !== -1 || h.indexOf("직위") !== -1 || h.indexOf("구분") !== -1 || h.indexOf("직무") !== -1 || h.indexOf("포지션") !== -1 || h === "role" || h === "position")) roleCol = c;
     else if (phoneCol === -1 && (h.indexOf("연락처") !== -1 || h.indexOf("전화") !== -1 || h.indexOf("휴대폰") !== -1 || h.indexOf("핸드폰") !== -1 || h.indexOf("phone") !== -1 || h.indexOf("tel") !== -1)) phoneCol = c;
     else if (emailCol === -1 && (h.indexOf("이메일") !== -1 || h.indexOf("email") !== -1 || h.indexOf("메일") !== -1)) emailCol = c;
     else if (recvCol === -1 && (h.indexOf("수신") !== -1 || h.indexOf("브리핑") !== -1 || h.indexOf("알림톡") !== -1 || h.indexOf("카톡") !== -1 || h.indexOf("receive") !== -1)) recvCol = c;
@@ -7975,7 +8055,8 @@ function getSettingsManagementData() {
       availableTasks: getAvailableTasks(null),
       availableManagers: getAvailableManagers(ss),
       partnerPhoneMap: getPartnerPhoneMap(ss),
-      memberPhoneMap: getMemberPhoneMap(ss)
+      memberPhoneMap: getMemberPhoneMap(ss),
+      siteSuperintendents: getSiteSuperintendents(ss)
     };
   } catch(err) {
     Logger.log("getSettingsManagementData 오류: " + err.toString());
@@ -12960,6 +13041,7 @@ function getSidebarDashboardData(forceRefresh) {
       partners: getAvailablePartners(ss, true, sharedPartnerRows),
       partnerPhoneMap: getPartnerPhoneMap(ss, sharedPartnerRows),
       memberPhoneMap: getMemberPhoneMap(ss),
+      siteSuperintendents: getSiteSuperintendents(ss),
       holidays: getKoreanHolidaysMap(ss),
       sites: sitesList,
       siteInfoMap: getSiteInfoMap(ss, true)
@@ -12982,6 +13064,7 @@ function getSidebarDashboardData(forceRefresh) {
       holidays: getKoreanHolidaysMap(null),
       partnerPhoneMap: getPartnerPhoneMap(null),
       memberPhoneMap: getMemberPhoneMap(null),
+      siteSuperintendents: getSiteSuperintendents(null),
       sites: [],
       siteInfoMap: {}
     };
@@ -14861,6 +14944,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '          <label style="display:block;font-size:11.5px;font-weight:700;color:#475569;margin-bottom:4px;">직급 / 역할</label>';
   html += '          <input type="text" id="memberInpRole" list="memberRoleSuggestions" placeholder="예: 현장소장, 디자이너" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:13px;font-weight:700;outline:none;">';
   html += '          <datalist id="memberRoleSuggestions">';
+  html += '            <option value="소장"></option>';
   html += '            <option value="현장소장"></option>';
   html += '            <option value="총괄소장"></option>';
   html += '            <option value="디자이너"></option>';
@@ -15109,6 +15193,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (res.availableManagers) rawData.availableManagers = res.availableManagers;\n';
   html += '      if (res.partnerPhoneMap) rawData.partnerPhoneMap = res.partnerPhoneMap;\n';
   html += '      if (res.memberPhoneMap) rawData.memberPhoneMap = res.memberPhoneMap;\n';
+  html += '      if (res.siteSuperintendents) rawData.siteSuperintendents = res.siteSuperintendents;\n';
+  html += '      else if (Array.isArray(res.members)) {\n';
+  html += '        rawData.siteSuperintendents = res.members.filter(function(m) {\n';
+  html += '          return m && m.name && String(m.role || "").replace(/\\s+/g, "").indexOf("소장") !== -1;\n';
+  html += '        }).map(function(m) {\n';
+  html += '          return { name: m.name, role: m.role || "소장", phone: m.phone || "" };\n';
+  html += '        });\n';
+  html += '      }\n';
   html += '      if (typeof populateTaskSelectOptions === "function") {\n';
   html += '        populateTaskSelectOptions(rawData.tasks);\n';
   html += '      }\n';
@@ -17014,6 +17106,49 @@ function buildSidebarDashboardHtml(mode) {
   html += '  return dows[dObj.getDay()] || "";';
   html += '}';
   html += '';
+  html += 'function getSiteSuperintendentList() {';
+  html += '  const suptList = [];';
+  html += '  if (typeof currentSettingsData !== "undefined" && currentSettingsData && Array.isArray(currentSettingsData.members) && currentSettingsData.members.length > 0) {';
+  html += '    currentSettingsData.members.forEach(function(m) {';
+  html += '      if (m && m.name && String(m.role || "").replace(/\\s+/g, "").indexOf("소장") !== -1) {';
+  html += '        suptList.push({ name: String(m.name).trim(), role: String(m.role || "소장").trim(), phone: String(m.phone || "").trim() });';
+  html += '      }';
+  html += '    });';
+  html += '  }';
+  html += '  if (suptList.length === 0 && typeof rawData !== "undefined" && rawData && Array.isArray(rawData.siteSuperintendents) && rawData.siteSuperintendents.length > 0) {';
+  html += '    rawData.siteSuperintendents.forEach(function(s) {';
+  html += '      if (s && s.name) {';
+  html += '        suptList.push({ name: String(s.name).trim(), role: String(s.role || "소장").trim(), phone: String(s.phone || "").trim() });';
+  html += '      }';
+  html += '    });';
+  html += '  }';
+  html += '  return suptList;';
+  html += '}';
+  html += '';
+  html += 'function getSiteSuperintendentDisplay(siteName, taskObj) {';
+  html += '  const suptList = getSiteSuperintendentList();';
+  html += '  if (suptList.length > 0) {';
+  html += '    let targetSupts = suptList;';
+  html += '    if (suptList.length > 1) {';
+  html += '      const mgrRaw = (taskObj && (taskObj.manager || taskObj.manager2 || taskObj.manager1)) || "";';
+  html += '      let siteMgrRaw = "";';
+  html += '      if (typeof rawData !== "undefined" && rawData && Array.isArray(rawData.sites) && siteName) {';
+  html += '        const sObj = rawData.sites.find(function(st) { return st && st.siteName === siteName; });';
+  html += '        if (sObj) siteMgrRaw = sObj.primaryManager || sObj.manager || "";';
+  html += '      }';
+  html += '      const combinedMgr = String(mgrRaw + "," + siteMgrRaw);';
+  html += '      const matched = suptList.filter(function(sp) { return combinedMgr.indexOf(sp.name) !== -1; });';
+  html += '      if (matched.length > 0) targetSupts = matched;';
+  html += '    }';
+  html += '    return targetSupts.map(function(sp) {';
+  html += '      const p = sp.phone || (typeof getMemberPhoneNumber === "function" ? getMemberPhoneNumber(sp.name) : "");';
+  html += '      return sp.name + (p ? " | " + p : "");';
+  html += '    }).join(" / ");';
+  html += '  }';
+  html += '  const fallbackPhone = (typeof getMemberPhoneNumber === "function" ? getMemberPhoneNumber("인경호") : "") || "010-9870-9696";';
+  html += '  return "인경호" + (fallbackPhone ? " | " + fallbackPhone : "");';
+  html += '}';
+  html += '';
   html += 'function buildPartnerWorkGuideText(siteName, taskObj) {';
   html += '  const sName = siteName || (taskObj && taskObj.siteName) || curSiteName || selectedPcSiteName || "";';
   html += '  const sInfo = getSiteInfoFromMap(sName);';
@@ -17131,12 +17266,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '  lines.push("■ 현장명: " + sName);';
   html += '  if (taskName) lines.push("■ 공종: " + taskName);';
   html += '  lines.push("■ 작업일자: " + (dateDisp || todayFormatted));';
+  html += '  const suptNamesSet = new Set(getSiteSuperintendentList().map(sp => sp.name));';
+  html += '  const pickNonSuptFirst = function(rawMgrStr) {';
+  html += '    const parts = String(rawMgrStr || "").split(/[,/]/).map(s => s.trim()).filter(Boolean);';
+  html += '    if (parts.length > 1 && suptNamesSet.has(parts[0])) {';
+  html += '      const alt = parts.find(p => !suptNamesSet.has(p));';
+  html += '      if (alt) return alt;';
+  html += '    }';
+  html += '    return parts[0] || "";';
+  html += '  };';
   html += '  let designerName = "";';
   html += '  if (taskObj) {';
   html += '    if (taskObj.manager1) {';
   html += '      designerName = String(taskObj.manager1).trim();';
   html += '    } else if (taskObj.manager) {';
-  html += '      designerName = String(taskObj.manager).split(/[,/]/)[0].trim();';
+  html += '      designerName = pickNonSuptFirst(taskObj.manager);';
   html += '    }';
   html += '  }';
   html += '  if (!designerName) {';
@@ -17145,9 +17289,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '      sObjForMgr = rawData.sites.find(s => s && s.siteName === sName);';
   html += '    }';
   html += '    if (sObjForMgr && (sObjForMgr.primaryManager || sObjForMgr.manager)) {';
-  html += '      designerName = String(sObjForMgr.primaryManager || sObjForMgr.manager).split(/[,/]/)[0].trim();';
+  html += '      designerName = pickNonSuptFirst(sObjForMgr.primaryManager || sObjForMgr.manager);';
   html += '    } else if (typeof findSiteDefaultManager === "function") {';
-  html += '      designerName = String(findSiteDefaultManager(sName) || "").split(/[,/]/)[0].trim();';
+  html += '      designerName = pickNonSuptFirst(findSiteDefaultManager(sName) || "");';
   html += '    }';
   html += '  }';
   html += '  if (typeof formatManagerName === "function" && designerName) {';
@@ -17157,7 +17301,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const designerPhone = designerName ? getMemberPhoneNumber(designerName) : "";';
   html += '  const designerDisplay = designerName ? (designerName + (designerPhone ? " | " + designerPhone : "")) : "미지정";';
   html += '  lines.push("■ 담당 디자이너 : " + designerDisplay);';
-  html += '  lines.push("■ 현장 소장 : 인경호 | 010-9870-9696");';
+  html += '  const superintendentDisplay = getSiteSuperintendentDisplay(sName, taskObj);';
+  html += '  lines.push("■ 현장 소장 : " + superintendentDisplay);';
   html += '  lines.push("━━━━━━━━━━━━━━━━━━");';
   html += '  lines.push("📍 현장 주소: " + (sInfo.address || "(주소 미등록 - 현장 문의)"));';
   html += '  lines.push("🔑 도어락 비번: " + (sInfo.doorPassword || "(비밀번호 미등록 - 현장 문의)"));';

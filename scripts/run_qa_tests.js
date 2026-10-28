@@ -8239,11 +8239,11 @@ assertTest('Step 124-1: getMemberPhoneMap 구성원 시트 연동 및 인경호 
   phoneMap124['인경호'] === '010-9870-9696'
 );
 
-// 124-2: buildPartnerWorkGuideText 내 ■ 담당 디자이너 : 이름 | 연락처 및 ■ 현장 소장 : 인경호 | 010-9870-9696 포맷 검증
+// 124-2: buildPartnerWorkGuideText 내 ■ 담당 디자이너 : 이름 | 연락처 및 ■ 현장 소장 : 동적 연동 포맷 검증
 const dashHtml124 = sandbox124.buildSidebarDashboardHtml('desktop');
-assertTest('Step 124-2: 안내문 텍스트 내 담당 디자이너 및 현장 소장(인경호 | 010-9870-9696 고정) 분리 포맷 검증',
+assertTest('Step 124-2: 안내문 텍스트 내 담당 디자이너 및 현장 소장(구성원 시트 소장 직급 연동) 분리 포맷 검증',
   dashHtml124.indexOf('lines.push("■ 담당 디자이너 : " + designerDisplay);') !== -1 &&
-  dashHtml124.indexOf('lines.push("■ 현장 소장 : 인경호 | 010-9870-9696");') !== -1 &&
+  dashHtml124.indexOf('lines.push("■ 현장 소장 : " + superintendentDisplay);') !== -1 &&
   dashHtml124.indexOf('lines.push("■ 담당자: "') === -1
 );
 
@@ -11664,6 +11664,67 @@ assertTest('Step 189-4: 개별 공정 삭제(confirmDeleteSingleTask) 및 현장
 // 189-5: index.html 내 exec?v=189 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 189-5: index.html 내 exec?v=189 최신 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(189|19[0-9])/.test(indexHtml189)
+);
+
+console.log('\n📋 [Step 190]: 반장님 작업 안내문 현장 소장 영역 03_구성원 시트(직급: 소장) 동적 연동 QA ---');
+const code190 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml190 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 190-1: 서버 getSiteSuperintendents(ss) 함수 정의 및 03_구성원 시트 직급 '소장' 추출 검증
+const mockSuptSheet190 = {
+  getName: () => '03_구성원',
+  getLastRow: () => 4,
+  getLastColumn: () => 5,
+  getRange: (r, c, numR, numC) => ({
+    getValues: () => {
+      if (r === 1 && numR === 1) {
+        return [['이름', '직급/역할', '연락처', '이메일', '알림톡/브리핑 수신']];
+      }
+      return [
+        ['조항만', '대표', '010-4491-0112', 'ceo@woosung.com', true],
+        ['박소장', '소장', '010-5555-7777', 'park@woosung.com', true],
+        ['송지은', '디자이너', '010-7242-2409', 'song@woosung.com', true]
+      ];
+    }
+  })
+};
+const mockSs190 = {
+  getSheets: () => [mockSuptSheet190],
+  getSheetByName: (n) => (n === '03_구성원' ? mockSuptSheet190 : null)
+};
+const supts190 = sandbox124.getSiteSuperintendents(mockSs190);
+assertTest('Step 190-1: 서버 getSiteSuperintendents(ss) 구성원 시트 내 직급 "소장" 구성원 및 연락처 추출 검증',
+  typeof sandbox124.getSiteSuperintendents === 'function' &&
+  Array.isArray(supts190) &&
+  supts190.length === 1 &&
+  supts190[0].name === '박소장' &&
+  supts190[0].phone === '010-5555-7777'
+);
+
+// 190-2: 클라이언트 getSiteSuperintendentDisplay 및 buildPartnerWorkGuideText 동적 소장 반영 검증
+vm124.runInContext(`rawData.siteSuperintendents = [{ name: '박소장', role: '소장', phone: '010-5555-7777' }];`, clientSandbox124);
+const guideText190 = clientSandbox124.buildPartnerWorkGuideText('한남동 준빌라 201호', sampleTask124);
+assertTest('Step 190-2: buildPartnerWorkGuideText 안내문 내 구성원 시트 직급 "소장" 인원(박소장 | 010-5555-7777) 동적 표시 검증',
+  guideText190.indexOf('■ 담당 디자이너 : 송지은 | 010-7242-2409') !== -1 &&
+  guideText190.indexOf('■ 현장 소장 : 박소장 | 010-5555-7777') !== -1
+);
+
+// 190-3: 마스터 설정(currentSettingsData.members)에서 직급을 '소장'으로 변경 시 안내문에 즉시 반영 검증
+vm124.runInContext(`currentSettingsData = { partners: [], tasks: [], members: [{ name: '최현장', role: '현장소장', phone: '010-8888-9999' }] };`, clientSandbox124);
+const guideTextSettings190 = clientSandbox124.buildPartnerWorkGuideText('한남동 준빌라 201호', sampleTask124);
+assertTest('Step 190-3: 마스터 설정 구성원 목록(currentSettingsData.members) 내 소장 직급 즉시 연동 검증',
+  guideTextSettings190.indexOf('■ 현장 소장 : 최현장 | 010-8888-9999') !== -1
+);
+
+// 190-4: getSidebarDashboardData 및 getSettingsManagementData 내 siteSuperintendents 페이로드 포함 검증
+assertTest('Step 190-4: 대시보드 및 마스터 설정 응답 페이로드 내 siteSuperintendents 포함 검증',
+  code190.includes('siteSuperintendents: getSiteSuperintendents(ss)') &&
+  code190.includes('if (res.siteSuperintendents) rawData.siteSuperintendents = res.siteSuperintendents;')
+);
+
+// 190-5: index.html 내 exec?v=190 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 190-5: index.html 내 exec?v=190 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(19[0-9])/.test(indexHtml190)
 );
 
 console.log('\n========================================================');
