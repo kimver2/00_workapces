@@ -10047,7 +10047,10 @@ function doGet(e) {
 
   // [스마트 행 자동 보정 엔진]
   // 신규 현장 추가, 행 삭제, 정렬 등으로 인해 시트 행 번호가 밀린 경우 실시간 자동 재탐색
-  if (sheet && (targetId || targetSite || targetTask)) {
+  var reqSheetName = String(p.sheetName || p.targetSheetName || "").trim();
+  var isArchReq = (p.isArchived === "true" || p.isArchived === true || reqSheetName === "완료현장");
+  var isCustomTargetSheet = isArchReq || (reqSheetName !== "" && reqSheetName !== "현장데이터");
+  if (sheet && !isCustomTargetSheet && (targetId || targetSite || targetTask)) {
     var lastRow = sheet.getLastRow();
     if (lastRow >= 2) {
       var resolveColCnt = Math.max(9, Math.min(11, (typeof sheet.getLastColumn === "function" ? sheet.getLastColumn() : 9) || 9));
@@ -12701,6 +12704,23 @@ function getSidebarDashboardData(forceRefresh) {
         var compRawAll = compSheet.getRange(1, 1, compLastR, compNumCols).getValues();
         var compSheetHeaders = (compRawAll.length >= compLastR && compRawAll.length > 0) ? compRawAll[0] : null;
         var compData = (compRawAll.length >= compLastR && compRawAll.length > 1) ? compRawAll.slice(1) : compRawAll;
+        var regularArchivedSiteNames = {};
+        var scanLastKnownSite = "";
+        for (var sci = 0; sci < compData.length; sci++) {
+          var scRowVals = compData[sci];
+          var scRawSite = String(scRowVals[0] || "").trim();
+          if (scRawSite) scanLastKnownSite = scRawSite;
+          var scSiteName = scRawSite || scanLastKnownSite;
+          var scDateVal = scRowVals[1];
+          var scTaskName = String(scRowVals[2] || "").trim();
+          if (!scSiteName || !scDateVal || !scTaskName) continue;
+          var scParsedCols = parseScheduleRowCols(scRowVals, compSheetHeaders);
+          var scMemo = scParsedCols ? scParsedCols.memo : String(scRowVals[5] || "").trim();
+          var isTaggedRow = (scMemo.indexOf("[단건]") !== -1 || scTaskName.indexOf("[단건]") !== -1 || scMemo.indexOf("[AS]") !== -1 || scTaskName.indexOf("[AS]") !== -1);
+          if (!isTaggedRow) {
+            regularArchivedSiteNames[scSiteName] = true;
+          }
+        }
         var compLastKnownSite = "";
         for (var ci = 0; ci < compData.length; ci++) {
           var cRowVals = compData[ci];
@@ -12746,7 +12766,19 @@ function getSidebarDashboardData(forceRefresh) {
           else if (cMemo.indexOf("[AS]") !== -1 || cTaskName.indexOf("[AS]") !== -1) cScope = "as";
 
           var cSiteKey = "ARCHIVED::" + cSiteName;
-          if (cScope !== "site") cSiteKey = "ARCHIVED::" + cScope + "::" + cSiteName;
+          if (cScope === "as") {
+            if (sitesMap[cSiteName]) {
+              cSiteKey = cSiteName;
+              cScope = "site";
+            } else if (regularArchivedSiteNames[cSiteName]) {
+              cSiteKey = "ARCHIVED::" + cSiteName;
+              cScope = "site";
+            } else {
+              cSiteKey = "ARCHIVED::as::" + cSiteName;
+            }
+          } else if (cScope !== "site") {
+            cSiteKey = "ARCHIVED::" + cScope + "::" + cSiteName;
+          }
           if (!sitesMap[cSiteKey]) {
             var cColorCode = "9";
             try { cColorCode = getCalendarColorForSite(cSiteName, compSheet); } catch(eC) {}

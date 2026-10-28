@@ -11755,6 +11755,84 @@ assertTest('Step 191-4: index.html 내 exec?v=191 최신 캐시 버스팅 파라
   /exec\?v=(19[1-9])/.test(indexHtml191)
 );
 
+console.log('\n📋 [Step 192]: 기존 현장이 있는 완료 AS는 기존 현장에 자동 통합 및 단독 AS만 AS 완료 목록 유지 QA ---');
+const code192 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml192 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 192-1: 완료현장 시트 사전 스캔(regularArchivedSiteNames) 및 기존 현장 유무에 따른 AS 완료 건 통합/분리 로직 검증
+assertTest('Step 192-1: 완료현장 시트 사전 스캔(regularArchivedSiteNames) 및 기존 현장 유무 기반 AS 완료 통합 로직 검증',
+  code192.includes('var regularArchivedSiteNames = {};') &&
+  code192.includes('if (cScope === "as") {') &&
+  code192.includes('if (sitesMap[cSiteName]) {') &&
+  code192.includes('} else if (regularArchivedSiteNames[cSiteName]) {') &&
+  code192.includes('cSiteKey = "ARCHIVED::as::" + cSiteName;')
+);
+
+// 192-2: 시뮬레이션 검증 - 기존 현장(진행중 또는 완료현장)이 있는 AS 완료 건은 scope="site"로 통합되고, 단독 AS만 scope="as"로 유지되는지 검증
+assertTest('Step 192-2: 시뮬레이션 - 기존 현장이 있는 AS 완료 건은 기존 현장에 통합(scope="site") 및 단독 AS만 AS 완료 목록(scope="as") 유지 검증', (() => {
+  const sitesMap = {
+    '기존진행현장A': { siteKey: '기존진행현장A', siteName: '기존진행현장A', scope: 'site', tasks: [{ taskName: '목공' }] }
+  };
+  const compData = [
+    ['기존완료현장B', '2026-10-01', '철거', '', true, '일반 공정', '조항만', '', '완료', 'cal_b1'],
+    ['기존완료현장B', '2026-10-15', '도배보수', '', true, '[AS] 벽지 들뜸 보수', '조항만', '', '완료', 'cal_b2'],
+    ['기존진행현장A', '2026-10-18', '전기점검', '', true, '[AS] 콘센트 교체', '조항만', '', '완료', 'cal_a2'],
+    ['단독AS현장C', '2026-10-20', '수전교체', '', true, '[AS] 싱크대 수전 교체', '조항만', '', '완료', 'cal_c1']
+  ];
+  const regularArchivedSiteNames = {};
+  for (let sci = 0; sci < compData.length; sci++) {
+    const scRow = compData[sci];
+    const scSite = scRow[0];
+    const scTask = scRow[2];
+    const scMemo = scRow[5];
+    const isTagged = scMemo.indexOf('[단건]') !== -1 || scTask.indexOf('[단건]') !== -1 || scMemo.indexOf('[AS]') !== -1 || scTask.indexOf('[AS]') !== -1;
+    if (!isTagged) regularArchivedSiteNames[scSite] = true;
+  }
+  for (let ci = 0; ci < compData.length; ci++) {
+    const cRow = compData[ci];
+    const cSiteName = cRow[0];
+    const cTaskName = cRow[2];
+    const cMemo = cRow[5];
+    let cScope = 'site';
+    if (cMemo.indexOf('[단건]') !== -1 || cTaskName.indexOf('[단건]') !== -1) cScope = 'single';
+    else if (cMemo.indexOf('[AS]') !== -1 || cTaskName.indexOf('[AS]') !== -1) cScope = 'as';
+
+    let cSiteKey = 'ARCHIVED::' + cSiteName;
+    if (cScope === 'as') {
+      if (sitesMap[cSiteName]) {
+        cSiteKey = cSiteName;
+        cScope = 'site';
+      } else if (regularArchivedSiteNames[cSiteName]) {
+        cSiteKey = 'ARCHIVED::' + cSiteName;
+        cScope = 'site';
+      } else {
+        cSiteKey = 'ARCHIVED::as::' + cSiteName;
+      }
+    } else if (cScope !== 'site') {
+      cSiteKey = 'ARCHIVED::' + cScope + '::' + cSiteName;
+    }
+    if (!sitesMap[cSiteKey]) {
+      sitesMap[cSiteKey] = { siteKey: cSiteKey, siteName: cSiteName, scope: cScope, isArchived: true, tasks: [] };
+    }
+    sitesMap[cSiteKey].tasks.push({ taskName: cTaskName, memo: cMemo, scope: cScope, sheetName: '완료현장' });
+  }
+  const mergedIntoActiveA = sitesMap['기존진행현장A'].tasks.length === 2 && !sitesMap['ARCHIVED::as::기존진행현장A'];
+  const mergedIntoArchivedB = sitesMap['ARCHIVED::기존완료현장B'] && sitesMap['ARCHIVED::기존완료현장B'].tasks.length === 2 && !sitesMap['ARCHIVED::as::기존완료현장B'];
+  const standaloneAsRemains = sitesMap['ARCHIVED::as::단독AS현장C'] && sitesMap['ARCHIVED::as::단독AS현장C'].scope === 'as' && sitesMap['ARCHIVED::as::단독AS현장C'].tasks.length === 1;
+  return !!(mergedIntoActiveA && mergedIntoArchivedB && standaloneAsRemains);
+})());
+
+// 192-3: doGet 스마트 행 자동 보정 시 완료현장/단건/AS 시트 요청이 현장데이터 행 번호로 잘못 덮어써지지 않는지 검증
+assertTest('Step 192-3: doGet 스마트 행 보정 시 커스텀 시트(완료현장/단건/AS) 행 번호 보존 가드 검증',
+  code192.includes('var isCustomTargetSheet = isArchReq || (reqSheetName !== "" && reqSheetName !== "현장데이터");') &&
+  code192.includes('if (sheet && !isCustomTargetSheet && (targetId || targetSite || targetTask)) {')
+);
+
+// 192-4: index.html 내 exec?v=192 최신 캐시 버스팅 파라미터 갱신 검증
+assertTest('Step 192-4: index.html 내 exec?v=192 최신 캐시 버스팅 파라미터 갱신 검증',
+  /exec\?v=(19[2-9])/.test(indexHtml192)
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');
