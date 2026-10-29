@@ -11874,23 +11874,30 @@ assertTest('Step 194-1: 서버 공용 비밀번호 관리 및 해시 토큰 검�
   typeof sandbox.computeDashboardPinToken === 'function' &&
   typeof sandbox.verifyDashboardAccessPinFromWeb === 'function' &&
   typeof sandbox.updateDashboardAccessPinFromWeb === 'function' &&
-  sandbox.getDashboardAccessPin() === '0304' &&
-  sandbox.verifyDashboardAccessPinFromWeb('0304').success === true &&
+  sandbox.getDashboardAccessPin() === '0112' &&
+  sandbox.verifyDashboardAccessPinFromWeb('0112').success === true &&
   sandbox.verifyDashboardAccessPinFromWeb('9999').success === false
 );
 
-// 194-2: 대시보드 HTML 내 보안 잠금 오버레이(#wsAccessLockOverlay), localStorage 1회 인증 기억 및 마스터 설정 비밀번호 변경 버튼 탑재 검증
-assertTest('Step 194-2: 대시보드 보안 잠금 화면(#wsAccessLockOverlay) 및 마스터 설정 비밀번호 변경 버튼 탑재 검증',
+// 194-2: 대시보드 HTML 내 보안 잠금 오버레이(#wsAccessLockOverlay), 클라이언트-서버 해시 토큰 100% 일치 및 웹/모바일 설정 메뉴 내 비밀번호 버튼 제거 검증
+const dashHtml194 = sandbox.buildSidebarDashboardHtml([], '', 'list', false, '', 'all', [], [], [], {}, [], {}, []);
+const clientPinScriptMatch = dashHtml194.match(/function computeClientWsPinToken[\s\S]*?return "WSPIN_"[\s\S]*?\}/);
+const clientPinFn = clientPinScriptMatch ? new Function('pinStr', clientPinScriptMatch[0] + '\nreturn computeClientWsPinToken(pinStr);') : null;
+assertTest('Step 194-2: 클라이언트-서버 비밀번호 해시 토큰 100% 일치 및 웹/모바일 비밀번호 설정 메뉴 제거 검증',
   code194.includes('id="wsAccessLockOverlay"') &&
   code194.includes('WS_PIN_STORAGE_KEY = "ws_dashboard_auth_token_v1"') &&
   code194.includes('function submitWsAccessPin()') &&
-  code194.includes('function changeDashboardAccessPinFromSettings()')
+  !code194.includes('id="settingsPinBtn"') &&
+  !code194.includes('function changeDashboardAccessPinFromSettings()') &&
+  clientPinFn !== null &&
+  clientPinFn('0112') === sandbox.computeDashboardPinToken('0112') &&
+  clientPinFn('0304') === sandbox.computeDashboardPinToken('0304')
 );
 
 // 194-3: 구 GAS 배포 ID(AKfycbxRcw...) 완전 제거 및 신규 배포 ID(AKfycbwJTNq...) + woosung-id URL 적용 검증
 assertTest('Step 194-3: 구 GAS 배포 URL 완전 교체 및 woosung-id 신규 URL 적용 검증',
   !indexHtml194.includes('AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg') &&
-  indexHtml194.includes('AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec?v=194') &&
+  indexHtml194.includes('AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec?v=196') &&
   code194.includes('https://kimver2.github.io/woosung-id/')
 );
 

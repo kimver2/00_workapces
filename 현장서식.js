@@ -8143,9 +8143,7 @@ function getSettingsManagementData() {
       availableManagers: getAvailableManagers(ss),
       partnerPhoneMap: getPartnerPhoneMap(ss),
       memberPhoneMap: getMemberPhoneMap(ss),
-      siteSuperintendents: getSiteSuperintendents(ss),
-      accessPin: getDashboardAccessPin(),
-      accessToken: computeDashboardPinToken(getDashboardAccessPin())
+      siteSuperintendents: getSiteSuperintendents(ss)
     };
   } catch(err) {
     Logger.log("getSettingsManagementData 오류: " + err.toString());
@@ -8911,11 +8909,10 @@ function saveAllSettingsBatchFromWeb(batchPayload) {
 }
 
 /**
- * [대시보드 보안 잠금] 공용 비밀번호 조회 (기본값: "0304")
- * - 관리자가 비밀번호를 설정하지 않은 초기에는 표준 공용 비밀번호 "0304" 적용
- * - 마스터 설정 모달의 [🔒 보안 비밀번호] 버튼 또는 스프레드시트 상단 메뉴에서 언제든 변경 가능
+ * [대시보드 보안 잠금] 공용 비밀번호 조회 (기본값: "0112")
+ * - 스프레드시트 상단 메뉴(현장 관리 ➔ 시스템 점검 & 가이드 ➔ 대시보드 공용 접속 비밀번호 확인/변경)에서만 변경 가능
  */
-var DEFAULT_DASHBOARD_ACCESS_PIN = "0304";
+var DEFAULT_DASHBOARD_ACCESS_PIN = "0112";
 
 function getDashboardAccessPin() {
   try {
@@ -8932,14 +8929,13 @@ function getDashboardAccessPin() {
 
 /**
  * [대시보드 보안 잠금] 공용 비밀번호 해시 토큰 생성 (클라이언트 localStorage 1회 인증 비교용)
- * - 평문 비밀번호 대신 해시 토큰을 비교하여 비밀번호가 변경되면 모든 기기에서 자동 재인증 유도
+ * - 서버(GAS V8)와 클라이언트(브라우저 JS) 양쪽에서 100% 동일한 결과를 보장하는 DJB2 32-bit 비트 연산 사용
  */
 function computeDashboardPinToken(pinStr) {
   var s = "ws_pin_v1::" + String(pinStr || "").trim();
-  var h1 = 0x811c9dc5;
+  var h1 = 5381;
   for (var i = 0; i < s.length; i++) {
-    h1 ^= s.charCodeAt(i);
-    h1 = (h1 * 0x01000193) >>> 0;
+    h1 = (((h1 << 5) + h1) ^ s.charCodeAt(i)) >>> 0;
   }
   return "WSPIN_" + h1.toString(16).toUpperCase() + "_" + s.length;
 }
@@ -8963,7 +8959,7 @@ function verifyDashboardAccessPinFromWeb(inputPin) {
 }
 
 /**
- * [대시보드 보안 잠금] 관리자 공용 비밀번호 변경
+ * [대시보드 보안 잠금] 관리자 공용 비밀번호 변경 (스프레드시트 전용)
  */
 function updateDashboardAccessPinFromWeb(newPin) {
   var cleanNew = String(newPin || "").trim();
@@ -9829,10 +9825,6 @@ function doGet(e) {
   if (action === "verifyDashboardPin") {
     var vPinRes = verifyDashboardAccessPinFromWeb(p.pin || "");
     return ContentService.createTextOutput(JSON.stringify(vPinRes)).setMimeType(ContentService.MimeType.JSON);
-  }
-  if (action === "updateDashboardPin") {
-    var uPinRes = updateDashboardAccessPinFromWeb(p.pin || "");
-    return ContentService.createTextOutput(JSON.stringify(uPinRes)).setMimeType(ContentService.MimeType.JSON);
   }
 
   // 0-0-0-Repair) 현장 아코디언 그룹 무결성 즉시 복구 요청 (action=repairSiteGroups)
@@ -15044,7 +15036,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '          <input type="text" id="settingsSearchInput" placeholder="검색 (업체명, 공종, 구성원, 연락처...)" oninput="onSettingsSearchInput(this.value)" style="padding:6px 10px 6px 30px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:200px;background:#ffffff;">';
   html += '        </div>';
   html += '        <button type="button" id="settingsAddBtn" onclick="openAddPartnerModal()" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;background:#10b981;color:#ffffff;border:none;border-radius:8px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 1px 2px rgba(16,185,129,0.2);transition:background 0.15s;" onmouseover="this.style.background=\'#059669\'" onmouseout="this.style.background=\'#10b981\'">+ 신규 거래처 추가</button>';
-  html += '        <button type="button" id="settingsPinBtn" onclick="changeDashboardAccessPinFromSettings()" style="display:inline-flex;align-items:center;gap:4px;padding:7px 12px;background:#f8fafc;color:#334155;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;" title="대시보드 공용 접속 비밀번호 확인 및 변경">🔒 보안 비밀번호: <span id="settingsCurrentPinLabel" style="color:#2563eb;">' + escapeHtmlForInput(getDashboardAccessPin()) + '</span></button>';
   html += '      </div>';
   html += '    </div>';
   html += '    <div id="settingsActiveFiltersBar" style="display:none;padding:7px 22px;background:#f8fafc;border-bottom:1px solid #e2e8f0;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:11.5px;flex-shrink:0;"></div>';
@@ -15257,27 +15248,26 @@ function buildSidebarDashboardHtml(mode) {
   html += '})();\n';
   html += 'function computeClientWsPinToken(pinStr) {\n';
   html += '  var s = "ws_pin_v1::" + String(pinStr || "").trim();\n';
-  html += '  var h1 = 0x811c9dc5;\n';
+  html += '  var h1 = 5381;\n';
   html += '  for (var i = 0; i < s.length; i++) {\n';
-  html += '    h1 ^= s.charCodeAt(i);\n';
-  html += '    h1 = Math.imul ? (Math.imul(h1, 0x01000193) >>> 0) : ((h1 * 0x01000193) >>> 0);\n';
+  html += '    h1 = (((h1 << 5) + h1) ^ s.charCodeAt(i)) >>> 0;\n';
   html += '  }\n';
   html += '  return "WSPIN_" + h1.toString(16).toUpperCase() + "_" + s.length;\n';
   html += '}\n';
-  html += 'function submitWsAccessPin() {\n';
+  html += 'function unlockWsDashboardWithToken(token) {\n';
+  html += '  WS_REQUIRED_PIN_TOKEN = token;\n';
+  html += '  try { if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.setItem === "function") localStorage.setItem(WS_PIN_STORAGE_KEY, token); } catch (eS) {}\n';
+  html += '  var lockEl = document.getElementById("wsAccessLockOverlay");\n';
+  html += '  var errEl = document.getElementById("wsAccessPinError");\n';
+  html += '  if (lockEl) lockEl.style.display = "none";\n';
+  html += '  if (errEl) errEl.style.display = "none";\n';
+  html += '  if (typeof showToast === "function") showToast("🔓 구성원 인증이 완료되었습니다. (이 기기에서 자동 유지됩니다)");\n';
+  html += '}\n';
+  html += 'function showWsAccessPinError() {\n';
   html += '  var inp = document.getElementById("wsAccessPinInput");\n';
   html += '  var errEl = document.getElementById("wsAccessPinError");\n';
-  html += '  var val = inp ? String(inp.value || "").trim() : "";\n';
-  html += '  if (!val) { if (inp) inp.focus(); return; }\n';
-  html += '  var candidateToken = computeClientWsPinToken(val);\n';
-  html += '  if (candidateToken === WS_REQUIRED_PIN_TOKEN) {\n';
-  html += '    try { if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.setItem === "function") localStorage.setItem(WS_PIN_STORAGE_KEY, WS_REQUIRED_PIN_TOKEN); } catch (eS) {}\n';
-  html += '    var lockEl = document.getElementById("wsAccessLockOverlay");\n';
-  html += '    if (lockEl) lockEl.style.display = "none";\n';
-  html += '    if (errEl) errEl.style.display = "none";\n';
-  html += '    if (typeof showToast === "function") showToast("🔓 구성원 인증이 완료되었습니다. (이 기기에서 자동 유지됩니다)");\n';
-  html += '    return;\n';
-  html += '  }\n';
+  html += '  var btn = document.getElementById("wsAccessPinBtn");\n';
+  html += '  if (btn) { btn.disabled = false; btn.innerText = "인증하고 대시보드 열기"; }\n';
   html += '  if (errEl) errEl.style.display = "block";\n';
   html += '  if (inp) {\n';
   html += '    inp.classList.remove("ws-pin-shake");\n';
@@ -15285,6 +15275,44 @@ function buildSidebarDashboardHtml(mode) {
   html += '    inp.classList.add("ws-pin-shake");\n';
   html += '    inp.value = "";\n';
   html += '    inp.focus();\n';
+  html += '  }\n';
+  html += '}\n';
+  html += 'function submitWsAccessPin() {\n';
+  html += '  var inp = document.getElementById("wsAccessPinInput");\n';
+  html += '  var btn = document.getElementById("wsAccessPinBtn");\n';
+  html += '  var val = inp ? String(inp.value || "").trim() : "";\n';
+  html += '  if (!val) { if (inp) inp.focus(); return; }\n';
+  html += '  var candidateToken = computeClientWsPinToken(val);\n';
+  html += '  if (candidateToken === WS_REQUIRED_PIN_TOKEN) {\n';
+  html += '    unlockWsDashboardWithToken(WS_REQUIRED_PIN_TOKEN);\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  if (btn) { btn.disabled = true; btn.innerText = "비밀번호 확인 중..."; }\n';
+  html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
+  html += '    google.script.run\n';
+  html += '      .withSuccessHandler(function(res) {\n';
+  html += '        if (btn) { btn.disabled = false; btn.innerText = "인증하고 대시보드 열기"; }\n';
+  html += '        if (res && res.success && res.token) {\n';
+  html += '          unlockWsDashboardWithToken(res.token);\n';
+  html += '        } else {\n';
+  html += '          showWsAccessPinError();\n';
+  html += '        }\n';
+  html += '      })\n';
+  html += '      .withFailureHandler(function() { showWsAccessPinError(); })\n';
+  html += '      .verifyDashboardAccessPinFromWeb(val);\n';
+  html += '  } else {\n';
+  html += '    var apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
+  html += '    fetch(apiUrl + "?action=verifyDashboardPin&pin=" + encodeURIComponent(val))\n';
+  html += '      .then(function(r) { return r.json(); })\n';
+  html += '      .then(function(res) {\n';
+  html += '        if (btn) { btn.disabled = false; btn.innerText = "인증하고 대시보드 열기"; }\n';
+  html += '        if (res && res.success && res.token) {\n';
+  html += '          unlockWsDashboardWithToken(res.token);\n';
+  html += '        } else {\n';
+  html += '          showWsAccessPinError();\n';
+  html += '        }\n';
+  html += '      })\n';
+  html += '      .catch(function() { showWsAccessPinError(); });\n';
   html += '  }\n';
   html += '}\n';
 
@@ -15487,10 +15515,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (pCountEl) pCountEl.innerText = currentSettingsData.partners.length;\n';
   html += '    if (tCountEl) tCountEl.innerText = currentSettingsData.tasks.length;\n';
   html += '    if (mCountEl) mCountEl.innerText = currentSettingsData.members.length;\n';
-  html += '    if (res.accessPin) {\n';
-  html += '      const pinLbl = document.getElementById("settingsCurrentPinLabel");\n';
-  html += '      if (pinLbl) pinLbl.innerText = res.accessPin;\n';
-  html += '    }\n';
   html += '\n';
   html += '    // 현장 추가/수정에 실시간 연동 (rawData 갱신 및 드롭다운 즉시 동기화)\n';
   html += '    if (typeof rawData !== "undefined" && rawData) {\n';
@@ -16238,32 +16262,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });\n';
   html += '}\n';
   html += '\n';
-  html += 'function changeDashboardAccessPinFromSettings() {\n';
-  html += '  const pinLbl = document.getElementById("settingsCurrentPinLabel");\n';
-  html += '  const curPin = pinLbl ? pinLbl.innerText.trim() : "0304";\n';
-  html += '  const newPin = prompt("🔒 대시보드 공용 접속 비밀번호 변경\\n\\n• 현재 비밀번호: " + curPin + "\\n• 구성원 기기에서 최초 1회만 입력하면 자동 유지됩니다.\\n• 비밀번호 변경 시 기존 인증된 모든 기기에서 새 비밀번호를 다시 입력받습니다.\\n\\n새로운 공용 비밀번호(4자리 이상)를 입력하세요:", curPin);\n';
-  html += '  if (newPin === null) return;\n';
-  html += '  const cleanPin = String(newPin || "").trim();\n';
-  html += '  if (!cleanPin || cleanPin.length < 4) {\n';
-  html += '    showToast("⚠️ 비밀번호는 최소 4자리 이상 입력해 주세요.");\n';
-  html += '    return;\n';
-  html += '  }\n';
-  html += '  if (cleanPin === curPin) return;\n';
-  html += '  showToast("🔒 공용 비밀번호 변경 중...");\n';
-  html += '  callSettingsApi("updateDashboardPin", { pin: cleanPin }, function(res) {\n';
-  html += '    if (res && res.success) {\n';
-  html += '      if (pinLbl) pinLbl.innerText = res.pin;\n';
-  html += '      if (res.token) {\n';
-  html += '        WS_REQUIRED_PIN_TOKEN = res.token;\n';
-  html += '        try { if (typeof localStorage !== "undefined" && localStorage) localStorage.setItem(WS_PIN_STORAGE_KEY, res.token); } catch (eS) {}\n';
-  html += '      }\n';
-  html += '      showToast("✅ 공용 비밀번호가 [" + res.pin + "](으)로 변경되었습니다!");\n';
-  html += '    } else {\n';
-  html += '      showToast("❌ 변경 실패: " + ((res && res.error) || "오류"));\n';
-  html += '    }\n';
-  html += '  });\n';
-  html += '}\n';
-  html += '\n';
   html += 'function callSettingsApi(action, params, onSuccess, onError) {\n';
   html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
   html += '    var runner = google.script.run\n';
@@ -16271,7 +16269,6 @@ function buildSidebarDashboardHtml(mode) {
   html += '      .withFailureHandler(onError || function(err) { showToast("❌ 통신 오류: " + err); });\n';
   html += '    if (action === "getSettingsData") runner.getSettingsManagementData();\n';
   html += '    else if (action === "saveAllSettingsBatch") runner.saveAllSettingsBatchFromWeb(params.data);\n';
-  html += '    else if (action === "updateDashboardPin") runner.updateDashboardAccessPinFromWeb(params.pin);\n';
   html += '    else if (action === "addMember") runner.addMemberItemFromWeb(params.data);\n';
   html += '    else if (action === "updateMember") runner.updateMemberItemFromWeb(params.row, params.data);\n';
   html += '    else if (action === "deleteMember") runner.deleteMemberItemFromWeb(params.row, params.name);\n';
