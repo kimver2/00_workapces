@@ -84,10 +84,11 @@
     <div class="loading-text">우성아이디 대시보드 연결 중...</div>
   </div>
 
-  <!-- 전체화면 무배너 웹앱 프레임 -->
+  <!-- 전체화면 무배너 웹앱 프레임 (credentialless: 크롬 다중 구글 계정 로그인 시 쿠키 충돌 원천 차단) -->
   <iframe
     id="appFrame"
-    src="https://script.google.com/macros/s/AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec?v=198"
+    credentialless
+    src="https://script.google.com/macros/s/AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec?v=200"
     allow="clipboard-write; camera; geolocation"
     onload="hideLoading()">
   </iframe>

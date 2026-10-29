@@ -11897,7 +11897,8 @@ assertTest('Step 194-2: 클라이언트-서버 비밀번호 해시 토큰 100% �
 // 194-3: 구 GAS 배포 ID(AKfycbxRcw...) 완전 제거 및 신규 배포 ID(AKfycbwJTNq...) + woosung-id URL 적용 검증
 assertTest('Step 194-3: 구 GAS 배포 URL 완전 교체 및 woosung-id 신규 URL 적용 검증',
   !indexHtml194.includes('AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg') &&
-  /AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_\/exec\?v=19[6-9]/.test(indexHtml194) &&
+  /AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_\/exec\?v=(19[6-9]|2[0-9]{2})/.test(indexHtml194) &&
+  indexHtml194.includes('credentialless') &&
   code194.includes('https://kimver2.github.io/woosung-id/')
 );
 

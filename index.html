@@ -186,10 +186,11 @@
     </div>
   </div>
 
-  <!-- 전체화면 무배너 웹앱 프레임 -->
+  <!-- 전체화면 무배너 웹앱 프레임 (credentialless: 크롬 다중 구글 계정 로그인 시 쿠키 충돌 원천 차단) -->
   <iframe
     id="appFrame"
-    src="https://script.google.com/macros/s/AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec?v=198"
+    credentialless
+    src="https://script.google.com/macros/s/AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec?v=200"
     allow="clipboard-write; camera; geolocation"
     onload="hideLoading()">
   </iframe>
@@ -222,6 +223,26 @@
       }
       if (ev.source) {
         orcaDashboardSource = ev.source;
+      }
+      if (data.type === 'WS_AUTH_INIT') {
+        try {
+          var savedTok = localStorage.getItem('ws_dashboard_auth_token_v2') || sessionStorage.getItem('ws_dashboard_auth_token_v2') || '';
+          var savedUsr = localStorage.getItem('ws_dashboard_auth_user_v2') || '';
+          if (ev.source) ev.source.postMessage({ type: 'WS_RESTORE_AUTH', token: savedTok, user: savedUsr }, '*');
+        } catch (eAuthInit) {}
+        return;
+      }
+      if (data.type === 'WS_SAVE_AUTH') {
+        try {
+          if (data.keep !== false) {
+            if (data.token) localStorage.setItem('ws_dashboard_auth_token_v2', data.token);
+            if (data.user && String(data.user).toLowerCase() !== 'admin') localStorage.setItem('ws_dashboard_auth_user_v2', data.user);
+          } else {
+            localStorage.removeItem('ws_dashboard_auth_token_v2');
+          }
+          if (data.token) sessionStorage.setItem('ws_dashboard_auth_token_v2', data.token);
+        } catch (eAuthSave) {}
+        return;
       }
       if (data.type === 'ORCA_BRIDGE_PING') {
         try {
