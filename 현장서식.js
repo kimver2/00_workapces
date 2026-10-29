@@ -17237,8 +17237,9 @@ function buildSidebarDashboardHtml(mode) {
   html += '        suptList.push({ name: String(m.name).trim(), role: String(m.role || "소장").trim(), phone: String(m.phone || "").trim() });';
   html += '      }';
   html += '    });';
+  html += '    return suptList;';
   html += '  }';
-  html += '  if (suptList.length === 0 && typeof rawData !== "undefined" && rawData && Array.isArray(rawData.siteSuperintendents) && rawData.siteSuperintendents.length > 0) {';
+  html += '  if (typeof rawData !== "undefined" && rawData && Array.isArray(rawData.siteSuperintendents) && rawData.siteSuperintendents.length > 0) {';
   html += '    rawData.siteSuperintendents.forEach(function(s) {';
   html += '      if (s && s.name) {';
   html += '        suptList.push({ name: String(s.name).trim(), role: String(s.role || "소장").trim(), phone: String(s.phone || "").trim() });';
@@ -17268,8 +17269,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      return sp.name + (p ? " | " + p : "");';
   html += '    }).join(" / ");';
   html += '  }';
-  html += '  const fallbackPhone = (typeof getMemberPhoneNumber === "function" ? getMemberPhoneNumber("인경호") : "") || "010-9870-9696";';
-  html += '  return "인경호" + (fallbackPhone ? " | " + fallbackPhone : "");';
+  html += '  return "";';
   html += '}';
   html += '';
   html += 'function buildPartnerWorkGuideText(siteName, taskObj) {';
@@ -17425,7 +17425,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '  const designerDisplay = designerName ? (designerName + (designerPhone ? " | " + designerPhone : "")) : "미지정";';
   html += '  lines.push("■ 담당 디자이너 : " + designerDisplay);';
   html += '  const superintendentDisplay = getSiteSuperintendentDisplay(sName, taskObj);';
-  html += '  lines.push("■ 현장 소장 : " + superintendentDisplay);';
+  html += '  if (superintendentDisplay) lines.push("■ 현장 소장 : " + superintendentDisplay);';
   html += '  lines.push("━━━━━━━━━━━━━━━━━━");';
   html += '  lines.push("📍 현장 주소: " + (sInfo.address || "(주소 미등록 - 현장 문의)"));';
   html += '  lines.push("🔑 도어락 비번: " + (sInfo.doorPassword || "(비밀번호 미등록 - 현장 문의)"));';
