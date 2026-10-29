@@ -6659,13 +6659,22 @@ function expandCompletedSitesMenu() {
 /**
  * 배포된 웹 앱 URL 가져오기
  */
+var CURRENT_ACTIVE_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec";
+
 function getWebAppUrl() {
   try {
     if (typeof PropertiesService !== "undefined" && PropertiesService.getDocumentProperties) {
       var docProps = PropertiesService.getDocumentProperties();
       if (docProps) {
-        var savedUrl = docProps.getProperty("WEB_APP_URL");
-        if (savedUrl) return savedUrl.trim();
+        var savedUrl = String(docProps.getProperty("WEB_APP_URL") || "").trim();
+        if (savedUrl) {
+          // 폐기된 구 배포 ID가 저장되어 있으면 신규 배포 URL로 자동 치환
+          if (savedUrl.indexOf("AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_") === -1 && savedUrl.indexOf("script.google.com/macros/s/") !== -1) {
+            try { docProps.setProperty("WEB_APP_URL", CURRENT_ACTIVE_WEBAPP_URL); } catch (eUpdUrl) {}
+            return CURRENT_ACTIVE_WEBAPP_URL;
+          }
+          return savedUrl;
+        }
       }
     }
   } catch(eProp) {}
@@ -6679,7 +6688,7 @@ function getWebAppUrl() {
     }
   } catch(e) {}
 
-  return "";
+  return CURRENT_ACTIVE_WEBAPP_URL;
 }
 
 /**
