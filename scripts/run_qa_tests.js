@@ -4202,9 +4202,9 @@ const emailRes62 = sandbox.buildMorningBriefingEmailContent(
   'https://docs.google.com/spreadsheets/d/test',
   'https://script.google.com/macros/s/old-url/exec'
 );
-assertTest('buildMorningBriefingEmailContent: 이메일 내 "📱 모바일 빠른 관리" 링크가 https://kimver2.github.io/00_workapces/ 로 정확히 설정 검증',
-  emailRes62.htmlBody.indexOf('href="https://kimver2.github.io/00_workapces/"') !== -1 &&
-  emailRes62.plainText.indexOf('https://kimver2.github.io/00_workapces/') !== -1
+assertTest('buildMorningBriefingEmailContent: 이메일 내 "📱 모바일 빠른 관리" 링크가 https://kimver2.github.io/woosung-id/ 로 정확히 설정 검증',
+  emailRes62.htmlBody.indexOf('href="https://kimver2.github.io/woosung-id/"') !== -1 &&
+  emailRes62.plainText.indexOf('https://kimver2.github.io/woosung-id/') !== -1
 );
 
 // 2) 시트 맨 아래(125행 등)에 분리되어 들어간 동일 현장 행 자동 병합(consolidateSplitSiteRows) 및 날짜순 정렬 검증
@@ -11862,6 +11862,36 @@ assertTest('Step 193-3: 구성원 목록에 소장 직책 등록 시 안내문�
 // 193-4: index.html 내 exec?v=193 최신 캐시 버스팅 파라미터 갱신 검증
 assertTest('Step 193-4: index.html 내 exec?v=193 최신 캐시 버스팅 파라미터 갱신 검증',
   /exec\?v=(19[3-9])/.test(indexHtml193)
+);
+
+console.log('\n📋 [Step 194]: woosung-id 신규 URL 교체, 구 배포 차단 및 대시보드 공용 비밀번호 보안 잠금 QA ---');
+const code194 = fs.readFileSync(path.join(__dirname, '..', '현장서식.js'), 'utf8');
+const indexHtml194 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+// 194-1: 서버 공용 비밀번호 관리 함수(getDashboardAccessPin, computeDashboardPinToken, verifyDashboardAccessPinFromWeb, updateDashboardAccessPinFromWeb) 탑재 검증
+assertTest('Step 194-1: 서버 공용 비밀번호 관리 및 해시 토큰 검증 함수 탑재 확인',
+  typeof sandbox.getDashboardAccessPin === 'function' &&
+  typeof sandbox.computeDashboardPinToken === 'function' &&
+  typeof sandbox.verifyDashboardAccessPinFromWeb === 'function' &&
+  typeof sandbox.updateDashboardAccessPinFromWeb === 'function' &&
+  sandbox.getDashboardAccessPin() === '0304' &&
+  sandbox.verifyDashboardAccessPinFromWeb('0304').success === true &&
+  sandbox.verifyDashboardAccessPinFromWeb('9999').success === false
+);
+
+// 194-2: 대시보드 HTML 내 보안 잠금 오버레이(#wsAccessLockOverlay), localStorage 1회 인증 기억 및 마스터 설정 비밀번호 변경 버튼 탑재 검증
+assertTest('Step 194-2: 대시보드 보안 잠금 화면(#wsAccessLockOverlay) 및 마스터 설정 비밀번호 변경 버튼 탑재 검증',
+  code194.includes('id="wsAccessLockOverlay"') &&
+  code194.includes('WS_PIN_STORAGE_KEY = "ws_dashboard_auth_token_v1"') &&
+  code194.includes('function submitWsAccessPin()') &&
+  code194.includes('function changeDashboardAccessPinFromSettings()')
+);
+
+// 194-3: 구 GAS 배포 ID(AKfycbxRcw...) 완전 제거 및 신규 배포 ID(AKfycbwJTNq...) + woosung-id URL 적용 검증
+assertTest('Step 194-3: 구 GAS 배포 URL 완전 교체 및 woosung-id 신규 URL 적용 검증',
+  !indexHtml194.includes('AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg') &&
+  indexHtml194.includes('AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec?v=194') &&
+  code194.includes('https://kimver2.github.io/woosung-id/')
 );
 
 console.log('\n========================================================');

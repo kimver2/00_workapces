@@ -1659,6 +1659,8 @@ function onOpen() {
 
     // [서브메뉴 2: 시스템 점검 & 가이드]
     .addSubMenu(ui.createMenu("🛠️ 시스템 점검 & 가이드")
+      .addItem("🔒 대시보드 공용 접속 비밀번호 확인/변경", "configureDashboardPasswordMenu")
+      .addSeparator()
       .addItem("📖 '00_사용가이드' 시트 생성 / 최신화", "createUsageGuideSheetMenu")
       .addItem("🛡️ 빨간 에러(유효성 경고) 완전 제거 & 서식 복구", "cleanAllValidationErrorsMenu")
       .addItem("⚠️ 지연 공정 강조 및 조건부 서식 재동기화", "checkAndHighlightDelayedSchedules")
@@ -8141,7 +8143,9 @@ function getSettingsManagementData() {
       availableManagers: getAvailableManagers(ss),
       partnerPhoneMap: getPartnerPhoneMap(ss),
       memberPhoneMap: getMemberPhoneMap(ss),
-      siteSuperintendents: getSiteSuperintendents(ss)
+      siteSuperintendents: getSiteSuperintendents(ss),
+      accessPin: getDashboardAccessPin(),
+      accessToken: computeDashboardPinToken(getDashboardAccessPin())
     };
   } catch(err) {
     Logger.log("getSettingsManagementData 오류: " + err.toString());
@@ -8903,6 +8907,112 @@ function saveAllSettingsBatchFromWeb(batchPayload) {
   } catch(err) {
     Logger.log("saveAllSettingsBatchFromWeb 오류: " + err.toString());
     return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * [대시보드 보안 잠금] 공용 비밀번호 조회 (기본값: "0304")
+ * - 관리자가 비밀번호를 설정하지 않은 초기에는 표준 공용 비밀번호 "0304" 적용
+ * - 마스터 설정 모달의 [🔒 보안 비밀번호] 버튼 또는 스프레드시트 상단 메뉴에서 언제든 변경 가능
+ */
+var DEFAULT_DASHBOARD_ACCESS_PIN = "0304";
+
+function getDashboardAccessPin() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (props && typeof props.getProperty === "function") {
+      var saved = props.getProperty("DASHBOARD_ACCESS_PIN");
+      if (saved !== null && saved !== undefined && String(saved).trim() !== "") {
+        return String(saved).trim();
+      }
+    }
+  } catch (ePin) {}
+  return DEFAULT_DASHBOARD_ACCESS_PIN;
+}
+
+/**
+ * [대시보드 보안 잠금] 공용 비밀번호 해시 토큰 생성 (클라이언트 localStorage 1회 인증 비교용)
+ * - 평문 비밀번호 대신 해시 토큰을 비교하여 비밀번호가 변경되면 모든 기기에서 자동 재인증 유도
+ */
+function computeDashboardPinToken(pinStr) {
+  var s = "ws_pin_v1::" + String(pinStr || "").trim();
+  var h1 = 0x811c9dc5;
+  for (var i = 0; i < s.length; i++) {
+    h1 ^= s.charCodeAt(i);
+    h1 = (h1 * 0x01000193) >>> 0;
+  }
+  return "WSPIN_" + h1.toString(16).toUpperCase() + "_" + s.length;
+}
+
+/**
+ * [대시보드 보안 잠금] 클라이언트에서 입력한 비밀번호 검증
+ */
+function verifyDashboardAccessPinFromWeb(inputPin) {
+  var cleanInput = String(inputPin || "").trim();
+  var currentPin = getDashboardAccessPin();
+  if (cleanInput && cleanInput === currentPin) {
+    return {
+      success: true,
+      token: computeDashboardPinToken(currentPin)
+    };
+  }
+  return {
+    success: false,
+    error: "비밀번호가 일치하지 않습니다. 다시 확인해 주세요."
+  };
+}
+
+/**
+ * [대시보드 보안 잠금] 관리자 공용 비밀번호 변경
+ */
+function updateDashboardAccessPinFromWeb(newPin) {
+  var cleanNew = String(newPin || "").trim();
+  if (!cleanNew || cleanNew.length < 4) {
+    return { success: false, error: "비밀번호는 최소 4자리 이상 입력해 주세요." };
+  }
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (props && typeof props.setProperty === "function") {
+      props.setProperty("DASHBOARD_ACCESS_PIN", cleanNew);
+    }
+    invalidateDashboardServerCache();
+    return {
+      success: true,
+      pin: cleanNew,
+      token: computeDashboardPinToken(cleanNew),
+      message: "공용 접속 비밀번호가 변경되었습니다. 기존에 인증된 다른 기기들은 새 비밀번호를 1회 다시 입력해야 접속됩니다."
+    };
+  } catch (err) {
+    return { success: false, error: "비밀번호 저장 중 오류: " + (err.message || err) };
+  }
+}
+
+/**
+ * [상단 메뉴] 공용 접속 비밀번호 확인 및 변경
+ */
+function configureDashboardPasswordMenu() {
+  var ui = SpreadsheetApp.getUi();
+  var curPin = getDashboardAccessPin();
+  var resp = ui.prompt(
+    "🔒 대시보드 공용 접속 비밀번호 설정",
+    "현재 설정된 공용 비밀번호: [ " + curPin + " ]\n\n" +
+    "• 구성원들은 휴대폰/PC에서 최초 1회만 입력하면 기기에 자동 저장됩니다.\n" +
+    "• 비밀번호를 변경하면 기존에 인증된 모든 기기에서 잠금이 다시 걸립니다.\n\n" +
+    "새로운 공용 비밀번호(4자리 이상)를 입력하세요:",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() === ui.Button.OK) {
+    var newPin = String(resp.getResponseText() || "").trim();
+    if (!newPin || newPin.length < 4) {
+      ui.alert("⚠️ 비밀번호 오류", "비밀번호는 최소 4자리 이상 입력해 주세요.", ui.ButtonSet.OK);
+      return;
+    }
+    var res = updateDashboardAccessPinFromWeb(newPin);
+    if (res.success) {
+      ui.alert("✅ 비밀번호 변경 완료", "새로운 공용 비밀번호 [ " + newPin + " ](으)로 변경되었습니다.\n기존 기기들은 다음 접속 시 새 비밀번호를 1회 입력해야 합니다.", ui.ButtonSet.OK);
+    } else {
+      ui.alert("❌ 변경 실패", res.error, ui.ButtonSet.OK);
+    }
   }
 }
 
@@ -9715,6 +9825,14 @@ function doGet(e) {
     var batchPayload = p.data ? JSON.parse(p.data) : p;
     var batchRes = saveAllSettingsBatchFromWeb(batchPayload);
     return ContentService.createTextOutput(JSON.stringify(batchRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "verifyDashboardPin") {
+    var vPinRes = verifyDashboardAccessPinFromWeb(p.pin || "");
+    return ContentService.createTextOutput(JSON.stringify(vPinRes)).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (action === "updateDashboardPin") {
+    var uPinRes = updateDashboardAccessPinFromWeb(p.pin || "");
+    return ContentService.createTextOutput(JSON.stringify(uPinRes)).setMimeType(ContentService.MimeType.JSON);
   }
 
   // 0-0-0-Repair) 현장 아코디언 그룹 무결성 즉시 복구 요청 (action=repairSiteGroups)
@@ -11253,7 +11371,7 @@ function sendDailySiteMorningBriefing(isManualTest) {
 
     var sheetUrl = "";
     try { sheetUrl = ss.getUrl(); } catch(e) {}
-    var webAppUrl = "https://kimver2.github.io/00_workapces/";
+    var webAppUrl = "https://kimver2.github.io/woosung-id/";
 
     var emailPayload = buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, delayedTasks, sheetUrl, webAppUrl);
 
@@ -11317,7 +11435,7 @@ function sendDailySiteMorningBriefing(isManualTest) {
 function buildMorningBriefingEmailContent(todayStr, dayOfWeekStr, todayTasks, delayedTasks, sheetUrl, webAppUrl) {
   var delayedCount = delayedTasks ? delayedTasks.length : 0;
   var todayCount = todayTasks ? todayTasks.length : 0;
-  var mobileQuickUrl = "https://kimver2.github.io/00_workapces/";
+  var mobileQuickUrl = "https://kimver2.github.io/woosung-id/";
 
   // 1. Plain text 버전
   var plainLines = [];
@@ -14045,7 +14163,21 @@ function buildSidebarDashboardHtml(mode) {
   html += '  @keyframes settingsRowFlash { 0% { background-color: #fef08a !important; } 100% { background-color: transparent; } }';
   html += '  .settings-row-moved { animation: settingsRowFlash 1.4s ease-out; }';
   html += '  @keyframes settingsFadeIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }';
+  html += '  @keyframes wsPinShake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }';
+  html += '  .ws-pin-shake { animation: wsPinShake 0.35s ease; border-color: #ef4444 !important; background: #fef2f2 !important; }';
   html += '</style></head><body>';
+
+  var currentPinToken = computeDashboardPinToken(getDashboardAccessPin());
+  html += '<div id="wsAccessLockOverlay" style="display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:#0f172a;z-index:200000;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">';
+  html += '  <div id="wsAccessLockCard" style="background:#ffffff;border-radius:20px;width:100%;max-width:360px;padding:32px 24px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.45);text-align:center;">';
+  html += '    <div style="width:56px;height:56px;border-radius:16px;background:#eff6ff;color:#2563eb;display:inline-flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:14px;box-shadow:0 4px 12px rgba(37,99,235,0.15);">🔒</div>';
+  html += '    <h2 style="margin:0 0 6px 0;font-size:19px;font-weight:900;color:#0f172a;letter-spacing:-0.4px;">우성아이디 구성원 인증</h2>';
+  html += '    <p style="margin:0 0 20px 0;font-size:12.5px;color:#64748b;line-height:1.5;">보안을 위해 공용 비밀번호를 입력해 주세요.<br><span style="color:#2563eb;font-weight:700;">최초 1회 인증 시 이 기기에서 자동 유지됩니다.</span></p>';
+  html += '    <input type="password" id="wsAccessPinInput" inputmode="text" autocomplete="current-password" placeholder="공용 비밀번호 입력" onkeydown="if(event.key===\'Enter\')submitWsAccessPin()" style="width:100%;box-sizing:border-box;padding:13px 16px;border:2px solid #cbd5e1;border-radius:12px;font-size:18px;font-weight:800;text-align:center;letter-spacing:4px;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor=\'#2563eb\';this.style.background=\'#ffffff\';">';
+  html += '    <div id="wsAccessPinError" style="display:none;margin-top:10px;font-size:12px;font-weight:700;color:#dc2626;">❌ 비밀번호가 일치하지 않습니다.</div>';
+  html += '    <button type="button" id="wsAccessPinBtn" onclick="submitWsAccessPin()" style="width:100%;margin-top:16px;padding:13px;background:#2563eb;color:#ffffff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,0.35);transition:background 0.15s;">인증하고 대시보드 열기</button>';
+  html += '  </div>';
+  html += '</div>';
 
   // 새로고침 글로벌 로딩바 및 오버레이 (목록 뷰 & 캘린더 뷰 공용)
   html += '<div id="refreshLoadingOverlay" class="refresh-loading-overlay">';
@@ -14912,6 +15044,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '          <input type="text" id="settingsSearchInput" placeholder="검색 (업체명, 공종, 구성원, 연락처...)" oninput="onSettingsSearchInput(this.value)" style="padding:6px 10px 6px 30px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px;outline:none;width:200px;background:#ffffff;">';
   html += '        </div>';
   html += '        <button type="button" id="settingsAddBtn" onclick="openAddPartnerModal()" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;background:#10b981;color:#ffffff;border:none;border-radius:8px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 1px 2px rgba(16,185,129,0.2);transition:background 0.15s;" onmouseover="this.style.background=\'#059669\'" onmouseout="this.style.background=\'#10b981\'">+ 신규 거래처 추가</button>';
+  html += '        <button type="button" id="settingsPinBtn" onclick="changeDashboardAccessPinFromSettings()" style="display:inline-flex;align-items:center;gap:4px;padding:7px 12px;background:#f8fafc;color:#334155;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;" title="대시보드 공용 접속 비밀번호 확인 및 변경">🔒 보안 비밀번호: <span id="settingsCurrentPinLabel" style="color:#2563eb;">' + escapeHtmlForInput(getDashboardAccessPin()) + '</span></button>';
   html += '      </div>';
   html += '    </div>';
   html += '    <div id="settingsActiveFiltersBar" style="display:none;padding:7px 22px;background:#f8fafc;border-bottom:1px solid #e2e8f0;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:11.5px;flex-shrink:0;"></div>';
@@ -15106,6 +15239,54 @@ function buildSidebarDashboardHtml(mode) {
 
   // Script
   html += '<script>';
+  html += 'var WS_REQUIRED_PIN_TOKEN = ' + jsStringLiteral_(currentPinToken) + ';\n';
+  html += 'var WS_PIN_STORAGE_KEY = "ws_dashboard_auth_token_v1";\n';
+  html += '(function() {\n';
+  html += '  try {\n';
+  html += '    var savedTok = (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") ? localStorage.getItem(WS_PIN_STORAGE_KEY) : "";\n';
+  html += '    var lockEl = document.getElementById("wsAccessLockOverlay");\n';
+  html += '    if (savedTok && savedTok === WS_REQUIRED_PIN_TOKEN) {\n';
+  html += '      if (lockEl) lockEl.style.display = "none";\n';
+  html += '    } else {\n';
+  html += '      setTimeout(function() {\n';
+  html += '        var inp = document.getElementById("wsAccessPinInput");\n';
+  html += '        if (inp) inp.focus();\n';
+  html += '      }, 120);\n';
+  html += '    }\n';
+  html += '  } catch (eLock) {}\n';
+  html += '})();\n';
+  html += 'function computeClientWsPinToken(pinStr) {\n';
+  html += '  var s = "ws_pin_v1::" + String(pinStr || "").trim();\n';
+  html += '  var h1 = 0x811c9dc5;\n';
+  html += '  for (var i = 0; i < s.length; i++) {\n';
+  html += '    h1 ^= s.charCodeAt(i);\n';
+  html += '    h1 = Math.imul ? (Math.imul(h1, 0x01000193) >>> 0) : ((h1 * 0x01000193) >>> 0);\n';
+  html += '  }\n';
+  html += '  return "WSPIN_" + h1.toString(16).toUpperCase() + "_" + s.length;\n';
+  html += '}\n';
+  html += 'function submitWsAccessPin() {\n';
+  html += '  var inp = document.getElementById("wsAccessPinInput");\n';
+  html += '  var errEl = document.getElementById("wsAccessPinError");\n';
+  html += '  var val = inp ? String(inp.value || "").trim() : "";\n';
+  html += '  if (!val) { if (inp) inp.focus(); return; }\n';
+  html += '  var candidateToken = computeClientWsPinToken(val);\n';
+  html += '  if (candidateToken === WS_REQUIRED_PIN_TOKEN) {\n';
+  html += '    try { if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.setItem === "function") localStorage.setItem(WS_PIN_STORAGE_KEY, WS_REQUIRED_PIN_TOKEN); } catch (eS) {}\n';
+  html += '    var lockEl = document.getElementById("wsAccessLockOverlay");\n';
+  html += '    if (lockEl) lockEl.style.display = "none";\n';
+  html += '    if (errEl) errEl.style.display = "none";\n';
+  html += '    if (typeof showToast === "function") showToast("🔓 구성원 인증이 완료되었습니다. (이 기기에서 자동 유지됩니다)");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  if (errEl) errEl.style.display = "block";\n';
+  html += '  if (inp) {\n';
+  html += '    inp.classList.remove("ws-pin-shake");\n';
+  html += '    void inp.offsetWidth;\n';
+  html += '    inp.classList.add("ws-pin-shake");\n';
+  html += '    inp.value = "";\n';
+  html += '    inp.focus();\n';
+  html += '  }\n';
+  html += '}\n';
 
   // ========================================================
   // [마스터 설정 관리: 거래처, 공종 및 구성원 실시간 클라이언트 엔진]
@@ -15306,6 +15487,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (pCountEl) pCountEl.innerText = currentSettingsData.partners.length;\n';
   html += '    if (tCountEl) tCountEl.innerText = currentSettingsData.tasks.length;\n';
   html += '    if (mCountEl) mCountEl.innerText = currentSettingsData.members.length;\n';
+  html += '    if (res.accessPin) {\n';
+  html += '      const pinLbl = document.getElementById("settingsCurrentPinLabel");\n';
+  html += '      if (pinLbl) pinLbl.innerText = res.accessPin;\n';
+  html += '    }\n';
   html += '\n';
   html += '    // 현장 추가/수정에 실시간 연동 (rawData 갱신 및 드롭다운 즉시 동기화)\n';
   html += '    if (typeof rawData !== "undefined" && rawData) {\n';
@@ -16053,6 +16238,32 @@ function buildSidebarDashboardHtml(mode) {
   html += '  });\n';
   html += '}\n';
   html += '\n';
+  html += 'function changeDashboardAccessPinFromSettings() {\n';
+  html += '  const pinLbl = document.getElementById("settingsCurrentPinLabel");\n';
+  html += '  const curPin = pinLbl ? pinLbl.innerText.trim() : "0304";\n';
+  html += '  const newPin = prompt("🔒 대시보드 공용 접속 비밀번호 변경\\n\\n• 현재 비밀번호: " + curPin + "\\n• 구성원 기기에서 최초 1회만 입력하면 자동 유지됩니다.\\n• 비밀번호 변경 시 기존 인증된 모든 기기에서 새 비밀번호를 다시 입력받습니다.\\n\\n새로운 공용 비밀번호(4자리 이상)를 입력하세요:", curPin);\n';
+  html += '  if (newPin === null) return;\n';
+  html += '  const cleanPin = String(newPin || "").trim();\n';
+  html += '  if (!cleanPin || cleanPin.length < 4) {\n';
+  html += '    showToast("⚠️ 비밀번호는 최소 4자리 이상 입력해 주세요.");\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  if (cleanPin === curPin) return;\n';
+  html += '  showToast("🔒 공용 비밀번호 변경 중...");\n';
+  html += '  callSettingsApi("updateDashboardPin", { pin: cleanPin }, function(res) {\n';
+  html += '    if (res && res.success) {\n';
+  html += '      if (pinLbl) pinLbl.innerText = res.pin;\n';
+  html += '      if (res.token) {\n';
+  html += '        WS_REQUIRED_PIN_TOKEN = res.token;\n';
+  html += '        try { if (typeof localStorage !== "undefined" && localStorage) localStorage.setItem(WS_PIN_STORAGE_KEY, res.token); } catch (eS) {}\n';
+  html += '      }\n';
+  html += '      showToast("✅ 공용 비밀번호가 [" + res.pin + "](으)로 변경되었습니다!");\n';
+  html += '    } else {\n';
+  html += '      showToast("❌ 변경 실패: " + ((res && res.error) || "오류"));\n';
+  html += '    }\n';
+  html += '  });\n';
+  html += '}\n';
+  html += '\n';
   html += 'function callSettingsApi(action, params, onSuccess, onError) {\n';
   html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
   html += '    var runner = google.script.run\n';
@@ -16060,6 +16271,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      .withFailureHandler(onError || function(err) { showToast("❌ 통신 오류: " + err); });\n';
   html += '    if (action === "getSettingsData") runner.getSettingsManagementData();\n';
   html += '    else if (action === "saveAllSettingsBatch") runner.saveAllSettingsBatchFromWeb(params.data);\n';
+  html += '    else if (action === "updateDashboardPin") runner.updateDashboardAccessPinFromWeb(params.pin);\n';
   html += '    else if (action === "addMember") runner.addMemberItemFromWeb(params.data);\n';
   html += '    else if (action === "updateMember") runner.updateMemberItemFromWeb(params.row, params.data);\n';
   html += '    else if (action === "deleteMember") runner.deleteMemberItemFromWeb(params.row, params.name);\n';

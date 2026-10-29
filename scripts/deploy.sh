@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-DEPLOYMENT_ID="AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg"
+DEPLOYMENT_ID="AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_"
 DESC="${1:-현장관리_자동배포}"
 
 echo "🔍 1. 문법 및 QA 무결성 검증 (현장서식.js)..."
