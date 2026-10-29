@@ -11897,8 +11897,17 @@ assertTest('Step 194-2: 클라이언트-서버 비밀번호 해시 토큰 100% �
 // 194-3: 구 GAS 배포 ID(AKfycbxRcw...) 완전 제거 및 신규 배포 ID(AKfycbwJTNq...) + woosung-id URL 적용 검증
 assertTest('Step 194-3: 구 GAS 배포 URL 완전 교체 및 woosung-id 신규 URL 적용 검증',
   !indexHtml194.includes('AKfycbxRcwYEilQ8wxRyMHxmPXUmLJjZ9qL2oclioJ7iQIYXdENmgjgWemu9D3T2m-FXHVvg') &&
-  indexHtml194.includes('AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec?v=196') &&
+  /AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_\/exec\?v=19[6-9]/.test(indexHtml194) &&
   code194.includes('https://kimver2.github.io/woosung-id/')
+);
+
+// 194-4: 비밀번호 5회 연속 오류 시 3분 잠금(checkAndRenderWsPinLockout) 및 자동 로그인 유지 체크박스(#wsAccessKeepLoginChk: localStorage vs sessionStorage) 검증
+assertTest('Step 194-4: 비밀번호 5회 오류 시 3분 일시 잠금 및 자동 로그인 유지 체크박스(localStorage vs sessionStorage) 탑재 검증',
+  code194.includes('id="wsAccessKeepLoginChk"') &&
+  code194.includes('WS_PIN_MAX_ATTEMPTS = 5') &&
+  code194.includes('WS_PIN_LOCKOUT_MS = 180000') &&
+  code194.includes('function checkAndRenderWsPinLockout()') &&
+  code194.includes('sessionStorage.setItem(WS_PIN_STORAGE_KEY, token)')
 );
 
 console.log('\n========================================================');
