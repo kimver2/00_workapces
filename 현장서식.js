@@ -8909,10 +8909,12 @@ function saveAllSettingsBatchFromWeb(batchPayload) {
 }
 
 /**
- * [대시보드 보안 잠금] 공용 비밀번호 조회 (기본값: "0112")
+ * [대시보드 보안 잠금] 공용 비밀번호 조회 (기본값: "0112") 및 히든 관리자 계정 ("admin" / "007077")
  * - 스프레드시트 상단 메뉴(현장 관리 ➔ 시스템 점검 & 가이드 ➔ 대시보드 공용 접속 비밀번호 확인/변경)에서만 변경 가능
  */
 var DEFAULT_DASHBOARD_ACCESS_PIN = "0112";
+var HIDDEN_ADMIN_AUTH_USER = "admin";
+var HIDDEN_ADMIN_AUTH_PIN = "007077";
 
 function getDashboardAccessPin() {
   try {
@@ -8925,6 +8927,54 @@ function getDashboardAccessPin() {
     }
   } catch (ePin) {}
   return DEFAULT_DASHBOARD_ACCESS_PIN;
+}
+
+/**
+ * [대시보드 보안 잠금] 03_구성원 시트에 등록된 전체 구성원 이름 목록 반환 (대표님 등 모든 구성원 포함)
+ * - 구성원 시트에서 퇴사자를 삭제하면 해당 인원의 인증 토큰이 즉시 무효화되어 자동 차단됨
+ */
+function getAllRegisteredMemberNamesForAuth(ss) {
+  var members = [];
+  try {
+    if (!ss && typeof SpreadsheetApp !== "undefined" && SpreadsheetApp && typeof SpreadsheetApp.getActiveSpreadsheet === "function") {
+      ss = SpreadsheetApp.getActiveSpreadsheet();
+    }
+    if (!ss && typeof getAppSpreadsheet === "function") {
+      ss = getAppSpreadsheet();
+    }
+    var mSheet = ss ? findMembersSheet(ss) : null;
+    if (mSheet && mSheet.getLastRow() >= 2) {
+      var lastR = mSheet.getLastRow();
+      var lastC = Math.max(mSheet.getLastColumn(), 1);
+      var hVals = mSheet.getRange(1, 1, 1, lastC).getValues()[0];
+      var nameCol = -1;
+      for (var c = 0; c < lastC; c++) {
+        var hStr = String(hVals[c] || "").trim();
+        if (hStr.indexOf("이름") !== -1 || hStr.indexOf("성명") !== -1 || hStr.indexOf("담당자") !== -1 || hStr.indexOf("직원") !== -1 || hStr.indexOf("팀원") !== -1) {
+          nameCol = c + 1;
+          break;
+        }
+      }
+      if (nameCol === -1) nameCol = 1;
+      var names = mSheet.getRange(2, nameCol, lastR - 1, 1).getValues();
+      for (var i = 0; i < names.length; i++) {
+        var nm = String(names[i][0] || "").trim();
+        if (nm && nm !== "이름" && nm !== "성명" && nm !== "담당자") {
+          var parts = nm.split(/[,/]/);
+          for (var p = 0; p < parts.length; p++) {
+            var subNm = parts[p].replace(/\s+/g, "").trim();
+            if (subNm && members.indexOf(subNm) === -1) {
+              members.push(subNm);
+            }
+          }
+        }
+      }
+    }
+  } catch (eAuthM) {}
+  if (members.length === 0) {
+    members = ["조항만", "송지은", "전예린", "한송이", "김종혁", "인경호"];
+  }
+  return members;
 }
 
 /**
@@ -8941,12 +8991,67 @@ function computeDashboardPinToken(pinStr) {
 }
 
 /**
- * [대시보드 보안 잠금] 클라이언트에서 입력한 비밀번호 검증
+ * [대시보드 보안 잠금] 구성원 이름 + 비밀번호 결합 해시 토큰 생성
  */
-function verifyDashboardAccessPinFromWeb(inputPin) {
-  var cleanInput = String(inputPin || "").trim();
+function computeDashboardUserToken(userStr, pinStr) {
+  var cleanUser = String(userStr || "").replace(/\s+/g, "").trim();
+  if (cleanUser.toLowerCase() === HIDDEN_ADMIN_AUTH_USER) cleanUser = HIDDEN_ADMIN_AUTH_USER;
+  var s = "ws_auth_v2::" + cleanUser + "::" + String(pinStr || "").trim();
+  var h1 = 5381;
+  for (var i = 0; i < s.length; i++) {
+    h1 = (((h1 << 5) + h1) ^ s.charCodeAt(i)) >>> 0;
+  }
+  return "WSAUTH_" + h1.toString(16).toUpperCase() + "_" + s.length;
+}
+
+/**
+ * [대시보드 보안 잠금] 현재 유효한 모든 구성원 토큰 + 히든 관리자(admin/007077) 토큰 목록 반환
+ */
+function getValidDashboardAuthTokens(ss) {
   var currentPin = getDashboardAccessPin();
-  if (cleanInput && cleanInput === currentPin) {
+  var tokens = [computeDashboardUserToken(HIDDEN_ADMIN_AUTH_USER, HIDDEN_ADMIN_AUTH_PIN)];
+  var memberList = getAllRegisteredMemberNamesForAuth(ss);
+  for (var i = 0; i < memberList.length; i++) {
+    var tok = computeDashboardUserToken(memberList[i], currentPin);
+    if (tokens.indexOf(tok) === -1) tokens.push(tok);
+  }
+  return tokens;
+}
+
+/**
+ * [대시보드 보안 잠금] 클라이언트에서 입력한 구성원 이름 + 비밀번호 검증 (히든 계정 admin / 007077 지원)
+ */
+function verifyDashboardAccessPinFromWeb(inputPin, inputUser) {
+  var cleanInputPin = String(inputPin || "").trim();
+  var currentPin = getDashboardAccessPin();
+  if (arguments.length >= 2 && inputUser !== undefined) {
+    var cleanUser = String(inputUser || "").replace(/\s+/g, "").trim();
+    if (!cleanUser) {
+      return { success: false, error: "구성원 이름을 입력해 주세요." };
+    }
+    if (cleanUser.toLowerCase() === HIDDEN_ADMIN_AUTH_USER && cleanInputPin === HIDDEN_ADMIN_AUTH_PIN) {
+      return {
+        success: true,
+        user: HIDDEN_ADMIN_AUTH_USER,
+        isAdmin: true,
+        token: computeDashboardUserToken(HIDDEN_ADMIN_AUTH_USER, HIDDEN_ADMIN_AUTH_PIN)
+      };
+    }
+    var validMembers = getAllRegisteredMemberNamesForAuth();
+    if (validMembers.indexOf(cleanUser) !== -1 && cleanInputPin && cleanInputPin === currentPin) {
+      return {
+        success: true,
+        user: cleanUser,
+        isAdmin: false,
+        token: computeDashboardUserToken(cleanUser, currentPin)
+      };
+    }
+    return {
+      success: false,
+      error: "등록된 구성원 이름이 아니거나 비밀번호가 일치하지 않습니다."
+    };
+  }
+  if (cleanInputPin && cleanInputPin === currentPin) {
     return {
       success: true,
       token: computeDashboardPinToken(currentPin)
@@ -9823,7 +9928,9 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(batchRes)).setMimeType(ContentService.MimeType.JSON);
   }
   if (action === "verifyDashboardPin") {
-    var vPinRes = verifyDashboardAccessPinFromWeb(p.pin || "");
+    var vPinRes = (p.user !== undefined)
+      ? verifyDashboardAccessPinFromWeb(p.pin || "", p.user || "")
+      : verifyDashboardAccessPinFromWeb(p.pin || "");
     return ContentService.createTextOutput(JSON.stringify(vPinRes)).setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -14160,12 +14267,14 @@ function buildSidebarDashboardHtml(mode) {
   html += '</style></head><body>';
 
   var currentPinToken = computeDashboardPinToken(getDashboardAccessPin());
+  var validAuthTokensList = getValidDashboardAuthTokens();
   html += '<div id="wsAccessLockOverlay" style="display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:#0f172a;z-index:200000;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">';
-  html += '  <div id="wsAccessLockCard" style="background:#ffffff;border-radius:20px;width:100%;max-width:360px;padding:32px 24px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.45);text-align:center;">';
-  html += '    <div style="width:56px;height:56px;border-radius:16px;background:#eff6ff;color:#2563eb;display:inline-flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:14px;box-shadow:0 4px 12px rgba(37,99,235,0.15);">🔒</div>';
+  html += '  <div id="wsAccessLockCard" style="background:#ffffff;border-radius:20px;width:100%;max-width:360px;padding:30px 24px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.45);text-align:center;">';
+  html += '    <div style="width:54px;height:54px;border-radius:16px;background:#eff6ff;color:#2563eb;display:inline-flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:12px;box-shadow:0 4px 12px rgba(37,99,235,0.15);">🔒</div>';
   html += '    <h2 style="margin:0 0 6px 0;font-size:19px;font-weight:900;color:#0f172a;letter-spacing:-0.4px;">우성아이디 구성원 인증</h2>';
-  html += '    <p style="margin:0 0 18px 0;font-size:12.5px;color:#64748b;line-height:1.5;">보안을 위해 공용 비밀번호를 입력해 주세요.<br><span style="color:#2563eb;font-weight:700;">5회 연속 오류 시 3분간 입력이 제한됩니다.</span></p>';
-  html += '    <input type="password" id="wsAccessPinInput" inputmode="text" autocomplete="current-password" placeholder="공용 비밀번호 입력" onkeydown="if(event.key===\'Enter\')submitWsAccessPin()" style="width:100%;box-sizing:border-box;padding:13px 16px;border:2px solid #cbd5e1;border-radius:12px;font-size:18px;font-weight:800;text-align:center;letter-spacing:4px;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor=\'#2563eb\';this.style.background=\'#ffffff\';">';
+  html += '    <p style="margin:0 0 16px 0;font-size:12.5px;color:#64748b;line-height:1.5;">구성원 이름과 공용 비밀번호를 입력해 주세요.<br><span style="color:#2563eb;font-weight:700;">5회 연속 오류 시 3분간 입력이 제한됩니다.</span></p>';
+  html += '    <input type="text" id="wsAccessNameInput" autocomplete="username" placeholder="구성원 이름 입력 (예: 홍길동)" onkeydown="if(event.key===\'Enter\'){var pEl=document.getElementById(\'wsAccessPinInput\');if(pEl)pEl.focus();}" style="width:100%;box-sizing:border-box;padding:12px 16px;margin-bottom:10px;border:2px solid #cbd5e1;border-radius:12px;font-size:16px;font-weight:800;text-align:center;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor=\'#2563eb\';this.style.background=\'#ffffff\';">';
+  html += '    <input type="password" id="wsAccessPinInput" inputmode="text" autocomplete="current-password" placeholder="공용 비밀번호 입력" onkeydown="if(event.key===\'Enter\')submitWsAccessPin()" style="width:100%;box-sizing:border-box;padding:12px 16px;border:2px solid #cbd5e1;border-radius:12px;font-size:18px;font-weight:800;text-align:center;letter-spacing:4px;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor=\'#2563eb\';this.style.background=\'#ffffff\';">';
   html += '    <div style="margin-top:12px;display:flex;flex-direction:column;align-items:center;gap:3px;">';
   html += '      <label style="display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;font-size:13px;font-weight:800;color:#1e293b;user-select:none;">';
   html += '        <input type="checkbox" id="wsAccessKeepLoginChk" checked style="width:16px;height:16px;cursor:pointer;accent-color:#2563eb;margin:0;">';
@@ -14173,7 +14282,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      </label>';
   html += '      <span style="font-size:11px;color:#94a3b8;font-weight:600;">공용/외부 PC에서는 체크를 해제하세요 (창 닫으면 자동 잠금)</span>';
   html += '    </div>';
-  html += '    <div id="wsAccessPinError" style="display:none;margin-top:10px;font-size:12px;font-weight:700;color:#dc2626;">❌ 비밀번호가 일치하지 않습니다.</div>';
+  html += '    <div id="wsAccessPinError" style="display:none;margin-top:10px;font-size:12px;font-weight:700;color:#dc2626;">❌ 등록된 구성원 이름이 아니거나 비밀번호가 일치하지 않습니다.</div>';
   html += '    <button type="button" id="wsAccessPinBtn" onclick="submitWsAccessPin()" style="width:100%;margin-top:14px;padding:13px;background:#2563eb;color:#ffffff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,0.35);transition:background 0.15s;">인증하고 대시보드 열기</button>';
   html += '  </div>';
   html += '</div>';
@@ -15238,7 +15347,9 @@ function buildSidebarDashboardHtml(mode) {
   // Script
   html += '<script>';
   html += 'var WS_REQUIRED_PIN_TOKEN = ' + jsStringLiteral_(currentPinToken) + ';\n';
-  html += 'var WS_PIN_STORAGE_KEY = "ws_dashboard_auth_token_v1";\n';
+  html += 'var WS_VALID_AUTH_TOKENS = ' + JSON.stringify(validAuthTokensList) + ';\n';
+  html += 'var WS_PIN_STORAGE_KEY = "ws_dashboard_auth_token_v2";\n';
+  html += 'var WS_USER_STORAGE_KEY = "ws_dashboard_auth_user_v2";\n';
   html += 'var WS_PIN_FAIL_KEY = "ws_pin_fail_count_v1";\n';
   html += 'var WS_PIN_LOCK_UNTIL_KEY = "ws_pin_lock_until_v1";\n';
   html += 'var WS_PIN_MAX_ATTEMPTS = 5;\n';
@@ -15249,6 +15360,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    var lockUntilRaw = (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") ? localStorage.getItem(WS_PIN_LOCK_UNTIL_KEY) : "0";\n';
   html += '    var lockUntil = parseInt(lockUntilRaw || "0", 10) || 0;\n';
   html += '    var nowMs = Date.now();\n';
+  html += '    var nameInp = document.getElementById("wsAccessNameInput");\n';
   html += '    var inp = document.getElementById("wsAccessPinInput");\n';
   html += '    var btn = document.getElementById("wsAccessPinBtn");\n';
   html += '    var errEl = document.getElementById("wsAccessPinError");\n';
@@ -15257,9 +15369,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '      var m = Math.floor(remainSec / 60);\n';
   html += '      var s = remainSec % 60;\n';
   html += '      var timeText = (m > 0 ? m + "분 " : "") + s + "초";\n';
+  html += '      if (nameInp) { nameInp.disabled = true; nameInp.style.background = "#f1f5f9"; }\n';
   html += '      if (inp) { inp.disabled = true; inp.value = ""; inp.placeholder = "입력 제한 중 (" + timeText + ")"; inp.style.background = "#f1f5f9"; }\n';
   html += '      if (btn) { btn.disabled = true; btn.style.background = "#94a3b8"; btn.style.cursor = "not-allowed"; btn.innerText = "⛔ 입력 잠금 중 (" + timeText + ")"; }\n';
-  html += '      if (errEl) { errEl.style.display = "block"; errEl.innerText = "⛔ 비밀번호 5회 연속 오류로 3분간 잠겼습니다. (" + timeText + " 후 재시도)"; }\n';
+  html += '      if (errEl) { errEl.style.display = "block"; errEl.innerText = "⛔ 인증 5회 연속 오류로 3분간 잠겼습니다. (" + timeText + " 후 재시도)"; }\n';
   html += '      if (!wsPinLockTimerId) {\n';
   html += '        wsPinLockTimerId = setInterval(checkAndRenderWsPinLockout, 1000);\n';
   html += '      }\n';
@@ -15268,6 +15381,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (wsPinLockTimerId) { clearInterval(wsPinLockTimerId); wsPinLockTimerId = null; }\n';
   html += '      if (lockUntil > 0) {\n';
   html += '        try { if (typeof localStorage !== "undefined" && localStorage) { localStorage.removeItem(WS_PIN_LOCK_UNTIL_KEY); localStorage.removeItem(WS_PIN_FAIL_KEY); } } catch (eCl) {}\n';
+  html += '        if (nameInp) { nameInp.disabled = false; nameInp.style.background = "#f8fafc"; }\n';
   html += '        if (inp) { inp.disabled = false; inp.placeholder = "공용 비밀번호 입력"; inp.style.background = "#f8fafc"; inp.focus(); }\n';
   html += '        if (btn) { btn.disabled = false; btn.style.background = "#2563eb"; btn.style.cursor = "pointer"; btn.innerText = "인증하고 대시보드 열기"; }\n';
   html += '        if (errEl) { errEl.style.display = "none"; }\n';
@@ -15279,16 +15393,28 @@ function buildSidebarDashboardHtml(mode) {
   html += '(function() {\n';
   html += '  try {\n';
   html += '    var savedTok = "";\n';
-  html += '    if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") savedTok = localStorage.getItem(WS_PIN_STORAGE_KEY) || "";\n';
-  html += '    if (!savedTok && typeof sessionStorage !== "undefined" && sessionStorage && typeof sessionStorage.getItem === "function") savedTok = sessionStorage.getItem(WS_PIN_STORAGE_KEY) || "";\n';
+  html += '    var savedUsr = "";\n';
+  html += '    if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") {\n';
+  html += '      savedTok = localStorage.getItem(WS_PIN_STORAGE_KEY) || "";\n';
+  html += '      savedUsr = localStorage.getItem(WS_USER_STORAGE_KEY) || "";\n';
+  html += '    }\n';
+  html += '    if (!savedTok && typeof sessionStorage !== "undefined" && sessionStorage && typeof sessionStorage.getItem === "function") {\n';
+  html += '      savedTok = sessionStorage.getItem(WS_PIN_STORAGE_KEY) || "";\n';
+  html += '    }\n';
   html += '    var lockEl = document.getElementById("wsAccessLockOverlay");\n';
-  html += '    if (savedTok && savedTok === WS_REQUIRED_PIN_TOKEN) {\n';
+  html += '    if (savedTok && Array.isArray(WS_VALID_AUTH_TOKENS) && WS_VALID_AUTH_TOKENS.indexOf(savedTok) !== -1) {\n';
   html += '      if (lockEl) lockEl.style.display = "none";\n';
   html += '    } else {\n';
+  html += '      var nameInp = document.getElementById("wsAccessNameInput");\n';
+  html += '      if (nameInp && savedUsr && savedUsr.toLowerCase() !== "admin") {\n';
+  html += '        nameInp.value = savedUsr;\n';
+  html += '      }\n';
   html += '      checkAndRenderWsPinLockout();\n';
   html += '      setTimeout(function() {\n';
-  html += '        var inp = document.getElementById("wsAccessPinInput");\n';
-  html += '        if (inp && !inp.disabled) inp.focus();\n';
+  html += '        var nEl = document.getElementById("wsAccessNameInput");\n';
+  html += '        var pEl = document.getElementById("wsAccessPinInput");\n';
+  html += '        if (nEl && !nEl.disabled && !nEl.value) nEl.focus();\n';
+  html += '        else if (pEl && !pEl.disabled) pEl.focus();\n';
   html += '      }, 120);\n';
   html += '    }\n';
   html += '  } catch (eLock) {}\n';
@@ -15301,16 +15427,33 @@ function buildSidebarDashboardHtml(mode) {
   html += '  }\n';
   html += '  return "WSPIN_" + h1.toString(16).toUpperCase() + "_" + s.length;\n';
   html += '}\n';
-  html += 'function unlockWsDashboardWithToken(token) {\n';
-  html += '  WS_REQUIRED_PIN_TOKEN = token;\n';
+  html += 'function computeClientWsUserToken(userStr, pinStr) {\n';
+  html += '  var cleanUser = String(userStr || "").replace(/\\s+/g, "").trim();\n';
+  html += '  if (cleanUser.toLowerCase() === "admin") cleanUser = "admin";\n';
+  html += '  var s = "ws_auth_v2::" + cleanUser + "::" + String(pinStr || "").trim();\n';
+  html += '  var h1 = 5381;\n';
+  html += '  for (var i = 0; i < s.length; i++) {\n';
+  html += '    h1 = (((h1 << 5) + h1) ^ s.charCodeAt(i)) >>> 0;\n';
+  html += '  }\n';
+  html += '  return "WSAUTH_" + h1.toString(16).toUpperCase() + "_" + s.length;\n';
+  html += '}\n';
+  html += 'function unlockWsDashboardWithToken(token, userName) {\n';
+  html += '  if (Array.isArray(WS_VALID_AUTH_TOKENS) && WS_VALID_AUTH_TOKENS.indexOf(token) === -1) {\n';
+  html += '    WS_VALID_AUTH_TOKENS.push(token);\n';
+  html += '  }\n';
   html += '  var keepChk = document.getElementById("wsAccessKeepLoginChk");\n';
   html += '  var keepPersistent = keepChk ? !!keepChk.checked : true;\n';
+  html += '  var cleanU = String(userName || "").replace(/\\s+/g, "").trim();\n';
   html += '  try {\n';
   html += '    if (typeof localStorage !== "undefined" && localStorage) {\n';
   html += '      localStorage.removeItem(WS_PIN_FAIL_KEY);\n';
   html += '      localStorage.removeItem(WS_PIN_LOCK_UNTIL_KEY);\n';
-  html += '      if (keepPersistent) localStorage.setItem(WS_PIN_STORAGE_KEY, token);\n';
-  html += '      else localStorage.removeItem(WS_PIN_STORAGE_KEY);\n';
+  html += '      if (keepPersistent) {\n';
+  html += '        localStorage.setItem(WS_PIN_STORAGE_KEY, token);\n';
+  html += '        if (cleanU && cleanU.toLowerCase() !== "admin") localStorage.setItem(WS_USER_STORAGE_KEY, cleanU);\n';
+  html += '      } else {\n';
+  html += '        localStorage.removeItem(WS_PIN_STORAGE_KEY);\n';
+  html += '      }\n';
   html += '    }\n';
   html += '    if (typeof sessionStorage !== "undefined" && sessionStorage) {\n';
   html += '      sessionStorage.setItem(WS_PIN_STORAGE_KEY, token);\n';
@@ -15324,7 +15467,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '    showToast(keepPersistent ? "🔓 구성원 인증이 완료되었습니다. (이 기기에서 자동 유지됩니다)" : "🔓 1회성 인증 완료 (브라우저 창을 닫으면 자동으로 잠깁니다)");\n';
   html += '  }\n';
   html += '}\n';
-  html += 'function showWsAccessPinError() {\n';
+  html += 'function showWsAccessPinError(customMsg) {\n';
   html += '  var inp = document.getElementById("wsAccessPinInput");\n';
   html += '  var errEl = document.getElementById("wsAccessPinError");\n';
   html += '  var btn = document.getElementById("wsAccessPinBtn");\n';
@@ -15344,7 +15487,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '  if (btn) { btn.disabled = false; btn.innerText = "인증하고 대시보드 열기"; }\n';
   html += '  if (errEl) {\n';
   html += '    errEl.style.display = "block";\n';
-  html += '    errEl.innerText = "❌ 비밀번호가 일치하지 않습니다. (오류 " + failCount + "/" + WS_PIN_MAX_ATTEMPTS + "회)";\n';
+  html += '    var baseMsg = customMsg || "등록된 구성원 이름이 아니거나 비밀번호가 일치하지 않습니다.";\n';
+  html += '    errEl.innerText = "❌ " + baseMsg + " (오류 " + failCount + "/" + WS_PIN_MAX_ATTEMPTS + "회)";\n';
   html += '  }\n';
   html += '  if (inp) {\n';
   html += '    inp.classList.remove("ws-pin-shake");\n';
@@ -15356,38 +15500,50 @@ function buildSidebarDashboardHtml(mode) {
   html += '}\n';
   html += 'function submitWsAccessPin() {\n';
   html += '  if (checkAndRenderWsPinLockout()) return;\n';
+  html += '  var nameInp = document.getElementById("wsAccessNameInput");\n';
   html += '  var inp = document.getElementById("wsAccessPinInput");\n';
+  html += '  var errEl = document.getElementById("wsAccessPinError");\n';
   html += '  var btn = document.getElementById("wsAccessPinBtn");\n';
+  html += '  var valName = nameInp ? String(nameInp.value || "").replace(/\\s+/g, "").trim() : "";\n';
   html += '  var val = inp ? String(inp.value || "").trim() : "";\n';
-  html += '  if (!val) { if (inp) inp.focus(); return; }\n';
-  html += '  var candidateToken = computeClientWsPinToken(val);\n';
-  html += '  if (candidateToken === WS_REQUIRED_PIN_TOKEN) {\n';
-  html += '    unlockWsDashboardWithToken(WS_REQUIRED_PIN_TOKEN);\n';
+  html += '  if (!valName) {\n';
+  html += '    if (errEl) { errEl.style.display = "block"; errEl.innerText = "⚠️ 구성원 이름을 입력해 주세요."; }\n';
+  html += '    if (nameInp) nameInp.focus();\n';
   html += '    return;\n';
   html += '  }\n';
-  html += '  if (btn) { btn.disabled = true; btn.innerText = "비밀번호 확인 중..."; }\n';
+  html += '  if (!val) {\n';
+  html += '    if (errEl) { errEl.style.display = "block"; errEl.innerText = "⚠️ 비밀번호를 입력해 주세요."; }\n';
+  html += '    if (inp) inp.focus();\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  var candidateToken = computeClientWsUserToken(valName, val);\n';
+  html += '  if (Array.isArray(WS_VALID_AUTH_TOKENS) && WS_VALID_AUTH_TOKENS.indexOf(candidateToken) !== -1) {\n';
+  html += '    unlockWsDashboardWithToken(candidateToken, valName);\n';
+  html += '    return;\n';
+  html += '  }\n';
+  html += '  if (btn) { btn.disabled = true; btn.innerText = "구성원 및 비밀번호 확인 중..."; }\n';
   html += '  if (typeof google !== "undefined" && google.script && google.script.run) {\n';
   html += '    google.script.run\n';
   html += '      .withSuccessHandler(function(res) {\n';
   html += '        if (btn) { btn.disabled = false; btn.innerText = "인증하고 대시보드 열기"; }\n';
   html += '        if (res && res.success && res.token) {\n';
-  html += '          unlockWsDashboardWithToken(res.token);\n';
+  html += '          unlockWsDashboardWithToken(res.token, valName);\n';
   html += '        } else {\n';
-  html += '          showWsAccessPinError();\n';
+  html += '          showWsAccessPinError(res && res.error);\n';
   html += '        }\n';
   html += '      })\n';
   html += '      .withFailureHandler(function() { showWsAccessPinError(); })\n';
-  html += '      .verifyDashboardAccessPinFromWeb(val);\n';
+  html += '      .verifyDashboardAccessPinFromWeb(val, valName);\n';
   html += '  } else {\n';
   html += '    var apiUrl = (typeof SCRIPT_URL !== "undefined" ? SCRIPT_URL : (window.location.href.split("?")[0]));\n';
-  html += '    fetch(apiUrl + "?action=verifyDashboardPin&pin=" + encodeURIComponent(val))\n';
+  html += '    fetch(apiUrl + "?action=verifyDashboardPin&user=" + encodeURIComponent(valName) + "&pin=" + encodeURIComponent(val))\n';
   html += '      .then(function(r) { return r.json(); })\n';
   html += '      .then(function(res) {\n';
   html += '        if (btn) { btn.disabled = false; btn.innerText = "인증하고 대시보드 열기"; }\n';
   html += '        if (res && res.success && res.token) {\n';
-  html += '          unlockWsDashboardWithToken(res.token);\n';
+  html += '          unlockWsDashboardWithToken(res.token, valName);\n';
   html += '        } else {\n';
-  html += '          showWsAccessPinError();\n';
+  html += '          showWsAccessPinError(res && res.error);\n';
   html += '        }\n';
   html += '      })\n';
   html += '      .catch(function() { showWsAccessPinError(); });\n';

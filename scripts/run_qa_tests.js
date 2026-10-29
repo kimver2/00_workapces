@@ -11885,7 +11885,7 @@ const clientPinScriptMatch = dashHtml194.match(/function computeClientWsPinToken
 const clientPinFn = clientPinScriptMatch ? new Function('pinStr', clientPinScriptMatch[0] + '\nreturn computeClientWsPinToken(pinStr);') : null;
 assertTest('Step 194-2: 클라이언트-서버 비밀번호 해시 토큰 100% 일치 및 웹/모바일 비밀번호 설정 메뉴 제거 검증',
   code194.includes('id="wsAccessLockOverlay"') &&
-  code194.includes('WS_PIN_STORAGE_KEY = "ws_dashboard_auth_token_v1"') &&
+  code194.includes('WS_PIN_STORAGE_KEY = "ws_dashboard_auth_token_v2"') &&
   code194.includes('function submitWsAccessPin()') &&
   !code194.includes('id="settingsPinBtn"') &&
   !code194.includes('function changeDashboardAccessPinFromSettings()') &&
@@ -11908,6 +11908,25 @@ assertTest('Step 194-4: 비밀번호 5회 오류 시 3분 일시 잠금 및 자�
   code194.includes('WS_PIN_LOCKOUT_MS = 180000') &&
   code194.includes('function checkAndRenderWsPinLockout()') &&
   code194.includes('sessionStorage.setItem(WS_PIN_STORAGE_KEY, token)')
+);
+
+// 194-5: 03_구성원 등록 이름 + 공용 비밀번호(0112) 매칭 인증 및 히든 마스터 계정(admin / 007077) 로그인 검증
+const validAuthTokens194 = sandbox.getValidDashboardAuthTokens();
+const clientUserScriptMatch = dashHtml194.match(/function computeClientWsUserToken[\s\S]*?return "WSAUTH_"[\s\S]*?\}/);
+const clientUserFn = clientUserScriptMatch ? new Function('userStr', 'pinStr', clientUserScriptMatch[0] + '\nreturn computeClientWsUserToken(userStr, pinStr);') : null;
+assertTest('Step 194-5: 구성원 이름 + 공용 비밀번호(0112) 인증, 미등록자 차단 및 히든 계정(admin / 007077) 로그인 검증',
+  code194.includes('id="wsAccessNameInput"') &&
+  sandbox.verifyDashboardAccessPinFromWeb('0112', '조항만').success === true &&
+  sandbox.verifyDashboardAccessPinFromWeb('0112', '김종혁').success === true &&
+  sandbox.verifyDashboardAccessPinFromWeb('0112', '외부인').success === false &&
+  sandbox.verifyDashboardAccessPinFromWeb('9999', '조항만').success === false &&
+  sandbox.verifyDashboardAccessPinFromWeb('007077', 'admin').success === true &&
+  sandbox.verifyDashboardAccessPinFromWeb('007077', 'ADMIN').success === true &&
+  sandbox.verifyDashboardAccessPinFromWeb('0112', 'admin').success === false &&
+  clientUserFn !== null &&
+  validAuthTokens194.indexOf(clientUserFn('admin', '007077')) !== -1 &&
+  validAuthTokens194.indexOf(clientUserFn('조항만', '0112')) !== -1 &&
+  validAuthTokens194.indexOf(clientUserFn('외부인', '0112')) === -1
 );
 
 console.log('\n========================================================');
