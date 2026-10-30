@@ -11930,6 +11930,16 @@ assertTest('Step 194-5: 구성원 이름 + 공용 비밀번호(0112) 인증, 미
   validAuthTokens194.indexOf(clientUserFn('외부인', '0112')) === -1
 );
 
+// 194-6: 모바일/PC 중첩 iframe(userCodeAppPanel -> script.google.com -> github.io) 간 window.top.postMessage 브릿지, 365일 퍼스트파티 쿠키 및 서버 사전 인증(authTok) 검증
+const preAuthedHtml194 = sandbox.buildSidebarDashboardHtml('mobile', clientUserFn('조항만', '0112'), '조항만');
+assertTest('Step 194-6: 모바일/PC 중첩 iframe 간 window.top.postMessage 브릿지, 365일 쿠키 백업 및 서버 사전 인증(display:none) 검증',
+  code194.includes('window.top.postMessage({ type: "WS_AUTH_INIT" }, "*")') &&
+  code194.includes('window.top.postMessage(authMsg, "*")') &&
+  indexHtml194.includes("setTopSavedCookie('ws_dashboard_auth_token_v2'") &&
+  indexHtml194.includes('authTok=') &&
+  preAuthedHtml194.includes('id="wsAccessLockOverlay" style="display:none;')
+);
+
 console.log('\n========================================================');
 console.log(`📊 [QA 검증 최종 결과]: 총 ${passCount + failCount}개 항목 중 ${passCount}개 통과, ${failCount}개 실패`);
 console.log('========================================================');

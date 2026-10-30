@@ -10446,7 +10446,7 @@ function doGet(e) {
   }
 
   // 3) 전체 모바일 대시보드 화면 출력 (URL 직접 접속 또는 row 미지정 시)
-  var dashHtml = buildSidebarDashboardHtml("mobile");
+  var dashHtml = buildSidebarDashboardHtml("mobile", p.authTok || "", p.authUsr || "");
   return HtmlService.createHtmlOutput(dashHtml)
     .setTitle("우성아이디 현장 대시보드")
     .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover")
@@ -13484,7 +13484,7 @@ function focusSheetRow(rowNumber, isArchived, siteName, taskName, dateStr) {
 /**
  * 실시간 대시보드 HTML/CSS/JS 생성기 (사이드바, 모달, 모바일 웹앱 지원)
  */
-function buildSidebarDashboardHtml(mode) {
+function buildSidebarDashboardHtml(mode, preAuthToken, preAuthUser) {
   var isModal = (mode === "modal");
   var isMobile = (mode === "mobile");
   var webAppUrl = getWebAppUrl();
@@ -14277,12 +14277,15 @@ function buildSidebarDashboardHtml(mode) {
 
   var currentPinToken = computeDashboardPinToken(getDashboardAccessPin());
   var validAuthTokensList = getValidDashboardAuthTokens();
-  html += '<div id="wsAccessLockOverlay" style="display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:#0f172a;z-index:200000;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">';
+  var cleanPreTok = (typeof preAuthToken === "string") ? preAuthToken.trim() : "";
+  var cleanPreUsr = (typeof preAuthUser === "string" && preAuthUser.trim().toLowerCase() !== "admin") ? preAuthUser.trim() : "";
+  var isServerPreAuthed = !!(cleanPreTok && cleanPreTok.indexOf("WSAUTH_") === 0 && validAuthTokensList.indexOf(cleanPreTok) !== -1);
+  html += '<div id="wsAccessLockOverlay" style="display:' + (isServerPreAuthed ? 'none' : 'flex') + ';position:fixed;top:0;left:0;width:100vw;height:100vh;background:#0f172a;z-index:200000;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">';
   html += '  <div id="wsAccessLockCard" style="background:#ffffff;border-radius:20px;width:100%;max-width:360px;padding:30px 24px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.45);text-align:center;">';
   html += '    <div style="width:54px;height:54px;border-radius:16px;background:#eff6ff;color:#2563eb;display:inline-flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:12px;box-shadow:0 4px 12px rgba(37,99,235,0.15);">🔒</div>';
   html += '    <h2 style="margin:0 0 6px 0;font-size:19px;font-weight:900;color:#0f172a;letter-spacing:-0.4px;">우성아이디 구성원 인증</h2>';
   html += '    <p style="margin:0 0 16px 0;font-size:12.5px;color:#64748b;line-height:1.5;">구성원 이름과 공용 비밀번호를 입력해 주세요.<br><span style="color:#2563eb;font-weight:700;">5회 연속 오류 시 3분간 입력이 제한됩니다.</span></p>';
-  html += '    <input type="text" id="wsAccessNameInput" autocomplete="username" placeholder="구성원 이름 입력 (예: 홍길동)" onkeydown="if(event.key===\'Enter\'){var pEl=document.getElementById(\'wsAccessPinInput\');if(pEl)pEl.focus();}" style="width:100%;box-sizing:border-box;padding:12px 16px;margin-bottom:10px;border:2px solid #cbd5e1;border-radius:12px;font-size:16px;font-weight:800;text-align:center;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor=\'#2563eb\';this.style.background=\'#ffffff\';">';
+  html += '    <input type="text" id="wsAccessNameInput" value="' + escapeHtmlForInput(cleanPreUsr) + '" autocomplete="username" placeholder="구성원 이름 입력 (예: 홍길동)" onkeydown="if(event.key===\'Enter\'){var pEl=document.getElementById(\'wsAccessPinInput\');if(pEl)pEl.focus();}" style="width:100%;box-sizing:border-box;padding:12px 16px;margin-bottom:10px;border:2px solid #cbd5e1;border-radius:12px;font-size:16px;font-weight:800;text-align:center;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor=\'#2563eb\';this.style.background=\'#ffffff\';">';
   html += '    <input type="password" id="wsAccessPinInput" inputmode="text" autocomplete="current-password" placeholder="공용 비밀번호 입력" onkeydown="if(event.key===\'Enter\')submitWsAccessPin()" style="width:100%;box-sizing:border-box;padding:12px 16px;border:2px solid #cbd5e1;border-radius:12px;font-size:18px;font-weight:800;text-align:center;letter-spacing:4px;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor=\'#2563eb\';this.style.background=\'#ffffff\';">';
   html += '    <div style="margin-top:12px;display:flex;flex-direction:column;align-items:center;gap:3px;">';
   html += '      <label style="display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;font-size:13px;font-weight:800;color:#1e293b;user-select:none;">';
@@ -15357,6 +15360,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '<script>';
   html += 'var WS_REQUIRED_PIN_TOKEN = ' + jsStringLiteral_(currentPinToken) + ';\n';
   html += 'var WS_VALID_AUTH_TOKENS = ' + JSON.stringify(validAuthTokensList) + ';\n';
+  html += 'var WS_SERVER_PRE_TOKEN = ' + jsStringLiteral_(isServerPreAuthed ? cleanPreTok : "") + ';\n';
   html += 'var WS_PIN_STORAGE_KEY = "ws_dashboard_auth_token_v2";\n';
   html += 'var WS_USER_STORAGE_KEY = "ws_dashboard_auth_user_v2";\n';
   html += 'var WS_PIN_FAIL_KEY = "ws_pin_fail_count_v1";\n';
@@ -15401,10 +15405,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '}\n';
   html += '(function() {\n';
   html += '  try {\n';
-  html += '    var savedTok = "";\n';
+  html += '    var savedTok = WS_SERVER_PRE_TOKEN || "";\n';
   html += '    var savedUsr = "";\n';
   html += '    if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") {\n';
-  html += '      savedTok = localStorage.getItem(WS_PIN_STORAGE_KEY) || "";\n';
+  html += '      if (!savedTok) savedTok = localStorage.getItem(WS_PIN_STORAGE_KEY) || "";\n';
   html += '      savedUsr = localStorage.getItem(WS_USER_STORAGE_KEY) || "";\n';
   html += '    }\n';
   html += '    if (!savedTok && typeof sessionStorage !== "undefined" && sessionStorage && typeof sessionStorage.getItem === "function") {\n';
@@ -15415,7 +15419,7 @@ function buildSidebarDashboardHtml(mode) {
   html += '      if (lockEl) lockEl.style.display = "none";\n';
   html += '    } else {\n';
   html += '      var nameInp = document.getElementById("wsAccessNameInput");\n';
-  html += '      if (nameInp && savedUsr && savedUsr.toLowerCase() !== "admin") {\n';
+  html += '      if (nameInp && savedUsr && savedUsr.toLowerCase() !== "admin" && !nameInp.value) {\n';
   html += '        nameInp.value = savedUsr;\n';
   html += '      }\n';
   html += '      checkAndRenderWsPinLockout();\n';
@@ -15439,9 +15443,8 @@ function buildSidebarDashboardHtml(mode) {
   html += '          if (nInp && !nInp.value) nInp.value = String(d.user);\n';
   html += '        }\n';
   html += '      });\n';
-  html += '      if (window.parent && window.parent !== window) {\n';
-  html += '        window.parent.postMessage({ type: "WS_AUTH_INIT" }, "*");\n';
-  html += '      }\n';
+  html += '      try { if (window.top && window.top !== window) window.top.postMessage({ type: "WS_AUTH_INIT" }, "*"); } catch (eTopI) {}\n';
+  html += '      try { if (window.parent && window.parent !== window && window.parent !== window.top) window.parent.postMessage({ type: "WS_AUTH_INIT" }, "*"); } catch (eParI) {}\n';
   html += '    }\n';
   html += '  } catch (eLock) {}\n';
   html += '})();\n';
@@ -15484,8 +15487,10 @@ function buildSidebarDashboardHtml(mode) {
   html += '    if (typeof sessionStorage !== "undefined" && sessionStorage) {\n';
   html += '      sessionStorage.setItem(WS_PIN_STORAGE_KEY, token);\n';
   html += '    }\n';
-  html += '    if (typeof window !== "undefined" && window.parent && window.parent !== window) {\n';
-  html += '      window.parent.postMessage({ type: "WS_SAVE_AUTH", token: token, user: cleanU, keep: keepPersistent }, "*");\n';
+  html += '    if (typeof window !== "undefined") {\n';
+  html += '      var authMsg = { type: "WS_SAVE_AUTH", token: token, user: cleanU, keep: keepPersistent };\n';
+  html += '      try { if (window.top && window.top !== window) window.top.postMessage(authMsg, "*"); } catch (eTopS) {}\n';
+  html += '      try { if (window.parent && window.parent !== window && window.parent !== window.top) window.parent.postMessage(authMsg, "*"); } catch (eParS) {}\n';
   html += '    }\n';
   html += '  } catch (eS) {}\n';
   html += '  var lockEl = document.getElementById("wsAccessLockOverlay");\n';

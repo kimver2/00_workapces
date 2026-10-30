@@ -186,6 +186,26 @@
     </div>
   </div>
 
+  <!-- 최상위 퍼스트파티 구성원 인증 잠금창 (github.io 영구 localStorage & 365일 쿠키 직접 저장) -->
+  <div id="topAccessLockOverlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:#0f172a;z-index:300000;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Pretendard',sans-serif;">
+    <div style="background:#ffffff;border-radius:20px;width:100%;max-width:360px;padding:30px 24px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.45);text-align:center;">
+      <div style="width:54px;height:54px;border-radius:16px;background:#eff6ff;color:#2563eb;display:inline-flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:12px;box-shadow:0 4px 12px rgba(37,99,235,0.15);">🔒</div>
+      <h2 style="margin:0 0 6px 0;font-size:19px;font-weight:900;color:#0f172a;letter-spacing:-0.4px;">우성아이디 구성원 인증</h2>
+      <p style="margin:0 0 16px 0;font-size:12.5px;color:#64748b;line-height:1.5;">구성원 이름과 공용 비밀번호를 입력해 주세요.<br><span style="color:#2563eb;font-weight:700;">최초 1회 인증 시 이 기기에서 계속 유지됩니다.</span></p>
+      <input type="text" id="topAccessNameInput" autocomplete="username" placeholder="구성원 이름 입력 (예: 홍길동)" onkeydown="if(event.key==='Enter'){var p=document.getElementById('topAccessPinInput');if(p)p.focus();}" style="width:100%;box-sizing:border-box;padding:12px 16px;margin-bottom:10px;border:2px solid #cbd5e1;border-radius:12px;font-size:16px;font-weight:800;text-align:center;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor='#2563eb';this.style.background='#ffffff';">
+      <input type="password" id="topAccessPinInput" inputmode="text" autocomplete="current-password" placeholder="공용 비밀번호 입력" onkeydown="if(event.key==='Enter')submitTopAccessPin()" style="width:100%;box-sizing:border-box;padding:12px 16px;border:2px solid #cbd5e1;border-radius:12px;font-size:18px;font-weight:800;text-align:center;letter-spacing:4px;outline:none;color:#0f172a;background:#f8fafc;transition:all 0.15s;" onfocus="this.style.borderColor='#2563eb';this.style.background='#ffffff';">
+      <div style="margin-top:12px;display:flex;flex-direction:column;align-items:center;gap:3px;">
+        <label style="display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;font-size:13px;font-weight:800;color:#1e293b;user-select:none;">
+          <input type="checkbox" id="topAccessKeepChk" checked style="width:16px;height:16px;cursor:pointer;accent-color:#2563eb;margin:0;">
+          <span>내 기기에서 자동 로그인 유지</span>
+        </label>
+        <span style="font-size:11px;color:#94a3b8;font-weight:600;">공용/외부 PC에서는 체크를 해제하세요 (창 닫으면 자동 잠금)</span>
+      </div>
+      <div id="topAccessPinError" style="display:none;margin-top:10px;font-size:12px;font-weight:700;color:#dc2626;">❌ 등록된 구성원 이름이 아니거나 비밀번호가 일치하지 않습니다.</div>
+      <button type="button" id="topAccessPinBtn" onclick="submitTopAccessPin()" style="width:100%;margin-top:14px;padding:13px;background:#2563eb;color:#ffffff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,0.35);transition:background 0.15s;">인증하고 대시보드 열기</button>
+    </div>
+  </div>
+
   <!-- 전체화면 무배너 웹앱 프레임 (credentialless: 크롬 다중 구글 계정 로그인 시 쿠키 충돌 원천 차단) -->
   <iframe
     id="appFrame"
@@ -196,6 +216,164 @@
   </iframe>
 
   <script>
+    var GAS_AUTH_API_URL = 'https://script.google.com/macros/s/AKfycbwJTNqEODEBUJNirHC3MWNpp-uSJsrjOPuT6C5cSJvlNCD1FIPOYZE9rn8aFhIouUY_/exec';
+    function getTopSavedCookie(name) {
+      try {
+        var match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)'));
+        return match ? decodeURIComponent(match[1]) : '';
+      } catch (eC) { return ''; }
+    }
+    function setTopSavedCookie(name, val, maxAgeSec) {
+      try {
+        document.cookie = name + '=' + encodeURIComponent(val || '') + '; path=/; max-age=' + maxAgeSec + '; SameSite=Lax';
+      } catch (eSC) {}
+    }
+    function getTopSavedAuth() {
+      var tok = '';
+      var usr = '';
+      try {
+        tok = localStorage.getItem('ws_dashboard_auth_token_v2') || sessionStorage.getItem('ws_dashboard_auth_token_v2') || getTopSavedCookie('ws_dashboard_auth_token_v2') || '';
+        usr = localStorage.getItem('ws_dashboard_auth_user_v2') || getTopSavedCookie('ws_dashboard_auth_user_v2') || '';
+      } catch (eG) {
+        tok = getTopSavedCookie('ws_dashboard_auth_token_v2') || '';
+        usr = getTopSavedCookie('ws_dashboard_auth_user_v2') || '';
+      }
+      return { token: tok, user: usr };
+    }
+    function saveTopAuthData(token, user, keepPersistent) {
+      var cleanU = String(user || '').replace(/\s+/g, '').trim();
+      if (keepPersistent !== false) {
+        if (token) {
+          try { localStorage.setItem('ws_dashboard_auth_token_v2', token); } catch (eL1) {}
+          setTopSavedCookie('ws_dashboard_auth_token_v2', token, 31536000);
+        }
+        if (cleanU && cleanU.toLowerCase() !== 'admin') {
+          try { localStorage.setItem('ws_dashboard_auth_user_v2', cleanU); } catch (eL2) {}
+          setTopSavedCookie('ws_dashboard_auth_user_v2', cleanU, 31536000);
+        }
+      } else {
+        try { localStorage.removeItem('ws_dashboard_auth_token_v2'); } catch (eLR) {}
+        setTopSavedCookie('ws_dashboard_auth_token_v2', '', 0);
+      }
+      if (token) {
+        try { sessionStorage.setItem('ws_dashboard_auth_token_v2', token); } catch (eSS) {}
+      }
+    }
+    function checkTopPinLockout() {
+      try {
+        var lockUntil = parseInt(localStorage.getItem('ws_pin_lock_until_v1') || '0', 10) || 0;
+        var nowMs = Date.now();
+        var nInp = document.getElementById('topAccessNameInput');
+        var pInp = document.getElementById('topAccessPinInput');
+        var btn = document.getElementById('topAccessPinBtn');
+        var errEl = document.getElementById('topAccessPinError');
+        if (lockUntil > nowMs) {
+          var remainSec = Math.ceil((lockUntil - nowMs) / 1000);
+          var m = Math.floor(remainSec / 60);
+          var s = remainSec % 60;
+          var timeText = (m > 0 ? m + '분 ' : '') + s + '초';
+          if (nInp) nInp.disabled = true;
+          if (pInp) { pInp.disabled = true; pInp.value = ''; }
+          if (btn) { btn.disabled = true; btn.style.background = '#94a3b8'; btn.innerText = '⛔ 입력 잠금 중 (' + timeText + ')'; }
+          if (errEl) { errEl.style.display = 'block'; errEl.innerText = '⛔ 5회 연속 오류로 3분간 잠겼습니다. (' + timeText + ' 후 재시도)'; }
+          setTimeout(checkTopPinLockout, 1000);
+          return true;
+        } else if (lockUntil > 0) {
+          localStorage.removeItem('ws_pin_lock_until_v1');
+          localStorage.removeItem('ws_pin_fail_count_v1');
+          if (nInp) nInp.disabled = false;
+          if (pInp) pInp.disabled = false;
+          if (btn) { btn.disabled = false; btn.style.background = '#2563eb'; btn.innerText = '인증하고 대시보드 열기'; }
+          if (errEl) errEl.style.display = 'none';
+        }
+      } catch (eLk) {}
+      return false;
+    }
+    function submitTopAccessPin() {
+      if (checkTopPinLockout()) return;
+      var nInp = document.getElementById('topAccessNameInput');
+      var pInp = document.getElementById('topAccessPinInput');
+      var keepChk = document.getElementById('topAccessKeepChk');
+      var errEl = document.getElementById('topAccessPinError');
+      var btn = document.getElementById('topAccessPinBtn');
+      var valName = nInp ? String(nInp.value || '').replace(/\s+/g, '').trim() : '';
+      var valPin = pInp ? String(pInp.value || '').trim() : '';
+      if (!valName) {
+        if (errEl) { errEl.style.display = 'block'; errEl.innerText = '⚠️ 구성원 이름을 입력해 주세요.'; }
+        if (nInp) nInp.focus();
+        return;
+      }
+      if (!valPin) {
+        if (errEl) { errEl.style.display = 'block'; errEl.innerText = '⚠️ 비밀번호를 입력해 주세요.'; }
+        if (pInp) pInp.focus();
+        return;
+      }
+      if (btn) { btn.disabled = true; btn.innerText = '구성원 및 비밀번호 확인 중...'; }
+      fetch(GAS_AUTH_API_URL + '?action=verifyDashboardPin&user=' + encodeURIComponent(valName) + '&pin=' + encodeURIComponent(valPin), {
+        method: 'GET',
+        credentials: 'omit'
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+          if (btn) { btn.disabled = false; btn.innerText = '인증하고 대시보드 열기'; }
+          if (res && res.success && res.token) {
+            try { localStorage.removeItem('ws_pin_fail_count_v1'); localStorage.removeItem('ws_pin_lock_until_v1'); } catch (eCl) {}
+            var keep = keepChk ? !!keepChk.checked : true;
+            saveTopAuthData(res.token, valName, keep);
+            var topLock = document.getElementById('topAccessLockOverlay');
+            if (topLock) topLock.style.display = 'none';
+            if (orcaDashboardSource) {
+              try { orcaDashboardSource.postMessage({ type: 'WS_RESTORE_AUTH', token: res.token, user: valName }, '*'); } catch (ePost) {}
+            }
+          } else {
+            var failCnt = 1;
+            try {
+              failCnt = (parseInt(localStorage.getItem('ws_pin_fail_count_v1') || '0', 10) || 0) + 1;
+              if (failCnt >= 5) {
+                localStorage.setItem('ws_pin_lock_until_v1', String(Date.now() + 180000));
+                localStorage.setItem('ws_pin_fail_count_v1', '0');
+              } else {
+                localStorage.setItem('ws_pin_fail_count_v1', String(failCnt));
+              }
+            } catch (eFc) {}
+            if (checkTopPinLockout()) return;
+            if (errEl) {
+              errEl.style.display = 'block';
+              errEl.innerText = '❌ ' + ((res && res.error) || '등록된 구성원 이름이 아니거나 비밀번호가 일치하지 않습니다.') + ' (오류 ' + failCnt + '/5회)';
+            }
+            if (pInp) { pInp.value = ''; pInp.focus(); }
+          }
+        })
+        .catch(function() {
+          if (btn) { btn.disabled = false; btn.innerText = '인증하고 대시보드 열기'; }
+          if (errEl) { errEl.style.display = 'block'; errEl.innerText = '❌ 통신 오류가 발생했습니다. 다시 시도해 주세요.'; }
+        });
+    }
+    (function() {
+      try {
+        var auth = getTopSavedAuth();
+        var topLock = document.getElementById('topAccessLockOverlay');
+        if (!auth.token) {
+          if (topLock) topLock.style.display = 'flex';
+          var nInp = document.getElementById('topAccessNameInput');
+          if (nInp && auth.user && auth.user.toLowerCase() !== 'admin') nInp.value = auth.user;
+          checkTopPinLockout();
+        } else {
+          if (topLock) topLock.style.display = 'none';
+        }
+        var frame = document.getElementById('appFrame');
+        if (frame && (auth.token || auth.user)) {
+          var baseSrc = frame.getAttribute('src') || '';
+          var extra = '';
+          if (auth.token) extra += '&authTok=' + encodeURIComponent(auth.token);
+          if (auth.user) extra += '&authUsr=' + encodeURIComponent(auth.user);
+          if (extra && baseSrc.indexOf('authTok=') === -1) {
+            frame.src = baseSrc + extra;
+          }
+        }
+      } catch (eInitFrame) {}
+    })();
+
     function hideLoading() {
       var overlay = document.getElementById('loadingOverlay');
       if (overlay) {
@@ -217,36 +395,43 @@
     window.addEventListener('message', function(ev) {
       var data = ev && ev.data;
       if (!data || typeof data !== 'object') return;
-      if (data.type === 'DASHBOARD_READY') {
-        hideLoading();
-        return;
-      }
       if (ev.source) {
         orcaDashboardSource = ev.source;
       }
+      if (data.type === 'DASHBOARD_READY') {
+        hideLoading();
+        try {
+          var authRdy = getTopSavedAuth();
+          if (ev.source && (authRdy.token || authRdy.user)) {
+            ev.source.postMessage({ type: 'WS_RESTORE_AUTH', token: authRdy.token, user: authRdy.user }, '*');
+          }
+        } catch (eRdyAuth) {}
+        return;
+      }
       if (data.type === 'WS_AUTH_INIT') {
         try {
-          var savedTok = localStorage.getItem('ws_dashboard_auth_token_v2') || sessionStorage.getItem('ws_dashboard_auth_token_v2') || '';
-          var savedUsr = localStorage.getItem('ws_dashboard_auth_user_v2') || '';
-          if (ev.source) ev.source.postMessage({ type: 'WS_RESTORE_AUTH', token: savedTok, user: savedUsr }, '*');
+          var authInit = getTopSavedAuth();
+          if (ev.source) ev.source.postMessage({ type: 'WS_RESTORE_AUTH', token: authInit.token, user: authInit.user }, '*');
         } catch (eAuthInit) {}
         return;
       }
       if (data.type === 'WS_SAVE_AUTH') {
         try {
-          if (data.keep !== false) {
-            if (data.token) localStorage.setItem('ws_dashboard_auth_token_v2', data.token);
-            if (data.user && String(data.user).toLowerCase() !== 'admin') localStorage.setItem('ws_dashboard_auth_user_v2', data.user);
-          } else {
-            localStorage.removeItem('ws_dashboard_auth_token_v2');
-          }
-          if (data.token) sessionStorage.setItem('ws_dashboard_auth_token_v2', data.token);
+          saveTopAuthData(data.token, data.user, data.keep);
+          var topLock = document.getElementById('topAccessLockOverlay');
+          if (topLock) topLock.style.display = 'none';
         } catch (eAuthSave) {}
         return;
       }
       if (data.type === 'ORCA_BRIDGE_PING') {
         try {
-          if (ev.source) ev.source.postMessage({ type: 'ORCA_BRIDGE_PONG' }, '*');
+          if (ev.source) {
+            ev.source.postMessage({ type: 'ORCA_BRIDGE_PONG' }, '*');
+            var authPing = getTopSavedAuth();
+            if (authPing.token || authPing.user) {
+              ev.source.postMessage({ type: 'WS_RESTORE_AUTH', token: authPing.token, user: authPing.user }, '*');
+            }
+          }
         } catch (ePong) {}
       } else if (data.type === 'ORCA_SHEET_MODAL_OPEN') {
         if (!orcaModalOpenInChild) {
